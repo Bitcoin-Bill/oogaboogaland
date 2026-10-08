@@ -86,6 +86,7 @@
   const gSent = new Float64Array(6);
   let gKnown = false, poseHasG = false;
   let clockOffset = 0, clockKnown = false;
+  let pokerVoice = null;
   // A server timestamp minus the arrival time is the true offset less the trip; the largest such
   // sample is the one that travelled fastest, so it is the best estimate yet.
   const clockSample = (serverMs) => {
@@ -122,6 +123,7 @@
 
   const sendBody = () => send(JSON.stringify({ t: "body", name: body }));
   const sendZone = () => send(JSON.stringify({ t: "zone", name: zone }));
+  const sendPokerVoice = () => { if (zone === "ember-den") send(JSON.stringify({ t: "poker-voice", table: pokerVoice })); };
   const sendMute = () => send(muted ? '{"t":"mute","on":true}' : '{"t":"mute","on":false}');
   // What the room hears is "showing the island now": the hub scene, in a visible tab.
   const sendHub = () => {
@@ -231,6 +233,7 @@
         send(`{"t":"pose","x":${px.toFixed(3)},"y":${py.toFixed(3)},"z":${pz.toFixed(3)},"yaw":${pyaw.toFixed(3)}${extra}}`);
       }
       sendZone();
+      sendPokerVoice();
       if (muted) sendMute();
       // A fresh room record starts at full health; the next report sends ours if it differs.
       hpSent = 100; koSent = false; hpAt = 0;
@@ -459,9 +462,17 @@
     if (name === zone) return;
     const moved = !sameGroup(name, zone);
     zone = state.zone = name;
+    pokerVoice = null;
     poseAt = 0; px = NaN;
     if (moved) BL.voice.setPeers([]);
     sendZone();
+  };
+  // Voice changes without moving or hiding anybody on the shared floor.
+  const setPokerVoice = table => {
+    if (zone !== "ember-den" || table !== null && (!Number.isInteger(table) || table < 0 || table >= 10) || pokerVoice === table) return;
+    pokerVoice = table;
+    BL.voice.setPeers([]);
+    sendPokerVoice();
   };
 
   // The hub says when it shows the island; a hidden tab stops counting until it is looked at again.
@@ -649,5 +660,5 @@
     close("off");
   };
 
-  BL.net = { start, recheck, subscribe, subscribeRoster, subscribeChat, subscribeDoor, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setHub, setMuted, setHealth, sendNpc, sendChat, sendPose, askDoor, goDoor, doneDoor, cancelDoor, passDoor, mayDrive, mayDriveGorilla, ownCharacter, characterOf, gorillaBody, bodyName, bodyKind, serverNow, remotes, state, CHAT_MAX, CHAT_KEEP, get npcFrame() { return npcFrame; } };
+  BL.net = { start, recheck, subscribe, subscribeRoster, subscribeChat, subscribeDoor, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setPokerVoice, setHub, setMuted, setHealth, sendNpc, sendChat, sendPose, askDoor, goDoor, doneDoor, cancelDoor, passDoor, mayDrive, mayDriveGorilla, ownCharacter, characterOf, gorillaBody, bodyName, bodyKind, serverNow, remotes, state, CHAT_MAX, CHAT_KEEP, get npcFrame() { return npcFrame; } };
 })();
