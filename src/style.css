@@ -832,7 +832,7 @@ body[data-active-scene="arcade"] .magazine-hud {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .chat-log {
@@ -4785,7 +4785,7 @@ body.orbit-dragging #tooltip {
     width: 100%;
     max-width: none;
     height: 52vh;
-    max-height: 52vh;
+    max-height: min(52vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
     border-radius: var(--radius) var(--radius) 0 0;
     border-bottom: 0;
     padding-bottom: var(--safe-bottom);
@@ -5081,10 +5081,10 @@ body.orbit-dragging #tooltip {
     top: auto;
     left: auto;
     right: 0;
-    bottom: 0;
+    bottom: var(--chat-keyboard, 0px);
     width: 330px;
     height: 72vh;
-    max-height: 72vh;
+    max-height: min(72vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
     border-radius: var(--radius) 0 0 0;
     border-bottom: 0;
     transition: transform 0.28s ease;

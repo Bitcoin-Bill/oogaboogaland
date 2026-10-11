@@ -200,7 +200,6 @@
       submit();
     }
   });
-  input.addEventListener("keyup", (e) => e.stopPropagation());
   if (displayForm) {
     displayForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -221,7 +220,6 @@
       if (e.isComposing || e.keyCode === 229 || displayComposing) return;
       if (e.key === "Escape") { e.preventDefault(); tab.focus({ preventScroll: true }); }
     });
-    displayInput.addEventListener("keyup", (e) => e.stopPropagation());
   }
   // Choosing the tab with a mouse puts the cursor in the input; on a touch screen that would raise the keyboard
   // over the log, so there the input waits for a tap. Heard after hud.js's own click on the tab.
@@ -231,7 +229,13 @@
     if (showing && live && fine.matches) input.focus({ preventScroll: true });
   });
   // The phone's keyboard covers the drawer's foot: lift the sheet by what it hides while the input has focus.
-  const fit = () => sheet.style.setProperty("--chat-keyboard", `${Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`);
+  const fit = () => {
+    sheet.style.setProperty("--chat-keyboard", `${Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop))}px`);
+    sheet.style.setProperty("--chat-viewport", `${Math.floor(viewport.height)}px`);
+    // A short landscape viewport scrolls the panel rather than hiding the focused editor.
+    const field = document.activeElement;
+    if (field === input || field === displayInput) field.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
   const fitInputs = displayInput ? [input, displayInput] : [input];
   for (const field of fitInputs) field.addEventListener("focus", () => {
     if (!viewport) return;
@@ -244,6 +248,7 @@
     viewport.removeEventListener("resize", fit);
     viewport.removeEventListener("scroll", fit);
     sheet.style.removeProperty("--chat-keyboard");
+    sheet.style.removeProperty("--chat-viewport");
   });
 
   net.subscribe(account);

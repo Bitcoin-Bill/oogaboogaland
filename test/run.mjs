@@ -4883,7 +4883,7 @@ const hubSheetPersistence = { name: "side panel persistence", why: "rule: a firs
     && restored.open === "true" && restored.tab === "bananas" && restored.panel
     && closed.open === "false" && closed.tab === "bananas" && !closed.saved.open && closed.saved.tab === "bananas", JSON.stringify({ first, opened, restored, closed }));
 } };
-const hubChat = { name: "ooga chat", why: "rule: Ooga Chat shows only with a backend, asks a signed-out visitor to sign in, keeps the last 100 lines as plain text, never pulls a reader back down, and Enter sends while Escape only leaves the input", run: async (b) => {
+const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus movement and fits keyboard-reduced viewports; Ooga Chat shows only with a backend, asks a signed-out visitor to sign in, keeps the last 100 lines as plain text, never pulls a reader back down, and Enter sends while Escape only leaves the input", run: async (b) => {
   // No backend in the suite: a saved chat tab falls back to the roster and the tab stays hidden.
   await b.evaluate(`localStorage.setItem("oogaboogaland.sheet.v1", JSON.stringify({ open: true, tab: "chat" }))`);
   await b.open(hubPage(src, "pos=0"));
@@ -5012,6 +5012,58 @@ const hubChat = { name: "ooga chat", why: "rule: Ooga Chat shows only with a bac
     BL.chat.heard([], false, { clientId: window.__chatSent.at(-1).clientId, accepted: true });
     return { pending, sent: window.__chatSent, cleared: input.value === "" && document.getElementById("chat-send").disabled && document.getElementById("chat-left").textContent === "160" }; })()`);
   await b.key("Escape");
+  const inputTransitions = [];
+  for (const id of ["chat-input", "chat-display"]) {
+    await b.evaluate(`__ooga.controls.reset(); document.activeElement.blur(); document.getElementById("scene").focus();`);
+    await b.send("Input.dispatchKeyEvent", { type: "keyDown", key: "w", code: "KeyW", windowsVirtualKeyCode: 87 });
+    const held = await b.evaluate("__ooga.controls.read().y");
+    await b.evaluate(`document.getElementById(${JSON.stringify(id)}).focus();`);
+    await b.send("Input.dispatchKeyEvent", { type: "keyUp", key: "w", code: "KeyW", windowsVirtualKeyCode: 87 });
+    const released = await b.evaluate("__ooga.controls.read().y");
+    await b.key("w");
+    const isolated = await b.evaluate("__ooga.controls.read().y");
+    await b.evaluate(`document.getElementById(${JSON.stringify(id)}).dispatchEvent(new CompositionEvent("compositionstart"));`);
+    await b.key("Escape");
+    const composing = await b.evaluate(`document.activeElement.id === ${JSON.stringify(id)}`);
+    await b.evaluate(`document.getElementById(${JSON.stringify(id)}).dispatchEvent(new CompositionEvent("compositionend"));`);
+    await b.key("Escape");
+    const escapedInput = await b.evaluate(`({ y: __ooga.controls.read().y, focus: document.activeElement.id, open: document.getElementById("sheet").dataset.open })`);
+    inputTransitions.push({ id, held, released, isolated, composing, ...escapedInput });
+  }
+  record("ooga chat: both editors release movement held before focus, isolate typed movement and retain IME-safe Escape", inputTransitions.every(r => r.held === 1 && r.released === 0 && r.isolated === 0 && r.composing && r.y === 0 && r.focus === "chat-tab" && r.open === "true"), JSON.stringify(inputTransitions));
+  const keyboardLayouts = [];
+  try {
+    for (const [width, height] of [[390, 844], [844, 390], [667, 375]]) {
+      await b.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: true });
+      for (const id of ["chat-input", "chat-display"]) {
+        keyboardLayouts.push(await b.evaluate(`(() => {
+          const sheet = document.getElementById("sheet"), field = document.getElementById(${JSON.stringify(id)}), viewport = visualViewport;
+          const saved = Object.fromEntries(["height", "offsetTop"].map(key => [key, Object.getOwnPropertyDescriptor(viewport, key)]));
+          const measure = () => { const r = sheet.getBoundingClientRect(), f = field.getBoundingClientRect(), toggle = sheet.querySelector(".sheet-toggle").getBoundingClientRect(), panel = document.getElementById("chat-panel").getBoundingClientRect(); return { bottom: parseFloat(getComputedStyle(sheet).bottom), top: r.top, edge: r.bottom, toggleTop: toggle.top, fieldTop: f.top, fieldBottom: f.bottom, panelTop: panel.top, panelBottom: panel.bottom }; };
+          try {
+            field.focus();
+            Object.defineProperty(viewport, "height", { configurable: true, value: innerHeight - 212 });
+            Object.defineProperty(viewport, "offsetTop", { configurable: true, value: 12 });
+            viewport.dispatchEvent(new Event("resize"));
+            const resized = measure();
+            viewport.dispatchEvent(new Event("scroll"));
+            const scrolled = measure(), focused = document.activeElement === field;
+            field.blur();
+            const cleared = !sheet.style.getPropertyValue("--chat-keyboard") && !sheet.style.getPropertyValue("--chat-viewport");
+            viewport.dispatchEvent(new Event("resize"));
+            const detached = !sheet.style.getPropertyValue("--chat-keyboard") && !sheet.style.getPropertyValue("--chat-viewport");
+            return { viewport: [innerWidth, innerHeight], id: field.id, resized, scrolled, focused, cleared, detached, visibleTop: 12, visibleBottom: innerHeight - 200 };
+          } finally {
+            field.blur();
+            for (const key of ["height", "offsetTop"]) { if (saved[key]) Object.defineProperty(viewport, key, saved[key]); else delete viewport[key]; }
+          }
+        })()`));
+      }
+    }
+  } finally {
+    await b.send("Emulation.clearDeviceMetricsOverride");
+  }
+  record("ooga chat: portrait and both landscape editors lift above the keyboard, stay within the visual viewport and clear positioning/listeners on blur", keyboardLayouts.every(r => r.focused && r.cleared && r.detached && [r.resized, r.scrolled].every(m => m.bottom === 200 && m.top >= r.visibleTop && m.toggleTop >= r.visibleTop && m.edge <= r.visibleBottom + 1 && m.fieldTop >= m.panelTop - 1 && m.fieldBottom <= m.panelBottom + 1)), JSON.stringify(keyboardLayouts));
   const escaped = await b.evaluate(`(() => { BL.net.sendChat = window.__chatSend; const out = { blurred: document.activeElement !== document.getElementById("chat-input"), open: document.getElementById("sheet").dataset.open === "true", tab: document.querySelector("[data-tab][aria-selected='true']").dataset.tab }; BL.chat.account({ backend: false, me: null, room: "off" }); localStorage.removeItem("oogaboogaland.sheet.v1"); return out; })()`);
   record("ooga chat: hidden without a backend, signed out asks to sign in, the last 100 lines kept as text, a reader not pulled down, a rejoin to a room that forgot keeps the page's lines, Enter sends and Escape leaves the input",
     none.hidden && none.tab === "roster" && none.offline === false && r.signedOut && r.saved === "chat" && r.focused
