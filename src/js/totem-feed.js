@@ -1,17 +1,15 @@
-// Each of the four totems' repositories' latest change, from GitHub's public REST API: one poller for the
+// Each of the four totems' repositories' recent merges, from GitHub's public REST API: one poller for the
 // page life. The four are asked one after another on start, then one every STEP_MS in turn while the tab is visible,
-// so each repository is asked every six minutes and the page stays well inside the unauthenticated limit of 60 an
-// hour; the browser's cache revalidates by ETag, and a 304 costs no quota. A refused poll (403 or 429 with the limit
-// spent) waits for GitHub's reset. The change is the newest commit on the default branch (a merge, for these projects),
-// so a totem can link straight to it.
+// so each repository is asked every six minutes. Closed pull requests are read newest-updated first until their
+// updates predate the last day; only a PR merged into main or master in that day can light a totem. A refused poll
+// (403 or 429 with the limit spent) waits for GitHub's reset.
 //
 // Each repository's `word` is what its totem carries, in runes down its back and sides and on its name board, and its
 // `importance` to Bitcoin sizes it: its totem stands that share of Bitcoin Core's height (`totem-models.js`).
-// `state.repos[i]` keeps `REPOS[i]`'s `sha`, `url` (the commit's page) and `changedAt` (its committer time in ms; all
-// empty or 0 until known). Subscribers get { type: "change", index, changedAt, fresh } whenever a repository's commit is
-// first read or replaced; `fresh` marks a new commit seen during the page life, never the first reading, so a page load
-// does not count as a change. Network errors are silent (counted in
-// state). Like the other feeds this stays off under nosim and can be disabled with totems=0. Exports REPOS, start,
+// `state.repos[i]` keeps `REPOS[i]`'s latest recent merge's PR number, URL and merge time (`changedAt`, in ms).
+// Subscribers get { type: "change", index, changedAt, fresh } when that merge changes; `fresh` marks a merge first
+// seen during the page life, never the first reading, so a page load does not count as a change. Network errors
+// are silent (counted in state). Like the other feeds this stays off under nosim and can be disabled with totems=0. Exports REPOS, start,
 // subscribe, dispose and state.
 (() => {
   "use strict";
@@ -23,10 +21,10 @@
     { name: "CLN", word: "CLN", repo: "ElementsProject/lightning", importance: 0.62 }
   ];
   const API = "https://api.github.com/repos/";
-  const STEP_MS = 90000;
-  const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, SHA = /^[0-9a-f]{40}$/;
+  const STEP_MS = 90000, RECENT = 24 * 3600000;
+  const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
   const subscribers = new Set();
-  const state = { enabled: false, polls: 0, failures: 0, lastError: "", limitedUntil: 0, repos: REPOS.map(() => ({ sha: "", url: "", changedAt: 0 })) };
+  const state = { enabled: false, polls: 0, failures: 0, lastError: "", limitedUntil: 0, repos: REPOS.map(() => ({ number: 0, url: "", changedAt: 0, seen: false })) };
   let timer = 0, turn = 0, inFlight = false, dueAt = 0;
 
   const emit = (event) => {
@@ -34,24 +32,44 @@
   };
 
   const poll = async (index) => {
-    const res = await fetch(`${API}${REPOS[index].repo}/commits?per_page=1`);
-    if (res.status === 403 || res.status === 429) {
-      const reset = Number(res.headers.get("x-ratelimit-reset"));
-      if (res.headers.get("x-ratelimit-remaining") === "0" && reset > 0) state.limitedUntil = reset * 1000;
-      throw new Error(`HTTP ${res.status}`);
+    const now = Date.now(), cutoff = now - RECENT;
+    let latest = null, mergedAt = 0;
+    for (let page = 1; ; page++) {
+      const res = await fetch(`${API}${REPOS[index].repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`);
+      if (res.status === 403 || res.status === 429) {
+        const reset = Number(res.headers.get("x-ratelimit-reset"));
+        if (res.headers.get("x-ratelimit-remaining") === "0" && reset > 0) state.limitedUntil = reset * 1000;
+        throw new Error(`HTTP ${res.status}`);
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const pulls = await res.json();
+      if (!Array.isArray(pulls)) throw new Error("unexpected pulls shape");
+      let older = false;
+      for (const pr of pulls) {
+        if (typeof pr.updated_at !== "string" || !ISO_TIME.test(pr.updated_at)) throw new Error("unexpected pull time");
+        const updated = Date.parse(pr.updated_at);
+        if (!Number.isFinite(updated)) throw new Error("unexpected pull time");
+        if (updated < cutoff) { older = true; break; }
+        const at = pr.merged_at;
+        if ((pr.base?.ref !== "main" && pr.base?.ref !== "master") || typeof at !== "string" || !ISO_TIME.test(at)) continue;
+        const when = Date.parse(at);
+        if (!Number.isFinite(when)) throw new Error("unexpected merge time");
+        if (when <= cutoff || when > now || when <= mergedAt) continue;
+        if (!Number.isSafeInteger(pr.number) || pr.number < 1 || pr.html_url !== `https://github.com/${REPOS[index].repo}/pull/${pr.number}`) throw new Error("unexpected pull URL");
+        latest = pr;
+        mergedAt = when;
+      }
+      if (older || pulls.length < 100) break;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = await res.json(), commit = Array.isArray(body) ? body[0] : null, at = commit?.commit?.committer?.date;
-    const url = `https://github.com/${REPOS[index].repo}/commit/${commit?.sha}`;
-    if (!commit || !SHA.test(commit.sha) || commit.html_url !== url || typeof at !== "string" || !ISO_TIME.test(at)) throw new Error("unexpected commits shape");
     state.polls++;
     state.lastError = "";
-    const entry = state.repos[index], previous = entry.sha;
-    if (commit.sha === previous) return;
-    entry.sha = commit.sha;
-    entry.url = url;
-    entry.changedAt = Date.parse(at);
-    emit({ type: "change", index, changedAt: entry.changedAt, fresh: previous !== "" });
+    const entry = state.repos[index], previous = entry.number, seen = entry.seen;
+    entry.seen = true;
+    if ((latest?.number || 0) === previous) return;
+    entry.number = latest?.number || 0;
+    entry.url = latest?.html_url || "";
+    entry.changedAt = mergedAt;
+    emit({ type: "change", index, changedAt: mergedAt, fresh: seen && !!latest && Date.now() - mergedAt < RECENT });
   };
 
   // One repository a call, or every one in turn when `all`; at most one call runs at a time.
