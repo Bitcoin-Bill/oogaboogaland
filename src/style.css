@@ -760,6 +760,11 @@ body[data-active-scene="arcade"] .magazine-hud {
   transition: color 0.15s ease;
 }
 
+/* With Ooga Chat's tab and the loot tab that makes four: the lettering shrinks so none is pushed out of the sheet. */
+.tabs:has(> [data-tab="loot"]:not([hidden])):has(> [data-tab="chat"]:not([hidden])) button {
+  font-size: 12.5px;
+}
+
 .tabs button:hover,
 .tabs button.virtual-hover {
   color: rgba(243, 239, 228, 0.85);
@@ -820,6 +825,137 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .panel[data-panel="roster"] > .feed-open {
   margin-top: auto;
+}
+
+/* Ooga Chat: the log scrolls on the roster's tablet, with the input pinned under it. */
+.panel[data-panel="chat"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.chat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.35) transparent;
+  list-style: none;
+  margin: 0;
+  padding: 2px 10px;
+  background: var(--tablet);
+  border: 2px solid var(--stone-dk);
+  border-radius: 9px 7px 10px 8px;
+  box-shadow: var(--tablet-shadow);
+}
+
+.chat-log:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-log:empty::before {
+  content: "Nobody has said anything yet.";
+  display: block;
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.chat-row {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.chat-row:last-child {
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.chat-name {
+  margin-right: 8px;
+  color: var(--accent-text);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.chat-login-name { margin-right: 8px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.chat-display-form { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chat-display-form input { min-width: 0; flex: 1; width: 100px; }
+.chat-display-form label { font-size: 10px; }
+.panel .chat-retention { flex: none; margin: 0; }
+.chat-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.chat-row[data-own="true"] .chat-name {
+  color: var(--ok);
+}
+
+.panel .chat-status {
+  flex: none;
+  margin: 0;
+}
+
+.chat-form {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-form input:disabled {
+  opacity: 0.55;
+}
+
+.chat-left {
+  flex: none;
+  min-width: 3ch;
+  color: rgba(243, 239, 228, 0.62);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.chat-left[data-over="true"] {
+  color: var(--danger);
+}
+
+.chat-send {
+  flex: none;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: linear-gradient(#e2a04a, var(--accent));
+  color: var(--ink);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 3px 0 var(--nail);
+  cursor: pointer;
+}
+
+.chat-send:hover:not(:disabled),
+.chat-send:focus-visible {
+  background: linear-gradient(#f0b05a, #e2a04a);
+  outline: none;
+}
+
+.chat-send:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .panel h2 {
@@ -1018,6 +1154,88 @@ body[data-active-scene="arcade"] .magazine-hud {
   overflow-wrap: anywhere;
 }
 
+/* A signed-in player's marks follow the name inside its cell, so the roster's columns stay as they are:
+   the host's black dot, then their voice (grey in voice, green speaking, red muted at their end; the
+   slash is this visitor's own mute, which a click on the mark toggles). */
+.roster-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.roster-marks:not(:has(> :not([hidden]))),
+.roster-host[hidden],
+.roster-voice[hidden] {
+  display: none;
+}
+
+.roster-host {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #000;
+  box-shadow: 0 0 0 1px var(--paper);
+}
+
+.roster-voice {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.roster-voice svg {
+  width: 12px;
+  height: 12px;
+  shape-rendering: crispEdges;
+}
+
+.roster-voice:disabled {
+  cursor: default;
+}
+
+.roster-voice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.roster-voice[data-voice="speaking"] {
+  color: var(--ok);
+}
+
+.roster-voice[data-voice="muted"] {
+  color: var(--danger);
+}
+
+.roster-voice .voice-far,
+.roster-voice .voice-cross,
+.roster-voice .voice-slash,
+.roster-voice[data-voice="muted"] .voice-near {
+  display: none;
+}
+
+.roster-voice[data-voice="speaking"] .voice-far,
+.roster-voice[data-voice="muted"] .voice-cross,
+.roster-voice[aria-pressed="true"] .voice-slash {
+  display: inline;
+}
+
+.roster-voice[aria-pressed="true"] {
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .roster-voice {
+    padding: 6px;
+    margin: -6px -3px;
+  }
+}
+
 .roster-age {
   color: var(--muted);
   font-size: 10px;
@@ -1088,7 +1306,8 @@ body[data-active-scene="arcade"] .magazine-hud {
 }
 
 .field input,
-.loot-assign {
+.loot-assign,
+.chat-form input {
   width: 100%;
   min-height: 38px;
   padding: 0 10px;
@@ -1101,7 +1320,8 @@ body[data-active-scene="arcade"] .magazine-hud {
 }
 
 .field input:focus-visible,
-.loot-assign:focus-visible {
+.loot-assign:focus-visible,
+.chat-form input:focus-visible {
   border-color: var(--accent);
 }
 
@@ -1330,6 +1550,14 @@ body[data-active-scene="arcade"] .magazine-hud {
   overflow-x: auto;
 }
 
+/* On touch screens the thumb sticks own the bottom edge: dock the debug panel at the top instead. */
+@media (pointer: coarse) {
+  .position-debug {
+    top: calc(16px + var(--safe-top));
+    bottom: auto;
+  }
+}
+
 /* The feed panel: the Konami code toggles it, page-wide, over any scene. */
 .feed-debug {
   position: fixed;
@@ -1434,6 +1662,29 @@ body[data-active-scene="arcade"] .magazine-hud {
 .hint.show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* The microphone's note: stays while muted in voice, under the clock, clear of the act button and the toasts. */
+.mic-note {
+  position: absolute;
+  left: 50%;
+  top: calc(52px + var(--safe-top));
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  background: var(--tablet);
+  border: 2px solid var(--stone-dk);
+  border-radius: 6px;
+  box-shadow: var(--tablet-shadow);
+  color: var(--paper);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.mic-note[data-muted="true"] {
+  color: #ffb3a6;
+  border-color: var(--danger);
 }
 
 .tooltip {
@@ -4552,11 +4803,12 @@ body.orbit-dragging #tooltip {
     top: auto;
     left: 0;
     right: 0;
-    bottom: 0;
+    /* chat.js lifts the drawer over the keyboard while its input has focus. */
+    bottom: var(--chat-keyboard, 0px);
     width: 100%;
     max-width: none;
     height: 52vh;
-    max-height: 52vh;
+    max-height: min(52vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
     border-radius: var(--radius) var(--radius) 0 0;
     border-bottom: 0;
     padding-bottom: var(--safe-bottom);
@@ -4569,7 +4821,7 @@ body.orbit-dragging #tooltip {
   }
 
   .sheet[data-open="false"] .sheet-toggle {
-    top: calc(-39px - var(--safe-bottom));
+    top: calc(-45px - var(--safe-bottom));
   }
 
   .sheet[data-open="true"]~.joysticks,
@@ -4599,10 +4851,20 @@ body.orbit-dragging #tooltip {
 
   .tabs button {
     min-height: 38px;
+    font-size: min(17px, 4vw);
+  }
+
+  .tabs:has(> [data-tab="loot"]:not([hidden])):has(> [data-tab="chat"]:not([hidden])) button {
+    font-size: min(12.5px, 3.3vw);
   }
 
   .panel {
     padding: 12px 14px;
+  }
+
+  /* Under 16px a phone zooms the page into the input. */
+  .chat-form input {
+    font-size: 16px;
   }
 
   #qr {
@@ -4842,10 +5104,10 @@ body.orbit-dragging #tooltip {
     top: auto;
     left: auto;
     right: 0;
-    bottom: 0;
+    bottom: var(--chat-keyboard, 0px);
     width: 330px;
     height: 72vh;
-    max-height: 72vh;
+    max-height: min(72vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
     border-radius: var(--radius) 0 0 0;
     border-bottom: 0;
     transition: transform 0.28s ease;
@@ -4965,7 +5227,7 @@ body.orbit-dragging #tooltip {
   }
 
   .sheet[data-open="false"] .sheet-toggle {
-    top: calc(-39px - var(--safe-bottom));
+    top: calc(-45px - var(--safe-bottom));
   }
 
   .equipment-hud {

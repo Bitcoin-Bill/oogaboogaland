@@ -4,7 +4,7 @@
 // always was: `backend` false, nothing shown, no socket. Like the live feeds it stays off under nosim and
 // can be disabled with net=0; the director starts it.
 //
-// The room answers who else is on the island: `remotes` (id → { login, display, body, x, y, z, yaw }),
+// The room answers who else is on the island: `remotes` (id → { login, display, body, zone, voice, muted, x, y, z, yaw }),
 // updated in place from its snapshots (up to 15 a second while anyone moves). A scene reports the Ooga the visitor drives with `setBody`
 // (null when none) and its feet and heading with `sendPose`, which throttles itself. A newer tab of the
 // same account kicks this one with `replaced`: it stops reconnecting until `rejoin`. `setZone` reports
@@ -24,23 +24,42 @@
 // The room's clock: `serverNow()` estimates it from the timestamps on `welcome` and `state`, keeping the
 // sample that arrived fastest (the least delayed), and `state.loopEpoch` is when the pile's shared
 // sound loop started, so every page can play the same moment of it.
-// Exports start, subscribe, dispose, login, logout, rejoin, setBody, setZone, setHub, sendNpc, npcFrame, sendPose, mayDrive, ownCharacter,
-// serverNow, remotes and state.
+// The roster's marks (who is in voice, muted, the host) follow `subscribeRoster`, which also fires on a
+// body or voice change; `subscribe` stays for the account and the room. `setMuted` tells the room this
+// page muted its microphone, and `state.body` is the Ooga this page reports driving.
+// `setHealth` reports the driven Ooga's health (on a change, at most HP_MS apart), which other pages draw over
+// it; remote records carry `hp` and `ko`.
+// Ooga Chat: `sendChat` sends a line (sanitized as donation messages are, CHAT_MAX characters at most) while the
+// room is live; `subscribeChat` hears the room's lines as `fn(lines, joined, receipt)`: one new line, or on every
+// (re)join the lines the room still holds, which chat.js merges; a rejection keeps the draft. The room names each line's
+// speaker; the page keeps nothing (chat.js shows them).
+// Exports start, subscribe, subscribeRoster, subscribeChat, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setHub, setMuted, setHealth, sendNpc,
+// sendChat, npcFrame, sendPose, mayDrive, ownCharacter, characterOf, serverNow, remotes, state, CHAT_MAX and CHAT_KEEP.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
   const POSE_MS = 1000 / 10;
+  // Health in steps of the smallest hit, a few reports a second at most; the room's own bounds for poses.
+  const HP_MS = 250, HP_STEP = 4, BOUND_XZ = 160, BOUND_Y_MIN = -130, BOUND_Y_MAX = 100;
   const PING_MS = 10000;
   const HIDDEN_PAUSE_MS = 5 * 60000;
   const BACKOFF_MS = 500, BACKOFF_MAX_MS = 15000;
+  // The room's own limits (worker/src/protocol.js): characters in a line, lines it holds.
+  const CHAT_MAX = 160, CHAT_KEEP = 100;
+  const chatIdValid = (id) => typeof id === "string" && id.length > 0 && id.length <= 64 && !/[^\w-]/.test(id);
   const subscribers = new Set();
+  const rosterSubscribers = new Set();
+  const chatSubscribers = new Set();
   const remotes = new Map();
   // room: "off" (signed out or no backend), "connecting", "live", "paused" (hidden a while), or a kick that
 // stopped it ("replaced", "full").
-  const state = { backend: false, me: null, started: false, room: "off", selfId: 0, online: 0, released: null, loopEpoch: 0, zone: "outside", hostId: 0, followers: 0, npcVersion: 0 };
+  const offline = new URLSearchParams(location.search);
+  const state = { backend: false, me: null, logoutEpoch: 0, started: false,
+    resolved: offline.has("nosim") || offline.get("net") === "0" || location.protocol !== "http:" && location.protocol !== "https:",
+    room: "off", selfId: 0, online: 0, released: null, loopEpoch: 0, zone: "outside", body: null, hostId: 0, followers: 0, npcVersion: 0 };
   let ws = null, retry = 0, retryTimer = 0, pingTimer = 0, hiddenTimer = 0, stopped = false;
   let npcFrame = null, inHub = false, hubSent = null;
-  let zone = "outside", body = null, poseAt = 0, px = NaN, py = NaN, pz = NaN, pyaw = NaN;
+  let zone = "outside", body = null, muted = false, hpSent = 100, koSent = false, hpAt = 0, poseAt = 0, px = NaN, py = NaN, pz = NaN, pyaw = NaN;
   let clockOffset = 0, clockKnown = false;
   // A server timestamp minus the arrival time is the true offset less the trip; the largest such
   // sample is the one that travelled fastest, so it is the best estimate yet.
@@ -52,8 +71,12 @@
   };
   const serverNow = () => Date.now() + clockOffset;
 
+  const rosterChanged = () => {
+    for (const fn of rosterSubscribers) fn();
+  };
   const emit = () => {
     for (const fn of subscribers) fn(state);
+    rosterChanged();
   };
 
   // Only the fields the page uses; anything else /api/me grows later stays out.
@@ -74,6 +97,7 @@
 
   const sendBody = () => send(JSON.stringify({ t: "body", name: body }));
   const sendZone = () => send(JSON.stringify({ t: "zone", name: zone }));
+  const sendMute = () => send(muted ? '{"t":"mute","on":true}' : '{"t":"mute","on":false}');
   // What the room hears is "showing the island now": the hub scene, in a visible tab.
   const sendHub = () => {
     const on = inHub && !document.hidden;
@@ -84,13 +108,25 @@
 
   const upsert = (p) => {
     if (!p || !Number.isSafeInteger(p.id) || p.id === state.selfId) return;
-    const rec = remotes.get(p.id) || { id: p.id, login: "", display: "", body: null, x: 0, y: 0, z: 0, yaw: 0 };
+    const rec = remotes.get(p.id) || { id: p.id, login: "", display: "", body: null, zone: "outside", voice: false, muted: false, hp: 100, ko: false, x: 0, y: 0, z: 0, yaw: 0 };
     rec.login = String(p.login);
     rec.display = String(p.display || p.login);
     rec.body = typeof p.body === "string" ? p.body : null;
     rec.zone = typeof p.zone === "string" ? p.zone : "outside";
+    rec.voice = p.voice === true;
+    rec.hp = Number.isFinite(p.hp) ? p.hp : 100;
+    rec.ko = p.ko === true;
+    rec.muted = p.muted === true;
     rec.x = +p.x || 0; rec.y = +p.y || 0; rec.z = +p.z || 0; rec.yaw = +p.yaw || 0;
     remotes.set(p.id, rec);
+  };
+
+  // Only the fields chat.js shows; the room already sanitized the text and named the speaker.
+  const chatLine = (m) => m && Number.isSafeInteger(m.id) && typeof m.login === "string" && typeof m.text === "string"
+    ? { id: m.id, at: Number.isFinite(m.at) ? m.at : 0, login: m.login, name: typeof m.name === "string" && m.name ? m.name : m.login, text: m.text.slice(0, CHAT_MAX) }
+    : null;
+  const chatHeard = (lines, replace, receipt = null) => {
+    for (const fn of chatSubscribers) fn(lines, replace, receipt);
   };
 
   const onMessage = (e) => {
@@ -129,6 +165,9 @@
       // whose sessions the room forgot with the old socket.
       sendZone();
       sendBody();
+      if (muted) sendMute();
+      // A fresh room record starts at full health; the next report sends ours if it differs.
+      hpSent = 100; koSent = false; hpAt = 0;
       hubSent = null;
       sendHub();
       BL.voice.restart();
@@ -142,7 +181,23 @@
       setRoom("live");
     } else if (msg.t === "body") {
       const rec = remotes.get(msg.id);
-      if (rec) rec.body = typeof msg.name === "string" ? msg.name : null;
+      if (rec) {
+        rec.body = typeof msg.name === "string" ? msg.name : null;
+        rec.hp = 100;
+        rec.ko = false;
+      }
+      rosterChanged();
+    } else if (msg.t === "vstate") {
+      const rec = remotes.get(msg.id);
+      if (!rec) return;
+      rec.voice = msg.voice === true;
+      rec.muted = msg.muted === true;
+      rosterChanged();
+    } else if (msg.t === "hp") {
+      const rec = remotes.get(msg.id);
+      if (!rec || !Number.isFinite(msg.v)) return;
+      rec.hp = msg.v;
+      rec.ko = msg.ko === true;
     } else if (msg.t === "zone") {
       const rec = remotes.get(msg.id);
       if (rec && typeof msg.name === "string") rec.zone = msg.name;
@@ -150,12 +205,28 @@
       state.hostId = Number.isSafeInteger(msg.id) ? msg.id : 0;
       state.followers = Number.isSafeInteger(msg.followers) ? msg.followers : 0;
       emit();
+    } else if (msg.t === "chat") {
+      const line = chatLine(msg);
+      if (line) chatHeard([line], false);
+    } else if (msg.t === "chat-ack" || msg.t === "chat-rejected") {
+      if (chatIdValid(msg.clientId))
+        chatHeard([], false, { clientId: msg.clientId, accepted: msg.t === "chat-ack", conflict: msg.reason === "conflict" });
+    } else if (msg.t === "chat-history") {
+      if (!Array.isArray(msg.messages)) return;
+      const lines = [];
+      for (const m of msg.messages.slice(-CHAT_KEEP)) {
+        const line = chatLine(m);
+        if (line) lines.push(line);
+      }
+      chatHeard(lines, true);
     } else if (msg.t === "voice") {
-      if (Array.isArray(msg.peers)) BL.voice.setPeers(msg.peers);
+      if (Array.isArray(msg.peers)) BL.voice.setPeers(msg.peers, Array.isArray(msg.gens) ? msg.gens : null);
     } else if (msg.t === "release") {
       state.released = { name: String(msg.name), reason: String(msg.reason) };
       emit();
     } else if (msg.t === "kick") {
+      // Revoked access stops reconnecting; the operator may later restore access.
+      if (msg.reason === "revoked") state.me = null;
       // replaced and full stop here; stale reconnects like any drop.
       if (msg.reason !== "stale") stopped = true;
       close(msg.reason === "stale" ? "connecting" : msg.reason);
@@ -205,18 +276,24 @@
     if (state.started) return;
     state.started = true;
     if (location.protocol !== "https:" && location.protocol !== "http:") return;
+    state.resolved = false;
     try {
       const res = await fetch("/api/me", { credentials: "same-origin", headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000) });
-      if (!res.ok || !(res.headers.get("content-type") || "").startsWith("application/json")) return;
+      // A static host's 404/HTML response establishes that no account exists
+      // here. A timeout or failed account service does not establish sign-out.
+      if (res.status === 404 || res.ok && !(res.headers.get("content-type") || "").startsWith("application/json")) { state.resolved = true; return; }
+      if (!res.ok) return;
       const data = await res.json();
       if (!data || !("player" in data)) return;
       state.backend = true;
       state.me = accept(data.player);
+      state.resolved = data.player === null || !!state.me;
       if (state.me) BL.contributors.addTemporary(data.character, state.me.login);
     } catch {
       return;
+    } finally {
+      emit();
     }
-    emit();
     connect();
   };
 
@@ -237,7 +314,31 @@
     stopped = true;
     window.clearTimeout(retryTimer);
     state.me = null;
+    state.logoutEpoch++;
     close("off");
+  };
+
+  // Existing account API; rejoin with fresh authenticated headers so future lines use the new name.
+  const setDisplay = async (display) => {
+    const player = state.me;
+    if (!state.backend || !player) return { ok: false, error: "Sign in first." };
+    const clean = String(display).trim();
+    if (clean.length < 3 || clean.length > 24 || /[^\w .,!?'@#:-]/.test(clean))
+      return { ok: false, error: "Use 3–24 letters A–Z, digits, spaces or _ . , ! ? ' @ # : -" };
+    try {
+      const res = await fetch("/api/me", { method: "PATCH", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ display: clean }), signal: AbortSignal.timeout(6000) });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: "Name could not be saved. Try again." };
+      const updated = accept(data.player);
+      if (!updated || updated.id !== player.id || state.me !== player) return { ok: false, error: "Account changed. Try again." };
+      state.me = updated;
+      const rejoinHere = !stopped;
+      close(rejoinHere ? "connecting" : state.room);
+      if (rejoinHere) { window.clearTimeout(retryTimer); retryTimer = 0; connect(); }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Name could not be saved. Try again." };
+    }
   };
 
   // After a `replaced` or `full` kick, the visitor chooses to play here again.
@@ -249,11 +350,22 @@
   };
 
   // Where the driven Ooga is ("outside", "hq", "cave-<id>"): voice is shared within one place.
+  // Zones are `<group>` or `<group>.<place>` (the Factory's tunnel and its hall); voice is shared within a group,
+  // so only leaving the group lets go of every voice here. The room answers every zone with the list to hear.
+  const groupLength = (name) => {
+    const dot = name.indexOf(".");
+    return dot < 0 ? name.length : dot;
+  };
+  const sameGroup = (a, b) => {
+    const n = groupLength(a);
+    return n === groupLength(b) && a.startsWith(b.slice(0, n));
+  };
   const setZone = (name) => {
     if (name === zone) return;
+    const moved = !sameGroup(name, zone);
     zone = state.zone = name;
     poseAt = 0; px = NaN;
-    BL.voice.setPeers([]);
+    if (moved) BL.voice.setPeers([]);
     sendZone();
   };
 
@@ -289,8 +401,41 @@
 
   const setBody = (name) => {
     if (name === body) return;
-    body = name;
+    body = state.body = name;
     sendBody();
+    // The room starts another Ooga at full health.
+    hpSent = 100; koSent = false;
+    rosterChanged();
+  };
+
+  // The driven Ooga's health, called every frame: sent only when its step or knockout changed, HP_MS apart, so a
+  // fight costs a few messages a second and an Ooga at full health none.
+  const setHealth = (value, stunned) => {
+    if (state.room !== "live" || !body) return;
+    const v = Math.max(0, Math.min(100, Math.round(value / HP_STEP) * HP_STEP)), ko = !!stunned;
+    if (v === hpSent && ko === koSent) return;
+    const now = performance.now();
+    if (now - hpAt < HP_MS) return;
+    hpAt = now;
+    hpSent = v;
+    koSent = ko;
+    send(`{"t":"hp","v":${v},"ko":${ko}}`);
+  };
+
+  // This page's own microphone muted or not, for every other page's roster.
+  const setMuted = (on) => {
+    if (on === muted) return;
+    muted = on;
+    sendMute();
+  };
+
+  // One line of Ooga Chat; false when it was not sent (not live, empty, or too long once sanitized).
+  const sendChat = (text, clientId) => {
+    const line = BL.donations.sanitize(text, Infinity);
+    if (state.room !== "live" || !ws || ws.readyState !== WebSocket.OPEN || !line || line.length > CHAT_MAX) return false;
+    if (clientId !== undefined && !chatIdValid(clientId)) return false;
+    send(JSON.stringify({ t: "chat", text: line, ...(clientId === undefined ? {} : { clientId }) }));
+    return true;
   };
 
   // Throttled to POSE_MS and skipped while nothing moved, so a standing Ooga costs nothing.
@@ -298,6 +443,10 @@
     if (state.room !== "live") return;
     const now = performance.now();
     if (now - poseAt < POSE_MS) return;
+    // The room drops a pose outside its bounds, which would freeze this Ooga on other pages: hold it at the edge.
+    x = Math.max(-BOUND_XZ, Math.min(BOUND_XZ, x));
+    z = Math.max(-BOUND_XZ, Math.min(BOUND_XZ, z));
+    y = Math.max(BOUND_Y_MIN, Math.min(BOUND_Y_MAX, y));
     if (Math.abs(x - px) < 0.005 && Math.abs(y - py) < 0.005 && Math.abs(z - pz) < 0.005 && Math.abs(yaw - pyaw) < 0.01) return;
     poseAt = now;
     px = x; py = y; pz = z; pyaw = yaw;
@@ -333,6 +482,14 @@
     subscribers.add(fn);
     return () => subscribers.delete(fn);
   };
+  const subscribeRoster = (fn) => {
+    rosterSubscribers.add(fn);
+    return () => rosterSubscribers.delete(fn);
+  };
+  const subscribeChat = (fn) => {
+    chatSubscribers.add(fn);
+    return () => chatSubscribers.delete(fn);
+  };
 
   const dispose = () => {
     document.removeEventListener("visibilitychange", onVisibility);
@@ -340,8 +497,10 @@
     window.clearTimeout(retryTimer);
     window.clearTimeout(hiddenTimer);
     subscribers.clear();
+    rosterSubscribers.clear();
+    chatSubscribers.clear();
     close("off");
   };
 
-  BL.net = { start, subscribe, dispose, login, logout, rejoin, setBody, setZone, setHub, sendNpc, sendPose, mayDrive, ownCharacter, serverNow, remotes, state, get npcFrame() { return npcFrame; } };
+  BL.net = { start, subscribe, subscribeRoster, subscribeChat, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setHub, setMuted, setHealth, sendNpc, sendChat, sendPose, mayDrive, ownCharacter, characterOf, serverNow, remotes, state, CHAT_MAX, CHAT_KEEP, get npcFrame() { return npcFrame; } };
 })();
