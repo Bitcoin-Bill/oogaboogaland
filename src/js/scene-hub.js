@@ -6983,14 +6983,15 @@
   // The four repository totems round the meadow, 60 degrees apart from east-south-east to west, so the work caves'
   // fronts, the gate and the landing view stay clear, each with its faces toward the pile. Fire burns in their six
   // eyes, each flame a node on the arcade's one `blaze` geometry. Eyes and runes go by how lately the repository
-  // changed (`totemFeed`): always a small fire and a soft warm glow breathing slowly, blazing for a fresh change and
-  // easing back over TOTEM_FADE, and a change seen during the visit flares them brightest for TOTEM_FLARE seconds with
-  // sparks.
+  // changed (`totemFeed`): always a small fire and a soft warm glow breathing slowly; for a day after a change
+  // (`totemGlow.RECENT`) the repository's own pattern moves through them, over the runes cut into TOTEM_BANDS
+  // slices up the pole and the eyes at their heights, waning to 60% by the day's end and easing out over a second or
+  // two; and a change seen during the visit flares them brightest for TOTEM_FLARE seconds with sparks.
   // Each also casts a soft warm light from its middle that follows them, its own lamp kind so the tiers'
   // nearest-first choice treats it like any other lamp.
   // TOTEM_CLEAR keeps a totem off the paths; TOTEM_ROOM keeps the scattered props off its stones and name board.
   const TOTEM_DEGREES = [110, 170, 230, 290], TOTEM_RADIUS = 17, TOTEM_CLEAR = 2.2, TOTEM_ROOM = 3.2;
-  const TOTEM_FADE = 6 * 3600000, TOTEM_FLARE = 6, TOTEM_CHEER = 14;
+  const TOTEM_BANDS = 8, TOTEM_FLARE = 6, TOTEM_CHEER = 14;
   const totems = [];
   let totemUnsub = null;
   const totemAge = (i) => {
@@ -7042,13 +7043,21 @@
       const ry = Math.atan2(-spot.x, -spot.z);
       claim(spot.x, spot.z, TOTEM_ROOM);
       const node = place(M.body(i), spot.x, spot.z, ry);
-      const runes = createNode({ geometry: M.glyphs(i), glow: 0 });
-      runes.sightHidden = true;
-      addChild(node, runes);
+      // A pattern runs over u from the lowest lit thing on the pole (a slice of runes or an eye) to the highest.
+      const slices = BL.totemGlow.bands(M.glyphs(i), TOTEM_BANDS);
+      let lo = Infinity, hi = -Infinity;
+      for (const { y } of slices) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      for (const [, y] of M.EYES) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      const u = (y) => (y - lo) / (hi - lo);
+      const runes = slices.map(({ geometry, y }) => {
+        const band = createNode({ geometry, glow: 0, sightHidden: true });
+        addChild(node, band);
+        return { node: band, u: u(y) };
+      });
       const flames = M.EYES.map(([x, y, z, size]) => {
         const flame = createNode({ position: { x, y, z }, scale: { x: size, y: size, z: size }, geometry: BL.arcadeModels.blaze(), sightHidden: true });
         addChild(node, flame);
-        return { node: flame, size };
+        return { node: flame, size, u: u(y) };
       });
       const owner = addProp("totem", node, spot.x, spot.z, 0);
       // The broad sphere would take in half the meadow; a tap counts only on the stones, the pole or the wings.
@@ -7060,7 +7069,7 @@
       };
       const light = { r: 0, g: 0, b: 0, radius: 0, glow: 0, hide: false };
       addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, 1.5, spot.z, true, 0, `totem:${i}`).always = true;
-      totems.push({ owner, runes, flames, light, flare: 0, top: { x: spot.x, y: M.APEX, z: spot.z } });
+      totems.push({ owner, runes, flames, light, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), top: { x: spot.x, y: M.APEX, z: spot.z } });
     });
     totemUnsub = feed.subscribe((event) => {
       if (event.fresh) flareTotem(event.index);
@@ -7069,20 +7078,28 @@
   const updateTotems = (dt, elapsed) => {
     const at = Date.now(), repos = BL.totemFeed.state.repos;
     for (let i = 0; i < totems.length; i++) {
-      const o = totems[i], changed = repos[i].changedAt;
-      const fade = changed ? Math.max(0, 1 - (at - changed) / TOTEM_FADE) : 0;
+      const o = totems[i], age = at - repos[i].changedAt;
+      const live = repos[i].changedAt && age < BL.totemGlow.RECENT ? 1 - 0.4 * age / BL.totemGlow.RECENT : 0;
+      o.live += (live - o.live) * Math.min(1, dt * 1.5);
+      if (o.live < 0.002) o.live = 0;
       o.flare = Math.max(0, o.flare - dt / TOTEM_FLARE);
-      const lit = Math.max(fade * fade, o.flare), breath = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 1.7);
-      // Highlight past 2.4 would carry the warm tint beyond its colour, so the flare tops out there.
-      o.runes.glow = 0.35 + 0.1 * breath + 0.55 * lit;
-      o.runes.highlight = 0.25 + 0.2 * breath + 1.6 * lit + 0.35 * o.flare;
-      const power = 0.45 + 0.1 * breath + 0.8 * lit;
-      o.light.radius = 4 + 2.5 * lit;
+      const breath = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 1.7), t = elapsed + i * 3.1;
+      // Each slice of runes lights where the pattern stands at its height. Highlight past 2.4 would carry the warm
+      // tint beyond its colour, so the flare tops out there.
+      let sum = 0;
+      for (let k = 0; k < o.runes.length; k++) {
+        const r = o.runes[k], v = o.live ? o.pattern(r.u, t, i) : 0, lit = Math.max(o.live * (0.25 + 0.75 * v), o.flare);
+        sum += v;
+        r.node.glow = 0.35 + 0.1 * breath + 0.55 * lit;
+        r.node.highlight = 0.25 + 0.2 * breath + 1.6 * lit + 0.35 * o.flare;
+      }
+      const lit = Math.max(o.live * (0.3 + 0.7 * sum / o.runes.length), o.flare), power = 0.45 + 0.1 * breath + 0.8 * lit;
+      o.light.radius = 4 + 2.5 * Math.max(o.live, o.flare);
       o.light.r = power; o.light.g = 0.62 * power; o.light.b = 0.3 * power;
-      // The eye fires: small and flickering at rest, half as tall again lit, and taller still in a flare.
-      const fire = 0.6 + 0.6 * lit + 0.3 * o.flare;
+      // The eye fires: small and flickering at rest, leaping as the pattern passes their height, taller still in a flare.
       for (let k = 0; k < o.flames.length; k++) {
         const f = o.flames[k], flick = Math.sin(elapsed * 11 + k * 2.3 + i) * 0.08 + Math.sin(elapsed * 17.3 + k * 1.1) * 0.05;
+        const fire = 0.6 + (o.live ? o.live * (0.15 + 0.75 * o.pattern(f.u, t, i)) : 0) + 0.3 * o.flare;
         f.node.scale.x = f.node.scale.z = f.size * fire;
         f.node.scale.y = f.size * fire * (1 + flick);
       }
