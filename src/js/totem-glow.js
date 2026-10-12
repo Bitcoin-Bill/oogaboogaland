@@ -1,8 +1,8 @@
 // The moving glow a repository totem runs for RECENT after its latest change (`totem-feed.js`'s `changedAt`).
 //
 // `bands(geo, step)` cuts a totem's rune geometry (`totemModels.glyphs(i)`) into horizontal slices `step` metres tall
-// by each face's middle (empty ones dropped), so a pattern can travel up or down the pole whatever the pole's shape: it reads the geometry it is given,
-// never the pole's measurements. It returns `{ geometry, y }` per slice from the foot up (`y` the slice's middle in
+// by each face's middle (empty ones dropped), so a pattern can travel up or down the pole whatever its shape.
+// It returns `{ geometry, y }` per slice from the foot up (`y` the slice's middle in
 // the totem's frame) and is memoised per geometry, so the first `step` asked stands. `pattern(word)` is the repository's pattern, a function
 // (u, time, seed) -> 0..1, where u runs 0 at the lowest lit part of the pole to 1 at the highest: each fits its
 // project. The hub samples it at every slice and eye each frame; the functions allocate nothing.
@@ -47,6 +47,17 @@
   // A soft bump `w` wide round `at`, on a pole of height 1.
   const bump = (u, at, w) => { const d = (u - at) / w; return Math.exp(-d * d); };
 
+  // Like the inner ramp stream's charge: a bright front with a softer wake, circling each painted band
+  // continuously. The signed wrapped distance joins the end of a turn to its start without a dark pause.
+  // `a` is distance round the ring in turns, `level` staggers the separating bands from foot to top.
+  const ring = (a, t, level) => {
+    const front = fract(t / 3.2 - level * 0.14);
+    const behind = fract(front - a + 1.5) - 0.5;
+    const leading = bump(behind, 0, 0.045);
+    const wake = Math.exp(-Math.max(0, behind) / 0.09) * smooth((behind + 0.05) / 0.1);
+    return 0.3 * leading + 0.7 * wake;
+  };
+
   const PATTERNS = {
     // Bitcoin Core, the chain: blocks of light stack up the pole one at a time, the newest flashing as it lands, and
     // the whole column holds lit a moment before it clears and starts again.
@@ -77,5 +88,5 @@
   };
   const pattern = (word) => PATTERNS[word] || PATTERNS.CLN;
 
-  BL.totemGlow = { RECENT, bands, pattern, PATTERNS };
+  BL.totemGlow = { RECENT, bands, ring, pattern, PATTERNS };
 })();

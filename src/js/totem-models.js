@@ -15,8 +15,8 @@
 // `body(i)` is totem i's wood, stone, paint and board, smooth where it is turned, closed for collision by its
 // `collisionGeometry`; `glyphs(i)` its runes, the ember in its Ooga's throat and Core's ₿, engraved in dark wood and
 // lit through its node's `glow` and `highlight`; `layout(i)` its `eyes` (sockets [x, y, z, flame scale] the hub sets
-// a fire in, filled once `body(i)` is built), `apex`, `reach` (the footprint's half width) and collision `boxes`;
-// `hit(i, …)` a ray against those boxes in the totem's frame, for picking. Loads after bifrost-gate.js, whose runes
+// a fire in, filled once `body(i)` is built), `rings` (separating band heights), `apex`, `reach` (the footprint's half width) and collision `boxes`;
+// `ringSector(i)` a shared painted strip on a separating band; `featureHighlights(i)` its painted face and crest details; `hit(i, …)` a ray against those boxes in the totem's frame, for picking. Loads after bifrost-gate.js, whose runes
 // it cuts, and is reached by the hub at run time only.
 (() => {
   "use strict";
@@ -25,7 +25,7 @@
   const { variants, box, prism, merge, moved, turnedX, turnedY, turnedZ, turn, shaded, along, noShadow, torus } = models;
   const { log, puff, postSign, flatInto } = hubModels;
   // The pole's radius, the tallest totem's crest tip in metres, and where the first face's mask starts.
-  const R = 0.38, CORE_HEIGHT = 7, FOOT = 0.65;
+  const R = 0.38, CORE_HEIGHT = 7, FOOT = 0.65, RING_SEGMENTS = 24;
   const CUT = "#24160c", HOLLOW = "#1c1410", BONE = "#e8dcc0", OCHRE = "#c8782e", RED = "#a8442a", CHAR = "#2a211c";
   const EMBER = "#ff7a1e", BTC = "#f7931a";
   const STONES = ["#5d5650", "#6b625a", "#7a716a", "#8b837b"].map(hexToRgb);
@@ -87,7 +87,7 @@
     });
     boxes.push([crest.hx, top + 0.15, apex, crest.hz]);
     const reach = Math.max(...boxes.map((b) => Math.max(b[0], b[3]))) * s;
-    return { design: d, faces, top, apex: apex * s, carvedApex: apex, s, reach, boxes: boxes.map((b) => b.map((v) => v * s)), eyes: [] };
+    return { design: d, faces, top, apex: apex * s, carvedApex: apex, s, reach, rings: faces.slice(1).map((f) => (f.y - f.h / 2) * s), boxes: boxes.map((b) => b.map((v) => v * s)), eyes: [] };
   });
 
   // A turned dome of radius r and height h facing +z with its base at (x, y, z).
@@ -276,7 +276,7 @@
   // A carved band round the pole at y, painted between dark rims, beaded with bone studs when `studs`.
   const band = (c, y) => {
     const d = c.d;
-    c.round.push(moved(turn([[R * 0.98, 0], [R + 0.03, 0.012], [R + 0.03, 0.028], [R + 0.022, 0.03], [R + 0.022, 0.07], [R + 0.03, 0.072], [R + 0.03, 0.088], [R * 0.98, 0.1]], 24, (t) => t < 0.3 || t > 0.7 ? d.dk : d.paint), 0, y - 0.05, 0));
+    c.round.push(moved(turn([[R * 0.98, 0], [R + 0.03, 0.012], [R + 0.03, 0.028], [R + 0.022, 0.03], [R + 0.022, 0.07], [R + 0.03, 0.072], [R + 0.03, 0.088], [R * 0.98, 0.1]], RING_SEGMENTS, (t) => t < 0.3 || t > 0.7 ? d.dk : d.paint), 0, y - 0.05, 0));
     if (d.studs) for (let k = 0; k < 10; k++) {
       const a = (k + 0.5) / 10 * Math.PI * 2;
       c.round.push(moved(turnedY(dome(0, 0, 0, 0.026, 0.025, BONE, 8), a), Math.sin(a) * (R + 0.02), y, Math.cos(a) * (R + 0.02)));
@@ -287,6 +287,14 @@
     for (let k = 0; k < v.length; k++) v[k] *= s;
     return geo;
   };
+
+  // One facet of the painted stripe, just proud of the band. Copies stay aligned with its carved facets,
+  // so the traveling light hugs the wood rather than floating as a rotating hoop. All rings on a pole share it.
+  const ringSector = variants((i) => {
+    const L = layout(i), g = turn([[R + 0.023, -0.019], [R + 0.023, 0.019]], RING_SEGMENTS, L.design.paint, 1);
+    const f = g.faces[0];
+    return noShadow(scaled({ verts: f.i.flatMap((k) => g.verts.slice(k * 3, k * 3 + 3)), faces: [{ ...f, i: [0, 1, 2, 3] }], lines: [], depthOffset: true }, L.s));
+  });
 
   const body = variants((i) => {
     const L = layout(i), d = L.design, c = { d, round: [], flat: [], eyes: L.eyes };
@@ -301,6 +309,27 @@
     });
     band(c, FOOT - 0.05);
     const geo = scaled(shaded(c.round, c.flat), L.s);
+    // Keep just the face and crest paint for the glow overlay, before adding the board and foot stones.
+    // The overlay shares these exact carved surfaces and is drawn only while the repository glows.
+    const colors = [d.paint, d.paint2, BONE, OCHRE, RED, "#d38a22", "#a8661a"].map(hexToRgb);
+    const highlights = { verts: [], faces: [], lines: [], smooth: true, castShadow: false, depthOffset: true };
+    const remap = new Map();
+    for (const f of geo.faces) {
+      if (!colors.some((c) => c[0] === f.color[0] && c[1] === f.color[1] && c[2] === f.color[2])) continue;
+      const y = f.i.reduce((sum, k) => sum + geo.verts[k * 3 + 1], 0) / f.i.length;
+      if (Math.abs(y - (FOOT - 0.05) * L.s) < 0.055 * L.s || L.rings.some((at) => Math.abs(y - at) < 0.055 * L.s)) continue;
+      const indices = f.i.map((k) => {
+        let j = remap.get(k);
+        if (j === undefined) {
+          j = highlights.verts.length / 3;
+          highlights.verts.push(geo.verts[k * 3], geo.verts[k * 3 + 1], geo.verts[k * 3 + 2]);
+          remap.set(k, j);
+        }
+        return j;
+      });
+      highlights.faces.push({ ...f, i: indices, emissive: 1 });
+    }
+    geo.featureHighlights = highlights;
     for (const e of c.eyes) { e[0] *= L.s; e[1] *= L.s; e[2] *= L.s; e[3] *= L.s; }
     // The name board, standing on its pegs in front of the stones.
     flatInto(geo, moved(merge(postSign(BL.totemFeed.REPOS[i].word, 0.32, 0.18)), 0, 0, 0.15 + 0.85 * L.s));
@@ -313,6 +342,8 @@
     geo.collisionGeometry = merge(...L.boxes.map(([hx, y0, y1, hz]) => box({ w: hx * 2, h: y1 - y0, d: hz * 2, color: CHAR, offset: { y: (y0 + y1) / 2 } })));
     return geo;
   });
+
+  const featureHighlights = (i) => body(i).featureHighlights;
 
   const glyphs = variants((i) => {
     const L = layout(i), runes = [...BL.totemFeed.REPOS[i].word], parts = [];
@@ -355,5 +386,5 @@
     return t;
   };
 
-  BL.totemModels = { body, glyphs, layout, hit, DESIGNS, CORE_HEIGHT };
+  BL.totemModels = { body, glyphs, ringSector, featureHighlights, layout, hit, DESIGNS, CORE_HEIGHT, RING_SEGMENTS };
 })();
