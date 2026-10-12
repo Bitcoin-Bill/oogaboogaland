@@ -1,4 +1,4 @@
-// The moving glow a repository totem runs for RECENT after its latest change (`totem-feed.js`'s `changedAt`).
+// The moving glow a repository totem runs for RECENT after its latest main/master PR merge (`totem-feed.js`'s `changedAt`).
 //
 // `bands(geo, step)` cuts a totem's rune geometry (`totemModels.glyphs(i)`) into horizontal slices `step` metres tall
 // by each face's middle (empty ones dropped), so a pattern can travel up or down the pole whatever its shape.
