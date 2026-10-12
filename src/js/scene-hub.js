@@ -7762,14 +7762,15 @@
   // fronts, the gate and the landing view stay clear, each with its faces toward the pile. Fire burns in their six
   // eyes, each flame a node on the arcade's one `blaze` geometry. Eyes and runes go by how lately the repository
   // changed (`totemFeed`): always a small fire and a soft warm glow breathing slowly; for a day after a change
-  // (`totemGlow.RECENT`) the repository's own pattern moves through them, over the runes cut into TOTEM_BANDS
+  // (`totemGlow.RECENT`) the repository's own pattern moves through them, over the runes cut into TOTEM_SLICE m
   // slices up the pole and the eyes at their heights, waning to 60% by the day's end and easing out over a second or
   // two; and a change seen during the visit flares them brightest for TOTEM_FLARE seconds with sparks.
   // Each also casts a soft warm light from its middle that follows them, its own lamp kind so the tiers'
   // nearest-first choice treats it like any other lamp.
-  // TOTEM_CLEAR keeps a totem off the paths; TOTEM_ROOM keeps the scattered props off its stones and name board.
-  const TOTEM_DEGREES = [110, 170, 230, 290], TOTEM_RADIUS = 17, TOTEM_CLEAR = 2.2, TOTEM_ROOM = 3.2;
-  const TOTEM_BANDS = 8, TOTEM_FLARE = 6, TOTEM_CHEER = 14;
+  // Each stands as tall and wide as its repository's importance (`totemModels.layout`): TOTEM_CLEAR past its reach
+  // keeps it off the paths, TOTEM_ROOM past its reach keeps the scattered props off its stones and name board.
+  const TOTEM_DEGREES = [110, 170, 230, 290], TOTEM_RADIUS = 17, TOTEM_CLEAR = 1.4, TOTEM_ROOM = 2.4;
+  const TOTEM_SLICE = 0.3, TOTEM_FLARE = 6, TOTEM_CHEER = 14;
   const totems = [];
   let totemUnsub = null;
   const totemAge = (i) => {
@@ -7801,7 +7802,7 @@
   const flareTotem = (i) => {
     const o = totems[i], p = o.owner.node.position, repo = BL.totemFeed.REPOS[i];
     o.flare = 1;
-    fx.burst(p.x, p.y + BL.totemModels.APEX - 0.85, p.z, 14, [SPARK], 1.8);
+    fx.burst(p.x, p.y + o.eyeTop, p.z, 14, [SPARK], 1.8);
     launchFireworks(3, o.top);
     for (const cave of crew.cavemen.values()) {
       if (cave === pilot.player || cave.build || cave.state === "sleeping") continue;
@@ -7816,23 +7817,23 @@
   const buildTotems = () => {
     const M = BL.totemModels, feed = BL.totemFeed;
     TOTEM_DEGREES.forEach((deg, i) => {
-      const spot = spotAt(deg, TOTEM_RADIUS, TOTEM_CLEAR);
+      const L = M.layout(i), spot = spotAt(deg, TOTEM_RADIUS, L.reach + TOTEM_CLEAR);
       if (!spot) throw new Error(`No meadow spot for the ${feed.REPOS[i].name} totem`);
       const ry = Math.atan2(-spot.x, -spot.z);
-      claim(spot.x, spot.z, TOTEM_ROOM);
+      claim(spot.x, spot.z, L.reach + TOTEM_ROOM);
       const node = place(M.body(i), spot.x, spot.z, ry);
       // A pattern runs over u from the lowest lit thing on the pole (a slice of runes or an eye) to the highest.
-      const slices = BL.totemGlow.bands(M.glyphs(i), TOTEM_BANDS);
+      const slices = BL.totemGlow.bands(M.glyphs(i), TOTEM_SLICE);
       let lo = Infinity, hi = -Infinity;
       for (const { y } of slices) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
-      for (const [, y] of M.EYES) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      for (const [, y] of L.eyes) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
       const u = (y) => (y - lo) / (hi - lo);
       const runes = slices.map(({ geometry, y }) => {
         const band = createNode({ geometry, glow: 0, sightHidden: true });
         addChild(node, band);
         return { node: band, u: u(y) };
       });
-      const flames = M.EYES.map(([x, y, z, size]) => {
+      const flames = L.eyes.map(([x, y, z, size]) => {
         const flame = createNode({ position: { x, y, z }, scale: { x: size, y: size, z: size }, geometry: BL.arcadeModels.blaze(), sightHidden: true });
         addChild(node, flame);
         return { node: flame, size, u: u(y) };
@@ -7843,11 +7844,11 @@
       owner.totem = i;
       owner.pickRay = (ray) => {
         const ox = ray.ox - P.x, oz = ray.oz - P.z;
-        return M.hit(ox * cos - oz * sin, ray.oy - P.y, ox * sin + oz * cos, ray.dx * cos - ray.dz * sin, ray.dy, ray.dx * sin + ray.dz * cos);
+        return M.hit(i, ox * cos - oz * sin, ray.oy - P.y, ox * sin + oz * cos, ray.dx * cos - ray.dz * sin, ray.dy, ray.dx * sin + ray.dz * cos);
       };
       const light = { r: 0, g: 0, b: 0, radius: 0, glow: 0, hide: false };
-      addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, 1.5, spot.z, true, 0, `totem:${i}`).always = true;
-      totems.push({ owner, runes, flames, light, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), top: { x: spot.x, y: M.APEX, z: spot.z } });
+      addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, 0, `totem:${i}`).always = true;
+      totems.push({ owner, runes, flames, light, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])), top: { x: spot.x, y: L.apex, z: spot.z } });
     });
     totemUnsub = feed.subscribe((event) => {
       if (event.fresh) flareTotem(event.index);

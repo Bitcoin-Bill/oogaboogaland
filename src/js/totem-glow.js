@@ -1,9 +1,9 @@
 // The moving glow a repository totem runs for RECENT after its latest change (`totem-feed.js`'s `changedAt`).
 //
-// `bands(geo, n)` cuts a totem's rune geometry (`totemModels.glyphs(i)`) into `n` horizontal slices by each face's
-// middle, so a pattern can travel up or down the pole whatever the pole's shape: it reads the geometry it is given,
+// `bands(geo, step)` cuts a totem's rune geometry (`totemModels.glyphs(i)`) into horizontal slices `step` metres tall
+// by each face's middle (empty ones dropped), so a pattern can travel up or down the pole whatever the pole's shape: it reads the geometry it is given,
 // never the pole's measurements. It returns `{ geometry, y }` per slice from the foot up (`y` the slice's middle in
-// the totem's frame) and is memoised per geometry, so the first `n` asked stands. `pattern(word)` is the repository's pattern, a function
+// the totem's frame) and is memoised per geometry, so the first `step` asked stands. `pattern(word)` is the repository's pattern, a function
 // (u, time, seed) -> 0..1, where u runs 0 at the lowest lit part of the pole to 1 at the highest: each fits its
 // project. The hub samples it at every slice and eye each frame; the functions allocate nothing.
 (() => {
@@ -12,13 +12,13 @@
   const RECENT = 24 * 3600000;
   const memo = new WeakMap();
 
-  const bands = (geo, n) => {
+  const bands = (geo, step) => {
     let list = memo.get(geo);
     if (list) return list;
     const v = geo.verts;
     let lo = Infinity, hi = -Infinity;
     for (let k = 1; k < v.length; k += 3) { lo = Math.min(lo, v[k]); hi = Math.max(hi, v[k]); }
-    const step = (hi - lo) / n || 1;
+    const n = Math.max(1, Math.ceil((hi - lo) / step));
     list = Array.from({ length: n }, (_, k) => ({ geometry: { verts: [], faces: [], lines: [], castShadow: geo.castShadow }, y: lo + (k + 0.5) * step, map: new Map() }));
     const slot = (indices) => {
       let y = 0;
