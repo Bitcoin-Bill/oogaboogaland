@@ -5,7 +5,8 @@
 // spent) waits for GitHub's reset. The change is the newest commit on the default branch (a merge, for these projects),
 // so a totem can link straight to it.
 //
-// Each repository's `word` is what its totem carries, in runes down its back and sides and on its name board.
+// Each repository's `word` is what its totem carries, in runes down its back and sides and on its name board, and its
+// `importance` to Bitcoin sizes it: its totem stands that share of Bitcoin Core's height (`totem-models.js`).
 // `state.repos[i]` keeps `REPOS[i]`'s `sha`, `url` (the commit's page) and `changedAt` (its committer time in ms; all
 // empty or 0 until known). Subscribers get { type: "change", index, changedAt, fresh } whenever a repository's commit is
 // first read or replaced; `fresh` marks a new commit seen during the page life, never the first reading, so a page load
@@ -16,10 +17,10 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const REPOS = [
-    { name: "Bitcoin Core", word: "CORE", repo: "bitcoin/bitcoin" },
-    { name: "BTCPay Server", word: "BTCPAY", repo: "btcpayserver/btcpayserver" },
-    { name: "LND", word: "LND", repo: "lightningnetwork/lnd" },
-    { name: "CLN", word: "CLN", repo: "ElementsProject/lightning" }
+    { name: "Bitcoin Core", word: "CORE", repo: "bitcoin/bitcoin", importance: 1 },
+    { name: "BTCPay Server", word: "BTCPAY", repo: "btcpayserver/btcpayserver", importance: 0.52 },
+    { name: "LND", word: "LND", repo: "lightningnetwork/lnd", importance: 0.7 },
+    { name: "CLN", word: "CLN", repo: "ElementsProject/lightning", importance: 0.62 }
   ];
   const API = "https://api.github.com/repos/";
   const STEP_MS = 90000;
