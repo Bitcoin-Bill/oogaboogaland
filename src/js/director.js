@@ -72,7 +72,7 @@
   const debugMagazines = DEBUG ? (params.get("mag") === "2" ? 2 : params.get("mag") === "1" ? 1 : 0) : 0;
   world.magazine = { owned: debugMagazines > 0, count: debugMagazines, ammo: debugMagazines ? 30 : 0, carrier: null };
 
-  let active = null;
+  let active = null, activeMeshRigs = false;
   let sceneTime = 0;
   let transition = null;
   let fade = 0;
@@ -194,6 +194,8 @@
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   if (coarse) for (const n of document.querySelectorAll("[data-intro] [data-coarse]")) n.textContent = n.dataset.coarse;
   const openIntro = () => intros.find((el) => !el.hidden) || null;
+  // The microphone's note, which names M only in a scene whose M mutes the microphone (`micKey`).
+  const showMic = () => window.BL.hud.showMic(window.BL.voice.stats, !!(active && active.micKey));
   const enter = (next, place = null) => {
     ctx.from = active ? active.id : null;
     ctx.place = place;
@@ -203,9 +205,12 @@
     // The page styles by scene too: the games hide the island's sheet, see style.css.
     document.body.dataset.activeScene = next.id;
     window.BL.net.setBody(null);
-    window.BL.net.setZone(next.id === "hub" ? "outside" : next.id === "dsb" ? "dsb-outside" : `scene-${next.id}`);
+    // The scene's own zone (`voiceZone`), else one of its own; the island and DSB Land report theirs as they go.
+    window.BL.net.setZone(next.voiceZone || (next.id === "dsb" ? "dsb-outside" : `scene-${next.id}`));
     next.enter(ctx);
+    activeMeshRigs = next.renderOpts?.meshRigs === true;
     active = next;
+    showMic();
     sceneTime = 0;
     router.arrive(next.id, place, ctx.from === null);
     if (POSITION_DEBUG && next.id !== "hub") {
@@ -351,7 +356,7 @@
     }
     agentPlay.update(dt);
     updateWorldClock(now);
-    const drawn = renderer.render(active.root, active.camera, active.renderOpts);
+    const drawn = renderer.render(active.root, active.camera, active.renderOpts, activeMeshRigs);
     if (drawn && !firstDraw) {
       firstDraw = true;
       mark("drawn");
@@ -434,6 +439,13 @@
       location.reload();
       return;
     }
+    // M mutes and unmutes the microphone while in voice, in the scenes that share voice and leave M free
+    // (`micKey`); a game's or a hall's own M still mutes its sound.
+    if (key === "m" && active.micKey && window.BL.voice.stats.enabled && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      window.BL.voice.toggle();
+      return;
+    }
     active.onKey(e);
   };
   const onVisibility = () => {
@@ -480,6 +492,10 @@
   const net = window.BL.net;
   const unsubscribeAccount = net.subscribe(window.BL.hud.showAccount);
   const unsubscribeVoice = window.BL.voice.subscribe(() => window.BL.hud.showAccount(net.state));
+  // The roster's host dot and voice marks follow the room and voice, on whichever scene's roster is up.
+  const unsubscribeRosterMarks = net.subscribeRoster(window.BL.hud.showVoices);
+  const unsubscribeVoiceMarks = window.BL.voice.subscribe(window.BL.hud.showVoices);
+  const unsubscribeMic = window.BL.voice.subscribe(showMic);
   const accountReady = !params.has("nosim") && params.get("net") !== "0" ? net.start() : Promise.resolve();
   // A tab opened in the background waits for its first look before it holds any socket.
   if (document.hidden) {
@@ -604,7 +620,7 @@
         return world.level;
       }
     };
-    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "entranceLights", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "totems", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "cloudFloorAt"]) {
+    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "entranceLights", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "totems", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "cloudFloorAt", "footsteps"]) {
       Object.defineProperty(ooga, key, { get: () => active.debug && active.debug[key], enumerable: true });
     }
     window.__ooga = ooga;
@@ -624,6 +640,9 @@
     window.BL.totemFeed.dispose();
     unsubscribeAccount();
     unsubscribeVoice();
+    unsubscribeRosterMarks();
+    unsubscribeVoiceMarks();
+    unsubscribeMic();
     window.BL.voice.dispose();
     net.dispose();
     window.removeEventListener("keydown", onKeyDown);
