@@ -12794,9 +12794,10 @@ const raceRigChecks = async () => {
   runInNewContext(rendererSource.replace("  BL.glRenderer =", "  window.__ordinaryRigProof = [ORDINARY_MESH_VS, ORDINARY_MESH_FS, ORDINARY_SHADOW_VS];\n  BL.glRenderer ="), context);
   const ordinaryHashes = context.window.__ordinaryRigProof.map(shader => createHash("sha256").update(shader).digest("hex"));
   const expectedOrdinaryHashes = [
-    // Canonical rock bc8ec01: preserve its DSB portal and water shader changes exactly.
-    "f1d1d746fa92363ac1cc71dd999732da0c1c9bb1666e2872f7766e11535a60c5",
-    "65f271818a1c681d3017559fd4f5e11861c64acf080066ce85cf113c8a1db646",
+    // Depth pre-pass "no image change" rendering core: the shared vertex and fragment
+    // bytes the depth-only and plain variants derive from, plus the untouched shadow path.
+    "6bed3532a26c98c3e5a9218674dbe75c789324168104f6b0eb7fb5c88872a012",
+    "b82d02f44814bebe09d97cfdfb32fb21ac0e1373411e4ba5de06a59065a6fa2c",
     "37030f053de422aa157f017ceedef0812ed57a17c9e1b2af4aab017c0b645364"
   ];
   record("race rig strategy: ordinary mesh, fragment and shadow shader bytes retain the pre-rig fast path", ordinaryHashes.every((hash, i) => hash === expectedOrdinaryHashes[i]), JSON.stringify(ordinaryHashes));
@@ -13007,6 +13008,8 @@ const raceRigDisposalProof = async () => {
     const context = {
       dsbGPU: null,
       canvas: { removeEventListener() {} }, onLost() {}, onRestored() {},
+      // dispose drops the page-life resize listeners it registered at creation.
+      window: { removeEventListener() {}, visualViewport: { removeEventListener() {} } }, onResize() {},
       destroyRecords() {}, reflectorTargets: new Map(), destroyReflector() {},
       destroyMirror() {}, destroyFbo() {}, destroyShadow() {},
       res: { programs: base, matrixTexture: null, quadVao: null },
