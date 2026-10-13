@@ -1620,7 +1620,7 @@ void main() {
     // PROTOTYPE: a scene at sea level can switch off the hub's dropped haze horizon (`hazeDrop: 0`).
     let skyHaze=1;
     const res = { programs: {}, fbo: null, shadow: null, bloom: null, quadVao: null, matrixTexture: null };
-    const mirror = { node: null, record: null, geometry: null, program: null, programReady: false, fb: null, tex: null, depth: null, width: 0, height: 0, renderWidth: 0, renderHeight: 0, portal: false, reveal: 0, frontFacing: false, walkThrough: false, captureValid: false, bodyTex: null, bodyState: null, bodyVersion: -1, shards: 0, query: null, queryPending: false, occluded: false, frame: 0 };
+    const mirror = { node: null, record: null, geometry: null, program: null, programReady: false, fb: null, tex: null, depth: null, width: 0, height: 0, renderWidth: 0, renderHeight: 0, capturedWidth: 0, capturedHeight: 0, portal: false, reveal: 0, frontFacing: false, walkThrough: false, captureValid: false, bodyTex: null, bodyState: null, bodyVersion: -1, shards: 0, query: null, queryPending: false, occluded: false, frame: 0 };
     const environment = { program: null, ready: false, fb: null, tex: null, depth: null, size: 0, next: 0, valid: 0, frame: 0, origin: new Float32Array(3) };
     // Reflectors: plain planar mirrors a scene may hold several of (the factory's peer shields), each with a capture
     // of its own, drawn with the mirror's program and their ripples. The mirror above stays the one mirror with
@@ -3169,6 +3169,9 @@ void main() {
       mirrorDebug.reflectionOnlyCount = 0;
       for (const rec of activeRecords) if (rec !== mirror.record) mirrorDebug.reflectionOnlyCount += rec.cameraHiddenCount;
       mirrorCapturedViewProj.set(mirrorViewProj);
+      // The texture and its projection stay paired at this size until the next completed capture:
+      // a skipped pass (cadence, occlusion) must not sample it at the frame's new render dimensions.
+      mirror.capturedWidth = captureWidth; mirror.capturedHeight = captureHeight;
       mirror.captureValid = mirrorDebug.captureValid = true;
       mirrorDebug.reflectionPassCount++;
       mirrorDebug.captureExcluded = true;
@@ -3187,7 +3190,7 @@ void main() {
         gl.uniformMatrix4fv(pg.u.uReflectionViewProj, false, mirrorCapturedViewProj);
         gl.uniformMatrix4fv(pg.u.uMirrorWorld, false, mirror.node.world);
         gl.uniform1f(pg.u.uShard, 0);
-        gl.uniform2f(pg.u.uReflectionScale, mirror.renderWidth / mirror.width, mirror.renderHeight / mirror.height);
+        gl.uniform2f(pg.u.uReflectionScale, mirror.capturedWidth / mirror.width, mirror.capturedHeight / mirror.height);
         gl.uniform3f(pg.u.uTint, 0.56, 0.62, 0.67);
         gl.uniform1f(pg.u.uPortal, mirror.portal ? 1 : 0);
         gl.uniform1f(pg.u.uReveal, mirror.reveal);
