@@ -1510,7 +1510,7 @@
     let reloadPrompt = false;
     const syncWeaponHud = () => {
       const cave = player(), weapon = cave && cave.weapon;
-      const ready = !!weapon && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
+      const ready = !!weapon && !cave.grabbedBy && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
       const primaryReady = ready && weapon.primaryOwned;
       const secondaryReady = ready && weapon.secondaryOwned;
       if (primaryButtonCave && (primaryButtonCave !== cave || !primaryReady || !weapon.primaryEquipped)) {
@@ -1551,7 +1551,7 @@
         return true;
       }
       const cave = player();
-      if (!active || !cave || crew.sleeping) return false;
+      if (!active || !cave || cave.grabbedBy || crew.sleeping) return false;
       resumePose();
       if (action === "weapon-primary" || action === "weapon-primary-down") {
         const alreadyHeld = !cave.weapon.equipped;
@@ -1869,6 +1869,7 @@
     };
     // Nearby actions consume a press; a ready jetpack leaves Space as throttle.
     const action = () => {
+      if (player()?.grabbedBy) return true;
       if (ctx.onPlayerAction && ctx.onPlayerAction()) return true;
       if (!active) return true;
       if (externalControl) return false;
@@ -2158,6 +2159,7 @@
     // The camera moves only on input: no drift, auto-orbit or inertia.
 
     const poseAim = () => {
+      if (player()?.grabbedBy) return;
       if (aimPreserveFacing) {
         crew.look(aimBodyYaw, aimBodyPitch, 1);
         player().parts.head.rotation.y = aimBodyHeadYaw;
@@ -3013,7 +3015,7 @@
     }, get moving() {
       // A press can arrive between frames, before readInput updates crew steer.
       const cave = player(), a = controls.read();
-      return !!cave && (Math.hypot(a.x, a.y) > 0.05 || cave.hop > 0 || cave.hopV > 0);
+      return !!cave && !cave.grabbedBy && (Math.hypot(a.x, a.y) > 0.05 || cave.hop > 0 || cave.hopV > 0);
     }, get mode() {
       return viewMode();
     }, get closeMix() {
