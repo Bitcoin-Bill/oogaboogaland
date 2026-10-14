@@ -664,6 +664,7 @@
     gauge: ["Gauge", "spark", ["The needle twitches.", "Pressure high. Ooga fine."]],
     rubble: ["Rubble", "chip", ["Loose rocks.", "Ooga kicks a pebble."]],
     bench: ["Log bench", "dust", ["A good log for sitting."]],
+    cabinet: ["Arcade cabinet", "spark", ["PRESS START. Ooga presses everything.", "The games are inside. Ooga points."]],
     vine: ["Vines", "leaf", ["The vines swing.", "Rustle rustle."]],
     boards: ["Boarded up · coming soon", "dust", ["Boarded up. Coming soon.", "Ooga peeks through a gap. Dark."]]
   };
@@ -1690,15 +1691,15 @@
   const sealedCaveVariant = (id) => id === "c3" ? 1 : id === "c10" ? 2 : 0;
   // Every cave wears its own facade from the shared voxel kit: two lantern posts, a string over the lintel,
   // vines off the rim, and the theme's own things either side of the path (lab dice and flasks, the mirror's glyph
-  // monoliths, the Lightning Factory's coil and coal, Ooga Arcade's stores and log bench, on its right only, as the
-  // Lightning Factory's right side fills its left). A slot without a theme wears none: the sealed caves, and the
+  // monoliths, the Lightning Factory's coil and coal, Ooga Arcade's two cabinets, hard against the left of its
+  // door and facing the island's centre: the Mempool stairs start at the right jamb and the Lightning Factory's right side fills the ground further left). A slot without a theme wears none: the sealed caves, and the
   // Headquarters ramps that run down a cutting rather than into a cliff. Each mouth bakes to one solid, one hanging and one glowing mesh, memoised per island
   // so a revisit only places nodes. Pieces are [kind, x, z, quarter turns, variant, lift] in the mouth's frame.
   const THEMES = {
     lab: { glass: 1, icon: "die", string: ["bulb", 1], pieces: [["flaskBench", -5.3, 1.1], ["die", -4.1, 2.8, 0, 1], ["die", -3.5, 3.6, 1, 3], ["die", -4.1, 2.8, 1, 4, 0.5], ["terminal", 5.2, 1.0], ["die", 4.3, 3.2, 1, 2], ["banner", -6.7, 0.7, 0, 1]] },
     matrix: { glass: 2, icon: "glyph", string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1], ["banner", 6.5, 0.8, 0, 2], ["banner", -6.5, 0.8, 0, 2], ["rubble", -6.3, 2.6, 0, 1]] },
     lightning: { glass: 0, icon: "bolt", string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["coalCrate", -5.1, 0.8, 0, 3], ["crate", -5.4, 2.1, 1, 0], ["crate", -5.4, 2.1, 0, 1, 0.75], ["barrel", -4.3, 2.9, 0, 1], ["rubble", -6.4, 0.9, 0, 1], ["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["banner", 6.6, 0.8, 0, 0], ["coil", 3.8, 3.4], ["coalCrate", 6.4, 3.4, 0, 1]] },
-    arcade: { glass: 0, icon: "banana", string: ["hanging", 0, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["crate", 5.2, 1.0, 0, 0], ["crate", 5.2, 1.0, 1, 1, 0.75], ["barrel", 4.4, 2.8, 0, 0], ["bench", 5.8, 3.5], ["rubble", 6.4, 2.3, 0, 1], ["banner", 6.6, 0.8, 0, 3]] }
+    arcade: { glass: 0, icon: "banana", string: ["hanging", 0, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["cabinet", -3.6, 1.0, 0, 0], ["cabinet", -2.9, 2.2, 0, 1]] }
   };
   const THEME_ICON = (slot) => slot.id === "c1" ? "favicon" : THEMES[slot.theme]?.icon || null;
   const trackCaveSign = (node, slot, mouth) => {
@@ -7764,12 +7765,11 @@
     }
   };
   // The four repository totems stand in two pairs beside the jumbotron approach, each with its faces toward the
-  // pile. Fire burns in their eyes, each flame a node on the arcade's one `blaze` geometry. Eyes and runes go by how lately the repository
-  // changed (`totemFeed`): always a small fire and a soft warm glow breathing slowly; for a day after a change
-  // (`totemGlow.RECENT`) the repository's own pattern moves through them, over the runes cut into TOTEM_SLICE m
-  // slices up the pole and the eyes at their heights, waning to 60% by the day's end and easing out over a second or
-  // two; light circles the carved bands between heads, and painted details pulse softly. A change
-  // seen during the visit flares them brightest for TOTEM_FLARE seconds with sparks.
+  // pile. Fire burns in their eyes, each flame a node on the arcade's one `blaze` geometry. For a day after a PR
+  // merges into main or master (`totemFeed`, `totemGlow.RECENT`), the repository's own pattern moves over the runes
+  // cut into TOTEM_SLICE m slices up the pole and the eyes at their heights, waning to 60% by the day's end; light
+  // circles the carved bands between heads, and painted details pulse softly. A merge seen during the visit flares
+  // them brightest for TOTEM_FLARE seconds with sparks. Outside that day the eyes and all glow go out.
   // Each also casts a soft warm light from its middle that follows them, its own lamp kind so the tiers'
   // nearest-first choice treats it like any other lamp.
   // Each stands as tall and wide as its repository's importance (`totemModels.layout`); TOTEM_ROOM past its reach
@@ -7801,7 +7801,7 @@
     speech.cancel();
     speech.speak(line);
   };
-  // A change landing during the visit: the eyes and runes flare, sparks fly from the eyes, fireworks go up from the
+  // A merge landing during the visit: the eyes and runes flare, sparks fly from the eyes, fireworks go up from the
   // totem's top, the Oogas awake within TOTEM_CHEER cheer and shout its word (never the one being driven), a deep
   // voice shouts "Ooga booga!", and one notice names the repository.
   const flareTotem = (i) => {
@@ -7817,7 +7817,7 @@
       fx.say(cave, fnv1a(`${repo.word}/${cave.traits.name}`) % 2 ? `${repo.word}!` : "OOGA!", 1.8);
     }
     shoutOoga();
-    hud.toast(`${repo.name} just changed · the ${repo.word} totem blazes`);
+    hud.toast(`${repo.name} just merged · the ${repo.word} totem blazes`);
   };
   const buildTotems = () => {
     const M = BL.totemModels, feed = BL.totemFeed;
@@ -7849,7 +7849,7 @@
         }
       });
       const flames = L.eyes.map(([x, y, z, size]) => {
-        const flame = createNode({ position: { x, y, z }, scale: { x: size, y: size, z: size }, geometry: BL.arcadeModels.blaze(), sightHidden: true });
+        const flame = createNode({ position: { x, y, z }, scale: { x: size, y: size, z: size }, geometry: BL.arcadeModels.blaze(), visible: false, sightHidden: true });
         addChild(node, flame);
         return { node: flame, size, u: u(y) };
       });
@@ -7862,8 +7862,8 @@
         return M.hit(i, ox * cos - oz * sin, ray.oy - P.y, ox * sin + oz * cos, ray.dx * cos - ray.dz * sin, ray.dy, ray.dx * sin + ray.dz * cos);
       };
       const light = { r: 0, g: 0, b: 0, radius: 0, glow: 0, hide: false };
-      addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, 0, `totem:${i}`).always = true;
-      totems.push({ owner, runes, rings, features, flames, light, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])), top: { x: spot.x, y: L.apex, z: spot.z } });
+      const lamp = addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, Infinity, `totem:${i}`);
+      totems.push({ owner, runes, rings, features, flames, light, lamp, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])), top: { x: spot.x, y: L.apex, z: spot.z } });
     });
     totemUnsub = feed.subscribe((event) => {
       if (event.fresh) flareTotem(event.index);
@@ -7873,10 +7873,11 @@
     const at = Date.now(), repos = BL.totemFeed.state.repos;
     for (let i = 0; i < totems.length; i++) {
       const o = totems[i], age = at - repos[i].changedAt;
-      const live = DEBUG_TOTEM_GLOW ? 1 : repos[i].changedAt && age < BL.totemGlow.RECENT ? 1 - 0.4 * age / BL.totemGlow.RECENT : 0;
-      o.live += (live - o.live) * Math.min(1, dt * 1.5);
+      const live = DEBUG_TOTEM_GLOW ? 1 : repos[i].changedAt && age >= 0 && age < BL.totemGlow.RECENT ? 1 - 0.4 * age / BL.totemGlow.RECENT : 0;
+      o.live = live ? o.live + (live - o.live) * Math.min(1, dt * 1.5) : 0;
       if (o.live < 0.002) o.live = 0;
-      o.flare = Math.max(0, o.flare - dt / TOTEM_FLARE);
+      o.flare = live ? Math.max(0, o.flare - dt / TOTEM_FLARE) : 0;
+      const glowPower = Math.max(o.live, o.flare);
       const breath = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 1.7), t = elapsed + i * 3.1;
       // Each slice of runes lights where the pattern stands at its height. Highlight past 2.4 would carry the warm
       // tint beyond its colour, so the flare tops out there.
@@ -7884,30 +7885,32 @@
       for (let k = 0; k < o.runes.length; k++) {
         const r = o.runes[k], v = o.live ? o.pattern(r.u, t, i) : 0, lit = Math.max(o.live * (0.25 + 0.75 * v), o.flare);
         sum += v;
-        r.node.glow = 0.35 + 0.1 * breath + 0.55 * lit;
-        r.node.highlight = 0.25 + 0.2 * breath + 1.6 * lit + 0.35 * o.flare;
+        r.node.glow = (0.45 + 0.55 * lit) * glowPower;
+        r.node.highlight = (0.45 + 1.6 * lit + 0.35 * o.flare) * glowPower;
       }
       // Let the painted details breathe gently, leaving their carved colors and shapes readable at the peak.
       const featurePulse = 0.5 + 0.5 * Math.sin(elapsed * 2.2 + i * 1.7);
-      const featureGlow = Math.max(o.live, o.flare) * 0.38 * featurePulse * featurePulse;
+      const featureGlow = glowPower * 0.38 * featurePulse * featurePulse;
       o.features.visible = featureGlow > 0.02;
       o.features.glow = featureGlow;
       o.features.highlight = 0.55 * featureGlow;
       // A bright front and fading wake now circle every separating band without stopping.
-      const ringPower = Math.max(o.live, o.flare);
+      const ringPower = glowPower;
       for (let k = 0; k < o.rings.length; k++) {
         const r = o.rings[k], lit = ringPower ? ringPower * BL.totemGlow.ring(r.a, t, r.level) : 0;
         r.node.visible = lit > 0.01;
         r.node.glow = lit;
         r.node.highlight = lit * 2.2;
       }
-      const lit = Math.max(o.live * (0.3 + 0.7 * sum / o.runes.length), o.flare), power = 0.45 + 0.1 * breath + 0.8 * lit;
-      o.light.radius = 4 + 2.5 * Math.max(o.live, o.flare);
+      const lit = Math.max(o.live * (0.3 + 0.7 * sum / o.runes.length), o.flare), power = (0.45 + 0.1 * breath + 0.8 * lit) * glowPower;
+      o.lamp.always = glowPower > 0;
+      o.light.radius = o.lamp.always ? 4 + 2.5 * glowPower : 0;
       o.light.r = power; o.light.g = 0.62 * power; o.light.b = 0.3 * power;
-      // The eye fires: small and flickering at rest, leaping as the pattern passes their height, taller still in a flare.
+      // The eye fires leap as the pattern passes their height, taller still in a flare; they go out between merges.
       for (let k = 0; k < o.flames.length; k++) {
         const f = o.flames[k], flick = Math.sin(elapsed * 11 + k * 2.3 + i) * 0.08 + Math.sin(elapsed * 17.3 + k * 1.1) * 0.05;
-        const fire = 0.6 + (o.live ? o.live * (0.15 + 0.75 * o.pattern(f.u, t, i)) : 0) + 0.3 * o.flare;
+        const fire = o.live * (0.75 + 0.75 * o.pattern(f.u, t, i)) + 0.3 * o.flare;
+        f.node.visible = o.lamp.always;
         f.node.scale.x = f.node.scale.z = f.size * fire;
         f.node.scale.y = f.size * fire * (1 + flick);
       }
@@ -7915,15 +7918,15 @@
   };
   const totemTip = (i) => {
     const age = totemAge(i), repo = BL.totemFeed.REPOS[i];
-    return age ? `${repo.name} totem · changed ${age} · tap to see the change` : `${repo.name} totem · tap to see its changes`;
+    return age ? `${repo.name} totem · merged ${age} · tap to see the PR` : `${repo.name} totem · tap to see its PRs`;
   };
-  // A tap opens the repository's latest change on GitHub in a new tab, as the lab's link opens its site.
+  // A tap opens the repository's latest recent merge on GitHub in a new tab, as the lab's link opens its site.
   const pokeTotem = (o) => {
     const p = o.node.position;
     fx.burst(p.x, p.y + 1.6, p.z, 8, [DUST], 1.2);
-    // Straight to the latest change once GitHub has answered, the repository's commits until then.
+    // Straight to the latest recent merge once GitHub has answered, the repository's PRs until then.
     const repo = BL.totemFeed.REPOS[o.totem], url = BL.totemFeed.state.repos[o.totem].url;
-    window.open(url || `https://github.com/${repo.repo}/commits`, "_blank", "noopener,noreferrer");
+    window.open(url || `https://github.com/${repo.repo}/pulls?q=is%3Apr+is%3Amerged`, "_blank", "noopener,noreferrer");
   };
   const update = (dt, elapsed) => {
     if (lawn && lawn.version !== island.path.version) layLawn();
@@ -7947,12 +7950,12 @@
     }
     mempoolIsland.water.update(dt, elapsed, Date.now());
     mempoolIsland.paintings.update(dt);
+    updateTotems(dt, elapsed);
     updateLamps(dt, elapsed, phase !== null);
     if (jumbotron) {
       jumbotron.update(elapsed, renderer);
     }
     updateChainSign(elapsed);
-    updateTotems(dt, elapsed);
     hud.updateBoard(elapsed);
     if (fireworksShells.length) updateFireworks();
     const next = daylight.phaseAt(hour);
