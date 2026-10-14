@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import * as protocol from "../src/protocol.js";
 import * as studio from "../src/studio-policy.js";
 import { sfuClient } from "../src/sfu.js";
+import { getPlayer } from "../src/db.js";
 
 const zones = ["dsb-outside", "dsb-studio", "dsb-maxis", "dsb-without-rulers", "dsb-proof-of-ink", "dsb-big-bitcoin", "dsb-meme-factory", "dsb-stackchain", "dsb-svrn"];
 test("every DSB venue isolates voice from other venues, hub and Bifrost", () => {
@@ -25,13 +26,13 @@ const roomClass = () => {
   const source = readFileSync(new URL("../src/room.js", import.meta.url), "utf8")
     .replace(/import\s+[\s\S]*?from\s+"[^"]+";/g, "")
     .replace("export class Room", "class Room") + "\nglobalThis.Room = Room;";
-  const context = { ...protocol, ...studio, DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }, WebSocketRequestResponsePair: class {}, sfuClient, CAST_ROWS: [{ handle: "YellowBrokeIt", github_login: "YellowBrokeIt" }], Date, Map, Set, Response, Promise, setTimeout, clearTimeout };
+  const context = { ...protocol, ...studio, getPlayer, DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }, WebSocketRequestResponsePair: class {}, sfuClient, CAST_ROWS: [{ handle: "YellowBrokeIt", github_login: "YellowBrokeIt" }], Date, Map, Set, Response, Promise, setTimeout, clearTimeout };
   runInNewContext(source, context);
   return context.Room;
 };
 test("room broadcasts DSB zone changes, persists them and keeps ownership enforcement", () => {
   const Room = roomClass(), room = Object.create(Room.prototype), sent = [];
-  room.players = new Map(); room.voiceSig = new Map();
+  room.players = new Map(); room.chatBuckets = new Map(); room.voiceSig = new Map();
   let attachment;
   const ws = { deserializeAttachment: () => ({ id: 1 }), serializeAttachment: value => { attachment = value; }, send: text => sent.push(JSON.parse(text)) };
   const player = room.record(ws, { id: 1, login: "YellowBrokeIt", display: "Yellow", body: "YellowBrokeIt", x: -45, y: 40, z: -43, yaw: 0 });
@@ -54,13 +55,13 @@ test("voice lists survive the room sleeping and follow a microphone published ag
   const wake = () => {
     const room = Object.create(Room.prototype);
     room.sfu = {};
-    room.players = new Map();
+    room.players = new Map(); room.chatBuckets = new Map();
     for (const id of [1, 2]) if (stores[id].a) room.players.set(id, room.record(sockets[id], stores[id].a));
     return room;
   };
   const room = Object.create(Room.prototype);
   room.sfu = {};
-  room.players = new Map();
+  room.players = new Map(); room.chatBuckets = new Map();
   for (const id of [1, 2]) {
     const p = room.record(sockets[id], { id, login: `p${id}`, display: `p${id}`, body: `ooga-${id}`, zone: "factory.hall", x: 0, y: 0, z: 0, yaw: 0 });
     p.voice = { pub: `pub${id}`, sub: `sub${id}`, track: "mic", gen: 10 + id };
@@ -103,7 +104,7 @@ test("SFU stays unavailable without secrets and uses bounded upstream calls with
 
 const studioRoom = () => {
   const Room = roomClass(), room = Object.create(Room.prototype);
-  room.players = new Map(); room.studio = studio.studioState(1000); room.env = { STUDIO_HOST_IDS: "1,3" }; room.cleanupJobs = [];
+  room.players = new Map(); room.chatBuckets = new Map(); room.studio = studio.studioState(1000); room.env = { STUDIO_HOST_IDS: "1,3" }; room.cleanupJobs = [];
   const pending = [], storage = new Map();
   room.ctx = { waitUntil: p => pending.push(p), storage: { put: async (k, v) => storage.set(k, structuredClone(v)), getAlarm: async () => null, setAlarm: async () => {} } };
   room.sfu = { closeTracks: async (_session, mids) => ({ tracks: mids.map(mid => ({ mid })) }), getSession: async () => ({ tracks: [] }) };

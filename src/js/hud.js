@@ -57,7 +57,7 @@
   const readSheetState = () => {
     try {
       const state = JSON.parse(localStorage.getItem(SHEET_STATE_KEY));
-      return state && typeof state.open === "boolean" && ["bananas", "roster", "loot"].includes(state.tab) ? state : null;
+      return state && typeof state.open === "boolean" && ["bananas", "roster", "loot", "chat"].includes(state.tab) ? state : null;
     } catch { return null; }
   };
   const writeSheetState = (open, tab) => {
@@ -296,7 +296,8 @@
     el.crateHelp.hidden = !lootEnabled;
     el.worldLootHint.hidden = !lootEnabled;
     const savedSheet = readSheetState();
-    const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) ? savedSheet.tab : "roster";
+    // Ooga Chat has a tab only where a backend answered (chat.js), which the director learns before any scene.
+    const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) && (savedSheet.tab !== "chat" || BL.net.state.backend) ? savedSheet.tab : "roster";
     for (const tab of el.tabs) tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
     for (const panel of el.panels) panel.hidden = panel.dataset.panel !== sheetTab;
     el.sheet.dataset.open = String(!!savedSheet?.open);
@@ -314,13 +315,17 @@
     };
     let toastTimer = 0, toastHideTimer = 0, hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
-    let showAway = false, awayCount = 0;
+    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null;
     const awayRow = document.createElement("li"), awayButton = document.createElement("button");
     awayRow.className = "roster-away";
     awayButton.type = "button";
     awayButton.setAttribute("aria-expanded", "false");
     awayRow.append(awayButton);
+    // countAway rescans on every roster state flip and online toggle; skip the writes until they change.
     const updateAwayButton = () => {
+      if (awayCount === awayShownCount && showAway === awayShownShow) return;
+      awayShownCount = awayCount;
+      awayShownShow = showAway;
       awayRow.hidden = awayCount === 0;
       awayButton.textContent = `${showAway ? "Hide" : "Show"} away (${awayCount})`;
     };
@@ -368,7 +373,7 @@
       }
       li.append(presence, name, age, state);
       el.roster.append(li);
-      rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, nextLook: "", nextLogin: "", nextHost: false });
+      rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
     }
     if (!awayRow.parentElement) el.roster.append(awayRow);
     updateAwayButton();
@@ -376,7 +381,9 @@
       const button = e.target.closest(".roster-voice");
       if (!button || button.disabled) return;
       button.blur();
-      BL.voice.muteLocal(button.dataset.login, button.getAttribute("aria-pressed") !== "true");
+      // The visitor's own mark mutes and unmutes their microphone; anyone else's mutes them for this visitor.
+      if (button.dataset.self === "true") BL.voice.toggle();
+      else BL.voice.muteLocal(button.dataset.login, button.getAttribute("aria-pressed") !== "true");
     });
     on(awayButton, "click", () => {
       showAway = !showAway;
@@ -1500,6 +1507,11 @@
     let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
     let tipVisibility = null, tipSpeechTop = Infinity;
     const tipScreen = { x: 0, y: 0, depth: 0 };
+    // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
+    // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
+    // before never needs the offset reads' forced layout again. A 0x0 read is a drag-hid tooltip
+    // (body.orbit-dragging / mine-dragging): never cached, so the first real hover measures again.
+    const tipSizeCache = new Map();
     const placeTooltip = (left, top) => {
       left = Math.round(left); top = Math.round(top);
       if (left === tipLeft && top === tipTop) return;
@@ -1529,8 +1541,18 @@
           tipText = text;
           tipState = "";
           el.tooltipText.textContent = text;
-          tipW = el.tooltip.offsetWidth;
-          tipH = el.tooltip.offsetHeight;
+          const size = tipSizeCache.get(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`);
+          if (size) {
+            tipW = size.w;
+            tipH = size.h;
+          } else {
+            tipW = el.tooltip.offsetWidth;
+            tipH = el.tooltip.offsetHeight;
+            if (tipW || tipH) {
+              if (tipSizeCache.size >= 64) tipSizeCache.clear();
+              tipSizeCache.set(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`, { w: tipW, h: tipH });
+            }
+          }
         }
         if (cave) {
           tooltip.update();
@@ -1809,21 +1831,55 @@
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
   const ROOM_WORDS = { replaced: "open in another tab", full: "island full" };
+  // Net and voice emits re-run this several times a second with the same outcome; last-written
+  // records keep an unchanged textContent from re-invalidating the line.
+  let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
+  let accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
   const showAccount = ({ backend, me, room, online }) => {
-    $("account").hidden = !backend;
-    $("account-name").textContent = me ? me.display : "";
-    $("account-name").hidden = !me;
-    $("account-login").hidden = !!me;
-    $("account-logout").hidden = !me;
+    const hasMe = !!me;
+    if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
+    const name = me ? me.display : "";
+    if (name !== accountName) { accountName = name; $("account-name").textContent = name; }
+    if (hasMe !== accountMe) {
+      accountMe = hasMe;
+      $("account-name").hidden = !me;
+      $("account-login").hidden = !!me;
+      $("account-logout").hidden = !me;
+    }
     const words = room === "live" ? `${online} online` : ROOM_WORDS[room] || "";
-    $("account-room").textContent = words;
-    $("account-room").hidden = !me || !words;
-    $("account-rejoin").hidden = !me || !ROOM_WORDS[room];
+    if (words !== accountWords) { accountWords = words; $("account-room").textContent = words; }
+    const wordsHidden = !me || !words;
+    if (wordsHidden !== accountWordsHidden) { accountWordsHidden = wordsHidden; $("account-room").hidden = wordsHidden; }
+    const rejoinHidden = !me || !ROOM_WORDS[room];
+    if (rejoinHidden !== accountRejoinHidden) { accountRejoinHidden = rejoinHidden; $("account-rejoin").hidden = rejoinHidden; }
     // Voice: join, then mute and unmute; a failure says why on the button until the next try.
     const voice = BL.voice.stats, voiceButton = $("account-voice");
-    voiceButton.hidden = room !== "live";
-    voiceButton.textContent = voice.joining ? "Joining voice" : (voice.error || voice.micError) && !voice.enabled ? `Voice: ${voice.error || voice.micError}` : !voice.enabled ? "Join voice" : voice.muted ? "Unmute" : "Mute";
-    voiceButton.setAttribute("aria-pressed", String(voice.enabled && !voice.muted));
+    const voiceHidden = room !== "live";
+    if (voiceHidden !== accountVoiceHidden) { accountVoiceHidden = voiceHidden; voiceButton.hidden = voiceHidden; }
+    const voiceWords = voice.joining ? "Joining voice" : (voice.error || voice.micError) && !voice.enabled ? `Voice: ${voice.error || voice.micError}` : !voice.enabled ? "Join voice" : voice.muted ? "Unmute" : "Mute";
+    if (voiceWords !== accountVoiceWords) { accountVoiceWords = voiceWords; voiceButton.textContent = voiceWords; }
+    const pressed = String(voice.enabled && !voice.muted);
+    if (pressed !== accountVoicePressed) { accountVoicePressed = pressed; voiceButton.setAttribute("aria-pressed", pressed); }
+  };
+  // The microphone's note (#181), page-level as the account line is: muted in voice, it stays until unmuted;
+  // alone in voice (nobody here to hear, so the microphone is held off), it says so until someone comes;
+  // unmuting, or someone coming, says "Mic on" for MIC_ON_MS, then it goes. A mute outranks alone.
+  // `keyed` is whether M unmutes in the active scene.
+  const MIC_ON_MS = 1500, MIC_COARSE = window.matchMedia("(pointer: coarse)").matches;
+  let micShown = "", micTimer = 0;
+  const showMic = (voice, keyed) => {
+    const muted = voice.muted && (voice.enabled || voice.joining), alone = !muted && voice.enabled && voice.alone;
+    const shown = muted ? keyed && !MIC_COARSE ? "Mic muted \u00b7 M to unmute" : "Mic muted \u00b7 Unmute in the panel" : alone ? "Alone \u00b7 mic off" : voice.enabled ? "Mic on" : "";
+    if (shown === micShown) return;
+    const note = $("mic-note"), was = micShown;
+    micShown = shown;
+    window.clearTimeout(micTimer);
+    micTimer = 0;
+    note.textContent = shown;
+    note.dataset.muted = String(muted);
+    if (muted || alone) note.hidden = false;
+    else if (shown && was && !note.hidden) micTimer = window.setTimeout(() => { note.hidden = true; }, MIC_ON_MS);
+    else note.hidden = true;
   };
   // The roster's marks are page-level too: whichever scene's roster is up, each signed-in player's row
   // (their own Ooga, else the one they drive) shows the host dot and their voice. The director hands every
@@ -1836,17 +1892,20 @@
   };
   const paintMarks = (row) => {
     const blocked = !!row.nextLogin && BL.voice.mutedLocally(row.nextLogin);
-    if (row.look !== row.nextLook || row.login !== row.nextLogin || row.blocked !== blocked) {
+    if (row.look !== row.nextLook || row.login !== row.nextLogin || row.blocked !== blocked || row.self !== row.nextSelf) {
       row.look = row.nextLook;
       row.login = row.nextLogin;
       row.blocked = blocked;
+      row.self = row.nextSelf;
       const button = row.voice;
       button.hidden = !row.look;
       button.dataset.voice = row.look;
       button.dataset.login = row.login;
-      button.disabled = !row.login;
+      button.dataset.self = String(row.self);
+      button.disabled = !row.login && !row.self;
       button.setAttribute("aria-pressed", String(blocked));
-      const words = !row.look ? "" : `${VOICE_WORDS[row.look]}${blocked ? ". Muted for you: click to unmute" : row.login ? ". Click to mute for you" : ""}`;
+      const words = !row.look ? "" : row.self ? row.look === "muted" ? "Your microphone is muted: click to unmute" : "Your microphone: click to mute"
+        : `${VOICE_WORDS[row.look]}${blocked ? ". Muted for you: click to unmute" : row.login ? ". Click to mute for you" : ""}`;
       button.title = words;
       button.setAttribute("aria-label", words);
     }
@@ -1865,7 +1924,7 @@
     if (!liveRows) return;
     for (const row of liveRows.values()) {
       row.nextLook = row.nextLogin = "";
-      row.nextHost = row.nextOnline = false;
+      row.nextHost = row.nextOnline = row.nextSelf = false;
     }
     const net = BL.net.state, voice = BL.voice.stats;
     if (net.room === "live" && net.me) {
@@ -1873,7 +1932,10 @@
       for (const rec of BL.net.remotes.values()) markOnline(rec.login, rec.body);
       const self = voiceRowOf(net.me.login, net.body);
       if (self) {
-        if (voice.enabled) self.nextLook = voice.muted ? "muted" : voice.speaking ? "speaking" : "on";
+        if (voice.enabled) {
+          self.nextLook = voice.muted ? "muted" : voice.speaking ? "speaking" : "on";
+          self.nextSelf = true;
+        }
         if (net.hostId === net.selfId) self.nextHost = true;
       }
       for (const rec of BL.net.remotes.values()) {
@@ -1893,5 +1955,5 @@
       liveOnline(row);
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showVoices, STATE_LABELS, statusFor };
+  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, STATE_LABELS, statusFor };
 })();
