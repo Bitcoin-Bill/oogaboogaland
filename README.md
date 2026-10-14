@@ -46,6 +46,8 @@ Who drives which Ooga:
 
 Players driving an Ooga can also talk: **Join voice** at the foot of the panel asks for your microphone, then becomes **Mute**. You hear everyone driving an Ooga in the same place as you, all at the same volume: out on the island, in HQ, or inside the same cave. Step into a cave and you hear only who is in there with you.
 
+While you are in voice, **M** mutes and unmutes your microphone on the island, in the lab, the Lightning Factory, ₿IFRÖST and the Ember Den (in Ooga Arcade and the games, M still mutes their sound), and a note stays on screen while you are muted. Your own speaker mark in the roster does the same. When nobody else in voice is in the same place as you, your microphone stays off (the note says "Alone · mic off") and turns back on by itself when someone joins; if you muted yourself, you stay muted. Walking your Ooga on the island, you hear your own footsteps; nobody else hears them.
+
 Ownership goes by GitHub login, not by name. These rules apply on the signed-in site; the plain GitHub Pages build has no accounts and every Ooga is free there. How it works: `docs/auth-and-presence.md`.
 
 ## Timechain Sphere
@@ -68,6 +70,8 @@ The mempool is the Mempool island: transactions arriving make its weather (six s
 ## Debug
 
 Each game and cave has an address to share, with its own preview card: `/oogarally`, `/oogadrop`, `/oogaorbit`, `/oogamine`, `/mempool`, `/dsb`, `/entropylab`, `/lightning` and `/sphere`. They work on the site and under `npm run serve`, and as `oogaboogaland.html#/oogarally` when the file is opened from disk; routes live in `src/js/routes.js`, and `npm run cards` recaptures the cards. `?scene=lab`, `race`, `drop`, `orbit`, `mine` or `dsb` opens that scene; `?nosim=1` silences the simulator and every feed; `?canvas2d=1` forces the Canvas 2D fallback; `?debug=1` exposes `window.__ooga`. AGENTS.md lists every flag and fixture.
+
+With `debug=1&totemglow=1`, keep all four repository totems' animated glow patterns at full strength, including continuous pulses on the rings between heads and soft pulses across their painted details. This also works with `nosim=1`. Add `time=2200` to see them at night. The flag leaves repository timestamps and celebrations unchanged.
 
 With `debug=1&poolfill=100`, pin the Mempool lake at half depth immediately. `poolfill` runs from 0 (empty bowl) to 200 (overflowing, with flooded shores and waterfalls), is clamped to that range, and ignores blank or invalid values. It controls depth from the bowl bottom through the full flood level, not volume or transaction backlog. Overflow starts around 176; 180 and 190 show partially filled trenches, and 200 fills the trenches completely. It leaves the live rain unchanged. Omit it for the live backlog level. In the debug console, `__ooga.poolIsland.preview.fill(150)` changes it without reloading; `fill(null)` restores the feed.
 

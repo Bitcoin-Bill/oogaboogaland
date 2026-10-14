@@ -17,6 +17,7 @@
   // Debug-only clock params: hour pins the hour, daylen is the day length in seconds.
   const DEBUG = params.has("debug");
   const DEBUG_POOL_BLOCK = DEBUG && params.get("poolblock") === "1";
+  const DEBUG_TOTEM_GLOW = DEBUG && params.get("totemglow") === "1";
   const DEBUG_GORILLA_MOVE = DEBUG && (params.get("gorillamove") === "1" || params.get("climbers") === "1");
   const DEBUG_GORILLA_RAGE = DEBUG && params.get("gorillarage") === "1";
   const timeParam = DEBUG ? params.get("time") : null;
@@ -193,10 +194,10 @@
   const ALTAR_HEIGHT = 0.34, ALTAR_BLOCK_WIDTH = 0.2, ALTAR_BLOCK_ARC = 0.3, ALTAR_RING_GAP = 0.02, ALTAR_MAX_BLOCKS = 512;
   const RIPEN = 25, TREE_CHANCE = 0.5, BUSH_CHANCE = 0.25;
   const PROP_TIPS = { tree: "Tree · shake it", bush: "Bush · rustle it", rock: "Rock · hit to break", crate: "Box · hit to break", barrel: "Barrel · hit to break", flower: "Flowers", torch: "Torch · warm", firepit: "Fire pit", bedroll: "Somebody's bed", ladder: "Ladder · wobbly", dock: "Dock · creaky", magazine: "Spare magazine · walk into it to collect", poolbridge: "Vine bridge · to the Mempool island", poolsign: "Mempool Rainforest · the way down is through the hill", poolpainting: "Wall painting · tap to read it closely", chainsign: "The chain, at a glance · tap to read it", weathersign: "Reading the weather · tap for the key", poolrock: "Mossy rock", poolfern: "Fern · rustle it", poollog: "Fallen log · something lives in it", jaguar: "Jaguar · do not poke", monkey: "Monkey · it watches you", toucan: "Toucan · big beak", canopy: "Rainforest tree · shake it", jumbotron: "Oogatron · OogaBoogaX on the big screen · tap the screen for a close-up", palm: "Palm · shake it", bifrostbridge: "Bifröst · the bridge to ₿IFRÖST", bifrostgate: "₿IFRÖST · walk an Ooga through the field", heimdall: "Heimdall · keeper of the bridge", gate: null };
-  const RETICLE_PROPS = new Set(["tree", "bush", "rock", "crate", "barrel", "flower", "torch", "firepit", "ladder", "poolsign", "poolpainting", "chainsign", "weathersign", "poolfern", "poollog", "jaguar", "monkey", "toucan", "canopy", "jumbotron", "palm", "timechainentrance", "timechainboard", "timechainchair", "timechainbeer", "bifrostgate", "heimdall"]);
+  const RETICLE_PROPS = new Set(["tree", "bush", "rock", "crate", "barrel", "flower", "torch", "firepit", "totem", "ladder", "poolsign", "poolpainting", "chainsign", "weathersign", "poolfern", "poollog", "jaguar", "monkey", "toucan", "canopy", "jumbotron", "palm", "timechainentrance", "timechainboard", "timechainchair", "timechainbeer", "bifrostgate", "heimdall"]);
   const workCave = (slot) => slot.repo && (slot.status === "open" || slot.status === "mirror");
   const MATRIX_LIVING_PROPS = new Set(["tree"]);
-  const SOLID_PROPS = new Set(["tree", "rock", "crate", "barrel", "firepit", "dock", "jumbotron", "poolbridge", "poolrock", "canopy"]);
+  const SOLID_PROPS = new Set(["tree", "rock", "crate", "barrel", "firepit", "dock", "jumbotron", "totem", "poolbridge", "poolrock", "canopy"]);
   const CLANKER_STEP_PROPS = new Set(["rock", "crate", "barrel", "poolrock"]);
   const BUSH_WORDS = ["Something rustles.", "A beetle. Ooga leaves it.", "Just a bush."];
   const PALM_WORDS = ["Coconuts. Ooga wanted bananas.", "A coconut thuds down. Ooga dodges.", "The fronds swish."];
@@ -413,6 +414,8 @@
   let sampledHour = 0, sampledDay = 0, sampledLatitude = NaN, sampledContinuousDay = 0, sampledUtcMs = 0;
   // How far under the Mempool island's ground the view is, 0 to 1: its sun and its storm stay outside.
   let poolShade = 0, poolUnder = 0;
+  // The driven Ooga's own footsteps, heard by this page alone (footsteps.js).
+  let footsteps = null;
   let weather = null, unsubscribeMempool = null, unsubscribeChain = null, mempoolIsland = null, timechainIsland = null, bifrostIsle = null;
   // The two boards across the hole from the vine bridge, one reading the chain and one reading the
   // weather. Each holds its canvas, its panel node and the reading it last drew, so a snapshot saying
@@ -673,6 +676,7 @@
     gauge: ["Gauge", "spark", ["The needle twitches.", "Pressure high. Ooga fine."]],
     rubble: ["Rubble", "chip", ["Loose rocks.", "Ooga kicks a pebble."]],
     bench: ["Log bench", "dust", ["A good log for sitting."]],
+    cabinet: ["Arcade cabinet", "spark", ["PRESS START. Ooga presses everything.", "The games are inside. Ooga points."]],
     vine: ["Vines", "leaf", ["The vines swing.", "Rustle rustle."]],
     boards: ["Boarded up · coming soon", "dust", ["Boarded up. Coming soon.", "Ooga peeks through a gap. Dark."]]
   };
@@ -1727,15 +1731,15 @@
   const sealedCaveVariant = (id) => id === "c3" ? 1 : id === "c10" ? 2 : 0;
   // Every cave wears its own facade from the shared voxel kit: two lantern posts, a string over the lintel,
   // vines off the rim, and the theme's own things either side of the path (lab dice and flasks, the mirror's glyph
-  // monoliths, the Lightning Factory's coil and coal, Ooga Arcade's stores and log bench, on its right only, as the
-  // Lightning Factory's right side fills its left). A slot without a theme wears none: the sealed caves, and the
+  // monoliths, the Lightning Factory's coil and coal, Ooga Arcade's two cabinets, hard against the left of its
+  // door and facing the island's centre: the Mempool stairs start at the right jamb and the Lightning Factory's right side fills the ground further left). A slot without a theme wears none: the sealed caves, and the
   // Headquarters ramps that run down a cutting rather than into a cliff. Each mouth bakes to one solid, one hanging and one glowing mesh, memoised per island
   // so a revisit only places nodes. Pieces are [kind, x, z, quarter turns, variant, lift] in the mouth's frame.
   const THEMES = {
     lab: { glass: 1, icon: "die", string: ["bulb", 1], pieces: [["flaskBench", -5.3, 1.1], ["die", -4.1, 2.8, 0, 1], ["die", -3.5, 3.6, 1, 3], ["die", -4.1, 2.8, 1, 4, 0.5], ["terminal", 5.2, 1.0], ["die", 4.3, 3.2, 1, 2], ["banner", -6.7, 0.7, 0, 1]] },
     matrix: { glass: 2, icon: "glyph", string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1], ["banner", 6.5, 0.8, 0, 2], ["banner", -6.5, 0.8, 0, 2], ["rubble", -6.3, 2.6, 0, 1]] },
     lightning: { glass: 0, icon: "bolt", string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["coalCrate", -5.1, 0.8, 0, 3], ["crate", -5.4, 2.1, 1, 0], ["crate", -5.4, 2.1, 0, 1, 0.75], ["barrel", -4.3, 2.9, 0, 1], ["rubble", -6.4, 0.9, 0, 1], ["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["banner", 6.6, 0.8, 0, 0], ["coil", 3.8, 3.4], ["coalCrate", 6.4, 3.4, 0, 1]] },
-    arcade: { glass: 0, icon: "banana", string: ["hanging", 0, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["crate", 5.2, 1.0, 0, 0], ["crate", 5.2, 1.0, 1, 1, 0.75], ["barrel", 4.4, 2.8, 0, 0], ["bench", 5.8, 3.5], ["rubble", 6.4, 2.3, 0, 1], ["banner", 6.6, 0.8, 0, 3]] }
+    arcade: { glass: 0, icon: "banana", string: ["hanging", 0, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["cabinet", -3.6, 1.0, 0, 0], ["cabinet", -2.9, 2.2, 0, 1]] }
   };
   const THEME_ICON = (slot) => slot.id === "c1" ? "favicon" : THEMES[slot.theme]?.icon || null;
   const trackCaveSign = (node, slot, mouth) => {
@@ -2007,6 +2011,8 @@
     let n = 0;
     const plant = (x, z) => {
       const y = island.surfaceAt(x, z);
+      // Leave the meadow palms out of the totems' clearing beside the jumbotron approach.
+      if (y === 0 && Math.hypot(x + 5.2, z - 17.5) < 3.6) return false;
       if (nearPath(x, z, 1.1) || island.overlapsStairs(x, z, 2) || !free(x, z, 1.2)) return false;
       // Level ground only: every side within a quarter metre of the foot.
       for (let i = 0; i < 4; i++) if (Math.abs(island.surfaceAt(x + Math.cos(i * 1.571) * 0.6, z + Math.sin(i * 1.571) * 0.6) - y) > 0.26) return false;
@@ -6007,6 +6013,7 @@
         if (o.prop === "timechainboard") return "Timechain display · tap to expand";
         if (o.prop === "timechainchair") return "Sani's recliner · tap to spin and spill the glass";
         if (o.prop === "timechainbeer") return "500 ml beer · tap to chug";
+        if (o.prop === "totem") return totemTip(o.totem);
         return PROP_TIPS[o.prop] || "";
       case "piece":
         return PIECES[o.piece] ? PIECES[o.piece][0] : "";
@@ -6124,6 +6131,9 @@
       case "rock":
         fx.burst(x, 0.6, z, 6, [CHIP], 1.4);
         hud.toast("Solid rock. Ow.");
+        break;
+      case "totem":
+        pokeTotem(o);
         break;
       case "palm":
         if (!wobble(o.node, 0.05)) return;
@@ -7759,20 +7769,20 @@
     go: (i) => jumbotron.goToView(i)
   };
   const openJumbotron = () => hud.openBoard(jumbotronBoard);
-  // Contribution fireworks: shells rise from the jumbotron and burst in the
-  // board's stat colors. Queued with absolute scene-clock times and stepped in
-  // update(), so a waiting shell costs nothing per frame.
+  // Contribution fireworks: shells rise from the jumbotron (or `from`, a totem's
+  // top) and burst in the board's stat colors. Queued with absolute scene-clock
+  // times and stepped in update(), so a waiting shell costs nothing per frame.
   const fireworksShells = [];
-  const launchFireworks = (strength = 1) => {
-    if (!jumbotronSpot || !fx) return 0;
+  const launchFireworks = (strength = 1, from = jumbotronSpot) => {
+    if (!from || !fx) return 0;
     const shells = Math.min(6, 2 + Math.min(4, strength | 0));
     for (let i = 0; i < shells; i++) {
       fireworksShells.push({
         at: now + i * 0.38 + Math.random() * 0.2,
         phase: "launch",
-        x: jumbotronSpot.x + (Math.random() - 0.5) * 2.6,
-        y: jumbotronSpot.y,
-        z: jumbotronSpot.z + (Math.random() - 0.5) * 1.4,
+        x: from.x + (Math.random() - 0.5) * 2.6,
+        y: from.y,
+        z: from.z + (Math.random() - 0.5) * 1.4,
         rise: 2.2 + Math.random() * 1.4
       });
     }
@@ -7793,6 +7803,170 @@
         fireworksShells.splice(i, 1);
       }
     }
+  };
+  // The four repository totems stand in two pairs beside the jumbotron approach, each with its faces toward the
+  // pile. Fire burns in their eyes, each flame a node on the arcade's one `blaze` geometry. For a day after a PR
+  // merges into main or master (`totemFeed`, `totemGlow.RECENT`), the repository's own pattern moves over the runes
+  // cut into TOTEM_SLICE m slices up the pole and the eyes at their heights, waning to 60% by the day's end; light
+  // circles the carved bands between heads, and painted details pulse softly. A merge seen during the visit flares
+  // them brightest for TOTEM_FLARE seconds with sparks. Outside that day the eyes and all glow go out.
+  // Each also casts a soft warm light from its middle that follows them, its own lamp kind so the tiers'
+  // nearest-first choice treats it like any other lamp.
+  // Each stands as tall and wide as its repository's importance (`totemModels.layout`); TOTEM_ROOM past its reach
+  // keeps the scattered props off its stones and name board. Fixed feet keep both pairs in their meadow clearings.
+  const TOTEM_SPOTS = [[7.8, 18.5], [-8.1, 18.6], [-4.7, 19.5], [4.1, 19.9]], TOTEM_ROOM = 2.4;
+  const TOTEM_SLICE = 0.3, TOTEM_FLARE = 6, TOTEM_CHEER = 14;
+  const totems = [];
+  let totemUnsub = null;
+  const totemAge = (i) => {
+    const changed = BL.totemFeed.state.repos[i].changedAt;
+    if (!changed) return "";
+    const minutes = Math.max(0, Math.round((Date.now() - changed) / 60000));
+    return minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`;
+  };
+  // A caveman's "Ooga booga!" in the browser's own speech, deep and slow: only once the visitor has touched the page
+  // (browsers refuse speech before that), never with the island's sound muted, and only in a voice on this device, so
+  // no text leaves it. The deep male voices go first where the device has them.
+  const OOGA_VOICES = ["Ralph", "Fred", "Daniel", "Alex"];
+  const shoutOoga = () => {
+    const speech = window.speechSynthesis;
+    if (!speech || weather.muted || navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+    const voices = speech.getVoices().filter((v) => v.localService && /^en/i.test(v.lang));
+    const voice = OOGA_VOICES.map((name) => voices.find((v) => v.name.startsWith(name))).find(Boolean) || voices[0];
+    if (!voice) return;
+    const line = new SpeechSynthesisUtterance("Oooga! Boooga!");
+    line.voice = voice;
+    line.pitch = 0.1;
+    line.rate = 0.7;
+    speech.cancel();
+    speech.speak(line);
+  };
+  // A merge landing during the visit: the eyes and runes flare, sparks fly from the eyes, fireworks go up from the
+  // totem's top, the Oogas awake within TOTEM_CHEER cheer and shout its word (never the one being driven), a deep
+  // voice shouts "Ooga booga!", and one notice names the repository.
+  const flareTotem = (i) => {
+    const o = totems[i], p = o.owner.node.position, repo = BL.totemFeed.REPOS[i];
+    o.flare = 1;
+    fx.burst(p.x, p.y + o.eyeTop, p.z, 14, [SPARK], 1.8);
+    launchFireworks(3, o.top);
+    for (const cave of crew.cavemen.values()) {
+      if (cave === pilot.player || cave.build || cave.state === "sleeping") continue;
+      const c = cave.root.position;
+      if (Math.hypot(c.x - p.x, c.z - p.z) > TOTEM_CHEER) continue;
+      cave.cheer = 1.6;
+      fx.say(cave, fnv1a(`${repo.word}/${cave.traits.name}`) % 2 ? `${repo.word}!` : "OOGA!", 1.8);
+    }
+    shoutOoga();
+    hud.toast(`${repo.name} just merged · the ${repo.word} totem blazes`);
+  };
+  const buildTotems = () => {
+    const M = BL.totemModels, feed = BL.totemFeed;
+    TOTEM_SPOTS.forEach(([x, z], i) => {
+      const L = M.layout(i), spot = { x, z };
+      const ry = Math.atan2(-spot.x, -spot.z);
+      claim(spot.x, spot.z, L.reach + TOTEM_ROOM);
+      const node = place(M.body(i), spot.x, spot.z, ry);
+      // A pattern runs over u from the lowest lit thing on the pole (a slice of runes or an eye) to the highest.
+      const slices = BL.totemGlow.bands(M.glyphs(i), TOTEM_SLICE);
+      let lo = Infinity, hi = -Infinity;
+      for (const { y } of slices) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      for (const [, y] of L.eyes) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+      const u = (y) => (y - lo) / (hi - lo);
+      const runes = slices.map(({ geometry, y }) => {
+        const band = createNode({ geometry, glow: 0, sightHidden: true });
+        addChild(node, band);
+        return { node: band, u: u(y) };
+      });
+      const features = createNode({ geometry: M.featureHighlights(i), glow: 0, visible: false, sightHidden: true });
+      addChild(node, features);
+      const rings = [];
+      L.rings.forEach((y, level) => {
+        for (let k = 0; k < M.RING_SEGMENTS; k++) {
+          const arc = createNode({ geometry: M.ringSector(i), position: { x: 0, y, z: 0 }, rotation: { x: 0, y: -k / M.RING_SEGMENTS * Math.PI * 2, z: 0 }, glow: 0, visible: false, sightHidden: true });
+          addChild(node, arc);
+          // Start at the front (+z); keep the geometry aligned to the painted band's existing facets.
+          rings.push({ node: arc, a: ((k - M.RING_SEGMENTS / 4 + M.RING_SEGMENTS) % M.RING_SEGMENTS + 0.5) / M.RING_SEGMENTS, level });
+        }
+      });
+      const flames = L.eyes.map(([x, y, z, size]) => {
+        const flame = createNode({ position: { x, y, z }, scale: { x: size, y: size, z: size }, geometry: BL.arcadeModels.blaze(), visible: false, sightHidden: true });
+        addChild(node, flame);
+        return { node: flame, size, u: u(y) };
+      });
+      const owner = addProp("totem", node, spot.x, spot.z, 0);
+      // The broad sphere would take in half the meadow; a tap counts only on the stones, the pole or the wings.
+      const P = node.position, cos = Math.cos(ry), sin = Math.sin(ry);
+      owner.totem = i;
+      owner.pickRay = (ray) => {
+        const ox = ray.ox - P.x, oz = ray.oz - P.z;
+        return M.hit(i, ox * cos - oz * sin, ray.oy - P.y, ox * sin + oz * cos, ray.dx * cos - ray.dz * sin, ray.dy, ray.dx * sin + ray.dz * cos);
+      };
+      const light = { r: 0, g: 0, b: 0, radius: 0, glow: 0, hide: false };
+      const lamp = addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, Infinity, `totem:${i}`);
+      totems.push({ owner, runes, rings, features, flames, light, lamp, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])), top: { x: spot.x, y: L.apex, z: spot.z } });
+    });
+    totemUnsub = feed.subscribe((event) => {
+      if (event.fresh) flareTotem(event.index);
+    });
+  };
+  const updateTotems = (dt, elapsed) => {
+    const at = Date.now(), repos = BL.totemFeed.state.repos;
+    for (let i = 0; i < totems.length; i++) {
+      const o = totems[i], age = at - repos[i].changedAt;
+      const live = DEBUG_TOTEM_GLOW ? 1 : repos[i].changedAt && age >= 0 && age < BL.totemGlow.RECENT ? 1 - 0.4 * age / BL.totemGlow.RECENT : 0;
+      o.live = live ? o.live + (live - o.live) * Math.min(1, dt * 1.5) : 0;
+      if (o.live < 0.002) o.live = 0;
+      o.flare = live ? Math.max(0, o.flare - dt / TOTEM_FLARE) : 0;
+      const glowPower = Math.max(o.live, o.flare);
+      const breath = 0.5 + 0.5 * Math.sin(elapsed * 1.8 + i * 1.7), t = elapsed + i * 3.1;
+      // Each slice of runes lights where the pattern stands at its height. Highlight past 2.4 would carry the warm
+      // tint beyond its colour, so the flare tops out there.
+      let sum = 0;
+      for (let k = 0; k < o.runes.length; k++) {
+        const r = o.runes[k], v = o.live ? o.pattern(r.u, t, i) : 0, lit = Math.max(o.live * (0.25 + 0.75 * v), o.flare);
+        sum += v;
+        r.node.glow = (0.45 + 0.55 * lit) * glowPower;
+        r.node.highlight = (0.45 + 1.6 * lit + 0.35 * o.flare) * glowPower;
+      }
+      // Let the painted details breathe gently, leaving their carved colors and shapes readable at the peak.
+      const featurePulse = 0.5 + 0.5 * Math.sin(elapsed * 2.2 + i * 1.7);
+      const featureGlow = glowPower * 0.38 * featurePulse * featurePulse;
+      o.features.visible = featureGlow > 0.02;
+      o.features.glow = featureGlow;
+      o.features.highlight = 0.55 * featureGlow;
+      // A bright front and fading wake now circle every separating band without stopping.
+      const ringPower = glowPower;
+      for (let k = 0; k < o.rings.length; k++) {
+        const r = o.rings[k], lit = ringPower ? ringPower * BL.totemGlow.ring(r.a, t, r.level) : 0;
+        r.node.visible = lit > 0.01;
+        r.node.glow = lit;
+        r.node.highlight = lit * 2.2;
+      }
+      const lit = Math.max(o.live * (0.3 + 0.7 * sum / o.runes.length), o.flare), power = (0.45 + 0.1 * breath + 0.8 * lit) * glowPower;
+      o.lamp.always = glowPower > 0;
+      o.light.radius = o.lamp.always ? 4 + 2.5 * glowPower : 0;
+      o.light.r = power; o.light.g = 0.62 * power; o.light.b = 0.3 * power;
+      // The eye fires leap as the pattern passes their height, taller still in a flare; they go out between merges.
+      for (let k = 0; k < o.flames.length; k++) {
+        const f = o.flames[k], flick = Math.sin(elapsed * 11 + k * 2.3 + i) * 0.08 + Math.sin(elapsed * 17.3 + k * 1.1) * 0.05;
+        const fire = o.live * (0.75 + 0.75 * o.pattern(f.u, t, i)) + 0.3 * o.flare;
+        f.node.visible = o.lamp.always;
+        f.node.scale.x = f.node.scale.z = f.size * fire;
+        f.node.scale.y = f.size * fire * (1 + flick);
+      }
+    }
+  };
+  const totemTip = (i) => {
+    const age = totemAge(i), repo = BL.totemFeed.REPOS[i];
+    return age ? `${repo.name} totem · merged ${age} · tap to see the PR` : `${repo.name} totem · tap to see its PRs`;
+  };
+  // A tap opens the repository's latest recent merge on GitHub in a new tab, as the lab's link opens its site.
+  const pokeTotem = (o) => {
+    const p = o.node.position;
+    fx.burst(p.x, p.y + 1.6, p.z, 8, [DUST], 1.2);
+    // Straight to the latest recent merge once GitHub has answered, the repository's PRs until then.
+    const repo = BL.totemFeed.REPOS[o.totem], url = BL.totemFeed.state.repos[o.totem].url;
+    window.open(url || `https://github.com/${repo.repo}/pulls?q=is%3Apr+is%3Amerged`, "_blank", "noopener,noreferrer");
   };
   const update = (dt, elapsed) => {
     if (lawn && lawn.version !== island.path.version) layLawn();
@@ -7835,6 +8009,7 @@
     }
     mempoolIsland.water.update(dt, elapsed, Date.now());
     mempoolIsland.paintings.update(dt);
+    updateTotems(dt, elapsed);
     updateLamps(dt, elapsed, phase !== null);
     if (jumbotron) {
       jumbotron.update(elapsed, renderer);
@@ -7932,6 +8107,7 @@
       const cave = crew.list[i];
       if (cave.root.visible) floatPose(cave, cave.root.position.y - cave.baseY, cave.bodyHeight, cave.phase, elapsed);
     }
+    footsteps.update(crew.player);
     npcSync.update(dt);
     shareDrivenOoga(dt);
     remotes.update(dt);
@@ -10256,6 +10432,7 @@
         } else if (event.type === "contribution") launchFireworks(event.delta);
       });
     }
+    buildTotems();
     meadowDressing(firePos);
     buildPilePosts();
     plantPalms();
@@ -10282,6 +10459,7 @@
     shared.renderOpts = RENDER_OPTS;
     fx = shared.fx = fxMod.create(shared);
     weather = weatherMod.create({ root, renderer, camera, heightAt: mempoolIsland.rainAt, fx, onRain: mempoolIsland.rainHit, centre: mempoolIsland.centre });
+    footsteps = BL.footsteps.create();
     // The snapshot outlives the visit, so a re-entered hub opens in the weather it left.
     weather.apply(chain.snapshot);
     mempoolIsland.water.apply(chain.snapshot);
@@ -10824,11 +11002,12 @@
         get timechainIsland() { return timechainIsland; },
         get factory() { return factoryMouth && factoryMouth.hall ? factoryMouth.hall.debug : null; },
         get bifrost() { return bifrostIsle; },
+        get footsteps() { return footsteps; },
         slots: pile.slots, drops: pile.drops, core: pile.core, shell: pile.shell, delivery: pile.delivery, spillEffect: pile.spillEffect, cavemen: crew.cavemen, crates: crates.list, lab: null, hud, applyAllSwag: crew.applyAllSwag, renderLocker: crew.renderLocker, demoTip, setPileLevel: pile.setLevel, refreshStates: crew.refreshStates, trimPool: fx.trimPool,
         get shown() {
           return pile.shown;
         },
-        terrainSections, caveSections, cutawayPaths: CUTAWAY_PATH_STATE, terrainRampRoof, get cutawayTravelRamp() { return cutawayTravelRamp; }, get cutawayTravelChannel() { return cutawayTravelChannel; }, get cutawayTravelStation() { return cutawayTravelStation; }, island, mouths: island.mouths, labels, camera, weather, chain, beasts, pokeBeast, useProp, refreshChainSign, get chainSign() { return chainSign; }, get poolIsland() { return mempoolIsland; }, cameraPose: POSITION_POSE, crew, fx, controls: pilot.controls, props, altar, path: island.path.debug, headquarters, jumbotron, fireworks: launchFireworks, get fireworksPending() { return fireworksShells.length; }, get npcSync() { return npcSync; }, clankers, clankerPlay, rageThrowMap, rageEdgeGoal, rageLandAt, rageCaptureLandAt, rageMapRouteClear, rageCaptureEligible, rageApproach, rageWarpRequired, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear, cloudFloorAt,
+        terrainSections, caveSections, cutawayPaths: CUTAWAY_PATH_STATE, terrainRampRoof, get cutawayTravelRamp() { return cutawayTravelRamp; }, get cutawayTravelChannel() { return cutawayTravelChannel; }, get cutawayTravelStation() { return cutawayTravelStation; }, island, mouths: island.mouths, labels, camera, weather, chain, beasts, pokeBeast, useProp, refreshChainSign, get chainSign() { return chainSign; }, get poolIsland() { return mempoolIsland; }, cameraPose: POSITION_POSE, crew, fx, controls: pilot.controls, props, altar, path: island.path.debug, headquarters, jumbotron, totems: { list: totems, flare: flareTotem }, fireworks: launchFireworks, get fireworksPending() { return fireworksShells.length; }, get npcSync() { return npcSync; }, clankers, clankerPlay, rageThrowMap, rageEdgeGoal, rageLandAt, rageCaptureLandAt, rageMapRouteClear, rageCaptureEligible, rageApproach, rageWarpRequired, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear, cloudFloorAt,
         scenery: {
           get candidateCount() { return scenery.length; },
           get visibleCount() { return sceneryVisible; },
@@ -11098,6 +11277,7 @@
     if (chainSign && chainSign.node.geometry) renderer.releaseGeometry(chainSign.node.geometry);
     chainSign = null;
     weather.dispose();
+    footsteps.dispose();
     mempoolIsland.water.dispose();
     mempoolIsland.paintings.dispose();
     mempoolIsland.wildlife.dispose();
@@ -11182,6 +11362,12 @@
       oogatronUnsub();
       oogatronUnsub = null;
     }
+    if (totemUnsub) {
+      totemUnsub();
+      totemUnsub = null;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    totems.length = 0;
     fireworksShells.length = 0;
     jumbotronSpot = null;
     if (jumbotron) {
@@ -11227,7 +11413,7 @@
     // Drop every per-visit ref but the cached island.
     terrainRampRoof = pathNode = altar = lawn = life = hud = hooks = input = pilot = fx = cameraCover = bananaCover = solids = rockGuides = objectGuides = sightGuides = bananaGuides = pileGuides = platformGuides = mirrorGuides = pile = crew = crates = critters = clock = presets = mirrorCave = matrixCave = matrixControl = gateRain = fire = headquarters = positionDebug = dockStairs = overlayCanvas = null;
     beasts.clear();
-    magazine = magazineState = breakables = weather = mempoolIsland = timechainIsland = clankers = clankerPlay = null;
+    magazine = magazineState = breakables = weather = footsteps = mempoolIsland = timechainIsland = clankers = clankerPlay = null;
     hubScene.input = hubScene.debug = null;
     return { targets: count };
   };
@@ -11253,6 +11439,7 @@
   const hubScene = {
     // The island reports its own zone as soon as an Ooga is driven (see `zoneOf`); until then it is nowhere.
     voiceZone: "none",
+    micKey: true,
     id: "hub", enter, update, overlay, onDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, leave, stats, liveGeometry,
     root: null, camera: null, input: null, debug: null,
     get inMotion() {
