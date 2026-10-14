@@ -770,6 +770,7 @@
   // high on the clump take the light greens and low ones the dark.
   const leafy = (geo, cx, cy, cz, rx, ry, rz, tones, rand, count, size) => {
     puff(geo, cx, cy, cz, rx * 0.84, ry * 0.84, rz * 0.84, [tones[0], tones[0], tones[0], tones[0]], rand, 4, 7);
+    const detailStart = geo.faces.length;
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let k = 0; k < count; k++) {
       const y = 1 - (k + 0.5) / count * 1.6, rr = Math.sqrt(Math.max(0, 1 - y * y)), a = k * golden + rand() * 0.5;
@@ -793,6 +794,7 @@
         pointedLeaf(geo, px, py, pz, axX, axY, axZ, wX / wl, wY / wl, wZ / wl, dx, dy, dz, len, light, dark);
       }
     }
+    if (geo.foliageVisibility === false) for (let i = detailStart; i < geo.faces.length; i++) geo.faces[i].visibility = false;
     return geo;
   };
   // A five-petal flower lying on a clump's surface facing out along n, with a round centre.
@@ -913,7 +915,11 @@
       for (const l of body.lines) geo.lines.push({ ...l, i: l.i.slice() });
       if (body.normals) for (let i = 0; i < body.normals.length; i++) geo.normals.push(body.normals[i]);
     } else if (body) flatInto(geo, body);
+    // Decoration renders normally, but visibility and outlines use the underlying body.
+    // Face tags survive merge and in-place transforms without a second mesh.
+    const detailStart = geo.faces.length;
     grow(padNormals(geo));
+    for (let i = detailStart; i < geo.faces.length; i++) geo.faces[i].visibility = false;
     geo.normals = Float32Array.from(padNormals(geo).normals);
     if (body && body.castShadow === false) geo.castShadow = false;
     return geo;
@@ -1103,7 +1109,7 @@
     return merge(...parts);
   };
   const cartoonTree = (i, rand, shell) => {
-    const geo = { verts: [], faces: [], lines: [], smooth: true, normals: [] }, tones = CANOPIES[i].map(hexToRgb);
+    const geo = { verts: [], faces: [], lines: [], smooth: true, normals: [], foliageVisibility: false }, tones = CANOPIES[i].map(hexToRgb);
     limb(geo, 0, -0.1, 0, 0.05, 2.1, 0.02, 0.24, 0.14, 8, BARK[0]);
     limb(geo, 0.05, 1.55, 0, 0.62, 1.95, 0.02, 0.09, 0.05, 6, BARK[1]);
     if (i % 2) limb(geo, 0, 1.5, -0.1, -0.7, 1.9, -0.3, 0.08, 0.05, 6, BARK[1]);
@@ -1176,7 +1182,7 @@
   // Bushes: leafy clumps on the voxel bushes' own ellipsoids. The first two flower (peach and pink, then yellow and
   // purple), the third carries round red berries.
   const bush = variants((i) => {
-    const rand = mulberry32(7 + i), geo = { verts: [], faces: [], lines: [], normals: [] }, tones = ["#3a6e24", "#56902f", "#6fae3a", "#8ccb4b"].map(hexToRgb);
+    const rand = mulberry32(7 + i), geo = { verts: [], faces: [], lines: [], normals: [], foliageVisibility: false }, tones = ["#3a6e24", "#56902f", "#6fae3a", "#8ccb4b"].map(hexToRgb);
     for (const [cx, cy, cz, rx, ry, rz] of CLUMPS[i]) leafy(geo, cx * QUARTER, cy * 0.8 * QUARTER, cz * QUARTER, rx * 1.12 * QUARTER, ry * 0.82 * QUARTER, rz * 1.12 * QUARTER, tones, rand, Math.round(10 + rx * rz * 3.2), 0.17);
     const [cx, cy, cz, rx, ry, rz] = CLUMPS[i][0];
     for (let n = 0; n < (i === 2 ? 9 : 6); n++) {
