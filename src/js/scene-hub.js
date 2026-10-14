@@ -7943,8 +7943,11 @@
         r.node.highlight = lit * 2.2;
       }
       const lit = Math.max(o.live * (0.3 + 0.7 * sum / o.runes.length), o.flare), power = (0.45 + 0.1 * breath + 0.8 * lit) * glowPower;
-      o.lamp.always = glowPower > 0;
-      o.light.radius = o.lamp.always ? 4 + 2.5 * glowPower : 0;
+      const always = glowPower > 0, radius = always ? 4 + 2.5 * glowPower : 0;
+      // Animated light inputs can change under a stationary camera, including when a merge's glow expires.
+      if (o.lamp.always !== always || o.light.radius !== radius || o.light.r !== power) lampSelValid = false;
+      o.lamp.always = always;
+      o.light.radius = radius;
       o.light.r = power; o.light.g = 0.62 * power; o.light.b = 0.3 * power;
       // The eye fires leap as the pattern passes their height, taller still in a flare; they go out between merges.
       for (let k = 0; k < o.flames.length; k++) {

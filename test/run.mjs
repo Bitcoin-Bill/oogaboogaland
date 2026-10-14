@@ -4587,6 +4587,7 @@ const donation = (id) => ({ name: `${id} donation`, why: "playthrough: a donatio
   if (id === "hub") {
     const lights = await b.evaluate(`(() => {
       const B = window.__ooga, level = B.level, hour = B.daylight.hour;
+      const repos = BL.totemFeed.state.repos, changedAt = repos.map(r => r.changedAt);
       const camera = JSON.stringify([B.camera.position, B.camera.target]);
       const sample = () => B.lamps.filter(l => l.pileProfile).map(l => {
         const index = B.lighting.selectedIds.indexOf(l.id), o = index * 8;
@@ -4601,14 +4602,30 @@ const donation = (id) => ({ name: `${id} donation`, why: "playthrough: a donatio
         const grown = sample();
         B.setPileLevel(100); B.advance(0.1);
         const shrunk = sample();
-        return { before, grown, shrunk, still: camera === JSON.stringify([B.camera.position, B.camera.target]) };
+        B.setHour(12);
+        for (const repo of repos) repo.changedAt = Date.now();
+        const sampleTotems = () => B.totems.list.map(o => {
+          const index = B.lighting.selectedIds.indexOf(o.lamp.id), at = index * 8;
+          return { r: o.light.r, selected: index >= 0, full: o.lamp.k === 1 && o.lamp.gain === 1,
+            error: Math.hypot(o.light.radius - B.renderOpts.lights[at + 3], o.light.r - B.renderOpts.lights[at + 4],
+              o.light.g - B.renderOpts.lights[at + 5], o.light.b - B.renderOpts.lights[at + 6]) };
+        });
+        B.advance(0.2); const lit = sampleTotems();
+        B.advance(0.2); const pulsed = sampleTotems();
+        for (const repo of repos) repo.changedAt = 0;
+        B.advance(0.1); const expired = B.totems.list.every(o => !B.lighting.selectedIds.includes(o.lamp.id));
+        return { before, grown, shrunk, lit, pulsed, expired, still: camera === JSON.stringify([B.camera.position, B.camera.target]) };
       } finally {
+        repos.forEach((r, i) => { r.changedAt = changedAt[i]; });
         B.setPileLevel(level); B.setHour(hour); B.advance(0.1);
       }
     })()`);
     record("hub donation: stationary night lighting follows pile posts through growth and shrinkage", lights.still
       && [lights.before, lights.grown, lights.shrunk].every(rows => rows.length === 3 && rows.every(l => l.selected && l.error < 1e-5))
       && lights.grown.every((l, i) => Math.hypot(...l.position.map((v, axis) => v - lights.before[i].position[axis])) > 1), JSON.stringify(lights));
+    record("hub donation: stationary lighting follows totem color, reach and expiry", lights.still && lights.expired
+      && [lights.lit, lights.pulsed].every(rows => rows.length === 4 && rows.every(l => l.selected && l.full && l.error < 1e-5))
+      && lights.pulsed.some((l, i) => Math.abs(l.r - lights.lit[i].r) > 1e-4), JSON.stringify(lights));
   }
 } });
 // Every track of the cup under the autopilot: all racers finish in order, the points and the cup medal
