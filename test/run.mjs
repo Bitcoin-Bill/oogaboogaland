@@ -2380,7 +2380,11 @@ const { outlinePerformanceProbe } = (() => {
       row.budgetHeld = wall.target > 0 && context.surfaceOcclusion === 100 && context.surfacePerception === 100 && budgetQueries === 0;
       guides.updateSurface(context, ex, ey, ez, camera, 0.002, actor, blockedNow, 102, 102, 30);
       row.latestEpoch = !wall.target && context.surfaceOcclusion === 102 && context.surfacePerception === 102 && budgetQueries > 0;
-      if (!row.budgetHeld || !row.latestEpoch || !lazy || remaining >= lazy || !row.stillPerceived || row.retraced || row.actorRetraced || !row.accumulatedMotion || !row.newlyActive) failures.push(row);
+      guides.updateSurface(context, ex, ey, ez, camera, 1 / 30, actor, () => true, 103, 103, 30, true);
+      row.slowHeld = !wall.target && context.surfacePerception === 102;
+      guides.updateSurface(context, ex, ey, ez, camera, 1 / 30, actor, () => true, 104, 104, 30, true);
+      row.noStarvation = wall.target > 0 && context.surfaceOcclusion === 104 && context.surfacePerception === 104;
+      if (!row.slowHeld || !row.noStarvation || !row.budgetHeld || !row.latestEpoch || !lazy || remaining >= lazy || !row.stillPerceived || row.retraced || row.actorRetraced || !row.accumulatedMotion || !row.newlyActive) failures.push(row);
       rows.push(row);
       if (rows.length === 3) break;
     }
@@ -2454,7 +2458,14 @@ const { canopyCertificateProbe, canopyPileProbe } = (() => {
       sample("camera inside canopy", true, true);
       cover.visible = false; sample("canopy moves away without a stale certificate", false);
     } finally { objects.dispose(); }
-    return { rows, failures, disposed: objects.stats.registered === 0 };
+    const models = [...Array.from({ length: 4 }, (_, i) => BL.hubModels.tree(i)), ...BL.poolModels.CANOPY.map(f => f())].map(g => {
+      const triangles = faces => faces.reduce((n, f) => n + f.i.length - 2, 0);
+      return { drawn: triangles(g.faces), queried: triangles(g.faces.filter(f => f.visibility !== false)) };
+    });
+    const dressed = BL.hubModels.withJungle(box(1, 1, 1), g => BL.hubModels.sprig(g, 0, 0.5, 0, 1, 1, 0, 5, 0.3, BL.math.mulberry32(7)));
+    const merged = BL.models.moved(BL.models.turnedY(BL.models.merge(dressed), 0.4), 2, 3, 4);
+    const bodyFaces = merged.faces.filter(f => f.visibility !== false).length;
+    return { rows, failures, models, dressing: bodyFaces === 6 && merged.faces.length > bodyFaces, disposed: objects.stats.registered === 0 };
   };
 
   const canopyPileProbe = () => {
@@ -14478,7 +14489,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   }
   {
     const proof = canopyCertificateProbe();
-    for (const backend of backends) record(`canopy occlusion ${backend}: solid prop coverage avoids dense ray searches while preserving tiny gaps, partial edges, clip planes and moving blockers`, proof.rows.length === 12 && proof.failures.length === 0 && proof.disposed, JSON.stringify(proof));
+    for (const backend of backends) record(`canopy occlusion ${backend}: solid prop coverage avoids dense ray searches while preserving tiny gaps, partial edges, clip planes and moving blockers`, proof.rows.length === 12 && proof.failures.length === 0 && proof.dressing && proof.models.length === 7 && proof.models.every(g => g.queried > 0 && g.queried < g.drawn / 10) && proof.disposed, JSON.stringify(proof));
   }
   {
     const entrance = rampOutlineSectionsProbe();

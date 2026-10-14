@@ -873,8 +873,10 @@
       // actor/context still derives immediately.
       if (recomputeHz > 0) context.surfaceCompute += Math.max(0, dt);
       const fresh = context.surfaceActor !== actor || !Number.isFinite(eye[0]) || !Number.isFinite(cameraEye[0]);
-      const derive = !recomputeHz || fresh || !defer && context.surfaceCompute >= 1 / recomputeHz;
+      const derive = !recomputeHz || fresh || context.surfaceCompute >= 1 / recomputeHz
+        && (!defer || context.surfaceCompute >= 2 / recomputeHz);
       if (derive) context.surfaceOcclusion = occlusion;
+      // Defer at most one interval, even when a slow frame rebuilds contours every time.
       // A deferred pass keeps its elapsed budget and pending epochs.
       if (derive && (moved || cameraMoved)) context.surfaceCompute = 0;
       const walls = context.walls, centers = context.surfaceCenters, wallGroups = context.surfaceWallGroups, outdoor = context.kind === "surface" && context.source.slopeSide === undefined;
