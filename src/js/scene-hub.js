@@ -1839,6 +1839,8 @@
   };
   const movePilePosts = () => {
     if (!pilePosts.length) return;
+    // The posts' light positions change even while the camera and daylight stay fixed.
+    lampSelValid = false;
     // A shared radius keeps the same three angles as the ring changes. Check the actual half-metre
     // post bases against the rasterized road, not the broad NPC work-area reservations.
     let radius = island.path.debug.ringOuterRadius + 0.8;

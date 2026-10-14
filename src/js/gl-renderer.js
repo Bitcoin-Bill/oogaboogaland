@@ -1673,6 +1673,13 @@ void main() {
         gl.uniform1f(p.u.uGlass, 1);
         p.glass = 1;
       }
+      // Active water samplers must never alias the shadow sampler's unit 0, even outside DSB.
+      // Linking also runs after context restoration and for the optional rig programs.
+      if (p.u.uDSBSurface || p.u.uDSBDepth) {
+        gl.useProgram(p.prog);
+        gl.uniform1i(p.u.uDSBSurface, 7);
+        gl.uniform1i(p.u.uDSBDepth, 8);
+      }
     };
     const destroyMirrorProgram = () => {
       const p = mirror.program;
@@ -3481,12 +3488,7 @@ void main() {
       skyHaze=opts.hazeDrop===undefined?1:opts.hazeDrop;
       if(dsbGPU && dsbGPU.state!==opts.dsbWater){dsbGPU.dispose();dsbGPU=null;}
       if(opts.dsbWater && !dsbGPU)dsbGPU=BL.dsbWater.gpu(gl,opts.dsbWater);
-      if(dsbGPU){
-        dsbGPU.bind(programs.mesh);
-        gl.useProgram(programs.mesh.prog);
-        gl.uniform1i(programs.mesh.u.uDSBSurface,7);
-        gl.uniform1i(programs.mesh.u.uDSBDepth,8);
-      }
+      if(dsbGPU)dsbGPU.bind(programs.mesh);
       const fogColor = fog || NO_FOG, fogA = fog ? fogNear : FOG_OFF, fogB = fog ? fogFar : FOG_OFF + 1;
       const windTime = performance.now() * 0.001 % 3600;
       gl.useProgram(programs.plain.prog);
