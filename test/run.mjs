@@ -4581,9 +4581,52 @@ const play = (id, what, code) => ({ name: `${id} playthrough`, why: "playthrough
   const r = await b.evaluate(code);
   record(`${id} playthrough: ${what}`, r.ok, JSON.stringify(r));
 } });
-const donation = (id) => ({ name: `${id} donation`, why: "playthrough: a donation becomes bananas on the pile", run: async (b) => {
+const donation = (id) => ({ name: `${id} donation`, why: "playthrough: a donation becomes bananas on the pile; regression: pile lamps keep their lights when the pile changes", run: async (b) => {
   const r = await b.evaluate(`(() => { const B = window.__ooga, s0 = B.stats().dropsLanded, d0 = B.game.state.donations; B.demoTip(4000); B.advance(6, 1 / 30); const landed = B.stats().dropsLanded - s0; return { ok: landed === window.BL.game.bananasFor(4000) && B.game.state.donations === d0 + 1, landed }; })()`);
   record(`${id} donation: a 4000 sat donation is counted and lands its bananas on the pile`, r.ok, JSON.stringify(r));
+  if (id === "hub") {
+    const lights = await b.evaluate(`(() => {
+      const B = window.__ooga, level = B.level, hour = B.daylight.hour;
+      const repos = BL.totemFeed.state.repos, changedAt = repos.map(r => r.changedAt);
+      const camera = JSON.stringify([B.camera.position, B.camera.target]);
+      const sample = () => B.lamps.filter(l => l.pileProfile).map(l => {
+        const index = B.lighting.selectedIds.indexOf(l.id), o = index * 8;
+        return { position: [l.x, l.y, l.z], selected: index >= 0,
+          error: Math.hypot(l.x - B.renderOpts.lights[o], l.y - B.renderOpts.lights[o + 1], l.z - B.renderOpts.lights[o + 2]) };
+      });
+      try {
+        B.setHour(0);
+        B.setPileLevel(100); B.advance(0.1);
+        const before = sample();
+        B.setPileLevel(1000000); B.advance(0.1);
+        const grown = sample();
+        B.setPileLevel(100); B.advance(0.1);
+        const shrunk = sample();
+        B.setHour(12);
+        for (const repo of repos) repo.changedAt = Date.now();
+        const sampleTotems = () => B.totems.list.map(o => {
+          const index = B.lighting.selectedIds.indexOf(o.lamp.id), at = index * 8;
+          return { r: o.light.r, selected: index >= 0, full: o.lamp.k === 1 && o.lamp.gain === 1,
+            error: Math.hypot(o.light.radius - B.renderOpts.lights[at + 3], o.light.r - B.renderOpts.lights[at + 4],
+              o.light.g - B.renderOpts.lights[at + 5], o.light.b - B.renderOpts.lights[at + 6]) };
+        });
+        B.advance(0.2); const lit = sampleTotems();
+        B.advance(0.2); const pulsed = sampleTotems();
+        for (const repo of repos) repo.changedAt = 0;
+        B.advance(0.1); const expired = B.totems.list.every(o => !B.lighting.selectedIds.includes(o.lamp.id));
+        return { before, grown, shrunk, lit, pulsed, expired, still: camera === JSON.stringify([B.camera.position, B.camera.target]) };
+      } finally {
+        repos.forEach((r, i) => { r.changedAt = changedAt[i]; });
+        B.setPileLevel(level); B.setHour(hour); B.advance(0.1);
+      }
+    })()`);
+    record("hub donation: stationary night lighting follows pile posts through growth and shrinkage", lights.still
+      && [lights.before, lights.grown, lights.shrunk].every(rows => rows.length === 3 && rows.every(l => l.selected && l.error < 1e-5))
+      && lights.grown.every((l, i) => Math.hypot(...l.position.map((v, axis) => v - lights.before[i].position[axis])) > 1), JSON.stringify(lights));
+    record("hub donation: stationary lighting follows totem color, reach and expiry", lights.still && lights.expired
+      && [lights.lit, lights.pulsed].every(rows => rows.length === 4 && rows.every(l => l.selected && l.full && l.error < 1e-5))
+      && lights.pulsed.some((l, i) => Math.abs(l.r - lights.lit[i].r) > 1e-4), JSON.stringify(lights));
+  }
 } });
 // Every track of the cup under the autopilot: all racers finish in order, the points and the cup medal
 // are the standings', and every track keeps a best. Ties share a place, so the saved medal may be any of theirs.
@@ -13107,9 +13150,10 @@ const raceRigChecks = async () => {
   runInNewContext(rendererSource.replace("  BL.glRenderer =", "  window.__ordinaryRigProof = [ORDINARY_MESH_VS, ORDINARY_MESH_FS, ORDINARY_SHADOW_VS];\n  BL.glRenderer ="), context);
   const ordinaryHashes = context.window.__ordinaryRigProof.map(shader => createHash("sha256").update(shader).digest("hex"));
   const expectedOrdinaryHashes = [
-    // Canonical rock bc8ec01: preserve its DSB portal and water shader changes exactly.
-    "f1d1d746fa92363ac1cc71dd999732da0c1c9bb1666e2872f7766e11535a60c5",
-    "65f271818a1c681d3017559fd4f5e11861c64acf080066ce85cf113c8a1db646",
+    // Depth pre-pass "no image change" rendering core: the shared vertex and fragment
+    // bytes the depth-only and plain variants derive from, plus the untouched shadow path.
+    "6bed3532a26c98c3e5a9218674dbe75c789324168104f6b0eb7fb5c88872a012",
+    "b82d02f44814bebe09d97cfdfb32fb21ac0e1373411e4ba5de06a59065a6fa2c",
     "37030f053de422aa157f017ceedef0812ed57a17c9e1b2af4aab017c0b645364"
   ];
   record("race rig strategy: ordinary mesh, fragment and shadow shader bytes retain the pre-rig fast path", ordinaryHashes.every((hash, i) => hash === expectedOrdinaryHashes[i]), JSON.stringify(ordinaryHashes));
@@ -13320,6 +13364,8 @@ const raceRigDisposalProof = async () => {
     const context = {
       dsbGPU: null,
       canvas: { removeEventListener() {} }, onLost() {}, onRestored() {},
+      // dispose drops the page-life resize listeners it registered at creation.
+      window: { removeEventListener() {}, visualViewport: { removeEventListener() {} } }, onResize() {},
       destroyRecords() {}, reflectorTargets: new Map(), destroyReflector() {},
       destroyMirror() {}, destroyFbo() {}, destroyShadow() {},
       res: { programs: base, matrixTexture: null, quadVao: null },
@@ -13450,23 +13496,38 @@ const selectedWaterProgramProof = () => {
   const source = readFileSync(new URL("../src/js/gl-renderer.js", import.meta.url), "utf8");
   const start = source.indexOf("      skyHaze=opts.hazeDrop");
   const body = source.slice(start, source.indexOf("      const fogColor", start));
+  const finishStart = source.indexOf("    const finishProgram =");
+  const finish = source.slice(finishStart, source.indexOf("    const destroyMirrorProgram", finishStart));
+  const makeProgram = () => ({ prog: { locations: { uDSBSurface: {}, uDSBDepth: {}, uDSBEnvironment: {} } },
+    u: {}, uniforms: ["uDSBSurface", "uDSBDepth", "uDSBEnvironment"], shaders: [] });
   const rows = [];
   for (const rig of [false, true]) {
-    const ordinary = { prog: {}, u: { uDSBSurface: {}, uDSBDepth: {}, uDSBEnvironment: {} } };
-    const selected = rig ? { prog: {}, u: { uDSBSurface: {}, uDSBDepth: {}, uDSBEnvironment: {} } } : ordinary;
-    const bindings = [], samplers = [], states = [], disposed = [];
-    const context = { skyHaze: 1, opts: { dsbWater: {} }, dsbGPU: null,
+    const ordinary = makeProgram(), selected = rig ? makeProgram() : ordinary;
+    const bindings = [], samplers = [], states = [], disposed = [], values = new Map();
+    const context = { skyHaze: 1, opts: { dsbWater: null }, dsbGPU: null,
       res: { programs: { mesh: ordinary } }, programs: { mesh: selected },
-      gl: { useProgram() {}, uniform1i(location, value) { samplers.push([location, value]); } },
+      gl: { getProgramParameter() { return true; }, getUniformLocation(p, name) { return p.locations[name] || null; },
+        useProgram() {}, uniform1i(location, value) { samplers.push([location, value]); values.set(location, value); } },
       BL: { dsbWater: { gpu(gl, state) { states.push(state); return { state,
         bind(program) { bindings.push(program); }, dispose() { disposed.push(state); } }; } } } };
+    // A fresh non-DSB scene still draws the full shader: its water samplers must not default to shadow unit 0.
+    runInNewContext(`${finish}\nfinishProgram(programs.mesh);`, context);
+    runInNewContext(body, context);
+    const cold = values.get(selected.u.uDSBSurface) === 7 && values.get(selected.u.uDSBDepth) === 8
+      && samplers.length === 2 && states.length === 0 && bindings.length === 0;
+    context.opts.dsbWater = {};
     runInNewContext(body, context); runInNewContext(body, context);
     const original = context.opts.dsbWater; context.opts.dsbWater = {};
     runInNewContext(body, context); const replacement = context.opts.dsbWater;
     context.opts.dsbWater = null; runInNewContext(body, context);
-    rows.push(bindings.length === 3 && bindings.every(p => p === selected)
+    const water = bindings.length === 3 && bindings.every(p => p === selected)
+      && samplers.length === 2
       && samplers.every(([location, value]) => location === selected.u[value === 7 ? "uDSBSurface" : "uDSBDepth"])
-      && states.length === 2 && disposed[0] === original && disposed[1] === replacement && context.dsbGPU === null);
+      && states.length === 2 && disposed[0] === original && disposed[1] === replacement && context.dsbGPU === null;
+    // A newly linked program after a context restore owns fresh locations and needs the same initialization.
+    const restored = makeProgram(); context.programs.mesh = restored;
+    runInNewContext("finishProgram(programs.mesh);", context); runInNewContext(body, context);
+    rows.push(cold && water && samplers.length === 4 && values.get(restored.u.uDSBSurface) === 7 && values.get(restored.u.uDSBDepth) === 8);
   }
   return { cases: rows.length, failures: rows.filter(ok => !ok).length };
 };
