@@ -2,7 +2,7 @@
 // writing through `box` and `put` into separate solid, hanging, decorative glow and lantern glow layers: general (`lanternPost`, `crate`, `coalCrate`,
 // `barrel`, `cart`, `banner`, `gauge`, `rubble`, `bracket`, `hanging`, `bulb`), lab (`die`,
 // `flaskBench`, `terminal`, `chalkboard`), the mirror (`monolith`, `runeStone`), lightning (`coil`,
-// `boards`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem from `hubModels.SIGN_ICONS`.
+// `boards`), the arcade (`cabinet`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem from `hubModels.SIGN_ICONS`.
 //
 // `set()` places pieces by quarter turns (`put`), strings sagging cables with lamps (`cable`) and `build`s
 // everything placed into one `solid`, one `hang`, decorative `glow` and lantern `lampGlow` mesh plus the `lights` its lanterns
@@ -29,6 +29,10 @@
   // arms, cloth, frames: no collision), `glow` (bolts and ore glints) and `lampGlow` (lantern glass).
   const U = 1 / 16;
   const SOLID = 0, HANG = 1, GLOW = 2, LAMP_GLOW = 3;
+  // Keep decorative uprights distinct inside a merged solid. Structures,
+  // workbenches and short stepping props retain their ordinary collision.
+  const RAGE_PASS = 64;
+  const RAGE_PASS_PIECES = new Set(["lanternPost", "banner", "chalkboard", "monolith", "coil", "gauge"]);
   const PALETTE = [
     "#8a5a32", "#a8703e", "#5c3a1e", "#43291a", // 0 wood, 1 wood light, 2 wood dark, 3 plank gap
     "#4a4d52", "#2c2e33", "#6f737a", // 4 iron, 5 iron dark, 6 iron light
@@ -60,6 +64,7 @@
   // several times cheaper to fill and probe than string-keyed voxel maps.
   const KEY = (x, y, z) => ((x + 2048) * 4096 + (y + 2048)) * 4096 + (z + 2048);
   const BOLT = ["...##", "..##.", ".##..", "#####", "..##.", ".##..", "##..."];
+  const INVADER = ["..#..#..", "...##...", "..####..", ".#.##.#.", "########", "#.####.#", "#.#..#.#", "...##..."];
   // A piece is three flat lists of x, y, z, colour per layer, built by its author through `put`.
   const author = (build) => {
     const layers = [[], [], [], []];
@@ -266,6 +271,23 @@
       for (const cx of [-8, 7]) for (let y = 0; y <= 5; y++) disc((x, yy, z) => put(SOLID, x, yy, z, y === 5 ? 1 : 2), 2.4, y, cx, 0);
       box(SOLID, -12, 11, 6, 8, -2, 1, (x, y) => y === 8 ? 1 : 2);
     }),
+    // Ooga Arcade: a cabinet with a lit screen and a coconut for a stick (0 timber, 1 stone).
+    cabinet: (v) => author((put, box) => {
+      const BODY = v & 1 ? [20, 21, 22] : [0, 1, 2], SCREEN = [30, 40][v & 1], PAINT = v & 1 ? 18 : 19;
+      const side = (x, y, z) => (x === -6 || x === 5) && (z === -5 || z === 4) ? BODY[2] : (y >> 2) & 1 ? BODY[1] : BODY[0];
+      box(SOLID, -6, 5, 0, 11, -5, 4, side);
+      box(SOLID, -6, 5, 12, 13, -5, 6, BODY[2]);
+      box(SOLID, -3, -3, 14, 15, 4, 4, 5);
+      put(SOLID, -3, 16, 4, 48);
+      put(SOLID, 1, 14, 4, 19);
+      put(SOLID, 3, 14, 4, 18);
+      box(SOLID, -6, 5, 14, 23, -5, 2, side);
+      for (let x = -6; x <= 5; x++) for (let y = 14; y <= 23; y++) {
+        const lit = x >= -4 && x <= 3 && y >= 15 && y <= 22 && INVADER[22 - y][x + 4] === "#";
+        put(lit ? GLOW : SOLID, x, y, 3, lit ? SCREEN : x < -4 || x > 3 || y < 15 || y > 22 ? BODY[2] : 36);
+      }
+      box(SOLID, -6, 5, 24, 27, -5, 4, (x, y, z) => y === 27 ? BODY[2] : z === 4 && (x + y) % 3 === 0 ? 16 : PAINT);
+    }),
     vine: (v) => author((put) => {
       const rand = mulberry32(800 + v);
       for (let k = 0; k < 3; k++) {
@@ -411,13 +433,16 @@
       lights.push((ox + x) * U, (oy + p[1]) * U, (oz + z) * U, kind === "coil" ? 4 : variant);
     };
     // Later pieces overwrite earlier voxels in the same cell; the hang layer never overwrites a solid one.
-    const write = (layer, x, y, z, c) => {
+    const write = (layer, x, y, z, c, ragePass = false) => {
       const k = KEY(x, y, z);
       if (layer !== SOLID && layers[SOLID].has(k)) return;
-      layers[layer].set(k, c);
+      // The palette fits below this bit. Carry it through run merging so a
+      // decorative face never absorbs an adjacent structural face's tag.
+      layers[layer].set(k, c | (layer === SOLID && ragePass ? RAGE_PASS : 0));
     };
     const put = (kind, x, y, z, turns = 0, variant = 0) => {
       const piece = pieceOf(kind, variant), mesh = MESHES[kind];
+      const ragePass = RAGE_PASS_PIECES.has(kind);
       const ox = Math.round(x / U), oy = Math.round(y / U), oz = Math.round(z / U), q = ((turns % 4) + 4) % 4;
       const step = boundsForStep(kind, variant);
       if (step) {
@@ -436,7 +461,7 @@
           if (mesh && (!mesh.keep || !mesh.keep(layer, lx, list[i + 1], lz))) continue;
           const rx = q === 0 ? lx : q === 1 ? lz : q === 2 ? -lx - 1 : -lz - 1;
           const rz = q === 0 ? lz : q === 1 ? -lx - 1 : q === 2 ? -lz - 1 : lx;
-          write(layer === LAMP_GLOW ? 5 : layer, ox + rx, oy + list[i + 1], oz + rz, list[i + 3]);
+          write(layer === LAMP_GLOW ? 5 : layer, ox + rx, oy + list[i + 1], oz + rz, list[i + 3], ragePass);
         }
       }
       light(kind, ox, oy, oz, q, variant);
@@ -479,14 +504,26 @@
       const map = layers[layer];
       if (!map.size) return null;
       const geo = { verts: [], faces: [], lines: [], voxel: new Float32Array([U, 0, 0, 0]) };
-      const has = (x, y, z) => map.has(KEY(x, y, z));
+      // Keep both shells closed where decorative and structural cells touch;
+      // filtering one must not leave a hole in the other one's collision.
+      let collisionTag = 0;
+      const has = (x, y, z) => {
+        const cell = map.get(KEY(x, y, z));
+        return cell !== undefined && (cell & RAGE_PASS) === collisionTag;
+      };
       const emit = (pts, c) => {
         const b = geo.verts.length / 3;
         for (const [x, y, z] of pts) geo.verts.push(x * U, y * U, z * U);
-        geo.faces.push({ i: [b, b + 1, b + 2, b + 3], color: RGB[c], emissive: layer === GLOW || layer === 4 || layer >= 5 ? EMISSIVE[c] || 0 : 0 });
+        const ragePass = !!(c & RAGE_PASS); c &= RAGE_PASS - 1;
+        const face = { i: [b, b + 1, b + 2, b + 3], color: RGB[c], emissive: layer === GLOW || layer === 4 || layer >= 5 ? EMISSIVE[c] || 0 : 0 };
+        if (ragePass) face.ragePass = true;
+        geo.faces.push(face);
       };
       voxelFaces((fn) => {
-        for (const [k, c] of map) fn(Math.floor(k / 16777216) - 2048, Math.floor(k / 4096) % 4096 - 2048, k % 4096 - 2048, c);
+        for (const [k, c] of map) {
+          collisionTag = c & RAGE_PASS;
+          fn(Math.floor(k / 16777216) - 2048, Math.floor(k / 4096) % 4096 - 2048, k % 4096 - 2048, c);
+        }
       }, has, emit);
       if (layer === 3 || layer === 4 || layer === 6) geo.swing = 1;
       return layer === GLOW || layer === 4 || layer >= 5 ? noShadow(geo) : geo;

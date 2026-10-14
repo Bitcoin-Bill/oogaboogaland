@@ -37,6 +37,14 @@
   let sceneCanvas = $("scene");
   const overlayCanvas = $("overlay");
   const overlayCtx = overlayCanvas.getContext("2d");
+  // The overlay's CSS size, read on resize rather than in drawFade: a read there follows the HUD
+  // writes of the scenes' overlays and forces a synchronous layout every faded frame (as in fx.js).
+  let overlayCssW = overlayCanvas.clientWidth, overlayCssH = overlayCanvas.clientHeight;
+  const overlayObserver = new ResizeObserver(() => {
+    overlayCssW = overlayCanvas.clientWidth;
+    overlayCssH = overlayCanvas.clientHeight;
+  });
+  overlayObserver.observe(overlayCanvas);
   const qualityLabel = $("quality");
   const curtain = $("curtain");
   const worldBlock = $("world-block"), worldBlockHeight = $("world-block-height");
@@ -194,6 +202,8 @@
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   if (coarse) for (const n of document.querySelectorAll("[data-intro] [data-coarse]")) n.textContent = n.dataset.coarse;
   const openIntro = () => intros.find((el) => !el.hidden) || null;
+  // The microphone's note, which names M only in a scene whose M mutes the microphone (`micKey`).
+  const showMic = () => window.BL.hud.showMic(window.BL.voice.stats, !!(active && active.micKey));
   const enter = (next, place = null) => {
     ctx.from = active ? active.id : null;
     ctx.place = place;
@@ -208,6 +218,7 @@
     next.enter(ctx);
     activeMeshRigs = next.renderOpts?.meshRigs === true;
     active = next;
+    showMic();
     sceneTime = 0;
     router.arrive(next.id, place, ctx.from === null);
     if (POSITION_DEBUG && next.id !== "hub") {
@@ -272,11 +283,11 @@
     fade = 1 - Math.min(1, transition.t / FADE);
     if (fade === 0) transition = null;
   };
-  // Fills in CSS pixels (clientWidth/clientHeight), not backing-store pixels.
+  // Fills in CSS pixels (clientWidth/clientHeight, cached above), not backing-store pixels.
   const drawFade = () => {
     overlayCtx.globalAlpha = fade;
     overlayCtx.fillStyle = "#000000";
-    overlayCtx.fillRect(0, 0, overlayCanvas.clientWidth, overlayCanvas.clientHeight);
+    overlayCtx.fillRect(0, 0, overlayCssW, overlayCssH);
     overlayCtx.globalAlpha = 1;
   };
 
@@ -436,6 +447,13 @@
       location.reload();
       return;
     }
+    // M mutes and unmutes the microphone while in voice, in the scenes that share voice and leave M free
+    // (`micKey`); a game's or a hall's own M still mutes its sound.
+    if (key === "m" && active.micKey && window.BL.voice.stats.enabled && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      window.BL.voice.toggle();
+      return;
+    }
     active.onKey(e);
   };
   const onVisibility = () => {
@@ -474,6 +492,7 @@
   showBlockHeight(chain.snapshot);
   if (!params.has("nosim") && params.get("mempool") !== "0") mempool.start();
   if (!params.has("nosim") && params.get("oogatron") !== "0") window.BL.oogatronLive.start();
+  if (!params.has("nosim") && params.get("totems") !== "0") window.BL.totemFeed.start();
   // `?chain=esplora` or `?chain=https://host/api` pins the provider; otherwise mempool.space leads
   // and three consecutive failures hand the session to Esplora on its own.
   if (!params.has("nosim") && params.get("chain") !== "0") chain.start({ source: params.get("chain") });
@@ -484,6 +503,7 @@
   // The roster's host dot and voice marks follow the room and voice, on whichever scene's roster is up.
   const unsubscribeRosterMarks = net.subscribeRoster(window.BL.hud.showVoices);
   const unsubscribeVoiceMarks = window.BL.voice.subscribe(window.BL.hud.showVoices);
+  const unsubscribeMic = window.BL.voice.subscribe(showMic);
   const accountReady = !params.has("nosim") && params.get("net") !== "0" ? net.start() : Promise.resolve();
   // A tab opened in the background waits for its first look before it holds any socket.
   if (document.hidden) {
@@ -608,7 +628,7 @@
         return world.level;
       }
     };
-    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "entranceLights", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "cloudFloorAt"]) {
+    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "entranceLights", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "totems", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "cloudFloorAt", "footsteps"]) {
       Object.defineProperty(ooga, key, { get: () => active.debug && active.debug[key], enumerable: true });
     }
     window.__ooga = ooga;
@@ -617,6 +637,7 @@
     destroyed = true;
     window.cancelAnimationFrame(raf);
     window.clearInterval(housekeepTimer);
+    overlayObserver.disconnect();
     unsubscribeDonations();
     unsubscribeBlockFeed();
     unsubscribeBlockHeight();
@@ -625,10 +646,12 @@
     mempool.dispose();
     chain.dispose();
     window.BL.oogatronLive.dispose();
+    window.BL.totemFeed.dispose();
     unsubscribeAccount();
     unsubscribeVoice();
     unsubscribeRosterMarks();
     unsubscribeVoiceMarks();
+    unsubscribeMic();
     window.BL.voice.dispose();
     net.dispose();
     window.removeEventListener("keydown", onKeyDown);
