@@ -707,7 +707,7 @@ export class Room extends DurableObject {
     if (!this.env || !this.env.DB) return true;
     try {
       const row = await this.env.DB.prepare("SELECT id, banned_at FROM players WHERE id = ?1").bind(p.id).first();
-      if (!row || row.banned_at) { if (this.players.get(p.id) === p) this.evict(p, "account-unavailable"); return false; }
+      if (!row || row.banned_at) { if (this.players.get(p.id) === p) this.evict(p, "revoked"); return false; }
       return true;
     } catch { return false; }
   }

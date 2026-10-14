@@ -12500,7 +12500,7 @@ const voiceAloneChecks = async () => {
   class Pc {constructor(){this.connectionState="connected";this.iceGatheringState="complete";this.localDescription={sdp:"v=0"};}addTransceiver(){return {mid:"0"};}async createOffer(){return {};}async createAnswer(){return {};}async setLocalDescription(){}async setRemoteDescription(){}addEventListener(){}removeEventListener(){}getTransceivers(){return [];}close(){}}
   class Audio {constructor(){this.muted=false;}pause(){}play(){return Promise.resolve();}}
   const fetch=async(url,o)=>{const op=url.split("/").pop(),body=JSON.parse(o.body);ops.push({op,mic:track.enabled});return {ok:true,json:async()=>op==="pull"?{tracks:body.ids.map((id,i)=>({id,mid:String(i+1)}))}:{sessionDescription:{}}};};
-  const context={window:{BL:{net:{setMuted:on=>netMuted.push(on),remotes:new Map()}},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){}},localStorage:{getItem:()=>null,setItem(){}},navigator:{mediaDevices:{getUserMedia:async()=>stream}},RTCPeerConnection:Pc,Audio,MediaStream:class{},fetch,Promise,JSON,Error,Map,Set,Float32Array,Math};
+  const context={window:{BL:{net:{state:{connectionToken:"synthetic"},setMuted:on=>netMuted.push(on),remotes:new Map()}},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){}},localStorage:{getItem:()=>null,setItem(){}},navigator:{mediaDevices:{getUserMedia:async()=>stream}},RTCPeerConnection:Pc,Audio,MediaStream:class{},fetch,AbortController,Promise,JSON,Error,Map,Set,Float32Array,Math};
   runInNewContext(source,context);
   const V=context.window.BL.voice,settle=()=>new Promise(r=>setTimeout(r,0)),read=()=>({alone:V.stats.alone,muted:V.stats.muted,mic:track.enabled});
   V.subscribe(st=>emits.push(st.alone));
@@ -13791,7 +13791,7 @@ const studioVoiceLifecycleProof = async () => {
   const late=fixture();late.deferPermission();const opening=late.voice.enable();late.voice.stop();const lateStream=late.makeStream();late.resolvePermission(lateStream);await opening;await drain();
   const permissionCancelled=lateStream.track.stops===1&&!late.voice.stats.publishing&&!late.voice.stats.enabled&&!late.calls.some(c=>c.op==="publish");late.voice.dispose();
   const rejoin=fixture();await rejoin.voice.enable();rejoin.voice.dropMic();await drain();const revoked=rejoin.streams[0].track.stops===1&&!rejoin.voice.stats.publishing&&rejoin.voice.stats.muted;
-  await rejoin.voice.enable();const explicitUnmute=revoked&&rejoin.gum===2&&rejoin.voice.stats.publishing&&!rejoin.voice.stats.muted&&rejoin.streams[1].track.enabled;
+  await rejoin.voice.enable();const heldAlone=rejoin.voice.stats.alone&&!rejoin.streams[1].track.enabled;rejoin.voice.setPeers([71]);await drain();const explicitUnmute=heldAlone&&revoked&&rejoin.gum===2&&rejoin.voice.stats.publishing&&!rejoin.voice.stats.muted&&!rejoin.voice.stats.alone&&rejoin.streams[1].track.enabled;
   rejoin.voice.toggle();const mutedBefore=rejoin.voice.stats.muted;await rejoin.voice.restart();await drain();
   const restartMute=mutedBefore&&rejoin.voice.stats.publishing&&rejoin.voice.stats.muted&&!rejoin.streams[1].track.enabled&&rejoin.gum===2;rejoin.voice.dispose();await drain();
   const stale=fixture();stale.deferPublish();const publishing=stale.voice.enable();await drain();const reachedPublish=stale.calls.some(c=>c.op==="publish");stale.voice.cancelPreflight();const previewCancelCannotStopPublication=stale.streams[0].track.stops===0;stale.voice.dropMic();stale.resolvePublish();await publishing;await drain();
@@ -13907,6 +13907,22 @@ const studioPreviewRangeProof = async () => {
     empty:previewResponse(Buffer.alloc(0),"video/mp4",{headers:{range:"bytes=0-"}},true).status===416};
 };
 
+// Listen-only visitors never opted in to speak, so the HUD shows them no microphone status; an opted-in speaker still does.
+const listenOnlyMicStatusProof = async () => {
+  const source=await readFile(join(root,"src/js/hud.js"),"utf8"),start=source.indexOf("  const MIC_ON_MS"),end=source.indexOf("\n  };\n",start)+5;
+  if(start<0||end<5)throw Error("showMic missing");
+  const note={hidden:true,textContent:"",dataset:{}},ctx={window:{matchMedia:()=>({matches:false}),setTimeout:()=>1,clearTimeout(){}},$:()=>note};
+  runInNewContext("const $=globalThis.$;"+source.slice(start,end)+";globalThis.showMic=showMic;",ctx);
+  const base={enabled:true,joining:false,publishing:false,micWanted:false,muted:false,alone:false};
+  const quiet=v=>{ctx.showMic({...base,...v},true);return note.textContent===""&&note.hidden;};
+  const listening=quiet({}),listeningAlone=quiet({alone:true}),listeningMuted=quiet({muted:true}),afterDrop=quiet({muted:true,alone:false});
+  ctx.showMic({...base,micWanted:true,publishing:true,alone:true},true);const speakerAlone=note.textContent==="Alone \u00b7 mic off"&&!note.hidden;
+  ctx.showMic({...base,micWanted:true,publishing:true,muted:true},true);const speakerMuted=note.textContent.startsWith("Mic muted")&&!note.hidden;
+  ctx.showMic({...base,micWanted:true,publishing:true},true);const speakerOn=note.textContent==="Mic on";
+  const back=quiet({});
+  return {listening,listeningAlone,listeningMuted,afterDrop,speakerAlone,speakerMuted,speakerOn,back};
+};
+
 const unitChecks = async () => {
   const previewRange=await studioPreviewRangeProof();
   record("Studio preview: local media single-byte ranges, HEAD, bounds and ignored unsupported requests",Object.values(previewRange).every(Boolean),JSON.stringify(previewRange));
@@ -13916,6 +13932,8 @@ const unitChecks = async () => {
   record("Studio catalogue: bounded reviewed sources have local media, captions and transcripts with immutable unique identities",Object.values(catalogue).every(Boolean),JSON.stringify(catalogue));
   const voiceLifecycle=await studioVoiceLifecycleProof();
   record("Studio voice lifecycle: receive-only restart, cancelled capture/publication, local preflight, muted restart and aggregate autoplay recovery",Object.values(voiceLifecycle).every(Boolean),JSON.stringify(voiceLifecycle));
+  const listenOnlyMic=await listenOnlyMicStatusProof();
+  record("Studio HUD: listen-only visitors see no mic status (no Mic on, Alone or Mic muted); opted-in speakers still do",Object.values(listenOnlyMic).every(Boolean),JSON.stringify(listenOnlyMic));
   const studio=await studioSessionProof();
   record("Studio session: receive-only readiness and blocked sound, Q&A consent, source selection, buffering and deterministic cleanup",Object.values(studio).every(Boolean),JSON.stringify(studio));
   const rage = await gorillaRageProof();

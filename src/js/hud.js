@@ -1868,8 +1868,10 @@
   const MIC_ON_MS = 1500, MIC_COARSE = window.matchMedia("(pointer: coarse)").matches;
   let micShown = "", micTimer = 0;
   const showMic = (voice, keyed) => {
-    const muted = voice.muted && (voice.enabled || voice.joining), alone = !muted && voice.enabled && voice.alone;
-    const shown = muted ? keyed && !MIC_COARSE ? "Mic muted \u00b7 M to unmute" : "Mic muted \u00b7 Unmute in the panel" : alone ? "Alone \u00b7 mic off" : voice.enabled ? "Mic on" : "";
+    // Listen-only visitors (never opted in to speak) see no microphone status at all.
+    const speaker = !!voice.micWanted;
+    const muted = speaker && voice.muted && (voice.publishing || voice.joining), alone = !muted && speaker && voice.alone;
+    const shown = muted ? keyed && !MIC_COARSE ? "Mic muted \u00b7 M to unmute" : "Mic muted \u00b7 Unmute in the panel" : alone ? "Alone \u00b7 mic off" : speaker && voice.publishing ? "Mic on" : "";
     if (shown === micShown) return;
     const note = $("mic-note"), was = micShown;
     micShown = shown;

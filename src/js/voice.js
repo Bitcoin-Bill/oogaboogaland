@@ -34,12 +34,12 @@
   const subs = new Map();
   // Each wanted voice's publication count from the room: a new count is a microphone published again.
   const wantedGen = new Map();
-  const stats = { enabled: false, muted: false, alone: false, speaking: false, joining: false, peers: 0, hearing: 0, error: "", micError: "", publishing: false, blocked: false, ready: false, preflight: false, preflightPending: false, permission: "unknown", deviceId: "", receiveLevel: 1, micLevel: 0, receiveState: "off" };
+  const stats = { enabled: false, muted: false, alone: false, micWanted: false, speaking: false, joining: false, peers: 0, hearing: 0, error: "", micError: "", publishing: false, blocked: false, ready: false, preflight: false, preflightPending: false, permission: "unknown", deviceId: "", receiveLevel: 1, micLevel: 0, receiveState: "off" };
   Object.defineProperty(stats, "receiveError", { enumerable: true, get: () => stats.error });
   const samples = new Float32Array(SAMPLES);
   const mutedLogins = new Set();
   let mic = null, pubPc = null, subPc = null, desired = [], queue = Promise.resolve();
-  let lifecycle = 0, micGeneration = 0, microphoneWanted = false;
+  let lifecycle = 0, micGeneration = 0, microphoneWanted = stats.micWanted = false;
   let cleanup = Promise.resolve(), receiverOpening = null;
   const requests = new Set();
   const current = (token) => { if (token !== lifecycle) throw new Error("voice operation cancelled"); };
@@ -326,7 +326,7 @@
     activate();
     if (stats.joining || stats.publishing) return;
     const token = lifecycle, generation = ++micGeneration;
-    stats.joining = true; stats.micError = ""; microphoneWanted = true; stats.permission = "requesting"; stats.preflight = false; stats.preflightPending = false;
+    stats.joining = true; stats.micError = ""; microphoneWanted = stats.micWanted = true; stats.permission = "requesting"; stats.preflight = false; stats.preflightPending = false;
     if (!preserveMute) stats.muted = false;
     emit();
     let openingReceiver = false;
@@ -396,7 +396,9 @@
 
   // The microphone sends only when this visitor has not muted it and the room lists someone to hear it.
   const gate = () => {
-    stats.alone = (stats.enabled || stats.joining) && desired.length === 0;
+    // Only a visitor who opted in to speak (passed the mic test and permission step) is ever "alone";
+    // a listen-only visitor has no microphone to hold off.
+    stats.alone = microphoneWanted && (stats.publishing || stats.joining) && desired.length === 0;
     if (mic) for (const t of mic.getAudioTracks()) t.enabled = !stats.muted && !stats.alone;
   };
 
@@ -415,7 +417,7 @@
 
   // Leaving voice for good (sign-out, another tab took over): the microphone is released too.
   const stop = () => {
-    lifecycle++; micGeneration++; abortRequests(); microphoneWanted = false;
+    lifecycle++; micGeneration++; abortRequests(); microphoneWanted = stats.micWanted = false;
     const was = stats.enabled || stats.joining || !!pubPc || !!subPc;
     stats.joining = false; teardown();
     if (mic) for (const t of mic.getTracks()) t.stop();
@@ -435,14 +437,14 @@
 
   // Revocation releases hardware while keeping receive-only audio available.
   const dropMic = () => {
-    micGeneration++; microphoneWanted = false; stats.joining = false;
+    micGeneration++; microphoneWanted = stats.micWanted = false; stats.joining = false;
     if (mic) for (const track of mic.getTracks()) track.stop();
     mic = null; stats.preflight = false; stats.preflightPending = false; stats.micLevel = 0;
     if (stats.permission === "requesting") stats.permission = "unknown";
     if (micMeter) micMeter.source.disconnect();
     micMeter = null;
     if (pubPc) pubPc.close();
-    pubPc = null; stats.publishing = false; stats.speaking = false;
+    pubPc = null; stats.publishing = false; stats.speaking = false; stats.alone = false;
     stats.muted = true; BL.net.setMuted(true);
     cleanup = api("unpublish").catch(() => {});
     emit();
