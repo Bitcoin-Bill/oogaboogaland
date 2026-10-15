@@ -3333,7 +3333,7 @@
     if (inner >= MEADOW_OUTER) return false;
     const bounds = BL.scene.boundsOf(owner.node.geometry), height = bounds.max[1] - bounds.min[1];
     // Random probes keep ordinary respawns varied. If they miss every safe
-    // spot, a bounded spiral covers the meadow. The original reservation is
+    // spot, a bounded spiral covers the meadow. The last reserved position is
     // the final fallback, still subject to every live collision/occupancy check.
     for (let attempt = 0; attempt <= 336; attempt++) {
       const fallback = attempt - 80;
@@ -4227,6 +4227,17 @@
       rec.throwing = false; rec.time = 0; entry.motion.throwProgress = 0;
       return false;
     }
+    const heldHeight = rec.autonomous && !throwing ? rec.safeY : handY;
+    const ceiling = throwing ? ceilingAt(p.x, p.z, heldHeight, cave) : Infinity;
+    const height = throwing ? Math.min(heldHeight, ceiling - cave.bodyHeight - Math.max(0, cave.viewLift)) : heldHeight;
+    // Keep the roof outside the support query's step allowance.
+    const supportY = Math.min(heldHeight, ceiling - STEP_MAX - 1e-6);
+    // Query support before lowering the release. An upright body that cannot
+    // fit here stays held, rather than querying through this floor to a lower level.
+    if (throwing && height < playerSupportAt(p.x, p.z, supportY, supportY, cave, false, true, rec.autonomous)) {
+      rec.throwing = false; rec.time = 0; entry.motion.throwProgress = 0;
+      return false;
+    }
     rec.cave = null; rec.throwing = false; rec.posed = false;
     entry.motion.dragging = false; entry.motion.throwProgress = 0;
     if (rec.warpVisit) {
@@ -4242,12 +4253,9 @@
     // Retain the latest clear standing point through a drag, jump or swing;
     // cancellation returns there even while the held body is off the floor.
     if (rec.autonomous && !throwing) { p.x = rec.safeX; p.y = rec.safeY + cave.baseY; p.z = rec.safeZ; }
-    const heldHeight = rec.autonomous && !throwing ? rec.safeY : handY;
     // The held body is horizontal; standing it up at the same ankle height
     // can put its head through a low roof. Fit it below that ceiling before
     // asking for support, or the voxel query can choose the roof as its floor.
-    const height = throwing ? Math.min(heldHeight, ceilingAt(p.x, p.z, heldHeight, cave)
-      - cave.bodyHeight - Math.max(0, cave.viewLift)) : heldHeight;
     cave.leap.rageThrown = throwing && rec.autonomous;
     const floor = playerSupportAt(p.x, p.z, height, height, cave, false, true, cave.leap.rageThrown);
     cave.hop = Math.max(0, height - floor);

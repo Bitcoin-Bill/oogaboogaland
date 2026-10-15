@@ -915,25 +915,23 @@
       for (const l of body.lines) geo.lines.push({ ...l, i: l.i.slice() });
       if (body.normals) for (let i = 0; i < body.normals.length; i++) geo.normals.push(body.normals[i]);
     } else if (body) flatInto(geo, body);
-    // Decoration renders normally, but visibility and outlines use the underlying body.
-    // Face tags survive merge and in-place transforms without a second mesh.
-    const detailStart = geo.faces.length;
     grow(padNormals(geo));
-    for (let i = detailStart; i < geo.faces.length; i++) geo.faces[i].visibility = false;
     geo.normals = Float32Array.from(padNormals(geo).normals);
     if (body && body.castShadow === false) geo.castShadow = false;
     return geo;
   };
   // A vine through `points` ([x, y, z] each) tapering from radius r0 to r1 in six-sided smooth segments, written into
   // a `withJungle` geometry. "#2f5424" is the darker vine the Mempool bridge slings under its deck. A repeated point
-  // (two runs joined at a post) adds nothing.
-  const liana = (geo, points, r0 = 0.04, r1 = r0, color = JUNGLE_VINE) => {
-    const rgb = rgbOf(color), n = points.length - 1;
+  // (two runs joined at a post) adds nothing. Structural cords remain visibility blockers;
+  // decorative garlands pass `visibility: false` through the final argument.
+  const liana = (geo, points, r0 = 0.04, r1 = r0, color = JUNGLE_VINE, visibility = true) => {
+    const rgb = rgbOf(color), n = points.length - 1, from = geo.faces.length;
     for (let i = 0; i < n; i++) {
       const a = points[i], b = points[i + 1];
       if (Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) < 1e-6) continue;
       limb(geo, a[0], a[1], a[2], b[0], b[1], b[2], r0 + (r1 - r0) * i / n, r0 + (r1 - r0) * (i + 1) / n, 6, rgb);
     }
+    if (!visibility) for (let i = from; i < geo.faces.length; i++) geo.faces[i].visibility = false;
     return padNormals(geo);
   };
   // The points of a vine slung from a to b in `steps` segments, sagging `sag` at its middle.
@@ -945,7 +943,7 @@
   // round that direction and lit by it tipped up, as if from out of a plant; `tones` dark to light. About 12
   // triangles a leaf, written into a `withJungle` geometry.
   const sprig = (geo, x, y, z, dx, dy, dz, count, size, rand, tones = JUNGLE_LEAVES) => {
-    const dl = Math.hypot(dx, dy, dz) || 1, rgb = tones.map(rgbOf);
+    const dl = Math.hypot(dx, dy, dz) || 1, rgb = tones.map(rgbOf), from = geo.faces.length;
     dx /= dl; dy /= dl; dz /= dl;
     const ny0 = Math.abs(dy) * 0.5 + 0.55, nl = Math.hypot(dx, ny0, dz), nx = dx / nl, ny = ny0 / nl, nz = dz / nl;
     // A frame across the direction to spread the leaves in.
@@ -965,6 +963,8 @@
       const band = 1 + Math.floor(rand() * (rgb.length - 1));
       pointedLeaf(geo, x, y, z, ax, ay, az, wx / wl, wy / wl, wz / wl, nx, ny, nz, size * (0.8 + rand() * 0.4), rgb[band], rgb[band - 1]);
     }
+    // Only leaf cards are decorative; solids added by the same grow callback remain blockers.
+    for (let i = from; i < geo.faces.length; i++) geo.faces[i].visibility = false;
     return geo;
   };
   // A leafy vine along `points`, as the Mempool bridge's rails: sprigs of two or three leaves every `every` metres
@@ -972,7 +972,7 @@
   // holds them level, 1 straight down. Garlands for beams, signs, rails and cabinet tops, and the cords of a net.
   // `rand` (a `mulberry32`) is required, as for `sprig`: seed each garland its own so no two hang alike.
   const garland = (geo, points, { r = 0.035, color = JUNGLE_VINE, every = 0.3, size = 0.24, droop = 0.6, out = null, rand, tones = JUNGLE_LEAVES } = {}) => {
-    liana(geo, points, r, r * 0.8, color);
+    liana(geo, points, r, r * 0.8, color, false);
     let run = 0, next = every / 2;
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1], tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2], len = Math.hypot(tx, ty, tz);
