@@ -2462,10 +2462,18 @@ const { canopyCertificateProbe, canopyPileProbe } = (() => {
       const triangles = faces => faces.reduce((n, f) => n + f.i.length - 2, 0);
       return { drawn: triangles(g.faces), queried: triangles(g.faces.filter(f => f.visibility !== false)) };
     });
-    const dressed = BL.hubModels.withJungle(box(1, 1, 1), g => BL.hubModels.sprig(g, 0, 0.5, 0, 1, 1, 0, 5, 0.3, BL.math.mulberry32(7)));
+    const H = BL.hubModels, rand = BL.math.mulberry32(7);
+    const dressed = H.withJungle(box(1, 1, 1), g => {
+      H.flatInto(g, BL.models.moved(box(1, 1, 1), 3, 0, 0));
+      H.liana(g, [[0, 1, 0], [1, 1, 0]], 0.08);
+      H.sprig(g, 0, 0.5, 0, 1, 1, 0, 5, 0.3, rand);
+      H.garland(g, [[0, 2, 0], [1, 2, 0]], { rand });
+    });
     const merged = BL.models.moved(BL.models.turnedY(BL.models.merge(dressed), 0.4), 2, 3, 4);
     const bodyFaces = merged.faces.filter(f => f.visibility !== false).length;
-    return { rows, failures, models, dressing: bodyFaces === 6 && merged.faces.length > bodyFaces, disposed: objects.stats.registered === 0 };
+    const cord = H.withJungle(null, g => H.liana(g, [[0, 0, 0], [1, 0, 0]], 0.08));
+    return { rows, failures, models, dressing: bodyFaces === 18 && merged.faces.length > bodyFaces
+      && cord.faces.length > 0 && cord.faces.every(f => f.visibility !== false), disposed: objects.stats.registered === 0 };
   };
 
   const canopyPileProbe = () => {
@@ -6890,16 +6898,13 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
   record("birds-eye combat: the pile, HQ hearth and basement center align on screen at every selected floor despite their different elevations", rows.every(r => r.orthoMix === 1 && r.centerError < 0.001), JSON.stringify(rows.map(({ name, centerError, orthoMix }) => ({ name, centerError, orthoMix }))));
   record("birds-eye combat: cave roofs, underground cuts and weather follow the full camera blend through carry and shoulder handoffs, including reversal without a reset", state.transitions.length === 8
     && state.transitions.every(r => r.immediate < 1e-6 && r.mixStep < 0.08 && r.cutStep < 5 && r.rockError < 1e-6 && r.capError < 1e-5 && r.maxRegions <= 8)
-    // Carry retains an overhead eye and its complete basement cut. The
-    // shoulder handoff moves below the ceiling and restores the room roof.
-    && state.transitions.slice(0, 4).every(r => r.after.fade === 1 && r.after.cuts.length > 0 && r.fadeStep === 0 && r.span === 0)
-    && state.transitions[4].after.fade === 0 && !state.transitions[4].after.cuts.length
-    && state.transitions[5].after.fade === 1 && state.transitions[5].after.cuts.length > 0
-    && state.transitions[4].after.eyeY < state.transitions[4].after.ceiling
+    // Both basement handoffs retain the chosen above-ceiling eye and its stable cut.
+    && state.transitions.slice(0, 6).every(r => r.after.fade === 1 && r.after.cuts.length > 0 && r.fadeStep === 0 && r.span === 0)
+    && state.transitions[4].after.eyeY > state.transitions[4].after.ceiling
     && state.transitions.slice(6).every(r => r.fadeError < 1e-6 && r.span > 1 && r.changed >= 10 && r.direction && r.blended >= 10)
     && state.transitions[1].after.mix > 0 && state.transitions[1].after.mix < 1
     && state.transitions[2].before.mix === state.transitions[1].after.mix
-    && [0, 2].every(i => state.transitions[i].after.mix === 0 && state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0)
+    && [0, 2, 4].every(i => state.transitions[i].after.mix === 0 && state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0)
     && [6].every(i => state.transitions[i].after.mix === 0 && state.transitions[i].after.fade === 0 && !state.transitions[i].after.cuts.length)
     && [3, 5, 7].every(i => state.transitions[i].after.mix === 1 && state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0)
     && state.transitions[4].after.mode === "shoulder" && state.transitions[5].after.mode === "birds-eye", JSON.stringify(state.transitions));
@@ -9200,7 +9205,7 @@ scene("hub", { label: "gorilla lab carry jump", query: "character=gorilla-portla
     for (let i = 0; i < 17; i++) B.advance(1 / 60, 1 / 60);
     const thrownInAir = !cave.grabbedBy && e.drive.airborne && cave.hop > 0 && Math.hypot(cave.leap.vx, cave.leap.vz) > 1;
     key("keyup", "g", "KeyG"); key("keyup", "w", "KeyW"); key("keyup", "Shift", "ShiftLeft");
-    return { lab: startedInLab, aisleError, ran, grabbed, first, peak, second, charged, heldThroughRelease, thrownInAir,
+    return { startedInLab, lab: e.motion.lab, aisleError, ran, grabbed, first, peak, second, charged, heldThroughRelease, thrownInAir,
       releaseHead: cave.root.position.y - cave.baseY + cave.bodyHeight + Math.max(0, cave.viewLift),
       releaseCeiling: mouth.floorY + B.headquarters.entropyLab.opening.ceilingY,
       smashUnchanged: e.smashSerial === serial };
@@ -9325,7 +9330,7 @@ scene("hub", { label: "gorilla lab carry jump", query: "character=gorilla-portla
     } finally { C.debugRage(e, false); B.pilot.release(true); code.dispose(); }
   })()`);
   record("gorilla lab carry jump: Shift+W+G keeps a running grab through both jumps and a charged midair throw without a smash",
-    state.lab && state.aisleError < 0.03 && state.ran && state.grabbed && state.first && state.peak > 0.5 && state.second && state.charged && state.heldThroughRelease
+    state.startedInLab && state.lab && state.aisleError < 0.03 && state.ran && state.grabbed && state.first && state.peak > 0.5 && state.second && state.charged && state.heldThroughRelease
       && state.thrownInAir && state.releaseHead <= state.releaseCeiling + 1e-6 && state.smashUnchanged && rage.began && rage.queued && rage.baseline?.inside && rage.baseline.lab
       && rage.baseline.gait === "upright" && rage.baseline.clipped > 0
       && rage.setup?.mapReady && rage.setup.gorillaInside && rage.setup.targetInside && rage.setup.eligible && !rage.setup.warpRequired && rage.setup.targetClear && rage.setup.gorillaClear
@@ -11136,6 +11141,54 @@ scene("dsb", { label: "dsb zuzu conversation", url: hubPage(dist), steps: [{ nam
   })()`);
   record("dsb chat: fixed HTTP transport rejects unsafe responses and defaults to mock", transport);
   record("retained Zuzu components: replacement DSB deliberately has no live cat or conversation", await b.evaluate('!__ooga.dsb.zuzu && !__ooga.dsb.conversation && !!BL.dsbAgent && !!BL.dsbConversation'));
+  const agentContract = await b.evaluate(`(() => {
+    const S = BL.scene, parent = S.createNode(), land = BL.dsbModels.build(), targets = new Set();
+    // A small real obstacle forces a waypoint detour between perch and arrival.
+    const clearAt = (x, z, r) => !(x > -9 - r && x < -7 + r && z > 19 - r && z < 24 + r);
+    const z = BL.dsbAgent.create({ parent, landmarks: land.landmarks, clearAt,
+      input: { add: n => targets.add(n), remove: n => targets.delete(n) },
+      brain: { observe() {}, dispose() {} } });
+    const sense = { name: "YellowBrokeIt", x: -11, y: 0, z: 21, food: 1, active: true };
+    let time = 4, result;
+    try {
+      Object.assign(z.root.position, { x: -11, z: 23 }); z.update(0, time, sense);
+      const snap = z.snapshot(); let id = snap.nextRequestId;
+      const ask = (type, extra = {}) => z.request({ visit: snap.visit, id: id++, at: time, type, ...extra });
+      const bad = [ask("eval"), ask("walk_to", { destination: "hub" }), ask("look_at", { entity: "window" }),
+        ask("say", { text: "hi", code: "x" }), ask("say", { text: "x".repeat(161) }),
+        ask("say", { text: "old", at: time - 4 }), ask("say", { text: "old visit", visit: snap.visit - 1 })];
+      const valid = ask("say", { text: "A perfectly ordinary future model sentence." });
+      const replay = z.request({ visit: snap.visit, id: id - 1, at: time, type: "stop_following" });
+      const movement = [ask("stop_following"), ask("walk_to", { destination: "arrival" })];
+      const burst = []; for (let i = 0; i < 12; i++) burst.push(ask("look_at", { entity: "player" }));
+      let safe = true, detour = false;
+      for (let i = 0; i < 600; i++) {
+        time += 0.05; z.update(0.05, time, sense); const p = z.root.position;
+        safe &&= clearAt(p.x, p.z, 0.42) && Math.hypot(p.x, p.z) <= 29.01 && p.z >= 6 && p.z <= 26;
+        detour ||= p.z < 18.6;
+      }
+      const arrived = Math.hypot(z.root.position.x + 4, z.root.position.z - 23) < 0.3;
+      sense.x = z.root.position.x; sense.z = z.root.position.z - 2; z.update(0, time + 1, sense);
+      const p = z.root.position, tomato = z.tomato(p.x, 0.65, p.z - 1, p.x, 0.65, p.z + 1);
+      z.projectile(p.x, 0.65, p.z - 1, p.x, 0.65, p.z + 1); z.event("weapon_hit"); z.event("food_activity");
+      const events = z.snapshot();
+      for (let i = 0; i < 80; i++) z.event("tomato_hit");
+      const memory = z.snapshot();
+      result = { bad, valid, replay, movement, limited: burst.includes("rate_limited"), safe, detour, arrived, tomato,
+        events: events.events.map(e => e.type), hits: events.self.weaponHits, shots: events.self.nearbyShots,
+        count: memory.events.length, tomatoHits: memory.self.tomatoHits,
+        ordered: memory.events.every((e, i, a) => !i || e.seq === a[i - 1].seq + 1),
+        frozen: Object.isFrozen(memory) && Object.isFrozen(memory.events[0]) };
+    } finally { z.dispose(); while (land.root.children.length) S.removeChild(land.root, land.root.children[0]); }
+    return { ...result, disposed: z.disposed && targets.size === 0 && parent.children.length === 0 };
+  })()`);
+  record("dsb zuzu: strict action validation rejects unsafe, stale, duplicate and excessive requests", agentContract.valid === "accepted"
+    && agentContract.bad.every(v => v !== "accepted") && agentContract.replay === "stale" && agentContract.limited
+    && agentContract.movement.every(v => v === "accepted"), JSON.stringify(agentContract));
+  record("dsb zuzu: waypoint walk detours around solid obstacles and reaches arrival inside safe bounds", agentContract.safe && agentContract.detour && agentContract.arrived, JSON.stringify(agentContract));
+  record("dsb zuzu: tomato, weapon and food observations retain events without unbounded memory", agentContract.tomato && agentContract.hits === 1 && agentContract.shots === 1
+    && ["tomato_hit", "weapon_hit", "shot_nearby", "food_seen", "food_activity"].every(type => agentContract.events.includes(type))
+    && agentContract.count === 64 && agentContract.tomatoHits === 81 && agentContract.ordered && agentContract.frozen && agentContract.disposed, JSON.stringify(agentContract));
   try {
     await mountZuzuConversationFixture(b);
     const approachTalk = async () => b.evaluate('__zuzuFixture.prepare()');
@@ -11227,12 +11280,34 @@ scene("dsb", { label: "dsb zuzu conversation", url: hubPage(dist), steps: [{ nam
 for (const ready of [false, true]) scene("dsb", { label: "entrance audio " + ready, url: hubPage(dist, "scene=dsb&entrance=1"), steps: [{ name: "dsb entrance " + (ready ? "audio enabled" : "audio blocked"), why: "regression: blocked audio must not block entrance movement", run: async (b) => {
     await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     if (ready) {
+      await b.evaluate(`(() => {
+        const original = AudioContext.prototype.createBufferSource, gainOriginal = AudioContext.prototype.createGain, audio = __ooga.audio, fade = audio.fade;
+        window.__entranceLeave = { original, gainOriginal, gains: [], context: null, fade: 0 };
+        AudioContext.prototype.createGain = function() { const gain = gainOriginal.call(this); __entranceLeave.gains.push(gain); return gain; };
+        AudioContext.prototype.createBufferSource = function() { window.__entranceLeave.context = this; return original.call(this); };
+        audio.fade = seconds => { window.__entranceLeave.fade = seconds; fade(seconds); };
+      })()`);
       const p = await b.evaluate(`(() => { const r = document.getElementById("dsb-start-audio").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
       await b.click(p.x, p.y);
       record("dsb entrance: Enter with sound decodes audio", await untilPage(b, "B.audio.ready && B.audio.musicDuration > 0", 10000));
     } else {
       // Fault injection: decoding never becomes ready and playback never finishes.
       await b.evaluate(`Object.defineProperty(__ooga.audio, "ready", { get: () => false });`);
+    }
+    if (ready) {
+      const glanceAtCue = cue => b.evaluate(`(() => {
+        const B = __ooga; window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+        try {
+          for (let i = 0; i < 1200 && B.audio.cue < ${cue}; i++) B.advance(1 / 60, 1 / 60);
+          B.advance(0.5, 1 / 60);
+          return { cue: B.audio.cue, x: B.camera.position.x, behind: B.camera.position.z - B.dsb.avatar.root.position.z };
+        } finally { window.dispatchEvent(new KeyboardEvent("keyup", { key: "w" })); }
+      })()`);
+      const left = await glanceAtCue(0);
+      await untilPage(b, "!B.audio.pending", 40000);
+      const right = await glanceAtCue(1);
+      record("dsb passage camera: real voice starts alternate gentle glances behind the Ooga", left.cue === 0 && right.cue === 1
+        && left.x < 1.7 && right.x > 1.7 && left.behind > 3 && right.behind > 3, JSON.stringify({ left, right }));
     }
     const moved = await b.evaluate(`(() => {
       const B = __ooga, before = B.dsb.entrance.progress;
@@ -11262,12 +11337,20 @@ for (const ready of [false, true]) scene("dsb", { label: "entrance audio " + rea
       const B = __ooga;
       Object.defineProperty(B.audio, "pending", { get: () => true });
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
-      B.advance(Math.max(24, B.audio.duration) + 1, 0.1);
+      B.advance((1 - B.dsb.entrance.progress) * (B.audio.ready ? B.audio.duration : 24) + 0.1, 0.1);
       window.dispatchEvent(new KeyboardEvent("keyup", { key: "w" }));
       return { phase: B.dsb.entrance.phase, progress: B.dsb.entrance.progress, pending: B.audio.pending };
     })()`);
     record("dsb entrance: completes despite pending audio, ready=" + ready, finished.phase === "done" && finished.progress === 1 && finished.pending, JSON.stringify(finished));
-
+    if (ready) {
+      const gainBefore = await b.evaluate('__entranceLeave.gains[0].gain.value');
+      await b.sleep(300);
+      record("dsb arrival audio: finishing fades the entrance soundtrack before retirement", await b.evaluate(`__entranceLeave.fade > 0 && __entranceLeave.context.state === "running" && __entranceLeave.gains[0].gain.value < ${gainBefore}`));
+      await b.evaluate(`__ooga.go("bifrost"); __ooga.advance(0.6, 1 / 60)`);
+      await untilPage(b, 'B.scene === "bifrost" && !B.transitioning', 15000);
+      record("dsb audio: leaving the scene closes its entrance context and clears the body class", await b.evaluate('__entranceLeave.context?.state === "closed" && !document.body.classList.contains("dsb-active")'));
+      await b.evaluate(`AudioContext.prototype.createBufferSource = __entranceLeave.original; AudioContext.prototype.createGain = __entranceLeave.gainOriginal; delete window.__entranceLeave;`);
+    }
   } }] });
 scene("dsb", { label: "dsb feeds and audio", url: hubPage(src, "scene=dsb"), steps: [{ name: "dsb feeds and audio", why: "contract: preserve DSB scene behavior independently of the hub entrance", run: async (b) => {
   const feed = await b.evaluate(`(async () => {
@@ -11325,7 +11408,7 @@ scene("dsb", { label: "dsb feeds and audio", url: hubPage(src, "scene=dsb"), ste
     const sound = await b.evaluate(`(() => { __entranceAudio.update(0, 2); __entranceAudio.update(1, 3); return { starts: __dsbSoundProbe.starts, fired: Array.from(__entranceAudio.fired) }; })()`);
     record("dsb audio: four supplied clips play sequentially once despite reversing", sound.starts.length === 4 && sound.fired.every((f) => f === 1) && sound.starts.every((s, i, a) => !i || s.at >= a[i - 1].at + a[i - 1].duration - 0.01), JSON.stringify(sound));
     await b.evaluate(`__entranceAudio.dispose()`);
-    record("dsb audio: leaving closes its audio context", await b.evaluate(`__dsbSoundProbe.context.state === "closed"`));
+    record("dsb audio: component disposal closes its audio context", await b.evaluate(`__dsbSoundProbe.context.state === "closed"`));
   } finally { await b.evaluate(`__entranceAudio?.dispose(); delete window.__entranceAudio; AudioContext.prototype.createBufferSource = __dsbSoundProbe.original; delete window.__dsbSoundProbe;`); }
 } }] });
 scene("dsb", { label: "dsb shared player", url: hubPage(dist), steps: [{ name: "dsb shared player", why: "contract: preserve DSB scene behavior independently of the hub entrance", run: async (b) => {
@@ -11436,7 +11519,7 @@ for (const backend of ["webgl2", "canvas2d"]) scene("dsb", { label: `dsb land ${
     && state.arrival === "arrival" && state.done === "done" && state.mode === "shoulder" && state.same
     && state.clearance >= 1 && state.samples >= 30 && state.travel > 60 && state.drift < .01 && state.controlsClear && !state.arrivalClass, JSON.stringify(state));
   await dsbExit(b);
-  record("dsb land " + backend + ": Portara returns to Bifrost with a clean console", await b.evaluate('__ooga.scene === "bifrost" && !__ooga.transitioning') && b.logs.length === 0, JSON.stringify(await b.evaluate('({scene:__ooga.scene,transitioning:__ooga.transitioning,gate:__ooga.dsb?.gate.state,receiving:__ooga.dsb?.gate.receiving,logs:[]})')) + b.logs.join(" | "));
+  record("dsb land " + backend + ": Portara returns to Bifrost with a clean console", await b.evaluate('__ooga.scene === "bifrost" && !__ooga.transitioning && !document.body.classList.contains("dsb-active")') && b.logs.length === 0, JSON.stringify(await b.evaluate('({scene:__ooga.scene,transitioning:__ooga.transitioning,gate:__ooga.dsb?.gate.state,receiving:__ooga.dsb?.gate.receiving,logs:[]})')) + b.logs.join(" | "));
 } }] });
 
 const mb = (bytes) => (bytes / 1048576).toFixed(2);
@@ -12906,6 +12989,27 @@ releaseGeometry(geometry); applyRig(res.programs.mesh, { geometry: {} }, 1); app
   record("race rigs: all custom CPU joints survive repeated mount changes, palettes stay bounded, unsupported surfaces reject atomically and disposal releases every GPU rig", originals.length === CAST && stable && bounded && rejected && overflow && disposed, JSON.stringify({ racers: originals.length, stable, bounded, rejected, overflow, disposed, released: released.length }));
 };
 
+const carriedReleaseProof = () => {
+  const source = readFileSync(join(root, "src/js/scene-hub.js"), "utf8");
+  const from = source.indexOf("  const finishClankerRider = "), to = source.indexOf("  const releaseClankerRider = ", from);
+  const rows = [];
+  for (const ceiling of [1.5, 2.5, 6]) {
+    const cave = { root: { position: { x: 0, y: 3, z: 0 } }, baseY: 0, bodyHeight: 2, viewLift: 0,
+      leap: {}, hop: 0, hopV: 0 };
+    const entry = { capture: { cave, autonomous: false, warpVisit: false, throwing: true, time: 1, posed: true }, motion: {}, heading: 0 };
+    cave.grabbedBy = entry; const queries = [];
+    const context = { entry, cave, ceiling, STEP_MAX: 0.35, clamp: (x, a, b) => Math.max(a, Math.min(b, x)),
+      clankerGripAt: () => [0, 3, 0], ceilingAt: () => ceiling,
+      playerSupportAt: (x, z, y) => { queries.push(y); return y < 0 ? -10 : y + 0.35 >= ceiling ? ceiling : 0; },
+      crew: { recoverDragged() {}, poseWeapon() {} } };
+    const released = runInNewContext(source.slice(from, to) + "finishClankerRider(entry, true, 1);", context);
+    rows.push({ ceiling, released, held: cave.grabbedBy === entry, feet: cave.root.position.y,
+      queries, throwing: entry.capture.throwing });
+  }
+  return { rows, valid: rows[0].released === false && rows[0].held && !rows[0].throwing && rows[0].queries.every(y => y >= 0)
+    && rows.slice(1).every(r => r.released && !r.held && r.feet >= 0 && r.feet + 2 <= r.ceiling && r.queries.every(y => y >= 0)) };
+};
+
 const visibilitySourceBakeProof = () => {
   const math = readFileSync(new URL("../src/js/math.js", import.meta.url), "utf8");
   const source = readFileSync(new URL("../src/js/character-visibility.js", import.meta.url), "utf8");
@@ -13449,6 +13553,8 @@ record("terrain glyph layouts: warm visits preserve exact registries and rendere
   const driver = await browserDriverProof();
   record("browser driver: broken transports retire every pending command and owned child, discovery is bounded, and pool ownership remains exclusive", driver.cases === 11 && driver.failures === 0, JSON.stringify(driver));
 
+const carriedRelease = carriedReleaseProof();
+record("gorilla release: insufficient upright headroom retains the grab without querying below the current floor", carriedRelease.valid, JSON.stringify(carriedRelease));
 const sharedBake = visibilitySourceBakeProof();
 record("character visibility source bakes: ownership wrappers share exact immutable triangles and reject changed topology or source vertices", sharedBake.failures === 0 && sharedBake.cases >= 200, JSON.stringify(sharedBake));
 
@@ -14917,6 +15023,9 @@ const dsbRadioTvCorrection = { name:"dsb radio TV correction", why:"regression: 
   await b.evaluate('window.__correction={audio:__ooga.dsb.noderunner.audio,tv:__ooga.dsb.tv};__ooga.dsb.tv.close()');
   await click("dsb-context");await step();
   record("DSB TV correction: physical nearby touch action opens five-channel menu",await b.evaluate('document.getElementById("dsb-tv").open&&document.querySelectorAll("#dsb-tv-menu button").length===5&&document.querySelectorAll("#dsb-tv-menu button:disabled").length===4'));
+  await click("dsb-tv-channel");
+  await click("dsb-tv-back");
+  record("DSB TV correction: back restores the channel menu and its focus", await b.evaluate('!document.getElementById("dsb-tv-menu").hidden && document.getElementById("dsb-tv-radio").hidden && document.activeElement.id === "dsb-tv-channel" && __ooga.dsb.tv.stats.route === "main"'));
   await click("dsb-tv-channel");
   record("DSB TV correction: bounded metadata and local official QR are visible",await b.evaluate('document.getElementById("dsb-tv-song").textContent==="Turtle Radio"&&document.querySelectorAll("#dsb-tv-queue li").length===1&&document.getElementById("dsb-tv-qr").width>100'));
   await b.evaluate('document.getElementById("dsb-tv-query").value="Ooga"');await click("dsb-tv-search");
