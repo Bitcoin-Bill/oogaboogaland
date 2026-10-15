@@ -2859,7 +2859,7 @@ const { contributorActivityProbe } = (() => {
 const { npcLaneSpacingProbe, npcLaneCornerProbe, npcLaneCurveProbe, npcLabLaneProbe, npcRingJunctionProbe } = (() => {
   // Real crew walkers share a simple trail, isolating lane choice and following
   // distance from scenery, spawn timing, and the cave's firing formation.
-  const npcLaneSpacingProbe = ({ dt = 1 / 60 } = {}) => {
+  const npcLaneSpacingProbe = ({ dt = 1 / 60, oscillating = false } = {}) => {
     const BL = window.BL, S = BL.scene, root = S.createNode(), targets = new Set(), noop = () => {};
     const island = { path: { version: 0, debug: { active: false, ringCenterRadius: 0 }, centerlines: [[{ x: 0, z: -10 }, { x: 0, z: 10 }]] },
       surfaceAt: () => 0, isPath: (x, z) => Math.abs(x) < 1 && Math.abs(z) <= 10 };
@@ -2874,7 +2874,7 @@ const { npcLaneSpacingProbe, npcLaneCornerProbe, npcLaneCurveProbe, npcLabLanePr
     const actors = [...crew.cavemen.values()], a = actors[0], b = actors[1], rows = [];
     let time = 0, result;
     const place = (cave, x, z, tx, tz) => {
-      cave.state = "working"; cave.root.visible = true; cave.root.quaternion = null;
+      cave.override = cave.state = "working"; cave.root.visible = true; cave.root.quaternion = null;
       Object.assign(cave.root.position, { x, y: cave.baseY, z });
       cave.walk = { tx, tz, speed: 1.7, phase: 0, heading: Math.atan2(tx - x, tz - z), to: "spot" };
       cave.act.kind = "wander"; Object.assign(cave.act.spot, { x: tx, z: tz, ry: 0 });
@@ -2886,16 +2886,35 @@ const { npcLaneSpacingProbe, npcLaneCornerProbe, npcLaneCurveProbe, npcLabLanePr
     };
     try {
       for (const cave of actors) { cave.root.visible = false; cave.state = "away"; cave.bedTravel.mode = ""; }
-      for (const name of ["opposing", "following", "tied", "branching"]) {
+      for (const name of oscillating ? ["oscillating"] : ["opposing", "following", "tied", "branching"]) {
         place(a, name === "tied" ? 0.35 : 0, -6, 0, 6);
         place(b, name === "tied" ? -0.35 : 0, name === "opposing" ? 6 : name === "tied" ? -6 : -6.75, 0, name === "opposing" ? -6 : 6);
         let frames = 0, gap = Infinity, waitFrames = 0, resumedGap = 0, laneError = 0, laneSamples = 0, laneRight = true;
         let waiting = false, branched = false, branchReleased = false, deadlocked = false, maxHop = 0, maxStep = 0, jumps = 0;
         const oldJumps = a.avoidance.navigation.jumps + b.avoidance.navigation.jumps;
-        const duration = name === "opposing" ? 12 : 3;
+        const duration = name === "opposing" || oscillating ? 12 : 3;
+        if (oscillating) {
+          // A real queue leader whose local avoidance jitters without opening
+          // a gap must not reset the follower's progress timer every frame.
+          a.puppet = true;
+          b.root.position.z = -7.1;
+        }
+        let stall = 0, maximumStall = 0;
+        const resets = b.progress.resets;
         while (frames++ < Math.ceil(duration / dt) && (a.walk || b.walk)) {
           const ax = a.root.position.x, az = a.root.position.z, bx = b.root.position.x, bz = b.root.position.z;
+          if (oscillating) {
+            const p = a.root.position, target = -6 + Math.sin(frames * dt * 8) * 0.05;
+            // The authored leader uses the shipped sweep too; a fixture
+            // must not move it into a follower that is already passing.
+            const z = crew.actorClear(p.x, p.z, p.x, target, 0, a.bodyHeight) ? target : p.z;
+            a.shoulder.motionZ = (z - p.z) / dt;
+            p.z = z;
+          }
           crew.update(dt, time += dt); S.updateWorld(root);
+          const step = Math.hypot(b.root.position.x - bx, b.root.position.z - bz);
+          stall = b.walk && step < 0.001 ? stall + dt : 0;
+          maximumStall = Math.max(maximumStall, stall);
           const separation = Math.hypot(a.root.position.x - b.root.position.x, a.root.position.z - b.root.position.z);
           gap = Math.min(gap, separation);
           maxStep = Math.max(maxStep, Math.hypot(a.root.position.x - ax, a.root.position.z - az), Math.hypot(b.root.position.x - bx, b.root.position.z - bz));
@@ -2913,7 +2932,7 @@ const { npcLaneSpacingProbe, npcLaneCornerProbe, npcLaneCurveProbe, npcLabLanePr
         }
         jumps = a.avoidance.navigation.jumps + b.avoidance.navigation.jumps - oldJumps;
         rows.push({ name, frames, gap, waiting, waitSeconds: waitFrames * dt, resumedGap, branched, branchReleased, deadlocked,
-          maxHop, maxStep, jumps, laneRight, laneError, laneSamples, arrived: !a.walk && !b.walk });
+          maxHop, maxStep, jumps, laneRight, laneError, laneSamples, maximumStall, resets: b.progress.resets - resets, passed: b.root.position.z > a.root.position.z + 1, arrived: !a.walk && !b.walk });
       }
       result = { dt, rows };
     } finally { crew.dispose(); if (result) result.disposed = targets.size === 0 && root.children.length === 0; }
@@ -4410,6 +4429,12 @@ const labLanes = async (b) => {
 
 };
 const workCaveTrips = async (b) => {
+  for (const dt of [1 / 20, 1 / 60]) {
+    const queue = await b.evaluate(`(${npcLaneSpacingProbe.toString()})(${JSON.stringify({ dt, oscillating: true })})`);
+    record(`work movement cave trips: ${1 / dt}Hz followers pass an oscillating leader without overlap, jumps or relocation`,
+      queue.disposed && queue.rows.length === 1 && queue.rows.every(row => row.waiting && row.passed && row.maximumStall < 5
+        && row.gap >= 0.68 - 1e-6 && row.maxStep <= 1.7 * dt + 1e-6 && row.maxHop === 0 && row.jumps === 0 && row.resets === 0), JSON.stringify(queue));
+  }
   const r = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, scene = BL.scenes.hub, dt = 1 / 20;
     const update = scene.update; scene.update = () => {}; B.pilot.release(true); B.setPileLevel(100000);
