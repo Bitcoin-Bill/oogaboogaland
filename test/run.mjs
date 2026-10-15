@@ -3562,7 +3562,7 @@ const session = (url, steps, opts, final) => output.run({ lines: [], results: []
     else record(steps[0][0], false, failure(err));
   } finally {
     clearTimeout(watchdog);
-    if (b && !overran) b.close();
+    if (b) await b.close(overran);
     const s = (ms) => (ms / 1000).toFixed(1);
     if (VERBOSE) lines.push(`TIME ${steps.map((step) => step[0]).join(" + ")} · launch ${s(started - t0)}s · boot ${s(ready - started)}s · body ${s(Date.now() - ready)}s · wall ${s(Date.now()-t0)}s · checks ${run.results.length} · watchdog ${overran?"FIRED":"clear"}${b?.renderer?" · renderer "+b.renderer:""}`);
   }
@@ -9146,7 +9146,7 @@ scene("hub", { label: "gorilla carry jump", query: "status=chillin", steps: [{ n
     state.grabbed && state.pendingRecovery && state.tookOff && state.grip < 0.04 && state.secondJump && state.charged
       && state.heldThroughRelease && state.thrownInAir && state.smashUnchanged, JSON.stringify(state));
 } }] });
-scene("hub", { label: "gorilla lab carry jump", query: "character=gorilla-portlandhodl&status=clankin&gorillarage=1", steps: [{ name: "gorilla lab carry jump", why: "regression: EntropyLab rejected running carry jumps and reapplied its worker pose and coat during autonomous rage capture", run: async (b) => {
+scene("hub", { label: "gorilla lab carry jump", exclusive: true, query: "character=gorilla-portlandhodl&status=clankin&gorillarage=1", steps: [{ name: "gorilla lab carry jump", why: "regression: EntropyLab rejected running carry jumps and reapplied its worker pose and coat during autonomous rage capture", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, e = B.clankers.player, cave = e.owner, p = e.root.position;
     for (const other of B.cavemen.values()) if (other !== cave) other.override = other.state = "away";
@@ -13081,7 +13081,7 @@ const browserDriverProof = async () => {
         on(name, fn) { handlers.set(name, fn); },
         listenerCount(name) { return handlers.has(name) ? 1 : 0; },
         emit(name, ...args) { handlers.get(name)?.(...args); },
-        kill(signal) { this.kills.push(signal || "SIGTERM"); return true; }
+        kill(signal) { this.kills.push(signal || "SIGTERM"); if (signal === "SIGKILL" && mode !== "delayed-exit") queueMicrotask(() => this.emit("exit", 0)); return true; }
       };
       children.push(child);
       if (mode === "spawn-error") queueMicrotask(() => {
@@ -13188,6 +13188,23 @@ const browserDriverProof = async () => {
     await flush();
     rows.push({ name: "duplicate close cannot publish two pool entries", pass: first !== second && f.children.length === 2 });
     first.close(true); second.close(true); await f.dispose();
+  }
+  {
+    const f = fixture("delayed-exit"), browser = await f.launch();
+    let closed = false, disposed = false;
+    const closing = browser.close(true).then(() => { closed = true; });
+    const disposing = f.dispose().then(() => { disposed = true; });
+    await flush();
+    const waiting = !closed && !disposed;
+    f.children[0].emit("exit", 0); await closing; await disposing;
+    rows.push({ name: "close waits for child exit", pass: waiting && closed && disposed });
+  }
+  {
+    const f = fixture("delayed-exit"); await f.launch();
+    let disposed = false; const disposing = f.dispose().then(() => { disposed = true; });
+    await flush(); const waiting = !disposed;
+    f.children[0].emit("exit", 0); await disposing;
+    rows.push({ name: "dispose drains live children", pass: waiting && disposed });
   }
   return { cases: rows.length, failures: rows.filter(row => !row.pass).length, rows };
 };
@@ -13551,7 +13568,7 @@ record("terrain glyph layouts: warm visits preserve exact registries and rendere
   const rigDisposal = await raceRigDisposalProof();
   record("race rig disposal: pending and linked variants release owned shaders and programs exactly once without context-loss support", rigDisposal.every(r => !r.programs && !r.shaders && !r.duplicateDeletes && r.arraysCleared && r.aliasesReleased), JSON.stringify(rigDisposal));
   const driver = await browserDriverProof();
-  record("browser driver: broken transports retire every pending command and owned child, discovery is bounded, and pool ownership remains exclusive", driver.cases === 11 && driver.failures === 0, JSON.stringify(driver));
+  record("browser driver: broken transports retire every pending command and owned child, discovery is bounded, and pool ownership remains exclusive", driver.cases === 13 && driver.failures === 0, JSON.stringify(driver));
 
 const carriedRelease = carriedReleaseProof();
 record("gorilla release: insufficient upright headroom retains the grab without querying below the current floor", carriedRelease.valid, JSON.stringify(carriedRelease));
@@ -15428,6 +15445,9 @@ const runTasks = async () => {
     while (queue.length) await queue.shift().run();
   };
   await Promise.all(Array.from({ length: LANES }, lane));
+  // Pool resets and killed children can still own GPU resources after their last check.
+  // Drain them before the exclusive sessions, including when POOL=1 was requested.
+  await dispose();
   // Strict travel deadlines and CPU-heavy Canvas playthroughs must observe
   // their own frame delivery, rather than other Chrome renderers or heap snapshots.
   // Preserve every assertion, frame and watchdog while ordinary scenes keep their lanes.
