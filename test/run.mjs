@@ -4593,11 +4593,13 @@ const gameRulesChecks = async () => {
     // three; a malformed day is dropped alone.
     const day = 864e5, now = Date.now();
     for (const [sats, ago] of [[4000, 0], [1200, 0], [800, 1]]) g.recordDonation({ id: `t${sats}`, sats, handle: "", message: "", at: now - ago * day });
+    g.recordDonation({ id: "fractional", sats: 1000, handle: "", message: "", at: now }, 0.25);
+    g.recordDonation({ id: "unpriced", sats: 2000, handle: "", message: "", at: now }, 0);
     const tally = make(), tips = { today: tally.tipsWithin(1), week: tally.tipsWithin(7), bananas: tally.state.bananas, last: tally.state.lastTip };
     const raw = JSON.parse(store.get("oogaboogaland.v1"));
     raw.tipDays.unshift([-1, "lots", 2]);
     store.set("oogaboogaland.v1", JSON.stringify(raw));
-    const tallied = tips.today[0] === 5200 && tips.today[1] === 13 && tips.week[0] === 6000 && tips.week[1] === 15 && tips.bananas === 15 && tips.last === 800
+    const tallied = tips.today[0] === 8200 && tips.today[1] === 13.25 && tips.week[0] === 9000 && tips.week[1] === 15.25 && tips.bananas === 15.25 && tips.last === 2000
       && make().state.tipDays.length === 2;
     store.set("oogaboogaland.v1", "{not json");
     const junk = make().state.orbit.best === null;
@@ -4625,6 +4627,49 @@ const gameRulesChecks = async () => {
     }
     record("jackpot wheel: a spin pays back 75 to 90% of its cost on average, the jackpot is ten spins' worth, and every wedge stops under the clapper wherever the spin aims in it", V.length === 20 && ev >= cost * 0.75 && ev <= cost * 0.9 && jackpot >= cost * 10 && missed.length === 0, JSON.stringify({ ev, cost, jackpot, missed: missed.slice(0, 4) }));
   }
+};
+const donationClientChecks = async () => {
+  const sockets = [], timers = [], received = [];
+  const context = { window: { setTimeout: fn => { const t = { fn }; timers.push(t); return t; }, clearTimeout: () => {} },
+    location: { protocol: "https:", origin: "https://site.test" },
+    WebSocket: class { constructor(url) { this.url = url; sockets.push(this); } close() { this.closed = true; } } };
+  runInNewContext(await readFile(new URL("../src/js/donations.js", import.meta.url), "utf8"), context);
+  const D = context.window.BL.donations;
+  D.useOrigin();
+  const stop = D.subscribe((d, bananas) => received.push({ d, bananas }));
+  const message = data => sockets.at(-1).onmessage({ data: JSON.stringify(data) });
+  message({ type: "status", open: true, network: "signet" });
+  message({ type: "tally", count: 0, sats: 0, bananas: 0, last: null, hours: [], rate: null });
+  const empty = D.state.tally?.count === 0 && D.state.tally.last === 0 && D.testNetwork === "signet";
+  message({ type: "tally", count: 1, sats: 1000, bananas: 0.25, last: 1000, hours: [[Date.now(), 1000, 0.25]], rate: null });
+  message({ type: "tally", count: "bad", sats: 0, bananas: 0, last: null, hours: [] });
+  const tally = D.state.tally?.bananas === 0.25 && D.state.tally.hours[0][2] === 0.25;
+  const paid = { type: "donation", donation: { id: "paid", sats: 1000, handle: "tester", message: "", at: Date.now() }, bananas: { exact: 0.25, rounded: 0 } };
+  message(paid); message(paid);
+  sockets[0].onclose(); timers.at(-1).fn();
+  const replay = sockets[1].url.endsWith("?after=paid");
+  message(paid);
+  message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
+  stop();
+  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, replay counts a payment once, an unpriced payment counts no bananas, and unsubscribe closes the socket",
+    empty && tally && replay && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ empty, tally, replay, received }));
+
+  let now = Date.now();
+  const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
+    document: { createElement: () => ({ getContext: () => ({}) }) }, Date: class extends Date { static now() { return now; } } };
+  runInNewContext(await readFile(new URL("../src/js/factory-kiosk.js", import.meta.url), "utf8"), kioskContext);
+  const F = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
+    invoice: async () => ({ request: "request", invoice: { id: "invoice", bolt11: "lntbs1", expires: now / 1000 + 10 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
+    open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {} });
+  const quote = async () => { F.start(); for (const key of ["Enter", "1", "Enter"]) F.key({ key }); await Promise.resolve(); };
+  await quote();
+  const quoted = F.state === "quote" && F.receive("invoice", { exact: 0.25, rounded: 0 }, "tester") && F.state === "paid" && F.who === "tester";
+  await quote(); now += 11000; F.update(0.1);
+  const expired = F.state === "expired", late = F.receive("invoice", { exact: 0.25, rounded: 0 }, "tester") && F.state === "paid";
+  await quote(); now += 11000; F.update(0.1); F.key({ key: "Escape" });
+  const back = F.state === "amount";
+  record("donation kiosk: a real invoice expires on its quote screen, Back returns to the amount, and a confirmed payment is recognized on the quote or after expiry", quoted && expired && late && back, JSON.stringify({ quoted, expired, late, back }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
@@ -4718,8 +4763,8 @@ const trip = (id) => ({ name: `${id} round trip`, why: "contract: a scene left a
   if (laps.some((l) => l.scene !== id)) throw new Error(`go("${id}") landed on ${laps.map((l) => l.scene).join()}`);
   const grew = ["records", "nodes", "targets", "dom"].filter((k) => laps[1][k] > laps[0][k] * 1.02 + 4);
   // A payment can arrive in any scene: the director hands it to the active one exactly like this.
-  const donated = await b.evaluate(`(() => { const B = window.__ooga; window.BL.scenes[B.scene].onDonation({ id: "trip-${id}", sats: 2100, handle: "tester", message: "ooga", at: Date.now() }); B.advance(1, 1 / 30); return B.scene; })()`);
-  record(`${id} round trip: leaving and entering twice keeps the leave contract and holds nothing the first visit did not, and a donation mid-visit is taken`, grew.length === 0 && donated === id, JSON.stringify({ grew, donated, first: laps[0], second: laps[1] }));
+  const donated = await b.evaluate(`(() => { const B = window.__ooga, g = B.game.state, before = { donations: g.donations, sats: g.totalSats, bananas: g.bananas }; window.BL.scenes[B.scene].onDonation({ id: "trip-${id}", sats: 2100, handle: "tester", message: "ooga", at: Date.now() }, { exact: 1.25, rounded: 1 }); B.advance(1, 1 / 30); return { scene: B.scene, donations: g.donations - before.donations, sats: g.totalSats - before.sats, bananas: g.bananas - before.bananas }; })()`);
+  record(`${id} round trip: leaving and entering twice keeps the leave contract and holds nothing the first visit did not, and a donation mid-visit is taken`, grew.length === 0 && donated.scene === id && donated.donations === 1 && donated.sats === 2100 && donated.bananas === 1.25, JSON.stringify({ grew, donated, first: laps[0], second: laps[1] }));
 } });
 const play = (id, what, code) => ({ name: `${id} playthrough`, why: "playthrough: the game reaches its result, shown and saved", run: async (b) => {
   const r = await b.evaluate(code);
@@ -13966,7 +14011,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   factoryChecks(BL);
   const clearance = claimClearanceProof();
   record("hub footprint clearance: conservative rejection preserves circular boundaries, live reservations and exceptional numbers", clearance.failures === 0 && clearance.cases >= 4000, JSON.stringify(clearance));
-  await characterChecks(); await contributorActivityChecks(); await mempoolFeedChecks(); await debugActivityStatusChecks(); await soloDebugChecks(); await adaptiveQualityChecks(); await chainSnapshotChecks(); await dsbSharedDataChecks(); await timechainDataChecks(); await weatherStepChecks(); await poolLayoutChecks(); await gameRulesChecks(); await poolWildlifeChecks();
+  await characterChecks(); await contributorActivityChecks(); await mempoolFeedChecks(); await debugActivityStatusChecks(); await soloDebugChecks(); await adaptiveQualityChecks(); await chainSnapshotChecks(); await dsbSharedDataChecks(); await timechainDataChecks(); await weatherStepChecks(); await poolLayoutChecks(); await gameRulesChecks(); await donationClientChecks(); await poolWildlifeChecks();
 
   // Scene state built directly instead of booted; seed 1 matches scene-hub.js.
   // Sealed cave guides need the hub's seal nodes, so probes reading them stay in the browser tier.

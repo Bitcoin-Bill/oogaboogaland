@@ -78,14 +78,15 @@
       }
       if (isString(parsed.handle, HANDLE_MAX)) state.handle = parsed.handle;
       if (isString(parsed.message, MESSAGE_MAX)) state.message = parsed.message;
-      for (const key of ["handFed", "totalSats", "donations", "bananas", "lastTip"]) {
+      for (const key of ["handFed", "totalSats", "donations", "lastTip"]) {
         if (Number.isFinite(parsed[key]) && parsed[key] >= 0) state[key] = Math.floor(parsed[key]);
       }
+      if (Number.isFinite(parsed.bananas) && parsed.bananas >= 0) state.bananas = parsed.bananas;
       // Each day's tally is [day, sats, bananas], the days rising; a malformed one is dropped alone.
       if (Array.isArray(parsed.tipDays)) {
         for (const d of parsed.tipDays.slice(-TIP_DAYS)) {
           const last = state.tipDays[state.tipDays.length - 1];
-          if (Array.isArray(d) && d.length === 3 && d.every((v) => Number.isInteger(v) && v >= 0) && (!last || d[0] > last[0])) state.tipDays.push(d.slice());
+          if (Array.isArray(d) && d.length === 3 && Number.isInteger(d[0]) && d[0] >= 0 && Number.isInteger(d[1]) && d[1] >= 0 && Number.isFinite(d[2]) && d[2] >= 0 && (!last || d[0] > last[0])) state.tipDays.push(d.slice());
         }
       }
       if (parsed.race && parsed.race.best && typeof parsed.race.best === "object") {
@@ -166,10 +167,10 @@
     };
     const assignedTo = (entryId) => Object.keys(state.assignments).find((name) => state.assignments[name] === entryId) || null;
     // A donation, wherever it lands: the totals, and the donations board's tally of bananas made, the last tip and
-    // its day's sats and bananas. `counted` is the API's count in real mode, kept whole; without it the game's own.
+    // its day's sats and bananas. `counted` is the API's exact count in real mode; without it the game's own.
     // A day already rolled out of the tally (a late replay) counts in the totals only.
     const recordDonation = (donation, counted = null) => {
-      const bananas = counted === null ? bananasFor(donation.sats) : Math.round(counted), day = dayOf(donation.at), days = state.tipDays;
+      const bananas = counted === null ? bananasFor(donation.sats) : counted, day = dayOf(donation.at), days = state.tipDays;
       state.totalSats += donation.sats;
       state.donations += 1;
       state.bananas += bananas;

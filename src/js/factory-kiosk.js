@@ -151,7 +151,7 @@
   const qrBox = (g, x, y, size, code, dim) => {
     g.fillStyle = "#fbf6e8";
     g.fillRect(x, y, size, size);
-    const n = code.size, m = Math.floor((size - 8) / n), o = Math.floor((size - m * n) / 2);
+    const n = code.size, m = Math.floor(size / (n + 8)), o = Math.floor((size - m * n) / 2);
     g.fillStyle = "#0b0d10";
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (code.modules[r * n + c]) g.fillRect(x + o + c * m, y + o + r * m, m, m);
     if (dim) {
@@ -316,7 +316,7 @@
       if (s === "paid" && (a === "watch" || a === "back")) return hooks.watch();
       if (s === "expired") {
         if (a === "regen") return real ? ask("invoice") : invoice();
-        if (a === "back") return set("quote");
+        if (a === "back") return set(real ? "amount" : "quote");
       }
     };
     // Keys, as the screen's buttons: Enter or Space the main one, Escape back (or out, from the attract screen), the
@@ -360,7 +360,7 @@
     // donation names (none for an anonymous tip), with the API's count when it sent one.
     flow.receive = (id, bananas = null, handle = "") => {
       const s = flow.state;
-      if (!flow.invoice || id !== flow.invoice.id || s !== "invoice" && s !== "waiting") return false;
+      if (!flow.invoice || id !== flow.invoice.id || s !== "invoice" && s !== "waiting" && s !== "quote" && s !== "expired") return false;
       if (bananas) flow.bananas = bananas.rounded;
       flow.who = handle;
       flow.hold = HOLD;
@@ -378,7 +378,7 @@
         shownNet = hooks.testNetwork();
         dirty = true;
       }
-      if (s === "invoice" || s === "waiting") {
+      if (s === "invoice" || s === "waiting" || real && s === "quote") {
         flow.left = real ? flow.invoice.expires - Date.now() / 1000 : flow.left - dt;
         if (flow.left <= 0) return set("expired");
         const tick = Math.ceil(flow.left);

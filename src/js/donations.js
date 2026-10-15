@@ -105,7 +105,7 @@
   // object each time, so a reader sees a change by its identity.
   const TALLY_HOURS = 7 * 24 + 1;
   const tallyOf = (t) => {
-    if (!isNumber(t.count) || !isNumber(t.sats) || !isNumber(t.bananas) || !isNumber(t.last) || !Array.isArray(t.hours)) return null;
+    if (!isNumber(t.count) || !isNumber(t.sats) || !isNumber(t.bananas) || t.last !== null && !isNumber(t.last) || !Array.isArray(t.hours)) return null;
     const hours = [];
     for (const h of t.hours) if (hours.length < TALLY_HOURS && Array.isArray(h) && isNumber(h[0]) && isNumber(h[1]) && isNumber(h[2])) hours.push([h[0], Math.max(0, h[1]), Math.max(0, h[2])]);
     return { count: Math.max(0, t.count), sats: Math.max(0, t.sats), bananas: Math.max(0, t.bananas), last: Math.max(0, t.last), hours, rate: rateOf(t.rate) };
@@ -129,7 +129,8 @@
       played[playedAt] = after = donation.id;
       playedAt = (playedAt + 1) % PLAYED;
       state.donations++;
-      handlers.donation(donation, b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: b.exact, rounded: b.rounded } : null);
+      // A paid invoice with no price counts no bananas; it must never use the simulator's conversion.
+      handlers.donation(donation, b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: Math.max(0, b.exact), rounded: Math.max(0, b.rounded) } : { exact: 0, rounded: 0 });
     } else if (data.type === "pile" && isNumber(data.bananas) && isNumber(data.eatPerHour)) {
       if (handlers.pile) handlers.pile({ bananas: Math.max(0, data.bananas), eatPerHour: Math.max(0, data.eatPerHour) });
     } else if (data.type === "board" && Array.isArray(data.entries)) {
