@@ -214,7 +214,8 @@
   // and pay(id, sats) when a payment settles; in real mode, `real`, invoice(sats, anon), which resolves to the API's
   // reply or `{ error }`, open(), the API's word on whether donations are open (null before it has said),
   // testNetwork(), the test network payments are on or "" for mainnet, account(), the page's account (`backend`, and
-  // `me` when signed in), signIn(), and onchain(request), which resolves to the API's `{ address, sats }` or `{ error }`.
+  // `me` when signed in), signIn(), onchain(request), which resolves to the API's `{ address, sats }` or `{ error }`, and
+  // waitFor(id) for an invoice left with its on-chain address shown and nothing received.
   const create = (hooks) => {
     const canvas = document.createElement("canvas"), g = canvas.getContext("2d"), idleCode = BL.qr.encode(hooks.link()), real = !!hooks.real;
     canvas.width = W;
@@ -261,6 +262,11 @@
       shown = -1;
       set("invoice");
     };
+    // Moving on from an invoice whose on-chain address was shown, with nothing received for it: the page waits on it, so
+    // its donation can tell the visitor it was theirs whenever it confirms.
+    const letGo = () => {
+      if (flow.chain && flow.state !== "paid") hooks.waitFor(flow.invoice.id);
+    };
     // Real mode: the API's invoice for this amount, then `next`. A reply that finds the visitor gone on is dropped.
     const ask = (next) => {
       const t = ++ticket;
@@ -272,6 +278,7 @@
           flow.error = r.error;
           return set(r.error === "amount" ? "amount" : "problem");
         }
+        letGo();
         flow.reply = r;
         flow.bananas = r.bananas ? r.bananas.rounded : 0;
         flow.invoice = { id: r.invoice.id, code: BL.qr.encode(`lightning:${r.invoice.bolt11.toUpperCase()}`), bolt: r.invoice.bolt11, expires: r.invoice.expires };
@@ -395,6 +402,7 @@
     };
     flow.stop = () => {
       ticket++;
+      letGo();
       flow.open = false;
       flow.invoice = flow.reply = flow.chain = flow.chainNote = null;
       set("idle");

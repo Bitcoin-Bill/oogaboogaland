@@ -96,6 +96,15 @@
     if (typeof r.address !== "string" || !/^[0-9A-Za-z]{14,100}$/.test(r.address) || !Number.isInteger(r.sats) || r.sats <= 0) return { error: "invalid" };
     return { address: r.address, sats: r.sats };
   };
+  // The invoices the kiosk let the visitor go from with an on-chain address shown and nothing received, kept for the
+  // page life so the donation, whenever it confirms, can say it was theirs: `waitFor(id)`, and `waited(id)`, true once
+  // when that invoice's donation comes. Past WAIT_MAX the oldest is dropped.
+  const WAIT_MAX = 16, waiting = new Set();
+  const waitFor = (id) => {
+    waiting.add(id);
+    if (waiting.size > WAIT_MAX) waiting.delete(waiting.values().next().value);
+  };
+  const waited = (id) => waiting.delete(id);
 
   // The socket. It sends nothing (a page that does is closed), comes back with backoff, and on a reconnect asks for
   // what it missed after the last donation it played; a donation already played is skipped. `state.open` is the
@@ -248,5 +257,5 @@
   // The test network real donations are paid on (signet on staging), or "" for mainnet, before the API has said, and
   // when simulated.
   const testNetwork = () => real && state.network && state.network !== "mainnet" ? state.network : "";
-  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, state, useOrigin, createRequest, invoice, note, onchain, subscribe, sanitize, HANDLE_MAX, MESSAGE_MAX };
+  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, state, useOrigin, createRequest, invoice, note, onchain, waitFor, waited, subscribe, sanitize, HANDLE_MAX, MESSAGE_MAX };
 })();

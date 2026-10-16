@@ -830,6 +830,7 @@
       real,
       invoice: (sats, anon) => donations.invoice({ sats, message: game.state.message, anon }),
       onchain: (request) => donations.onchain(request),
+      waitFor: (id) => donations.waitFor(id),
       open: () => donations.state.open,
       testNetwork: () => donations.testNetwork,
       account: () => BL.net.state,
