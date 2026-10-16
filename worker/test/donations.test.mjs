@@ -2,6 +2,7 @@
 // receives, and a stand-in D1 answers the session lookup. No network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { handleDonations } from "../src/donations.js";
 
 const SITE = "https://site.test";
@@ -24,6 +25,15 @@ const call = (path, { method = "POST", headers = {}, body } = {}) => {
   return [request, new URL(request.url)];
 };
 const json = { "content-type": "application/json" };
+
+test("regression: a production deploy keeps the donation binding and routes donation calls before assets", () => {
+  const source = readFileSync(new URL("../../wrangler.production.jsonc", import.meta.url), "utf8");
+  const config = JSON.parse(source.replace(/^\s*\/\/.*$/gm, ""));
+  assert.deepEqual(config.services.find((s) => s.binding === "DONATIONS"), {
+    binding: "DONATIONS", service: "bananapayserver-production", entrypoint: "PageApi"
+  });
+  assert.ok(config.assets.run_worker_first.includes("/donations/*"));
+});
 
 test("an invoice goes on with the page's body and type alone, the signed-in donor and the visitor's address", async () => {
   const DONATIONS = binding();
@@ -49,14 +59,19 @@ test("a visitor who isn't signed in gives as nobody, and a note or an on-chain s
   assert.equal(DONATIONS.calls[0].args[1], null);
 });
 
-test("the socket's upgrade keeps only the WebSocket headers and sets the visitor's address over the browser's", async () => {
+test("signed-out and signed-in viewers can open the donation socket, passing only WebSocket headers and the visitor's address", async () => {
   const DONATIONS = binding();
   const ws = { upgrade: "websocket", connection: "Upgrade", "sec-websocket-key": "k", "sec-websocket-version": "13", cookie: "__Host-obl_session=tok", "x-client": "1.1.1.1" };
-  const [request, url] = call("/donations/socket?after=abc12345", { method: "GET", headers: ws });
-  await handleDonations(request, { SITE_ORIGIN: SITE, DONATIONS }, url);
+  for (const cookie of ["", ws.cookie]) {
+    const [request, url] = call("/donations/socket?after=abc12345", { method: "GET", headers: { ...ws, cookie } });
+    const response = await handleDonations(request, { SITE_ORIGIN: SITE, DONATIONS }, url);
+    assert.equal(response.status, 200);
+  }
+  assert.equal(DONATIONS.calls.length, 2);
   const [passed] = DONATIONS.calls[0].args;
   assert.equal(passed.url, `${SITE}/donations/socket?after=abc12345`);
   assert.deepEqual(Object.fromEntries(passed.headers), { connection: "Upgrade", "sec-websocket-key": "k", "sec-websocket-version": "13", upgrade: "websocket", "x-client": "203.0.113.7" });
+  assert.deepEqual(Object.fromEntries(DONATIONS.calls[1].args[0].headers), Object.fromEntries(passed.headers));
 });
 
 test("another site, an unknown path, an oversized body, a missing binding and a failing bananapayserver each get their answer", async () => {
