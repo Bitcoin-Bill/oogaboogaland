@@ -1349,17 +1349,6 @@ body[data-active-scene="arcade"] .magazine-hud {
   font-size: 11px;
 }
 
-#donation-save {
-  padding: 6px 10px;
-  border: 2px solid var(--wood-edge);
-  border-radius: 6px;
-  background: var(--plank);
-  color: var(--paper);
-  cursor: pointer;
-}
-
-#donation-save:disabled { opacity: 0.5; cursor: default; }
-
 #donation-screen {
   display: block;
   width: 100%;

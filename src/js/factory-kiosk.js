@@ -1,7 +1,7 @@
 // The donation kiosk's screen, as the concepts draw it: the simulated sequence a visitor runs at the kiosk in the
 // factory's right wall. The attract screen, with this visit's donation link as its QR and START; an amount typed on a
 // keypad; its quote in bananas (and in dollars, when the price feed has one); a Lightning invoice for it, with a fresh
-// donation request as its QR, a five-minute expiry, copy and regenerate; the wait while it is paid; and the payment
+// donation request as its QR, a five-minute expiry, copy and Back to the quote; the wait while it is paid; and the payment
 // received, which sends the visitor to watch the cooker. Everything is set in the jumbotron's 5x7 letters on one
 // square canvas, `W` by `H`, which the scene lays over the kiosk's glass while the visitor is at it; `still` paints
 // the glass's own pictures for when nobody is (the attract screen, and the thanks while the cooker works).
@@ -11,7 +11,8 @@
 // use) the amount, once confirmed, asks the API for its invoice at once (`hooks.invoice`): the quote shows the API's
 // bananas and rate, the invoice its bolt11 as a `lightning:` QR and its own expiry, and nothing settles but the
 // socket. Both kiosks offer an editable display handle and message, initially the signed-in login or anon. Changing
-// the details updates that invoice in place, keeping its payment code and rate. Either
+// the details updates that invoice in place, keeping its payment code. Receipt-priced invoices
+// follow the live rate until full payment is detected; legacy invoices retain their quoted rate. Either
 // way the scene hands every donation back through `receive(id, bananas, handle)`, which takes the one this invoice is
 // waiting for and thanks the donor it names. The scene holds that tip's bananas until the visitor asks to watch, or
 // HOLD runs out.
@@ -257,9 +258,31 @@
     const canvas = document.createElement("canvas"), g = canvas.getContext("2d"), idleCode = BL.qr.encode(hooks.link()), real = !!hooks.real;
     canvas.width = W;
     canvas.height = H;
-    let dirty = true, shown = -1, buttons = [], ticket = 0, shownOpen = null, shownNet = "", saving = null, saveQueued = false;
+    let dirty = true, shown = -1, buttons = [], ticket = 0, shownOpen = null, shownNet = "", saving = null, saveQueued = false, unwatchRate = null, rateAt = 0, rateStale = false;
     const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0, savedDetails: null, detailsDirty: false, detailsSaving: false, detailsError: "" };
     const bananaAmount = () => real ? BANANAS.format(flow.bananas) : sats(flow.bananas);
+    flow.rate = flow.frozenPricing = null;
+    const estimate = () => {
+      if (!real || flow.state === "paid") return;
+      const floating = !flow.reply || flow.reply.pricing === "receipt" || flow.state === "amount" || flow.state === "quoting";
+      const liveRate = floating && hooks.rate ? hooks.rate() : null, quotedRate = flow.reply?.rate;
+      const rate = (flow.frozenPricing ? flow.frozenPricing.rate
+        : liveRate && (!quotedRate || liveRate.at >= quotedRate.at) ? liveRate : quotedRate) || null;
+      const bananas = flow.frozenPricing ? flow.frozenPricing.bananas?.exact || 0
+        : floating && rate ? Math.round(flow.sats * rate.usdPerBtc / 1e5) / 1000 : flow.bananas;
+      if (rate !== flow.rate || rateAt !== rate?.at || rateStale !== !!rate?.stale || bananas !== flow.bananas) dirty = true;
+      flow.rate = rate || null; flow.bananas = bananas;
+      rateAt = rate?.at; rateStale = !!rate?.stale;
+    };
+    const rateLine = (x, y, width = 340, align = "center") => {
+      const r = flow.rate;
+      if (width < 200) {
+        write(g, r?.stale ? "RATE · STALE" : "RATE", x, y, 1, r?.stale ? INK.red : INK.dim);
+        writeFit(g, r ? `${RATE.format(r.satsPerBanana)} SATS/BANANA` : "UNAVAILABLE", x, y + 10, 1, INK.dim, width);
+        return;
+      }
+      writeFit(g, r ? `1 BANANA ≈ ${RATE.format(r.satsPerBanana)} SATS${r.stale ? " · STALE" : ""}` : "PRICE UNAVAILABLE", x, y, 1, r?.stale ? INK.red : INK.dim, width, align);
+    };
     const set = (state) => {
       flow.state = state;
       dirty = true;
@@ -288,8 +311,8 @@
         if (reply.error) {
           flow.detailsError = reply.error === "invalid" ? "These details need a donation server update."
             : reply.error === "unknown" ? "This donation is already settled or no longer available."
-            : reply.error === "busy" ? "Please wait a moment, then save again."
-            : "Couldn't save changes. Please try again.";
+            : reply.error === "busy" ? "Please wait a moment, then press Enter to retry."
+            : "Couldn't save changes. Press Enter to retry.";
           flow.detailsDirty = true;
           saveQueued = false;
         } else {
@@ -366,6 +389,7 @@
         }
         letGo();
         flow.reply = r;
+        flow.frozenPricing = null;
         flow.savedDetails = value;
         flow.bananas = r.bananas ? r.bananas.exact : 0;
         // No bolt11 when the API couldn't make the Lightning half in time: the quote then offers on-chain alone.
@@ -376,6 +400,7 @@
         flow.left = r.invoice.expires - Date.now() / 1000;
         shown = -1;
         set(next === "invoice" && !bolt ? "quote" : next);
+        estimate();
         if (hooks.details) {
           flow.detailsChanged();
           if (flow.detailsDirty) flow.saveDetails();
@@ -440,7 +465,6 @@
           flow.settle = SETTLE;
           return set("waiting");
         }
-        if (a === "regen") return real ? ask("invoice") : invoice();
         if (a === "copy") return hooks.copy(flow.invoice.bolt);
         if (a === "back") return set("quote");
       }
@@ -467,7 +491,7 @@
     };
     // Keys, as the screen's buttons: Enter or Space the main one, Escape back (or out, from the attract screen), the
     // digits, Backspace and Delete on the keypad, A to edit the donation details and O to pay on-chain on a real
-    // quote, C to copy and R to regenerate an invoice, and C to copy the on-chain address.
+    // quote, C to copy the invoice or on-chain address, and R to replace an expired invoice.
     flow.key = (e) => {
       const k = e.key, s = flow.state;
       if (k === "Escape") return s === "idle" ? hooks.close() : act("back");
@@ -481,7 +505,7 @@
       if (s !== "paid" && (k === "a" || k === "A")) return act("details");
       if (s === "quote" && (k === "o" || k === "O")) return act("chain");
       if ((s === "invoice" || s === "chain") && (k === "c" || k === "C")) return act("copy");
-      if ((s === "invoice" || s === "expired") && (k === "r" || k === "R")) return act("regen");
+      if (s === "expired" && (k === "r" || k === "R")) return act("regen");
     };
     // A tap at (u, v) on the canvas: the button under it, or on the attract screen anywhere.
     flow.tap = (u, v) => {
@@ -489,18 +513,24 @@
       if (flow.state === "idle") act("start");
     };
     flow.start = () => {
+      if (unwatchRate) unwatchRate();
+      unwatchRate = null;
       if (hooks.closeDetails) hooks.closeDetails();
       ticket++;
       flow.open = true;
       flow.digits = flow.error = flow.who = "";
       flow.invoice = flow.reply = flow.chain = flow.chainNote = flow.savedDetails = null;
+      flow.rate = flow.frozenPricing = null;
       saving = null; saveQueued = flow.detailsDirty = flow.detailsSaving = false; flow.detailsError = "";
       flow.got = flow.due = flow.rest = 0;
       if (hooks.startDetails) hooks.startDetails();
+      if (real && hooks.watchRate) unwatchRate = hooks.watchRate();
       quote();
       set("idle");
     };
     flow.stop = () => {
+      if (unwatchRate) unwatchRate();
+      unwatchRate = null;
       if (hooks.closeDetails) hooks.closeDetails();
       ticket++;
       letGo();
@@ -517,20 +547,21 @@
     flow.receive = (id, bananas = null, handle = "", paidSats = null) => {
       const s = flow.state;
       if (!flow.invoice || id !== flow.invoice.id || !RECEIVING.includes(s)) return false;
+      set("paid");
       if (hooks.closeDetails) hooks.closeDetails();
       if (bananas) flow.bananas = real ? bananas.exact : bananas.rounded;
       if (real && Number.isInteger(paidSats) && paidSats > 0) flow.sats = paidSats;
       flow.who = handle;
       flow.hold = HOLD;
-      set("paid");
       return true;
     };
     // An on-chain payment for this invoice seen before its block (`sats` all received so far, `due` the invoice's amount,
     // `left` what BTCPay still wants, fee included), taken on the address or sent screen, and true then: all of it moves
     // on to the wait for a block, part of it back to the address, which then asks for the rest. The API may send one twice.
-    flow.seen = (id, sats, due, left) => {
+    flow.seen = (id, sats, due, left, pricing = null) => {
       const s = flow.state;
-      if (!flow.invoice || id !== flow.invoice.id || s !== "chain" && s !== "confirming") return false;
+      if (!flow.invoice || id !== flow.invoice.id || !flow.chain || !RECEIVING.includes(s)) return false;
+      if (pricing && left === 0 && !flow.frozenPricing) { flow.frozenPricing = pricing; estimate(); }
       flow.got = sats;
       flow.due = due;
       flow.rest = left;
@@ -546,6 +577,7 @@
     // The invoice's clock, the payment settling, and the paid screen's hold on the bananas.
     flow.update = (dt) => {
       const s = flow.state;
+      estimate();
       if (real && hooks.open() !== shownOpen) {
         shownOpen = hooks.open();
         if (s === "idle") dirty = true;
@@ -610,11 +642,15 @@
       dirty = false;
       buttons = [];
       const s = flow.state, v = flow.invoice;
-      if (s === "idle") paintIdle(g, idleCode, button, closed(), shownNet);
+      if (s === "idle") {
+        paintIdle(g, idleCode, button, closed(), shownNet);
+        if (real) rateLine(W / 2, 389);
+      }
       else if (s === "quoting") {
         face(g, "CONFIRM DONATION");
         write(g, `${sats(flow.sats)} SATS`, W / 2, 110, 4, INK.gold, "center");
         write(g, "GETTING YOUR QUOTE...", W / 2, 162, 2, INK.white, "center");
+        if (real) rateLine(W / 2, 274);
         button(130, 320, 140, 48, "< BACK", "", "back");
       } else if (s === "problem") {
         const [title, line, note] = PROBLEMS[flow.error] || PROBLEMS.invalid;
@@ -632,6 +668,7 @@
         write(g, "SATS", 346, 66, 2, INK.dim, "right");
         if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 106, 1, INK.red, "center");
         else if (flow.digits && !valid()) write(g, flow.sats < MIN ? `MIN ${sats(MIN)} SATS` : `MAX ${sats(MAX)} SATS`, W / 2, 106, 1, INK.red, "center");
+        else if (real) rateLine(W / 2, 106, 320);
         const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "rub"];
         keys.forEach((k, i) => {
           const x = 44 + (i % 3) * 106, y = 120 + Math.floor(i / 3) * 54;
@@ -652,7 +689,7 @@
         button(100, 340, 200, 48, "CONTINUE >", valid() ? "primary" : "off", "go");
         closeButton();
       } else if (s === "quote" && real) {
-        const { bananas, rate } = flow.reply;
+        const rate = flow.rate, floating = flow.reply.pricing === "receipt";
         face(g, "CONFIRM DONATION");
         panel(g, 30, 44, 340, 92);
         write(g, "YOU DONATE", 42, 54, 1, INK.dim);
@@ -661,9 +698,9 @@
         write(g, "RATE", 42, 144, 1, INK.dim);
         writeFit(g, rate ? `1 BANANA = $1 ≈ ${RATE.format(rate.satsPerBanana)} SATS` : "NO PRICE YET", 42, 156, 2, INK.white, 316);
         panel(g, 30, 176, 340, 84);
-        write(g, "YOU WILL MAKE", 42, 186, 1, INK.dim);
-        if (bananas) {
-          write(g, "AT THE INVOICE RATE", 358, 186, 1, INK.dim, "right");
+        write(g, floating ? "ESTIMATED BANANAS" : "YOU WILL MAKE", 42, 186, 1, INK.dim);
+        if (rate) {
+          write(g, floating ? "PRICED WHEN RECEIVED" : "AT THE INVOICE RATE", 358, 186, 1, INK.dim, "right");
           bananaRow(g, `${bananaAmount()} BANANA${flow.bananas === 1 ? "" : "S"}`, 48, 212, 34, 4, 262);
         } else write(g, "COUNTED WHEN PAID", 42, 214, 2, INK.gold);
         if (flow.chainNote) write(g, flow.chainNote, W / 2, 276, 1, INK.red, "center");
@@ -673,7 +710,7 @@
           const at = new Date(rate.at);
           write(g, `OLD PRICE: THE LAST ONE, FROM ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`, W / 2, 276, 1, INK.red, "center");
         }
-        if (hooks.details) fromRow(`FROM @${(flow.savedDetails || hooks.details()).handle || "anon"}`, "EDIT DETAILS", "details");
+        if (hooks.details) fromRow(`FROM @${hooks.details().handle || "anon"}`, "EDIT DETAILS", "details");
         // How to pay: the Lightning invoice already made, or an address for it on-chain.
         button(30, 326, 84, 52, "< BACK", "", "back");
         button(122, 326, 120, 52, "LIGHTNING", v.bolt ? "primary" : "off", "create");
@@ -692,7 +729,7 @@
         write(g, "YOU WILL MAKE", 42, 186, 1, INK.dim);
         if (hooks.bananasFor(flow.sats + 400) === flow.bananas) write(g, `MAX ${flow.bananas} PER TIP`, 358, 186, 1, INK.dim, "right");
         bananaRow(g, `${flow.bananas} BANANA${flow.bananas > 1 ? "S" : ""}`, 48, 212, 34, 4, 262);
-        if (hooks.details) fromRow(`FROM @${(flow.savedDetails || hooks.details()).handle || "anon"}`, "EDIT DETAILS", "details");
+        if (hooks.details) fromRow(`FROM @${hooks.details().handle || "anon"}`, "EDIT DETAILS", "details");
         button(30, 326, 120, 52, "< BACK", "", "back");
         button(160, 326, 210, 52, "CREATE INVOICE", "primary", "create");
         closeButton();
@@ -703,10 +740,14 @@
         write(g, "AMOUNT", 232, 48, 1, INK.dim);
         write(g, sats(flow.sats), 232, 60, 2, INK.white);
         write(g, "SATS", 232, 78, 1, INK.dim);
-        write(g, "BANANAS", 232, 98, 1, INK.dim);
-        bananaRow(g, real && !flow.reply.bananas ? "LATER" : bananaAmount(), 234, 112, 16, 2, 118);
+        write(g, real ? "EST. BANANAS" : "BANANAS", 232, 98, 1, INK.dim);
+        bananaRow(g, real && !flow.rate ? "LATER" : bananaAmount(), 234, 112, 16, 2, 118);
         write(g, "EXPIRES IN", 232, 144, 1, INK.dim);
         write(g, clock(flow.left), 232, 156, 4, flow.left <= 60 ? INK.red : INK.gold);
+        if (real) {
+          rateLine(232, 198, 148, "left");
+          if (flow.rate) writeFit(g, `≈ $${(flow.sats / 1e8 * flow.rate.usdPerBtc).toFixed(2)} USD`, 232, 228, 1, INK.white, 148);
+        }
         if (waiting) {
           write(g, "SCAN WITH YOUR WALLET TO COMPLETE PAYMENT.", 20, 252, 1, INK.white);
           panel(g, 20, 266, 360, 40, INK.amber);
@@ -722,7 +763,7 @@
           g.lineWidth = 1.5;
           g.strokeRect(355.5, 273.5, 9, 11);
           g.strokeRect(359.5, 276.5, 9, 11);
-          button(20, 312, 150, 46, "REGENERATE", "", "regen");
+          button(20, 312, 150, 46, "< BACK", "", "back");
           if (real) {
             panel(g, 178, 312, 202, 46, INK.amber);
             write(g, "WAITING FOR PAYMENT", 296, 332, 1, INK.white, "center");
@@ -735,6 +776,7 @@
         face(g, "PAY ON-CHAIN", INK.gold, INK.bg, true);
         write(g, `${sats(flow.sats)} SATS`, W / 2, 110, 4, INK.gold, "center");
         write(g, "GETTING AN ADDRESS...", W / 2, 162, 2, INK.white, "center");
+        if (real) rateLine(W / 2, 274);
         button(130, 320, 140, 48, "< BACK", "", "back");
       } else if (s === "chain") {
         // The address for this invoice, its amount (with the store's network fee, when it adds one), or what is left once
@@ -749,8 +791,10 @@
         if (c.send > (flow.rest ? flow.due - flow.got : flow.sats)) write(g, "WITH THE NETWORK FEE", 232, 104, 1, INK.dim);
         write(g, "SEND BEFORE", 232, 122, 1, INK.dim);
         write(g, clock(flow.left), 232, 134, 4, flow.left <= 60 ? INK.red : INK.gold);
-        write(g, "BANANAS", 232, 176, 1, INK.dim);
-        bananaRow(g, flow.reply.bananas ? bananaAmount() : "LATER", 234, 190, 16, 2, 118);
+        write(g, "EST. BANANAS", 232, 176, 1, INK.dim);
+        bananaRow(g, flow.rate ? bananaAmount() : "LATER", 234, 190, 16, 2, 118);
+        rateLine(232, 214, 148, "left");
+        if (flow.rate) writeFit(g, `≈ $${(flow.sats / 1e8 * flow.rate.usdPerBtc).toFixed(2)} USD`, 232, 238, 1, INK.white, 148);
         // Part of it seen: what came, and what is left to send to the same address.
         if (flow.rest) write(g, `RECEIVED ${sats(flow.got)} OF ${sats(flow.due)} SATS: SEND ${sats(flow.rest)} MORE`, W / 2, 250, 1, INK.amber, "center");
         else write(g, "SCAN WITH YOUR BITCOIN WALLET", 120, 250, 1, INK.white, "center");
@@ -773,7 +817,9 @@
         face(g, seen ? "SEEN ON-CHAIN" : "SENT ON-CHAIN", INK.gold, INK.bg, true);
         write(g, seen ? "WAITING FOR" : "YOUR BANANAS COOK", W / 2, 64, 3, INK.white, "center");
         write(g, seen ? "A BLOCK" : "ONCE IT CONFIRMS", W / 2, 92, 3, INK.white, "center");
-        writeFit(g, flow.reply.bananas ? `${sats(paid)} SATS · ${bananaAmount()} BANANA${flow.bananas === 1 ? "" : "S"}` : `${sats(paid)} SATS`, W / 2, 218, 2, INK.gold, 340, "center");
+        writeFit(g, flow.rate ? `${sats(paid)} SATS · ${bananaAmount()} BANANA${flow.bananas === 1 ? "" : "S"}` : `${sats(paid)} SATS`, W / 2, 202, 2, INK.gold, 340, "center");
+        write(g, flow.frozenPricing ? "PRICE RECORDED AT FULL RECEIPT" : "ESTIMATED · PRICED WHEN RECEIVED", W / 2, 222, 1, INK.dim, "center");
+        rateLine(W / 2, 236);
         write(g, seen ? "YOUR PAYMENT IS IN THE MEMPOOL. YOU CAN LEAVE:" : "THAT TAKES A BLOCK OR MORE. YOU CAN LEAVE:", W / 2, 250, 1, INK.dim, "center");
         write(g, "THE COOKER STARTS WHEN IT CONFIRMS.", W / 2, 264, 1, INK.dim, "center");
         button(30, 326, 120, 52, "< ADDRESS", seen ? "off" : "", "back");

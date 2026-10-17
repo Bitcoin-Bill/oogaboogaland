@@ -4661,7 +4661,7 @@ const donationClientChecks = async () => {
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
   message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
   message({ type: "seen", id: "chain", sats: 400, due: 1000 });
-  const heard = seen.length === 1 && seen[0].join() === "chain,400,1000,615";
+  const heard = seen.length === 1 && seen[0].slice(0, 4).join() === "chain,400,1000,615" && seen[0][4] === null;
   const fallback = await D.invoice({ sats: 1000 });
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
   stop();
@@ -4707,15 +4707,61 @@ const donationClientChecks = async () => {
   const waited = waits.join() === "unlit";
   record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 
-  const elements = new Map(), frames = new Map(), invoices = [], notes = [], popupWaits = [];
+  let liveRate = { usdPerBtc: 100000, satsPerBanana: 1000, at: now, stale: false }, watching = 0;
+  const live = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
+    invoice: async () => ({ request: "request", pricing: "receipt", invoice: { id: "floating", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 1, rounded: 1 }, rate: liveRate }),
+    onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor() {},
+    open: () => true, testNetwork: () => "", rate: () => liveRate, watchRate: () => { watching++; return () => watching--; } });
+  live.start(); for (const key of ["Enter", "1", "0", "0", "0", "Enter"]) live.key({ key }); await Promise.resolve();
+  const first = live.bananas === 1, fixedInvoice = live.invoice;
+  live.key({ key: "Enter" });
+  liveRate = { usdPerBtc: 90000, satsPerBanana: 1111, at: ++now, stale: false }; live.update(0.1);
+  const qrFloating = live.state === "invoice" && live.bananas === 0.9 && live.invoice === fixedInvoice;
+  live.key({ key: "Escape" }); live.key({ key: "O" }); await Promise.resolve();
+  const fixedChainCode = live.chain.code;
+  liveRate = { usdPerBtc: 80000, satsPerBanana: 1250, at: ++now, stale: false }; live.update(0.1);
+  const chainFloating = live.bananas === 0.8 && live.chain.code === fixedChainCode;
+  live.key({ key: "Escape" });
+  live.seen("floating", 1000, 1000, 0, { receivedAt: now, rate: liveRate, bananas: { exact: 0.8, rounded: 1 } });
+  liveRate = { usdPerBtc: 120000, satsPerBanana: 833, at: ++now, stale: false }; live.update(0.1);
+  const frozen = live.state === "confirming" && live.bananas === 0.8 && live.rate.usdPerBtc === 80000;
+  live.receive("floating", { exact: 0.8, rounded: 1 }, "donor", 1000); live.update(0.1);
+  const credited = live.bananas === 0.8;
+  live.stop();
+  record("donation pricing: estimates float on both QR screens without replacing either payment code, full receipt freezes even from the quote, settlement keeps its recorded bananas, and closing releases the rate feed",
+    first && qrFloating && chainFloating && frozen && credited && watching === 0, JSON.stringify({ first, qrFloating, chainFloating, frozen, credited, watching }));
+
+  const priceSockets = [], priceTimers = new Map(), priceListeners = new Map();
+  let priceClock = 1000, nextPriceTimer = 0;
+  const rateContext = { window: { BL: {}, setTimeout: fn => { const id = ++nextPriceTimer; priceTimers.set(id, fn); return id; }, clearTimeout: id => priceTimers.delete(id) },
+    document: { hidden: false, addEventListener: (name, fn) => priceListeners.set(name, fn), removeEventListener: name => priceListeners.delete(name) },
+    Date: { now: () => priceClock }, WebSocket: class { constructor(url) { this.url = url; priceSockets.push(this); } close() { this.closed = true; } } };
+  runInNewContext(await readFile(new URL("../src/js/donation-rate.js", import.meta.url), "utf8"), rateContext);
+  const rates = rateContext.window.BL.donationRate, offOne = rates.watch(), offTwo = rates.watch();
+  priceSockets[0].onmessage({ data: JSON.stringify({ weightedPrice: "90000.12" }) });
+  const sharedRate = priceSockets.length === 1 && rates.current.usdPerBtc === 90000.12 && !rates.current.stale;
+  priceSockets[0].onmessage({ data: JSON.stringify({ weightedPrice: "-1" }) });
+  const validRate = rates.current.usdPerBtc === 90000.12;
+  rateContext.document.hidden = true; priceListeners.get("visibilitychange")();
+  const hiddenRate = priceSockets[0].closed && rates.current.stale && priceTimers.size === 0;
+  rateContext.document.hidden = false; priceListeners.get("visibilitychange")();
+  priceClock++; priceSockets[1].onmessage({ data: JSON.stringify({ weightedPrice: "91000" }) });
+  offOne(); const retainedRate = !priceSockets[1].closed;
+  offTwo(); offTwo();
+  record("donation rate: kiosks share one socket, reject invalid prices, pause while hidden, reconnect when visible, and close the last socket and its timers exactly once",
+    sharedRate && validRate && hiddenRate && retainedRate && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
+    JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, listeners: priceListeners.size, timers: priceTimers.size }));
+
+  const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];
   for (const id of ["donation-popup", "donation-screen", "donation-handle", "donation-message", "donation-close",
-    "donation-fields", "factory-donation-fields", "donation-save", "donation-details-status"]) elements.set(id, {
+    "donation-fields", "factory-donation-fields", "donation-details-status"]) elements.set(id, {
     listeners: new Map(), open: false, value: "", disabled: false,
     addEventListener(type, fn) { this.listeners.set(type, fn); }, removeEventListener(type) { this.listeners.delete(type); },
     showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; },
     select() { this.selected = true; }, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
   });
   Object.assign(kioskContext, { location: { origin: "https://site.test" }, navigator: {}, performance: { now: () => now },
+    setTimeout: fn => { const id = now++; detailTimers.set(id, fn); return id; }, clearTimeout: id => detailTimers.delete(id),
     requestAnimationFrame: (fn) => { const id = now++; frames.set(id, fn); return id; }, cancelAnimationFrame: (id) => frames.delete(id) });
   kioskContext.document.getElementById = id => elements.get(id);
   const K = kioskContext.window.BL, factoryCreate = K.factoryKiosk.create;
@@ -4743,14 +4789,20 @@ const donationClientChecks = async () => {
   elements.get("donation-handle").value = "another-name";
   elements.get("donation-message").value = "m".repeat(281);
   elements.get("donation-fields").listeners.get("input")();
-  await popupFlow.saveDetails();
+  await [...detailTimers.values()][0]();
   const edited = focused && notes.at(-1).handle === "another-name" && notes.at(-1).message.length === 280
     && notes.at(-1).request === "request" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
-  popupFlow.detailsChanged(); await popupFlow.saveDetails();
+  elements.get("donation-fields").listeners.get("input")();
+  await [...detailTimers.values()][0]();
   const invoiceEdited = popupFlow.state === "invoice" && notes.at(-1).handle === undefined
     && notes.at(-1).message === "updated while the QR is shown" && popupFlow.invoice === originalInvoice;
+  popupFlow.key({ key: "R" });
+  popupFlow.key({ key: "Escape" });
+  const lightningBack = popupFlow.state === "quote" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
+  popupFlow.key({ key: "Enter" });
+  const sameLightning = popupFlow.state === "invoice" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
   popupFlow.key({ key: "Escape" });
   popupFlow.key({ key: "O" }); await Promise.resolve();
   const popupSeen = popup.seen("popup", 1000, 1000, 0) && popupFlow.state === "confirming";
@@ -4758,9 +4810,9 @@ const donationClientChecks = async () => {
   const leftWaiting = popupWaits.join() === "popup" && !dialog.open && frames.size === 0;
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
-  const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
-  record("donation popup: signed-out visitors can quote a payment, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, listeners and late replies",
-    anonymous && signedIn && edited && invoiceEdited && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, invoiceEdited, other, settled, popupSeen, leftWaiting, disposed }));
+  const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
+  record("donation popup: signed-out visitors can quote a payment, edits save automatically on the same invoice, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
+    anonymous && signedIn && edited && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });

@@ -6,9 +6,9 @@
     const dialog = document.getElementById("donation-popup"), canvas = document.getElementById("donation-screen");
     const fields = document.getElementById("donation-fields"), dock = document.getElementById("factory-donation-fields");
     const handle = document.getElementById("donation-handle"), message = document.getElementById("donation-message"), closeButton = document.getElementById("donation-close");
-    const saveButton = document.getElementById("donation-save"), status = document.getElementById("donation-details-status");
+    const status = document.getElementById("donation-details-status");
     const context = canvas.getContext("2d"), donations = BL.donations;
-    let flow = null, fieldFlow = null, frame = 0, previous = 0, clock = 0;
+    let flow = null, fieldFlow = null, frame = 0, previous = 0, clock = 0, saveTimer = 0;
     const cleanDetails = (handle, message) => ({
       handle: donations.sanitize(handle, donations.HANDLE_MAX).replace(/^@+/, "").trim() || "anon",
       message: donations.sanitize(message, donations.MESSAGE_MAX)
@@ -19,10 +19,9 @@
       if (fieldFlow !== owner) return;
       const paid = owner.state === "paid", hasInvoice = !!owner.invoice;
       handle.disabled = message.disabled = paid;
-      saveButton.hidden = !hasInvoice || paid;
-      saveButton.disabled = !owner.detailsDirty || owner.detailsSaving;
+      if (paid) { clearTimeout(saveTimer); saveTimer = 0; }
       status.textContent = owner.detailsSaving ? "Saving changes…" : owner.detailsError
-        || (owner.detailsDirty ? "Unsaved changes" : hasInvoice ? "Details saved" : "");
+        || (owner.detailsDirty ? "Changes save automatically…" : hasInvoice ? "Details saved" : "");
     };
     const attachDetails = (owner, value, factory = false) => {
       fieldFlow = owner;
@@ -34,6 +33,7 @@
     };
     const detachDetails = (owner) => {
       if (fieldFlow !== owner) return;
+      if (saveTimer) save();
       fieldFlow = null;
       dock.hidden = true;
       dialog.insertBefore(fields, dialog.querySelector(".help"));
@@ -43,18 +43,25 @@
       handle.select();
       handle.scrollIntoView({ block: "nearest" });
     };
-    const changed = () => { if (fieldFlow) fieldFlow.detailsChanged(); };
-    const save = () => { if (fieldFlow) fieldFlow.saveDetails(); };
+    const save = () => {
+      clearTimeout(saveTimer); saveTimer = 0;
+      return fieldFlow ? fieldFlow.saveDetails() : Promise.resolve({});
+    };
+    const changed = () => {
+      if (!fieldFlow) return;
+      fieldFlow.detailsChanged();
+      clearTimeout(saveTimer); saveTimer = 0;
+      if (fieldFlow.invoice && fieldFlow.state !== "paid") saveTimer = setTimeout(save, 350);
+    };
     const fieldsKey = (event) => {
       event.stopPropagation();
-      if (event.key === "Enter" && event.target !== saveButton && !event.isComposing) {
+      if (event.key === "Enter" && !event.isComposing) {
         event.preventDefault(); save();
       }
     };
     fields.addEventListener("input", changed);
     fields.addEventListener("change", save);
     fields.addEventListener("keydown", fieldsKey);
-    saveButton.addEventListener("click", save);
     const close = () => {
       cancelAnimationFrame(frame); frame = 0;
       if (flow) flow.stop();
@@ -83,6 +90,8 @@
         note: (request, value, changedHandle) => donations.note(request, value.message, changedHandle ? value.handle : undefined),
         onchain: (request) => donations.onchain(request), waitFor: donations.waitFor,
         open: () => donations.state.open, testNetwork: () => donations.testNetwork,
+        rate: () => BL.donationRate?.current || donations.state.tally?.rate,
+        watchRate: () => BL.donationRate?.watch(),
         bananasFor: BL.game.bananasFor,
         copy: (text) => { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); },
         close, watch: close, release: close
@@ -120,13 +129,13 @@
       close();
       return true;
     };
-    const seen = (id, sats, due, left) => !!flow && flow.seen(id, sats, due, left);
+    const seen = (id, sats, due, left, pricing) => !!flow && flow.seen(id, sats, due, left, pricing);
     const dispose = () => {
       close();
       if (fieldFlow) detachDetails(fieldFlow);
       dialog.removeEventListener("keydown", key); dialog.removeEventListener("cancel", cancel);
       fields.removeEventListener("input", changed); fields.removeEventListener("change", save);
-      fields.removeEventListener("keydown", fieldsKey); saveButton.removeEventListener("click", save);
+      fields.removeEventListener("keydown", fieldsKey);
       closeButton.removeEventListener("click", close); canvas.removeEventListener("click", tap);
     };
     return { open, close, receive, seen, dispose, defaults, details, focusDetails, attachDetails, detachDetails, detailsState };

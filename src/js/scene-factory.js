@@ -839,6 +839,8 @@
       waitFor: (id) => donations.waitFor(id),
       open: () => donations.state.open,
       testNetwork: () => donations.testNetwork,
+      rate: () => BL.donationRate.current || donations.state.tally?.rate,
+      watchRate: () => BL.donationRate.watch(),
       request: () => donations.createRequest(BL.donationPopup.details()),
       bananasFor: gameMod.bananasFor,
       price: () => BL.chain.snapshot.priceUsd,
@@ -1048,7 +1050,7 @@
     return true;
   };
   // An on-chain payment seen before its block: true when the kiosk holding its invoice shows it.
-  const onSeen = (id, sats, due, left) => !!(scene.booth.flow && scene.booth.flow.seen(id, sats, due, left));
+  const onSeen = (id, sats, due, left, pricing) => !!(scene.booth.flow && scene.booth.flow.seen(id, sats, due, left, pricing));
   const onLootCleared = () => {};
 
   const build = () => {
