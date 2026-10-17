@@ -4646,6 +4646,12 @@ const donationClientChecks = async () => {
   message({ type: "tally", count: 1, sats: 1000, bananas: 0.25, last: 1000, hours: [[Date.now(), 1000, 0.25]], rate: null });
   message({ type: "tally", count: "bad", sats: 0, bananas: 0, last: null, hours: [] });
   const tally = D.state.tally?.bananas === 0.25 && D.state.tally.hours[0][2] === 0.25;
+  message({ type: "board", entries: [{ handle: "banana-leader", bananas: 20, sats: 1000 }],
+    satsEntries: [{ handle: "sat-leader", bananas: 10, sats: 9000 }] });
+  const boards = D.state.board[0].handle === "banana-leader" && D.state.board[0].sats === 1000
+    && D.state.boardSats[0].handle === "sat-leader" && D.state.boardSats[0].sats === 9000;
+  message({ type: "board", entries: [{ handle: "legacy-donor", bananas: 4 }] });
+  const legacyBoard = D.state.board[0].bananas === 4 && D.state.board[0].sats === null && D.state.boardSats === null;
   const paid = { type: "donation", donation: { id: "paid", sats: 1000, handle: "tester", message: "", at: Date.now() }, bananas: { exact: 0.25, rounded: 0 } };
   message(paid); message(paid);
   sockets[0].onclose(); timers.at(-1).fn();
@@ -4653,9 +4659,9 @@ const donationClientChecks = async () => {
   message(paid);
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, replay counts a payment once, an unpriced payment counts no bananas, and unsubscribe closes the socket",
-    empty && tally && replay && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ empty, tally, replay, received }));
+  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, and unsubscribe closes the socket",
+    empty && tally && boards && legacyBoard && replay && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ empty, tally, boards, legacyBoard, replay, received }));
 
   let now = Date.now();
   const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
@@ -5377,8 +5383,8 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
 const hubBlockHeight = { name: "header clock and block height", why: "rule: the single-digit clock is centered from its visible glyphs with a time zone, and the shared chain reading is shown beneath it", run: async (b) => {
   const before = await b.evaluate(`(() => { const clock = document.getElementById("world-clock"), label = clock.querySelector("svg").getAttribute("aria-label"), text = label.replace(/^Ooga Booga time /, ""), cells = [...text].reduce((sum, ch) => sum + (ch === " " ? 2 : 4), -1), zone = (new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date()).find(part => part.type === "timeZoneName")?.value || "UTC").toUpperCase().replaceAll("−", "-"); return { height: document.getElementById("world-block-height").textContent, bananas: !!document.getElementById("world-banana-count"), label, namedImage: !clock.hasAttribute("aria-label") && clock.querySelector("svg").getAttribute("role") === "img", text, zone, cells, viewWidth: clock.querySelector("svg").viewBox.baseVal.width, cssWidth: parseFloat(clock.style.width) }; })()`);
   await b.evaluate(`BL.mempool.emit({ type: "block", height: 900123, txCount: 3210 })`);
-  const after = await b.evaluate(`(() => { const B = __ooga, height = document.getElementById("world-block-height"), block = document.getElementById("world-block"); const shown = height.textContent; B.hud.setMeter(42, 60, "Ready"); return { shown, afterMeter: height.textContent, label: block.getAttribute("aria-label"), bananas: !!document.getElementById("world-banana-count"), icon: !!block.querySelector(".banana-icon") }; })()`);
-  record("header: a single-digit clock is centered from its displayed time and local zone, while the chain feed paints block height below it and banana-meter updates cannot overwrite it", before.height === "\u2014" && before.namedImage && !before.bananas && before.text === `9:00 AM ${before.zone}` && before.viewWidth === before.cells && Math.abs(before.cssWidth - before.cells / 6) < 1e-6 && after.shown === "900,123" && after.afterMeter === after.shown && after.label === "Bitcoin block height 900123" && !after.bananas && !after.icon, JSON.stringify({ before, after }));
+  const after = await b.evaluate(`(() => { const height = document.getElementById("world-block-height"), block = document.getElementById("world-block"); const shown = height.textContent; return { shown, label: block.getAttribute("aria-label"), bananas: !!document.getElementById("world-banana-count"), icon: !!block.querySelector(".banana-icon") }; })()`);
+  record("header: a single-digit clock is centered from its displayed time and local zone, while the chain feed paints block height below it", before.height === "\u2014" && before.namedImage && !before.bananas && before.text === `9:00 AM ${before.zone}` && before.viewWidth === before.cells && Math.abs(before.cssWidth - before.cells / 6) < 1e-6 && after.shown === "900,123" && after.label === "Bitcoin block height 900123" && !after.bananas && !after.icon, JSON.stringify({ before, after }));
 } };
 const hubDestinationNames = { name: "destination accessible names", why: "regression: each visible destination label must occur in the button's accessible name", run: async (b) => {
   const rows = [];

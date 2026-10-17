@@ -310,71 +310,6 @@ body[data-active-scene="hub"] .home-link {
   pointer-events: none;
 }
 
-.meter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  margin-bottom: 10px;
-  padding: 8px 14px;
-  background: var(--tablet);
-  border: 2px solid var(--stone-dk);
-  border-radius: 9px 7px 10px 8px;
-  box-shadow: var(--tablet-shadow);
-}
-
-.meter-label {
-  color: var(--accent-text);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.meter-bar {
-  flex: 1 1 90px;
-  min-width: 90px;
-  height: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.meter-fill {
-  display: block;
-  height: 100%;
-  width: 0%;
-  background: var(--ok);
-  transition: width 0.45s ease, background-color 0.4s ease;
-}
-
-.meter-fill[data-level="mid"] {
-  background: var(--warn);
-}
-
-.meter-fill[data-level="low"] {
-  background: var(--danger);
-}
-
-.meter-count {
-  min-width: 3ch;
-  text-align: right;
-  font-weight: 600;
-}
-
-.meter-forecast {
-  flex-basis: 100%;
-  color: var(--muted);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-
-.metrics {
-  margin-top: 8px;
-  grid-template-columns: 1fr 1fr;
-}
-
 .presets {
   grid-column: 3;
   display: flex;
@@ -389,13 +324,13 @@ body[data-active-scene="hub"] .home-link {
 }
 
 .presets button,
-.tabs button,
 .sheet-toggle {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.presets button {
+.presets button,
+.banana-units button {
   min-height: 28px;
   padding: 0 12px;
   border: 2px solid var(--wood-edge);
@@ -439,10 +374,12 @@ body[data-active-scene="hub"] .home-link {
 }
 
 .sheet {
+  --sheet-chat-top: 197px;
+  --sheet-chat-left: 216px;
   position: absolute;
   top: calc(62px + var(--safe-top));
   right: calc(16px + var(--safe-right));
-  height: 520px;
+  height: var(--sheet-height, 520px);
   max-height: calc(100% - 90px - var(--safe-top) - var(--safe-bottom));
   width: 380px;
   max-width: calc(100vw - 32px - var(--safe-left) - var(--safe-right));
@@ -453,6 +390,7 @@ body[data-active-scene="hub"] .home-link {
   border-radius: var(--radius);
   box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35);
   color: var(--paper);
+  padding-bottom: 10px;
   transition: transform 0.28s ease;
 }
 
@@ -716,20 +654,6 @@ body[data-active-scene="arcade"] .magazine-hud {
   height: 56px;
 }
 
-.sheet-toggle .banana-icon {
-  display: block;
-  width: 100%;
-  height: auto;
-  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5));
-}
-
-.sheet-toggle .caveman-icon {
-  display: block;
-  width: 100%;
-  height: auto;
-  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5));
-}
-
 .sheet-toggle:hover,
 .sheet-toggle.virtual-hover,
 .sheet-toggle:focus-visible {
@@ -737,46 +661,41 @@ body[data-active-scene="arcade"] .magazine-hud {
   outline: none;
 }
 
-.tabs {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px 0;
-  border-bottom: 2px solid var(--wood-edge);
-  flex: none;
+.sheet-panels { display: contents; }
+.sheet-toggle-loot { top: 133px; height: 56px; }
+.sheet-toggle-chat { top: var(--sheet-chat-top); height: 56px; }
+.sheet:has(.sheet-toggle-loot[hidden]) { --sheet-chat-top: 133px; --sheet-chat-left: 144px; }
+.sheet-toggle svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5)); }
+.sheet-toggle[aria-selected="true"] { background: linear-gradient(90deg, var(--wood), var(--wood-dk)); }
+.sheet-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.sheet-toggle .tab-count { position: absolute; bottom: 3px; right: 3px; margin: 0; }
+
+.sheet-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 16px;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.tabs button {
-  flex: 1;
-  min-height: 38px;
-  margin-bottom: -2px;
-  border: 2px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
-  color: rgba(243, 239, 228, 0.55);
-  font-size: 17px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  transition: color 0.15s ease;
+.sheet-resize::after {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 6px auto;
+  border-radius: 2px;
+  background: var(--wood-edge);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-/* With Ooga Chat's tab and the loot tab that makes four: the lettering shrinks so none is pushed out of the sheet. */
-.tabs:has(> [data-tab="loot"]:not([hidden])):has(> [data-tab="chat"]:not([hidden])) button {
-  font-size: 12.5px;
-}
+.sheet-resize:hover::after { background: var(--accent-text); }
+.sheet-resize:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.sheet[data-open="false"] .sheet-resize { display: none; }
 
-.tabs button:hover,
-.tabs button.virtual-hover {
-  color: rgba(243, 239, 228, 0.85);
-}
-
-.tabs button[aria-selected="true"] {
-  color: var(--paper);
-  border-color: var(--wood-edge);
-  background: var(--wood-dk);
-}
-
-.tabs button:focus-visible,
 .presets button:focus-visible,
 .actions button:focus-visible,
 .link:focus-visible {
@@ -825,6 +744,134 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .panel[data-panel="roster"] > .feed-open {
   margin-top: auto;
+}
+
+.panel[data-panel="bananas"] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.banana-total,
+.banana-board {
+  flex: none;
+  padding: 12px;
+  background: var(--tablet);
+  border: 2px solid var(--stone-dk);
+  border-radius: 9px 7px 10px 8px;
+  box-shadow: var(--tablet-shadow);
+}
+
+.banana-total-head,
+.banana-board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.banana-total .banana-total-head h2,
+.banana-board .banana-board-head h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.banana-source {
+  color: var(--muted);
+  border-color: rgba(166, 166, 162, 0.4);
+  background: rgba(166, 166, 162, 0.08);
+}
+
+.banana-total > strong {
+  display: block;
+  margin: 12px 0;
+  color: var(--accent-text);
+  font-size: clamp(24px, 5vw, 34px);
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+  overflow-wrap: anywhere;
+}
+
+.banana-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.35);
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.banana-totals b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--paper);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.banana-board { flex: 1 0 auto; }
+.banana-units { display: flex; gap: 6px; }
+.banana-units button { min-height: 34px; padding: 0 9px; }
+
+.banana-units button[aria-pressed="true"] {
+  background: var(--wood-dk);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.banana-units button:hover,
+.banana-units button.virtual-hover {
+  background: linear-gradient(#b8844a, var(--plank));
+  color: var(--paper);
+}
+
+.banana-units button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.banana-board-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding: 0 0 6px 29px;
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.banana-leaders { margin: 0; padding: 0; list-style: none; }
+
+.banana-leaders li {
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.banana-leaders li:last-child { border-bottom: 0; box-shadow: none; }
+.banana-rank { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.banana-donor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banana-leaders strong { color: var(--paper); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.banana-leaders li:first-child .banana-rank,
+.banana-leaders li:first-child strong { color: var(--accent-text); }
+.banana-empty { padding: 12px 0; text-align: center; }
+.banana-board-note { margin-top: 12px; }
+.panel[data-panel="bananas"] > .feed-open { flex: none; margin-top: 0; }
+
+@media (pointer: coarse) {
+  .banana-units button { min-height: 44px; }
 }
 
 /* Ooga Chat: the log scrolls on the roster's tablet, with the input pinned under it. */
@@ -4705,7 +4752,6 @@ body.orbit-dragging #tooltip {
 
 @media (prefers-reduced-motion: reduce) {
 
-  .meter-fill,
   .toast,
   .hint {
     transition: none;
@@ -4755,20 +4801,6 @@ body.orbit-dragging #tooltip {
     font-size: 10.5px;
   }
 
-  .meter {
-    justify-self: end;
-    gap: 8px;
-    padding: 6px 10px;
-  }
-
-  .meter-label {
-    display: none;
-  }
-
-  .meter-bar {
-    width: 84px;
-  }
-
   .presets {
     grid-column: 1 / -1;
     justify-content: center;
@@ -4811,8 +4843,8 @@ body.orbit-dragging #tooltip {
     bottom: var(--chat-keyboard, 0px);
     width: 100%;
     max-width: none;
-    height: 52vh;
-    max-height: min(52vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
+    height: var(--sheet-height, 52vh);
+    max-height: max(0px, calc(var(--chat-viewport, 100vh) - 74px - var(--safe-top)));
     border-radius: var(--radius) var(--radius) 0 0;
     border-bottom: 0;
     padding-bottom: var(--safe-bottom);
@@ -4851,15 +4883,6 @@ body.orbit-dragging #tooltip {
     margin: 0;
     height: 42px;
     padding: 4px 18px 0;
-  }
-
-  .tabs button {
-    min-height: 38px;
-    font-size: min(17px, 4vw);
-  }
-
-  .tabs:has(> [data-tab="loot"]:not([hidden])):has(> [data-tab="chat"]:not([hidden])) button {
-    font-size: min(12.5px, 3.3vw);
   }
 
   .panel {
@@ -5047,27 +5070,6 @@ body.orbit-dragging #tooltip {
     grid-column: 1 / -1;
   }
 
-  .panel[data-panel="bananas"] {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-content: start;
-    gap: 12px;
-  }
-
-  .panel[data-panel="bananas"] > .meter {
-    grid-column: 1 / -1;
-    margin-bottom: 0;
-  }
-
-  .panel[data-panel="bananas"] > .stats,
-  .panel[data-panel="bananas"] > .help {
-    margin-top: 0;
-  }
-
-  .panel[data-panel="bananas"] > .feed-open {
-    align-self: end;
-    margin-top: 0;
-  }
 }
 
 /* Keep full-size weapon readouts on phones; spares move onto their own row. */
@@ -5110,8 +5112,8 @@ body.orbit-dragging #tooltip {
     right: 0;
     bottom: var(--chat-keyboard, 0px);
     width: 330px;
-    height: 72vh;
-    max-height: min(72vh, max(0px, calc(var(--chat-viewport, 100vh) - 42px - var(--safe-top))));
+    height: var(--sheet-height, 72vh);
+    max-height: max(0px, calc(var(--chat-viewport, 100vh) - 74px - var(--safe-top)));
     border-radius: var(--radius) 0 0 0;
     border-bottom: 0;
     transition: transform 0.28s ease;
@@ -8113,4 +8115,12 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .svrn-menu nav button { flex: 1 0 42%; }
   .svrn-grid { grid-template-columns: 1fr; }
   .svrn-content { padding: 14px; }
+}
+
+/* Bottom-anchored drawers grow upward, with the resize grip just inside their top edge. */
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) {
+  .sheet { padding-top: 12px; }
+  .sheet-resize { top: -3px; bottom: auto; }
+  .sheet-toggle-loot { top: -39px; left: 144px; height: 42px; }
+  .sheet-toggle-chat { top: -39px; left: var(--sheet-chat-left); height: 42px; }
 }
