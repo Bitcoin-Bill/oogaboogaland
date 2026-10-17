@@ -217,7 +217,7 @@
   };
   const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false }) => {
     const el = {
-      roster: $("roster"),
+      roster: $("roster"), rosterCount: $("roster-count"),
       statDonations: $("stat-donations"),
       statSats: $("stat-sats"),
       bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
@@ -356,14 +356,20 @@
     };
     let hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
-    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null;
+    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null, onlineCount = 0, onlineShown = -1;
     const awayRow = document.createElement("li"), awayButton = document.createElement("button");
     awayRow.className = "roster-away";
     awayButton.type = "button";
     awayButton.setAttribute("aria-expanded", "false");
     awayRow.append(awayButton);
     // countAway rescans on every roster state flip and online toggle; skip the writes until they change.
+    // The title's chip counts the players online, or the cast while nobody is.
     const updateAwayButton = () => {
+      if (onlineCount !== onlineShown) {
+        onlineShown = onlineCount;
+        el.rosterCount.textContent = onlineCount ? `${onlineCount} online` : `${roster.length} Oogas`;
+        el.rosterCount.dataset.tone = onlineCount ? "live" : "idle";
+      }
       if (awayCount === awayShownCount && showAway === awayShownShow) return;
       awayShownCount = awayCount;
       awayShownShow = showAway;
@@ -399,7 +405,6 @@
       voice.hidden = true;
       voice.append(voiceIcon.cloneNode(true));
       marks.append(host, voice);
-      name.append(marks);
       const age = document.createElement("span");
       age.className = "roster-age";
       age.append(BL.contributors.contributionAgeLabel(contributor));
@@ -412,7 +417,7 @@
         if (!awayRow.parentElement) el.roster.append(awayRow);
         li.hidden = true; awayCount++;
       }
-      li.append(presence, name, age, state);
+      li.append(presence, name, marks, age, state);
       el.roster.append(li);
       rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
     }
@@ -435,8 +440,11 @@
     // Online players lead the roster, by their activity's stamp; an away player who is online is never folded away.
     const rankOf = (row) => row.online ? ONLINE_RANK : ROSTER_ORDER[row.state.dataset.state];
     const countAway = () => {
-      awayCount = 0;
-      for (const row of rosterRows.values()) if (row.state.dataset.state === "away" && !row.online) awayCount++;
+      awayCount = onlineCount = 0;
+      for (const row of rosterRows.values()) {
+        if (row.online) onlineCount++;
+        else if (row.state.dataset.state === "away") awayCount++;
+      }
       updateAwayButton();
     };
     const placeRosterRow = (row) => {
@@ -497,13 +505,19 @@
       if (showOnline(row)) placeRosterRow(row);
     };
     showVoices();
-    let shownTally, shownBoard, shownReal, shownNetwork;
+    let shownTally, shownBoard, shownReal, shownNetwork, shownOpen;
     const refreshDonors = (force = false) => {
       const { real, state, testNetwork } = BL.donations;
-      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork) return;
-      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork;
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
+      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
       const tally = real ? state.tally : donationStats;
-      el.bananaSource.textContent = real ? testNetwork ? `Test · ${testNetwork}` : "Island total" : "Local demo";
+      // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
+      // donations closed, or the island's live feed.
+      const tone = !real ? "idle" : testNetwork ? "test" : !tally ? "wait" : state.open === false ? "closed" : "live";
+      el.bananaSource.dataset.tone = tone;
+      el.bananaSource.textContent = tone === "idle" ? "Demo" : tone === "test" ? `Test · ${testNetwork}` : tone === "wait" ? "Loading" : tone === "closed" ? "Closed" : "Live";
+      el.bananaSource.title = tone === "idle" ? "Demo donations saved in this browser" : tone === "test" ? `Test donations on ${testNetwork}, not real bitcoin`
+        : tone === "wait" ? "Waiting for the island’s donation feed" : tone === "closed" ? "Donations are closed for now" : "The island’s donation feed";
       el.bananaTotal.textContent = tally ? DONATED_COUNT.format(tally.bananas) : "—";
       el.statDonations.textContent = tally ? BANANA_COUNT.format(real ? tally.count : tally.donations) : "—";
       el.statSats.textContent = tally ? BANANA_COUNT.format(real ? tally.sats : tally.totalSats) : "—";
@@ -518,16 +532,18 @@
         const entry = ranked[i], row = document.createElement("li");
         const rank = document.createElement("span"), name = document.createElement("span"), amount = document.createElement("strong");
         rank.className = "banana-rank"; rank.textContent = String(i + 1).padStart(2, "0");
-        name.className = "banana-donor"; name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous"; name.title = name.textContent;
-        amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONATED_COUNT).format(entry[donorUnit]);
+        name.className = "banana-donor"; name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous";
+        if (!entry.handle) name.dataset.anon = "true";
+        amount.className = "banana-amount"; amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONATED_COUNT).format(entry[donorUnit]);
         row.append(rank, name, amount); el.bananaLeaders.append(row);
       }
       el.bananaEmpty.hidden = ranked.length > 0;
       el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
-        : real && !entries ? "Waiting for the island’s donor leaderboard…"
+        : real && !entries ? "Loading the donor leaderboard…"
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
-      el.bananaBoardNote.textContent = real ? "Island donation feed · top 10 donors"
-        : "Demo donations · this browser. Earlier tips have no donor history.";
+      el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
+        : testNetwork ? `Test donations on ${testNetwork}. Amounts as recorded when each was paid.`
+        : "All time, as recorded when each donation was paid.";
       el.bananaBoardUnit.textContent = donorUnit === "sats" ? "Sats" : "Bananas";
       el.bananaLeaders.setAttribute("aria-label", `Top donors by ${donorUnit}`);
       for (const button of el.donorUnits) button.setAttribute("aria-pressed", String(button.dataset.donorUnit === donorUnit));
@@ -1975,7 +1991,7 @@
   // Net and voice emits re-run this several times a second with the same outcome; last-written
   // records keep an unchanged textContent from re-invalidating the line.
   let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
-  let accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
+  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
   const showAccount = ({ backend, me, room, online }) => {
     const hasMe = !!me;
     if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
@@ -1987,6 +2003,9 @@
       $("account-login").hidden = !!me;
       $("account-logout").hidden = !me;
     }
+    // The foot's green dot shows only while the room is live.
+    const live = String(!!me && room === "live");
+    if (live !== accountLive) { accountLive = live; $("account").dataset.live = live; }
     const words = room === "live" ? `${online} online` : ROOM_WORDS[room] || "";
     if (words !== accountWords) { accountWords = words; $("account-room").textContent = words; }
     const wordsHidden = !me || !words;
