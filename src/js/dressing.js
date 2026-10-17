@@ -2,7 +2,7 @@
 // writing through `box` and `put` into separate solid, hanging, decorative glow and lantern glow layers: general (`lanternPost`, `crate`, `coalCrate`,
 // `barrel`, `cart`, `banner`, `gauge`, `rubble`, `bracket`, `hanging`, `bulb`), lab (`die`,
 // `flaskBench`, `terminal`, `chalkboard`), the mirror (`monolith`, `runeStone`), lightning (`coil`,
-// `boards`), the arcade (`cabinet`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem from `hubModels.SIGN_ICONS`.
+// `boards`), the arcade (`cabinet`), B.C.A. (`abacus`, `ledger`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem from `hubModels.SIGN_ICONS`.
 //
 // `set()` places pieces by quarter turns (`put`), strings sagging cables with lamps (`cable`) and `build`s
 // everything placed into one `solid`, one `hang`, decorative `glow` and lantern `lampGlow` mesh plus the `lights` its lanterns
@@ -32,7 +32,7 @@
   // Keep decorative uprights distinct inside a merged solid. Structures,
   // workbenches and short stepping props retain their ordinary collision.
   const RAGE_PASS = 64;
-  const RAGE_PASS_PIECES = new Set(["lanternPost", "banner", "chalkboard", "monolith", "coil", "gauge"]);
+  const RAGE_PASS_PIECES = new Set(["lanternPost", "banner", "chalkboard", "monolith", "coil", "gauge", "abacus"]);
   const PALETTE = [
     "#8a5a32", "#a8703e", "#5c3a1e", "#43291a", // 0 wood, 1 wood light, 2 wood dark, 3 plank gap
     "#4a4d52", "#2c2e33", "#6f737a", // 4 iron, 5 iron dark, 6 iron light
@@ -52,7 +52,8 @@
     "#f5d142", "#4f9a38", // 49 banana, 50 vine
     "#e9d7a0", "#d8c184", // 51 sand, 52 sand dark
     "#d9a441", "#5a3a1a", // 53 leopard tan, 54 leopard spot
-    BANANA_ART.ink.D, BANANA_ART.ink.Y, BANANA_ART.ink.G // 55-57 ammo banana outline, fruit, stem
+    BANANA_ART.ink.D, BANANA_ART.ink.Y, BANANA_ART.ink.G, // 55-57 ammo banana outline, fruit, stem
+    "#25324a", "#c79a3e", "#5b3a24" // 58 navy cloth, 59 brass, 60 walnut
   ];
   const EMISSIVE = { 9: 1, 10: 1, 11: 0.9, 30: 1, 31: 1, 32: 1, 37: 1, 40: 1 };
   // Lantern glass by variant (amber, teal, green, red) and the light each casts; the fifth is a bolt's yellow.
@@ -164,10 +165,10 @@
         if (d <= 3.2) put(SOLID, x, y, wz, d < 1.2 ? 6 : 5);
       }
     }),
-    // A cave's standard: 0 bolt, 1 die, 2 glyph, 3 banana.
+    // A cave's standard: 0 bolt, 1 die, 2 glyph, 3 banana, 4 abacus.
     banner: (v) => author((put, box) => {
-      const CLOTH = [14, 41, 36, 42][v], EDGE = [15, 33, 37, 18][v];
-      const EMBLEM = [["bolt", 18], ["die", 33], ["glyph", 37], null][v];
+      const CLOTH = [14, 41, 36, 42, 58][v], EDGE = [15, 33, 37, 18, 59][v];
+      const EMBLEM = [["bolt", 18], ["die", 33], ["glyph", 37], null, ["abacus", 49]][v];
       box(SOLID, -3, 2, 0, 1, -3, 2, 2);
       box(SOLID, -1, 0, 2, 45, -1, 0, 2);
       box(SOLID, -1, 0, 46, 47, -1, 0, v === 2 ? 37 : 6);
@@ -287,6 +288,39 @@
         put(lit ? GLOW : SOLID, x, y, 3, lit ? SCREEN : x < -4 || x > 3 || y < 15 || y > 22 ? BODY[2] : 36);
       }
       box(SOLID, -6, 5, 24, 27, -5, 4, (x, y, z) => y === 27 ? BODY[2] : z === 4 && (x + y) % 3 === 0 ? 16 : PAINT);
+    }),
+    // B.C.A.: a standing abacus of banana and ivory beads on brass rods, and a lectern with the open ledger and
+    // a spike of receipts.
+    abacus: () => author((put, box) => {
+      for (const x of [-14, 13]) {
+        box(SOLID, x - 1, x + 1, 0, 1, -4, 3, 2);
+        box(SOLID, x, x, 2, 33, -1, 0, 60);
+      }
+      for (const y of [8, 32]) box(SOLID, -13, 12, y, y + 1, -1, 0, 60);
+      for (let r = 0; r < 5; r++) {
+        const y = 12 + r * 4;
+        box(HANG, -13, 12, y, y, 0, 0, 59);
+        // Four beads pushed left and a few right, a different count on each rod: someone was counting.
+        const left = 2 + (r * 3) % 4, right = 1 + (r * 2) % 3;
+        for (let b = 0; b < left + right; b++) {
+          const x0 = b < left ? -12 + b * 3 : 10 - (b - left) * 3;
+          box(SOLID, x0, x0 + 1, y - 1, y + 1, -1, 1, (r + b) % 3 ? 49 : 16);
+        }
+      }
+    }),
+    ledger: () => author((put, box) => {
+      box(SOLID, -5, 4, 0, 1, -4, 3, 60);
+      box(SOLID, -1, 0, 2, 15, -1, 0, 60);
+      for (let z = -5; z <= 4; z++) {
+        const y = 16 + Math.round((z + 5) * 0.4);
+        box(SOLID, -7, 6, y, y, z, z, 60);
+        box(SOLID, -6, 5, y + 1, y + 1, z, z, (x) => x === 0 || x === -1 ? 2 : 16);
+        if (z % 2 === 0) for (let x = -5; x <= 4; x++) if (x < -1 || x > 0) if ((x + z) % 3) put(HANG, x, y + 2, z, (x + z) % 5 ? 3 : 17);
+      }
+      box(SOLID, 5, 5, 20, 21, -5, -5, 59);
+      box(SOLID, 8, 9, 0, 0, -3, -2, 59);
+      box(HANG, 8, 8, 1, 9, -3, -3, 6);
+      for (let y = 2; y <= 7; y += 2) box(HANG, 7, 10, y, y, -4 + (y & 2 ? 0 : 1), -1, 16);
     }),
     vine: (v) => author((put) => {
       const rand = mulberry32(800 + v);
