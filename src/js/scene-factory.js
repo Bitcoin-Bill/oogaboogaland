@@ -839,6 +839,7 @@
       waitFor: (id) => donations.waitFor(id),
       open: () => donations.state.open,
       testNetwork: () => donations.testNetwork,
+      limits: () => donations.state.limits,
       rate: () => BL.donationRate.current || donations.state.tally?.rate,
       watchRate: () => BL.donationRate.watch(),
       request: () => donations.createRequest(BL.donationPopup.details()),

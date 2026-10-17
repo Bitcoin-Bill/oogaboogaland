@@ -4642,6 +4642,10 @@ const donationClientChecks = async () => {
   const stop = D.subscribe((d, bananas) => received.push({ d, bananas }), { onSeen: (...a) => seen.push(a) });
   const message = data => sockets.at(-1).onmessage({ data: JSON.stringify(data) });
   message({ type: "status", open: true, network: "signet" });
+  message({ type: "status", open: true, limits: { minSats: 1, maxSats: 2000, lightningMaxSats: 1000 } });
+  const advertisedLimits = D.state.limits?.lightningMaxSats === 1000;
+  message({ type: "status", open: true, limits: { minSats: 1, maxSats: 2000, lightningMaxSats: 3000 } });
+  const validatedLimits = D.state.limits?.lightningMaxSats === 1000;
   message({ type: "tally", count: 0, sats: 0, bananas: 0, last: null, hours: [], rate: null });
   const empty = D.state.tally?.count === 0 && D.state.tally.last === 0 && D.testNetwork === "signet";
   message({ type: "tally", count: 1, sats: 1000, bananas: 0.25, last: 1000, hours: [[Date.now(), 1000, 0.25]], rate: null });
@@ -4666,8 +4670,8 @@ const donationClientChecks = async () => {
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
   stop();
   record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
-    empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
+    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
 
   let now = Date.now(), detailsOpen = false;
   const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
@@ -4751,6 +4755,32 @@ const donationClientChecks = async () => {
   record("donation rate: kiosks share one socket, reject invalid prices, pause while hidden, reconnect when visible, and close the last socket and its timers exactly once",
     sharedRate && validRate && hiddenRate && retainedRate && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
     JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, listeners: priceListeners.size, timers: priceTimers.size }));
+
+  const drawn = [], blankGlyph = [0, 0, 0, 0, 0, 0, 0];
+  kioskContext.window.BL.jumbotron.text.glyphOf = ch => { drawn.push(ch); return blankGlyph; };
+  const paintContext = new Proxy({}, { get: () => () => {} });
+  kioskContext.document.createElement = () => ({ getContext: () => paintContext });
+  let capCalls = 0;
+  const caps = { minSats: 1, maxSats: 2000, lightningMaxSats: 1000 };
+  const capped = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
+    limits: () => caps, open: () => true, testNetwork: () => "",
+    invoice: async () => { capCalls++; return { request: "request", lightning: "limit", invoice: { id: "chain-only", bolt11: null, expires: now / 1000 + 900 }, rate: null, bananas: null }; },
+    onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1001 }), waitFor() {} });
+  capped.start(); for (const key of ["Enter", "1", "0", "0", "1"]) capped.key({ key });
+  capped.update(0.1); capped.paint();
+  const capWarning = drawn.join("").includes("OVER LIGHTNING LIMIT");
+  capped.tap(200, 360); await Promise.resolve(); capped.paint();
+  const capContinue = capped.state === "quote" && capCalls === 1;
+  capped.tap(180, 350);
+  const lightningDisabled = capped.state === "quote" && capCalls === 1;
+  capped.tap(300, 350); await Promise.resolve();
+  const capOnchain = capped.state === "chain";
+  capped.stop(); capped.start(); for (const key of ["Enter", "2", "0", "0", "1"]) capped.key({ key });
+  capped.key({ key: "Enter" });
+  const overallCap = capped.state === "amount" && capCalls === 1;
+  capped.stop();
+  record("donation limits: amounts above Lightning warn before Continue, keep on-chain available, disable the Lightning button, and still enforce the configured overall cap",
+    capWarning && capContinue && lightningDisabled && capOnchain && overallCap, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap }));
 
   const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];
   for (const id of ["donation-popup", "donation-screen", "donation-handle", "donation-message", "donation-close",

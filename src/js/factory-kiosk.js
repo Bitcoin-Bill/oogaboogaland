@@ -259,7 +259,7 @@
     canvas.width = W;
     canvas.height = H;
     let dirty = true, shown = -1, buttons = [], ticket = 0, shownOpen = null, shownNet = "", saving = null, saveQueued = false, unwatchRate = null, rateAt = 0, rateStale = false;
-    const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0, savedDetails: null, detailsDirty: false, detailsSaving: false, detailsError: "" };
+    const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0, savedDetails: null, detailsDirty: false, detailsSaving: false, detailsError: "", limits: null };
     const bananaAmount = () => real ? BANANAS.format(flow.bananas) : sats(flow.bananas);
     flow.rate = flow.frozenPricing = null;
     const estimate = () => {
@@ -357,8 +357,12 @@
       flow.sats = Number(flow.digits) || 0;
       flow.bananas = hooks.bananasFor(Math.max(1, flow.sats));
     };
-    // The API sets the limits in real mode and answers `amount` past them.
-    const valid = () => real ? flow.sats >= 1 : flow.sats >= MIN && flow.sats <= MAX;
+    // The API advertises separate policy limits; its overall cap still bounds on-chain tips.
+    const limits = () => real && hooks.limits ? hooks.limits() : null;
+    const overLightning = () => real && limits() && flow.sats > limits().lightningMaxSats;
+    const canLightning = () => !!flow.invoice?.bolt && !overLightning();
+    const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= (limits()?.minSats || 1)
+      && flow.sats <= (limits()?.maxSats || Number.MAX_SAFE_INTEGER) : flow.sats >= MIN && flow.sats <= MAX;
     const closed = () => real && hooks.open() === false;
     const invoice = () => {
       const r = hooks.request(), id = r.id.replace(/[^0-9a-z]/gi, "");
@@ -438,7 +442,7 @@
       if (s === "idle" && a === "start" && !closed()) return set("amount");
       if (s === "amount") {
         if (a.length === 1 && a >= "0" && a <= "9") {
-          if (flow.digits.length < 7 && !(flow.digits === "" && a === "0")) flow.digits += a;
+          if (flow.digits.length < (real ? 16 : 7) && !(flow.digits === "" && a === "0")) flow.digits += a;
         } else if (a === "clear") flow.digits = "";
         else if (a === "rub") flow.digits = flow.digits.slice(0, -1);
         else if (a === "go" && valid()) return real ? ask("quote") : set("quote");
@@ -455,7 +459,7 @@
       if (s === "problem" && a === "back") return set("amount");
       if (s === "quote") {
         // Without a Lightning invoice the main button pays on-chain.
-        if (a === "create" && real && !flow.invoice.bolt) a = "chain";
+        if (a === "create" && real && !canLightning()) a = "chain";
         if (a === "create") return real ? set("invoice") : invoice();
         if (a === "chain" && real) return flow.chain ? set("chain") : askChain();
         if (a === "back") return set("amount");
@@ -578,6 +582,7 @@
     flow.update = (dt) => {
       const s = flow.state;
       estimate();
+      if (flow.limits !== limits()) { flow.limits = limits(); dirty = true; }
       if (real && hooks.open() !== shownOpen) {
         shownOpen = hooks.open();
         if (s === "idle") dirty = true;
@@ -663,11 +668,15 @@
       else if (s === "amount") {
         face(g, "ENTER SATS TO DONATE");
         panel(g, 40, 44, 320, 56, INK.amber);
-        if (flow.digits) write(g, sats(flow.sats), 54, 58, 4, INK.white);
+        if (flow.digits) writeFit(g, sats(flow.sats), 54, 58, 4, INK.white, 236);
         else write(g, "0", 54, 58, 4, INK.dim);
         write(g, "SATS", 346, 66, 2, INK.dim, "right");
         if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 106, 1, INK.red, "center");
-        else if (flow.digits && !valid()) write(g, flow.sats < MIN ? `MIN ${sats(MIN)} SATS` : `MAX ${sats(MAX)} SATS`, W / 2, 106, 1, INK.red, "center");
+        else if (flow.digits && !valid()) {
+          const min = real ? limits()?.minSats || 1 : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
+          writeFit(g, flow.sats < min ? `MIN ${sats(min)} SATS` : `MAX ${sats(max)} SATS`, W / 2, 106, 1, INK.red, 320, "center");
+        }
+        else if (overLightning()) write(g, "OVER LIGHTNING LIMIT · ON-CHAIN ONLY", W / 2, 106, 1, INK.amber, "center");
         else if (real) rateLine(W / 2, 106, 320);
         const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "rub"];
         keys.forEach((k, i) => {
@@ -687,13 +696,14 @@
           }
         });
         button(100, 340, 200, 48, "CONTINUE >", valid() ? "primary" : "off", "go");
+        if (overLightning()) rateLine(W / 2, 389, 320);
         closeButton();
       } else if (s === "quote" && real) {
         const rate = flow.rate, floating = flow.reply.pricing === "receipt";
         face(g, "CONFIRM DONATION");
         panel(g, 30, 44, 340, 92);
         write(g, "YOU DONATE", 42, 54, 1, INK.dim);
-        write(g, `${sats(flow.sats)} SATS`, 42, 70, 4, INK.gold);
+        writeFit(g, `${sats(flow.sats)} SATS`, 42, 70, 4, INK.gold, 316);
         if (rate) write(g, `≈ $${(flow.sats / 1e8 * rate.usdPerBtc).toFixed(2)} USD`, 42, 110, 2, INK.white);
         write(g, "RATE", 42, 144, 1, INK.dim);
         writeFit(g, rate ? `1 BANANA = $1 ≈ ${RATE.format(rate.satsPerBanana)} SATS` : "NO PRICE YET", 42, 156, 2, INK.white, 316);
@@ -704,6 +714,7 @@
           bananaRow(g, `${bananaAmount()} BANANA${flow.bananas === 1 ? "" : "S"}`, 48, 212, 34, 4, 262);
         } else write(g, "COUNTED WHEN PAID", 42, 214, 2, INK.gold);
         if (flow.chainNote) write(g, flow.chainNote, W / 2, 276, 1, INK.red, "center");
+        else if (flow.reply.lightning === "limit" || overLightning()) write(g, "OVER LIGHTNING LIMIT · PAY ON-CHAIN", W / 2, 276, 1, INK.amber, "center");
         else if (!v.bolt) write(g, "LIGHTNING IS UNAVAILABLE NOW: PAY ON-CHAIN", W / 2, 276, 1, INK.red, "center");
         else if (!rate) write(g, "NO PRICE YET: THE BANANAS ARE COUNTED LATER", W / 2, 276, 1, INK.red, "center");
         else if (rate.stale) {
@@ -713,8 +724,8 @@
         if (hooks.details) fromRow(`FROM @${hooks.details().handle || "anon"}`, "EDIT DETAILS", "details");
         // How to pay: the Lightning invoice already made, or an address for it on-chain.
         button(30, 326, 84, 52, "< BACK", "", "back");
-        button(122, 326, 120, 52, "LIGHTNING", v.bolt ? "primary" : "off", "create");
-        button(250, 326, 120, 52, "ON-CHAIN", v.bolt ? "" : "primary", "chain");
+        button(122, 326, 120, 52, "LIGHTNING", canLightning() ? "primary" : "off", "create");
+        button(250, 326, 120, 52, "ON-CHAIN", canLightning() ? "" : "primary", "chain");
         closeButton();
       } else if (s === "quote") {
         face(g, "CONFIRM DONATION");

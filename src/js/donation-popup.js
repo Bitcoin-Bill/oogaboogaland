@@ -90,6 +90,7 @@
         note: (request, value, changedHandle) => donations.note(request, value.message, changedHandle ? value.handle : undefined),
         onchain: (request) => donations.onchain(request), waitFor: donations.waitFor,
         open: () => donations.state.open, testNetwork: () => donations.testNetwork,
+        limits: () => donations.state.limits,
         rate: () => BL.donationRate?.current || donations.state.tally?.rate,
         watchRate: () => BL.donationRate?.watch(),
         bananasFor: BL.game.bananasFor,
