@@ -1318,6 +1318,48 @@ body[data-active-scene="arcade"] .magazine-hud {
   overflow: auto;
 }
 
+#factory-donation-fields {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(12px + var(--safe-bottom));
+  width: min(680px, calc(100% - 32px));
+  transform: translateX(-50%);
+}
+
+#factory-donation-fields #donation-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 8px;
+  background: var(--wood);
+  box-shadow: 0 3px 0 var(--nail);
+}
+
+#factory-donation-fields .field { margin-top: 0; }
+#factory-donation-fields .donation-details-actions { grid-column: 1 / -1; }
+
+.donation-details-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--paper);
+  font-size: 11px;
+}
+
+#donation-save {
+  padding: 6px 10px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: var(--plank);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+#donation-save:disabled { opacity: 0.5; cursor: default; }
+
 #donation-screen {
   display: block;
   width: 100%;
@@ -1809,8 +1851,9 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .account {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 100%;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 6px 10px;
   min-width: 0;
@@ -1856,6 +1899,7 @@ body[data-active-scene="arcade"] .magazine-hud {
 .account-actions {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 6px 10px;
 }

@@ -437,7 +437,6 @@
         <span class="account" id="account" hidden>
           <span class="account-who">
             <span class="account-name" id="account-name" hidden></span>
-            <span class="account-room" id="account-room" hidden></span>
           </span>
           <span class="account-actions">
             <button type="button" class="foot-button foot-primary" data-action="account-login" id="account-login">Sign in with GitHub</button>
@@ -447,6 +446,7 @@
           </span>
         </span>
         <span class="sheet-foot-meta">
+          <span class="account-room" id="account-room" hidden></span>
           <span class="quality" id="quality" aria-live="polite"></span>
           <button type="button" class="link" data-action="reset">Reset demo</button>
         </span>
@@ -1496,21 +1496,17 @@
         <button type="button" class="modal-close" id="donation-close" aria-label="Close donation">&times;</button>
       </div>
       <canvas id="donation-screen" width="400" height="400" tabindex="0" aria-label="Donation screen. Type an amount, press Enter to continue, O for on-chain, C to copy, and Escape to go back."></canvas>
-      <label class="field"><span>Donation handle</span><input id="donation-handle" type="text" maxlength="39" autocomplete="off" spellcheck="false" placeholder="anon"></label>
-      <label class="field"><span>Banana message (up to 280 characters)</span><input id="donation-message" type="text" maxlength="280" autocomplete="off" placeholder="Optional message"></label>
+      <div id="donation-fields">
+        <label class="field"><span>Donation handle</span><input id="donation-handle" type="text" maxlength="39" autocomplete="off" spellcheck="false" placeholder="anon"></label>
+        <label class="field"><span>Banana message (up to 280 characters)</span><input id="donation-message" type="text" maxlength="280" autocomplete="off" placeholder="Optional message"></label>
+        <div class="donation-details-actions">
+          <button type="button" id="donation-save" hidden>Save changes</button>
+          <span id="donation-details-status" role="status"></span>
+        </div>
+      </div>
       <p class="help">Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.</p>
     </dialog>
-    <dialog class="modal" id="donation-details" aria-labelledby="donation-details-title">
-      <form method="dialog" id="donation-details-form">
-        <div class="panel-head">
-          <h2 id="donation-details-title"><span data-sign>Donation details</span></h2>
-          <button type="button" class="modal-close" id="donation-details-close" aria-label="Cancel changes">&times;</button>
-        </div>
-        <label class="field"><span>Donation handle</span><input id="donation-details-handle" type="text" maxlength="39" autocomplete="off" spellcheck="false" placeholder="anon"></label>
-        <label class="field"><span>Banana message (up to 280 characters)</span><input id="donation-details-message" type="text" maxlength="280" autocomplete="off" placeholder="Optional message"></label>
-        <div class="actions"><button type="submit">Save details</button></div>
-      </form>
-    </dialog>
+    <div id="factory-donation-fields" hidden></div>
     <dialog class="modal" id="feed" aria-label="Feed the Ooga Boogas">
       <div class="panel-head">
         <h2><span data-sign>Feed the Ooga Boogas</span></h2>

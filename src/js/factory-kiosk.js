@@ -11,7 +11,7 @@
 // use) the amount, once confirmed, asks the API for its invoice at once (`hooks.invoice`): the quote shows the API's
 // bananas and rate, the invoice its bolt11 as a `lightning:` QR and its own expiry, and nothing settles but the
 // socket. Both kiosks offer an editable display handle and message, initially the signed-in login or anon. Changing
-// the details on a real quote makes a new invoice, so the paid event carries exactly those details. Either
+// the details updates that invoice in place, keeping its payment code and rate. Either
 // way the scene hands every donation back through `receive(id, bananas, handle)`, which takes the one this invoice is
 // waiting for and thanks the donor it names. The scene holds that tip's bananas until the visitor asks to watch, or
 // HOLD runs out.
@@ -91,12 +91,28 @@
   };
   const chain = (g, x, y, size, color) => {
     g.save();
-    g.translate(x + size * 0.3, y + size * 0.5);
-    g.rotate(-Math.PI / 4);
+    g.translate(x, y);
+    g.scale(size / 24, size / 24);
     g.strokeStyle = color;
-    g.lineWidth = 2;
-    g.strokeRect(-size * 0.23, -size * 0.48, size * 0.46, size * 0.6);
-    g.strokeRect(-size * 0.23, -size * 0.12, size * 0.46, size * 0.6);
+    g.lineWidth = 2.2;
+    g.lineCap = g.lineJoin = "round";
+    // Two open, rounded links weave through one another at the centre.
+    g.beginPath();
+    g.moveTo(10, 13);
+    g.bezierCurveTo(12, 15, 15, 15, 17, 13);
+    g.lineTo(20, 10);
+    g.bezierCurveTo(22, 8, 22, 5, 20, 3);
+    g.bezierCurveTo(18, 1, 15, 1, 13, 3);
+    g.lineTo(11, 5);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(14, 11);
+    g.bezierCurveTo(12, 9, 9, 9, 7, 11);
+    g.lineTo(4, 14);
+    g.bezierCurveTo(2, 16, 2, 19, 4, 21);
+    g.bezierCurveTo(6, 23, 9, 23, 11, 21);
+    g.lineTo(13, 19);
+    g.stroke();
     g.restore();
   };
   const banana = (g, x, y, r) => BL.bananaIcon.paint(g, x - r, y - r * 1.4, r * 2);
@@ -161,9 +177,13 @@
     if (!title) return;
     const tw = width(title, 2);
     write(g, title, W / 2, 14, 2, color, "center");
-    const icon = onchain ? chain : bolt;
-    icon(g, W / 2 - tw / 2 - 18, 9, 22, INK.gold);
-    icon(g, W / 2 + tw / 2 + 6, 9, 22, INK.gold);
+    if (onchain) {
+      chain(g, W / 2 - tw / 2 - 32, 11, 20, INK.gold);
+      chain(g, W / 2 + tw / 2 + 12, 11, 20, INK.gold);
+    } else {
+      bolt(g, W / 2 - tw / 2 - 18, 9, 22, INK.gold);
+      bolt(g, W / 2 + tw / 2 + 6, 9, 22, INK.gold);
+    }
   };
   const panel = (g, x, y, w, h, edge = INK.line) => {
     g.fillStyle = INK.panel;
@@ -230,19 +250,62 @@
   // and pay(id, sats) when a payment settles; in real mode, `real`, invoice(sats), which resolves to the API's
   // reply or `{ error }`, open(), the API's word on whether donations are open (null before it has said),
   // testNetwork(), the test network payments are on or "" for mainnet, details() for the editable handle/message,
-  // startDetails() and editDetails(done) for the shared form, outerClose when the popup supplies its own X,
+  // startDetails() and editDetails() for the shared form, outerClose when the popup supplies its own X,
   // onchain(request), which resolves to the API's `{ address, sats }` or `{ error }`, and
   // waitFor(id) for an invoice left with its on-chain address shown and nothing received.
   const create = (hooks) => {
     const canvas = document.createElement("canvas"), g = canvas.getContext("2d"), idleCode = BL.qr.encode(hooks.link()), real = !!hooks.real;
     canvas.width = W;
     canvas.height = H;
-    let dirty = true, shown = -1, buttons = [], ticket = 0, shownOpen = null, shownNet = "";
-    const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0 };
+    let dirty = true, shown = -1, buttons = [], ticket = 0, shownOpen = null, shownNet = "", saving = null, saveQueued = false;
+    const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0, savedDetails: null, detailsDirty: false, detailsSaving: false, detailsError: "" };
     const bananaAmount = () => real ? BANANAS.format(flow.bananas) : sats(flow.bananas);
     const set = (state) => {
       flow.state = state;
       dirty = true;
+    };
+    const sameDetails = (a, b) => a.handle === b.handle && a.message === b.message;
+    const detailsState = () => {
+      dirty = true;
+      if (hooks.detailsState) hooks.detailsState(flow);
+    };
+    flow.detailsChanged = () => {
+      flow.detailsDirty = !!flow.savedDetails && !sameDetails(hooks.details(), flow.savedDetails);
+      flow.detailsError = "";
+      detailsState();
+    };
+    flow.saveDetails = () => {
+      if (!flow.open || !flow.invoice || !flow.savedDetails || flow.state === "paid") return Promise.resolve({});
+      if (saving) { saveQueued = true; return saving; }
+      const value = hooks.details(), previous = flow.savedDetails, invoice = flow.invoice;
+      if (sameDetails(value, previous)) { flow.detailsChanged(); return Promise.resolve({}); }
+      if (!real) { flow.savedDetails = value; flow.detailsChanged(); return Promise.resolve({}); }
+      flow.detailsSaving = true; flow.detailsError = "";
+      detailsState();
+      const pending = hooks.note(flow.reply.request, value, value.handle !== previous.handle).then((reply) => {
+        if (saving !== pending || !flow.open || flow.invoice !== invoice || flow.state === "paid") return reply;
+        saving = null; flow.detailsSaving = false;
+        if (reply.error) {
+          flow.detailsError = reply.error === "invalid" ? "These details need a donation server update."
+            : reply.error === "unknown" ? "This donation is already settled or no longer available."
+            : reply.error === "busy" ? "Please wait a moment, then save again."
+            : "Couldn't save changes. Please try again.";
+          flow.detailsDirty = true;
+          saveQueued = false;
+        } else {
+          flow.savedDetails = value;
+          flow.detailsDirty = !sameDetails(hooks.details(), value);
+        }
+        detailsState();
+        if (saveQueued && flow.detailsDirty && !reply.error) {
+          saveQueued = false;
+          return flow.saveDetails();
+        }
+        saveQueued = false;
+        return reply;
+      });
+      saving = pending;
+      return pending;
     };
     const button = (x, y, w, h, label, kind, act, scale = 2) => {
       const on = kind !== "off";
@@ -276,10 +339,12 @@
     const closed = () => real && hooks.open() === false;
     const invoice = () => {
       const r = hooks.request(), id = r.id.replace(/[^0-9a-z]/gi, "");
+      if (hooks.details) flow.savedDetails = hooks.details();
       flow.invoice = { id: r.id, url: r.url, code: BL.qr.encode(r.url), bolt: `lnbc${flow.sats * 10}n1p${id}` };
       flow.left = EXPIRY;
       shown = -1;
       set("invoice");
+      if (hooks.details) flow.detailsChanged();
     };
     // Moving on from an invoice whose on-chain address was shown, with nothing received for it: the page waits on it, so
     // its donation can tell the visitor it was theirs whenever it confirms.
@@ -288,10 +353,12 @@
     };
     // Real mode: the API's invoice for this amount, then `next`. A reply that finds the visitor gone on is dropped.
     const ask = (next) => {
-      const t = ++ticket;
+      const t = ++ticket, value = hooks.details ? hooks.details() : { handle: "", message: "" };
+      saving = null; saveQueued = false;
+      flow.detailsSaving = false;
       flow.error = "";
       set("quoting");
-      hooks.invoice(flow.sats).then((r) => {
+      hooks.invoice(flow.sats, value).then((r) => {
         if (t !== ticket || flow.state !== "quoting") return;
         if (r.error) {
           flow.error = r.error;
@@ -299,6 +366,7 @@
         }
         letGo();
         flow.reply = r;
+        flow.savedDetails = value;
         flow.bananas = r.bananas ? r.bananas.exact : 0;
         // No bolt11 when the API couldn't make the Lightning half in time: the quote then offers on-chain alone.
         const bolt = r.invoice.bolt11;
@@ -308,6 +376,10 @@
         flow.left = r.invoice.expires - Date.now() / 1000;
         shown = -1;
         set(next === "invoice" && !bolt ? "quote" : next);
+        if (hooks.details) {
+          flow.detailsChanged();
+          if (flow.detailsDirty) flow.saveDetails();
+        }
       });
     };
     // Real mode: the address to pay this invoice on-chain, asked for once an invoice. A refusal goes back to the quote
@@ -337,14 +409,7 @@
     const act = (a) => {
       if (a === "close") return hooks.close();
       const s = flow.state;
-      if (a === "details" && (s === "quote" || s === "amount") && hooks.editDetails) {
-        hooks.editDetails(() => {
-          if (!flow.open || flow.state !== s) return;
-          if (real && s === "quote") ask("quote");
-          else dirty = true;
-        });
-        return;
-      }
+      if (a === "details" && s !== "paid" && hooks.editDetails) return hooks.editDetails();
       if (s === "idle" && a === "start" && !closed()) return set("amount");
       if (s === "amount") {
         if (a.length === 1 && a >= "0" && a <= "9") {
@@ -413,7 +478,7 @@
         if (k === "Delete") return act("clear");
       }
       if (k === "Backspace") return act("back");
-      if ((s === "quote" || s === "amount") && (k === "a" || k === "A")) return act("details");
+      if (s !== "paid" && (k === "a" || k === "A")) return act("details");
       if (s === "quote" && (k === "o" || k === "O")) return act("chain");
       if ((s === "invoice" || s === "chain") && (k === "c" || k === "C")) return act("copy");
       if ((s === "invoice" || s === "expired") && (k === "r" || k === "R")) return act("regen");
@@ -428,7 +493,8 @@
       ticket++;
       flow.open = true;
       flow.digits = flow.error = flow.who = "";
-      flow.invoice = flow.reply = flow.chain = flow.chainNote = null;
+      flow.invoice = flow.reply = flow.chain = flow.chainNote = flow.savedDetails = null;
+      saving = null; saveQueued = flow.detailsDirty = flow.detailsSaving = false; flow.detailsError = "";
       flow.got = flow.due = flow.rest = 0;
       if (hooks.startDetails) hooks.startDetails();
       quote();
@@ -439,6 +505,7 @@
       ticket++;
       letGo();
       flow.open = false;
+      saving = null; saveQueued = flow.detailsSaving = false;
       flow.invoice = flow.reply = flow.chain = flow.chainNote = null;
       flow.got = flow.due = flow.rest = 0;
       set("idle");
@@ -606,7 +673,7 @@
           const at = new Date(rate.at);
           write(g, `OLD PRICE: THE LAST ONE, FROM ${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`, W / 2, 276, 1, INK.red, "center");
         }
-        if (hooks.details) fromRow(`FROM @${hooks.details().handle || "anon"}`, "EDIT DETAILS", "details");
+        if (hooks.details) fromRow(`FROM @${(flow.savedDetails || hooks.details()).handle || "anon"}`, "EDIT DETAILS", "details");
         // How to pay: the Lightning invoice already made, or an address for it on-chain.
         button(30, 326, 84, 52, "< BACK", "", "back");
         button(122, 326, 120, 52, "LIGHTNING", v.bolt ? "primary" : "off", "create");
@@ -625,7 +692,7 @@
         write(g, "YOU WILL MAKE", 42, 186, 1, INK.dim);
         if (hooks.bananasFor(flow.sats + 400) === flow.bananas) write(g, `MAX ${flow.bananas} PER TIP`, 358, 186, 1, INK.dim, "right");
         bananaRow(g, `${flow.bananas} BANANA${flow.bananas > 1 ? "S" : ""}`, 48, 212, 34, 4, 262);
-        if (hooks.details) fromRow(`FROM @${hooks.details().handle || "anon"}`, "EDIT DETAILS", "details");
+        if (hooks.details) fromRow(`FROM @${(flow.savedDetails || hooks.details()).handle || "anon"}`, "EDIT DETAILS", "details");
         button(30, 326, 120, 52, "< BACK", "", "back");
         button(160, 326, 210, 52, "CREATE INVOICE", "primary", "create");
         closeButton();

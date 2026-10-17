@@ -4707,12 +4707,13 @@ const donationClientChecks = async () => {
   const waited = waits.join() === "unlit";
   record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 
-  const elements = new Map(), frames = new Map(), invoices = [], popupWaits = [];
+  const elements = new Map(), frames = new Map(), invoices = [], notes = [], popupWaits = [];
   for (const id of ["donation-popup", "donation-screen", "donation-handle", "donation-message", "donation-close",
-    "donation-details", "donation-details-form", "donation-details-handle", "donation-details-message", "donation-details-close"]) elements.set(id, {
+    "donation-fields", "factory-donation-fields", "donation-save", "donation-details-status"]) elements.set(id, {
     listeners: new Map(), open: false, value: "", disabled: false,
     addEventListener(type, fn) { this.listeners.set(type, fn); }, removeEventListener(type) { this.listeners.delete(type); },
-    showModal() { this.open = true; }, close() { this.open = false; }, focus() {}, getContext: () => ({})
+    showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; },
+    select() { this.selected = true; }, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
   });
   Object.assign(kioskContext, { location: { origin: "https://site.test" }, navigator: {}, performance: { now: () => now },
     requestAnimationFrame: (fn) => { const id = now++; frames.set(id, fn); return id; }, cancelAnimationFrame: (id) => frames.delete(id) });
@@ -4724,6 +4725,7 @@ const donationClientChecks = async () => {
   K.net = { state: { backend: true, me: null }, login() {} };
   K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX,
     invoice: async options => { invoices.push(options); return { request: "request", invoice: { id: "popup", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }; },
+    note: async (request, message, handle) => { notes.push({ request, message, handle }); return {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
   const popup = K.donationPopup.create({ state: { message: "hello" } }), dialog = elements.get("donation-popup");
@@ -4736,11 +4738,20 @@ const donationClientChecks = async () => {
   await popupQuote();
   const signedIn = elements.get("donation-handle").value === "tester" && invoices.at(-1).handle === "tester";
   popupFlow.key({ key: "A" });
-  elements.get("donation-details-handle").value = "another-name";
-  elements.get("donation-details-message").value = "m".repeat(281);
-  elements.get("donation-details-form").listeners.get("submit")({ preventDefault() {} });
-  await Promise.resolve();
-  const edited = invoices.at(-1).handle === "another-name" && invoices.at(-1).message.length === 280;
+  const focused = elements.get("donation-handle").focused && elements.get("donation-handle").selected;
+  const originalInvoice = popupFlow.invoice, invoiceCount = invoices.length;
+  elements.get("donation-handle").value = "another-name";
+  elements.get("donation-message").value = "m".repeat(281);
+  elements.get("donation-fields").listeners.get("input")();
+  await popupFlow.saveDetails();
+  const edited = focused && notes.at(-1).handle === "another-name" && notes.at(-1).message.length === 280
+    && notes.at(-1).request === "request" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
+  popupFlow.key({ key: "Enter" });
+  elements.get("donation-message").value = "updated while the QR is shown";
+  popupFlow.detailsChanged(); await popupFlow.saveDetails();
+  const invoiceEdited = popupFlow.state === "invoice" && notes.at(-1).handle === undefined
+    && notes.at(-1).message === "updated while the QR is shown" && popupFlow.invoice === originalInvoice;
+  popupFlow.key({ key: "Escape" });
   popupFlow.key({ key: "O" }); await Promise.resolve();
   const popupSeen = popup.seen("popup", 1000, 1000, 0) && popupFlow.state === "confirming";
   elements.get("donation-close").listeners.get("click")();
@@ -4749,7 +4760,7 @@ const donationClientChecks = async () => {
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
   record("donation popup: signed-out visitors can quote a payment, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, listeners and late replies",
-    anonymous && signedIn && edited && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, other, settled, popupSeen, leftWaiting, disposed }));
+    anonymous && signedIn && edited && invoiceEdited && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, invoiceEdited, other, settled, popupSeen, leftWaiting, disposed }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
@@ -8136,9 +8147,11 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
   const opened = await screen();
   await b.key("Enter"); await b.key("A");
   await b.evaluate(`(() => {
-    document.getElementById("donation-details-handle").value = "tester";
-    document.getElementById("donation-details-message").value = "zebra 12:34";
-    document.getElementById("donation-details-form").requestSubmit();
+    document.getElementById("donation-handle").value = "tester";
+    document.getElementById("donation-message").value = "zebra 12:34";
+    document.getElementById("donation-message").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("donation-message").dispatchEvent(new Event("change", { bubbles: true }));
+    document.getElementById("donation-handle").blur();
   })()`);
   for (const k of ["1", "2", "0", "0"]) await b.key(k);
   const typed = await screen();
