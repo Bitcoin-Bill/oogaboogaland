@@ -17,7 +17,31 @@
   const $ = (id) => document.getElementById(id);
   const TIER_RANK = { legendary: 0, epic: 1, rare: 2, common: 3 };
   const BANANA_COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+  const DONATED_COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+  let donorUnit = "bananas";
+  let donationStats = null, liveDonors = null;
+  const setDonationStats = (stats) => {
+    donationStats = stats;
+    if (liveDonors) liveDonors(true);
+  };
   const MESSAGE_FADE_MS = 300;
+  // The page's one toast, which every scene's HUD and the director share: a new one replaces the last.
+  let toastTimer = 0, toastHideTimer = 0;
+  const toast = (text) => {
+    const box = $("toast");
+    window.clearTimeout(toastTimer);
+    window.clearTimeout(toastHideTimer);
+    box.textContent = text;
+    box.hidden = false;
+    $("message-stack").append(box);
+    box.classList.add("show");
+    toastTimer = window.setTimeout(() => {
+      box.classList.remove("show");
+      toastHideTimer = window.setTimeout(() => {
+        if (!box.classList.contains("show")) box.hidden = true;
+      }, MESSAGE_FADE_MS);
+    }, 2800);
+  };
   const SHEET_STATE_KEY = "oogaboogaland.sheet.v1";
   const BOARD_STATE_KEY = "oogaboogaland.oogatron.windows.v1";
   const MAX_FLOATING_BOARDS = 12;
@@ -60,8 +84,8 @@
       return state && typeof state.open === "boolean" && ["bananas", "roster", "loot", "chat"].includes(state.tab) ? state : null;
     } catch { return null; }
   };
-  const writeSheetState = (open, tab) => {
-    try { localStorage.setItem(SHEET_STATE_KEY, JSON.stringify({ open, tab })); } catch { /* Storage may be unavailable. */ }
+  const writeSheetState = (open, tab, height) => {
+    try { localStorage.setItem(SHEET_STATE_KEY, JSON.stringify({ open, tab, height })); } catch { /* Storage may be unavailable. */ }
   };
   // Sign headings: one pixel path per element, scaled by that element's CSS height.
   const SIGN_NS = "http://www.w3.org/2000/svg";
@@ -193,12 +217,13 @@
   };
   const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false }) => {
     const el = {
-      meterFill: $("meter-fill"),
-      meterCount: $("meter-count"),
-      meterForecast: $("meter-forecast"),
-      roster: $("roster"),
+      roster: $("roster"), rosterCount: $("roster-count"),
       statDonations: $("stat-donations"),
       statSats: $("stat-sats"),
+      bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
+      bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
+      bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
+      donorUnits: [...document.querySelectorAll("[data-donor-unit]")],
       lootTab: $("loot-tab"),
       lootCount: $("loot-count"),
       crateHelp: $("crate-help"),
@@ -269,6 +294,8 @@
       sheet: $("sheet"),
       sheetToggle: $("sheet-toggle"),
       sheetBananas: $("sheet-bananas"),
+      sheetResize: $("sheet-resize"),
+      sheetPanels: document.querySelector(".sheet-panels"),
       tabs: [...document.querySelectorAll("[data-tab]")],
       panels: [...document.querySelectorAll("[data-panel]")],
       presets: [...document.querySelectorAll("[data-preset]")],
@@ -304,9 +331,15 @@
     el.crateHelp.hidden = !lootEnabled;
     el.worldLootHint.hidden = !lootEnabled;
     const savedSheet = readSheetState();
+    let sheetHeight = Number.isFinite(savedSheet?.height) && savedSheet.height >= 1 && savedSheet.height <= 10000 ? savedSheet.height : null;
+    if (sheetHeight === null) el.sheet.style.removeProperty("--sheet-height");
+    else el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
     // Ooga Chat has a tab only where a backend answered (chat.js), which the director learns before any scene.
     const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) && (savedSheet.tab !== "chat" || BL.net.state.backend) ? savedSheet.tab : "roster";
-    for (const tab of el.tabs) tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
+    for (const tab of el.tabs) {
+      tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
+      tab.tabIndex = tab.dataset.tab === sheetTab ? 0 : -1;
+    }
     for (const panel of el.panels) panel.hidden = panel.dataset.panel !== sheetTab;
     el.sheet.dataset.open = String(!!savedSheet?.open);
     el.primary.hidden = true;
@@ -321,16 +354,22 @@
       target.addEventListener(type, fn, opts);
       listeners.push(() => target.removeEventListener(type, fn, opts));
     };
-    let toastTimer = 0, toastHideTimer = 0, hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
+    let hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
-    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null;
+    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null, onlineCount = 0, onlineShown = -1;
     const awayRow = document.createElement("li"), awayButton = document.createElement("button");
     awayRow.className = "roster-away";
     awayButton.type = "button";
     awayButton.setAttribute("aria-expanded", "false");
     awayRow.append(awayButton);
     // countAway rescans on every roster state flip and online toggle; skip the writes until they change.
+    // The title's chip counts the players online, or the cast while nobody is.
     const updateAwayButton = () => {
+      if (onlineCount !== onlineShown) {
+        onlineShown = onlineCount;
+        el.rosterCount.textContent = onlineCount ? `${onlineCount} online` : `${roster.length} Oogas`;
+        el.rosterCount.dataset.tone = onlineCount ? "live" : "idle";
+      }
       if (awayCount === awayShownCount && showAway === awayShownShow) return;
       awayShownCount = awayCount;
       awayShownShow = showAway;
@@ -366,7 +405,6 @@
       voice.hidden = true;
       voice.append(voiceIcon.cloneNode(true));
       marks.append(host, voice);
-      name.append(marks);
       const age = document.createElement("span");
       age.className = "roster-age";
       age.append(BL.contributors.contributionAgeLabel(contributor));
@@ -379,7 +417,7 @@
         if (!awayRow.parentElement) el.roster.append(awayRow);
         li.hidden = true; awayCount++;
       }
-      li.append(presence, name, age, state);
+      li.append(presence, name, marks, age, state);
       el.roster.append(li);
       rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
     }
@@ -402,8 +440,11 @@
     // Online players lead the roster, by their activity's stamp; an away player who is online is never folded away.
     const rankOf = (row) => row.online ? ONLINE_RANK : ROSTER_ORDER[row.state.dataset.state];
     const countAway = () => {
-      awayCount = 0;
-      for (const row of rosterRows.values()) if (row.state.dataset.state === "away" && !row.online) awayCount++;
+      awayCount = onlineCount = 0;
+      for (const row of rosterRows.values()) {
+        if (row.online) onlineCount++;
+        else if (row.state.dataset.state === "away") awayCount++;
+      }
       updateAwayButton();
     };
     const placeRosterRow = (row) => {
@@ -464,30 +505,58 @@
       if (showOnline(row)) placeRosterRow(row);
     };
     showVoices();
-    // Seed empty text nodes so later updates only mutate text, never the DOM.
-    for (const node of [el.meterCount, el.meterForecast]) if (!node.firstChild) node.append("");
-    let shownBananas = -1, shownWidth = "", shownBand = "", shownForecast = null;
-    const setMeter = (level, capacity, forecastText) => {
-      const percent = Math.min(100, Math.max(0, level / capacity * 100));
-      const width = `${percent}%`;
-      if (width !== shownWidth) {
-        shownWidth = width;
-        el.meterFill.style.width = width;
-        el.meterFill.parentElement.setAttribute("aria-valuenow", String(Math.round(percent)));
+    let shownTally, shownBoard, shownReal, shownNetwork, shownOpen;
+    const refreshDonors = (force = false) => {
+      const { real, state, testNetwork } = BL.donations;
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
+      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
+      const tally = real ? state.tally : donationStats;
+      // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
+      // donations closed, or the island's live feed.
+      const tone = !real ? "idle" : testNetwork ? "test" : !tally ? "wait" : state.open === false ? "closed" : "live";
+      el.bananaSource.dataset.tone = tone;
+      el.bananaSource.textContent = tone === "idle" ? "Demo" : tone === "test" ? `Test · ${testNetwork}` : tone === "wait" ? "Loading" : tone === "closed" ? "Closed" : "Live";
+      el.bananaSource.title = tone === "idle" ? "Demo donations saved in this browser" : tone === "test" ? `Test donations on ${testNetwork}, not real bitcoin`
+        : tone === "wait" ? "Waiting for the island’s donation feed" : tone === "closed" ? "Donations are closed for now" : "The island’s donation feed";
+      el.bananaTotal.textContent = tally ? DONATED_COUNT.format(tally.bananas) : "—";
+      el.statDonations.textContent = tally ? BANANA_COUNT.format(real ? tally.count : tally.donations) : "—";
+      el.statSats.textContent = tally ? BANANA_COUNT.format(real ? tally.sats : tally.totalSats) : "—";
+      const entries = real ? donorUnit === "sats" ? state.boardSats : state.board : donationStats?.donors;
+      const missingSats = donorUnit === "sats" && (real && state.board !== null && entries === null || entries?.some((entry) => entry.sats === null));
+      // The API ranks before rounding bananas, with stable account-id ties. Keep that order.
+      const ranked = missingSats ? [] : real ? entries || [] : (entries || []).slice().sort((a, b) =>
+        b[donorUnit] - a[donorUnit] || b[donorUnit === "bananas" ? "sats" : "bananas"] - a[donorUnit === "bananas" ? "sats" : "bananas"]
+        || a.handle.localeCompare(b.handle));
+      el.bananaLeaders.replaceChildren();
+      for (let i = 0; i < Math.min(10, ranked.length); i++) {
+        const entry = ranked[i], row = document.createElement("li");
+        const rank = document.createElement("span"), name = document.createElement("span"), amount = document.createElement("strong");
+        rank.className = "banana-rank"; rank.textContent = String(i + 1).padStart(2, "0");
+        name.className = "banana-donor"; name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous";
+        if (!entry.handle) name.dataset.anon = "true";
+        amount.className = "banana-amount"; amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONATED_COUNT).format(entry[donorUnit]);
+        row.append(rank, name, amount); el.bananaLeaders.append(row);
       }
-      const band = level < capacity * 0.15 ? "low" : level < capacity * 0.4 ? "mid" : "ok";
-      if (band !== shownBand) el.meterFill.dataset.level = shownBand = band;
-      const bananas = Math.floor(level);
-      if (bananas !== shownBananas) {
-        shownBananas = bananas;
-        const count = BANANA_COUNT.format(bananas);
-        el.meterCount.firstChild.data = count;
-      }
-      if (forecastText !== shownForecast) el.meterForecast.firstChild.data = shownForecast = forecastText;
+      el.bananaEmpty.hidden = ranked.length > 0;
+      el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
+        : real && !entries ? "Loading the donor leaderboard…"
+        : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
+      el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
+        : testNetwork ? `Test donations on ${testNetwork}. Amounts as recorded when each was paid.`
+        : "All time, as recorded when each donation was paid.";
+      el.bananaBoardUnit.textContent = donorUnit === "sats" ? "Sats" : "Bananas";
+      el.bananaLeaders.setAttribute("aria-label", `Top donors by ${donorUnit}`);
+      for (const button of el.donorUnits) button.setAttribute("aria-pressed", String(button.dataset.donorUnit === donorUnit));
     };
-    const setStats = ({ totalSats, donations }) => {
-      el.statDonations.textContent = String(donations);
-      el.statSats.textContent = formatLarge(totalSats);
+    for (const button of el.donorUnits) on(button, "click", () => {
+      donorUnit = button.dataset.donorUnit;
+      refreshDonors(true);
+    });
+    listeners.push(BL.donations.subscribeState(refreshDonors));
+    liveDonors = refreshDonors;
+    refreshDonors(true);
+    const setStats = (stats) => {
+      setDonationStats(stats);
     };
     let actLabel = el.act.textContent;
     const setAct = (label) => {
@@ -1511,20 +1580,6 @@
       const panel = document.getElementById(b.dataset.fold);
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
-    const toast = (text) => {
-      window.clearTimeout(toastTimer);
-      window.clearTimeout(toastHideTimer);
-      el.toast.textContent = text;
-      el.toast.hidden = false;
-      el.messageStack.append(el.toast);
-      el.toast.classList.add("show");
-      toastTimer = window.setTimeout(() => {
-        el.toast.classList.remove("show");
-        toastHideTimer = window.setTimeout(() => {
-          if (!el.toast.classList.contains("show")) el.toast.hidden = true;
-        }, MESSAGE_FADE_MS);
-      }, 2800);
-    };
     let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
     let tipVisibility = null, tipSpeechTop = Infinity;
     const tipScreen = { x: 0, y: 0, depth: 0 };
@@ -1659,28 +1714,106 @@
     const selectedSheetTab = () => el.tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.dataset.tab || "roster";
     const setSheetOpen = (open) => {
       el.sheet.dataset.open = String(open);
-      writeSheetState(open, selectedSheetTab());
+      writeSheetState(open, selectedSheetTab(), sheetHeight);
     };
     const selectTab = (name) => {
-      for (const t of el.tabs) t.setAttribute("aria-selected", String(t.dataset.tab === name));
+      for (const t of el.tabs) {
+        t.setAttribute("aria-selected", String(t.dataset.tab === name));
+        t.tabIndex = t.dataset.tab === name ? 0 : -1;
+      }
       for (const p of el.panels) p.hidden = p.dataset.panel !== name;
       setSheetOpen(true);
     };
-    for (const t of el.tabs) {
-      on(t, "click", () => {
-        const already = t.getAttribute("aria-selected") === "true" && el.sheet.dataset.open === "true";
-        if (already && window.matchMedia("(max-width: 720px)").matches) setSheetOpen(false);
-        else selectTab(t.dataset.tab);
-      });
-    }
     // A pull tab opens its own panel, and folds the sheet when that panel is already showing.
     const pull = (name) => {
       const showing = el.sheet.dataset.open === "true" && el.tabs.some((t) => t.dataset.tab === name && t.getAttribute("aria-selected") === "true");
       if (showing) setSheetOpen(false);
       else selectTab(name);
     };
-    on(el.sheetToggle, "click", () => pull("roster"));
-    on(el.sheetBananas, "click", () => pull("bananas"));
+    for (const tab of el.tabs) on(tab, "click", () => pull(tab.dataset.tab));
+    on(el.sheetPanels, "keydown", (e) => {
+      let step = 0;
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") step = 1;
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") step = -1;
+      else if (e.key !== "Home" && e.key !== "End") return;
+      e.preventDefault(); e.stopPropagation();
+      const tabs = el.tabs.filter((tab) => !tab.hidden), index = tabs.indexOf(document.activeElement);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (index + step + tabs.length) % tabs.length;
+      selectTab(tabs[next].dataset.tab);
+      tabs[next].focus({ preventScroll: true });
+    });
+    const bottomSheet = window.matchMedia("(max-width: 720px), (max-height: 500px) and (orientation: landscape)");
+    let sheetPointer = -1, sheetStartY = 0, sheetStartHeight = 0, sheetDirection = 1;
+    const sheetLimits = () => {
+      const safe = getComputedStyle(document.documentElement);
+      const safeTop = parseFloat(safe.getPropertyValue("--safe-top")) || 0;
+      const safeBottom = parseFloat(safe.getPropertyValue("--safe-bottom")) || 0;
+      const viewport = parseFloat(el.sheet.style.getPropertyValue("--chat-viewport")) || window.innerHeight;
+      const max = Math.max(1, bottomSheet.matches ? viewport - 74 - safeTop : window.innerHeight - 90 - safeTop - safeBottom);
+      return { min: Math.min(240, max), max };
+    };
+    const showSheetHeight = () => {
+      const limits = sheetLimits();
+      const height = el.sheet.getBoundingClientRect().height;
+      el.sheetPanels.setAttribute("aria-orientation", bottomSheet.matches ? "horizontal" : "vertical");
+      el.sheetResize.setAttribute("aria-valuemin", String(Math.round(limits.min)));
+      el.sheetResize.setAttribute("aria-valuemax", String(Math.round(limits.max)));
+      if (height > 0) el.sheetResize.setAttribute("aria-valuenow", String(Math.round(height)));
+    };
+    const resizeSheet = (height) => {
+      const limits = sheetLimits();
+      sheetHeight = Math.round(Math.min(limits.max, Math.max(limits.min, height)));
+      el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
+      showSheetHeight();
+    };
+    const finishSheetResize = () => {
+      const pointer = sheetPointer;
+      sheetPointer = -1;
+      if (pointer >= 0 && el.sheetResize.hasPointerCapture(pointer)) el.sheetResize.releasePointerCapture(pointer);
+      if (pointer >= 0) writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+    };
+    on(el.sheetResize, "pointerdown", (e) => {
+      if (sheetPointer >= 0 || e.button !== 0 || !e.isPrimary) return;
+      e.preventDefault(); e.stopPropagation();
+      sheetPointer = e.pointerId; sheetStartY = e.clientY;
+      sheetStartHeight = el.sheet.getBoundingClientRect().height;
+      sheetDirection = bottomSheet.matches ? -1 : 1;
+      el.sheetResize.focus({ preventScroll: true });
+      if (e.isTrusted) el.sheetResize.setPointerCapture(e.pointerId);
+    });
+    on(el.sheetResize, "pointermove", (e) => {
+      if (e.pointerId !== sheetPointer) return;
+      e.preventDefault(); e.stopPropagation();
+      resizeSheet(sheetStartHeight + (e.clientY - sheetStartY) * sheetDirection);
+    });
+    const endSheetResize = (e) => {
+      if (e.pointerId !== sheetPointer) return;
+      e.preventDefault(); e.stopPropagation();
+      finishSheetResize();
+    };
+    on(el.sheetResize, "pointerup", endSheetResize);
+    on(el.sheetResize, "pointercancel", endSheetResize);
+    on(el.sheetResize, "lostpointercapture", endSheetResize);
+    on(window, "blur", finishSheetResize);
+    on(window, "resize", () => { finishSheetResize(); showSheetHeight(); });
+    on(el.sheetResize, "keydown", (e) => {
+      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+      e.preventDefault(); e.stopPropagation();
+      const limits = sheetLimits();
+      resizeSheet(e.key === "Home" ? limits.min : e.key === "End" ? limits.max
+        : el.sheet.getBoundingClientRect().height + (e.key === "ArrowUp" ? 32 : -32));
+      writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+    });
+    on(el.sheetResize, "dblclick", () => {
+      sheetHeight = null;
+      el.sheet.style.removeProperty("--sheet-height");
+      writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+      showSheetHeight();
+    });
+    const sheetObserver = new ResizeObserver(showSheetHeight);
+    sheetObserver.observe(el.sheet);
+    listeners.push(() => sheetObserver.disconnect());
+    showSheetHeight();
     let presetHandler = null;
     for (const b of el.presets) on(b, "click", () => {
       b.blur();
@@ -1814,6 +1947,7 @@
     };
     // dispose removes only the rows and timers this instance added.
     const dispose = () => {
+      finishSheetResize();
       finishPrimary(true);
       window.clearTimeout(toastTimer);
       window.clearTimeout(toastHideTimer);
@@ -1822,7 +1956,9 @@
       window.clearTimeout(copyTimer);
       for (const off of listeners) off();
       if (liveRows === rosterRows) liveRows = liveOnline = null;
+      if (liveDonors === refreshDonors) liveDonors = null;
       el.roster.replaceChildren();
+      el.bananaLeaders.replaceChildren();
       el.inventory.replaceChildren();
       el.toast.classList.remove("show");
       el.toast.hidden = true;
@@ -1847,7 +1983,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setMeter, setStats, setAct, setMode, setOwnOoga, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setOwnOoga, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
@@ -1855,7 +1991,7 @@
   // Net and voice emits re-run this several times a second with the same outcome; last-written
   // records keep an unchanged textContent from re-invalidating the line.
   let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
-  let accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
+  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
   const showAccount = ({ backend, me, room, online }) => {
     const hasMe = !!me;
     if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
@@ -1867,6 +2003,9 @@
       $("account-login").hidden = !!me;
       $("account-logout").hidden = !me;
     }
+    // The foot's green dot shows only while the room is live.
+    const live = String(!!me && room === "live");
+    if (live !== accountLive) { accountLive = live; $("account").dataset.live = live; }
     const words = room === "live" ? `${online} online` : ROOM_WORDS[room] || "";
     if (words !== accountWords) { accountWords = words; $("account-room").textContent = words; }
     const wordsHidden = !me || !words;
@@ -1978,5 +2117,5 @@
       liveOnline(row);
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, STATE_LABELS, statusFor };
+  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, toast, STATE_LABELS, statusFor };
 })();
