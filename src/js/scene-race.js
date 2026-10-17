@@ -86,7 +86,7 @@
     const rain = rainParam !== null ? rainParam === "1" : math.randomInt(100) < RAIN_CHANCE;
     const def = raceTrack.trackById(id), hours = raceTrack.THEMES[def.theme].hours;
     const hour = Number.isFinite(hourParam) ? hourParam : hours ? hours[math.randomInt(hours.length)] : null;
-    track = raceTrack.build(def, { renderer, detail, rain, spectators: !contributors.solo, slots: contributors.activeRoster.length, hour, mirror: selection.mirror });
+    track = raceTrack.build(def, { renderer, detail, rain, spectators: !contributors.solo, slots: Math.min(racersMod.FIELD, contributors.activeRoster.length), hour, mirror: selection.mirror });
     addChild(root, track.root);
     buildWeather();
     track.renderOpts.meshRigs = true;
@@ -181,7 +181,10 @@
     racers.setup({ track, playerName: selection.racer, playerMount: selection.mount, lapCount: track.laps });
     items.setTrack(track);
   };
+  // Back from a race the garage lines up freshly drawn rivals; a track picked in the garage keeps them, and
+  // Race again, the next track and every race of a cup run the same field.
   const toGarage = () => {
+    if (phase !== "garage") racers.draw();
     phase = "garage";
     fx.clearParticles();
     cup.active = false;
@@ -939,7 +942,7 @@
   };
   const liveGeometry = (set) => {
     agent.liveGeometry(set);
-    for (const r of racers.racers) set.add(r.cave.headOpen).add(r.cave.headClosed);
+    for (const r of racers.all) set.add(r.cave.headOpen).add(r.cave.headClosed);
   };
   const stats = () => {
     let nodes = 0;

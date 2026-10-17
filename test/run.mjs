@@ -4888,7 +4888,7 @@ const donation = (id, { stat = "dropsLanded", seconds = 6, where = "lands its ba
 } });
 // Every track of the cup under the autopilot: all racers finish in order, the points and the cup medal
 // are the standings', and every track keeps a best. Ties share a place, so the saved medal may be any of theirs.
-const cupRun = `(() => { const B = window.__ooga, R = B.race, T = window.BL.raceTrack.TRACKS, rounds = []; R.startCup(); for (let i = 0; i < T.length; i++) { if (i) R.nextRace(); const P = B.racers; P.start(); P.autopilot = true; R.simulate(300); P.autopilot = false; rounds.push({ track: R.selection.track, all: P.order.every((r) => r.finished), ranked: P.order.every((r, k) => r.rank === k + 1 && (!k || P.order[k - 1].finishTime <= r.finishTime)) }); R.finishRace(); } const pts = Array.from(R.cup.points), you = pts[B.racers.player.index], lo = pts.filter((p) => p > you).length + 1, hi = pts.filter((p) => p >= you).length, stored = B.game.state.race.cup, place = stored ? ["gold", "silver", "bronze"].indexOf(stored.medal) + 1 : 0; const saved = stored ? stored.points === you && place >= lo && place <= hi : hi > 3; return { ok: R.cup.done && R.phase === "finished" && rounds.every((r) => r.all && r.ranked) && saved && T.every((t) => B.game.state.race.best[t.id]), rounds, you, lo, hi, stored }; })()`;
+const cupRun = `(() => { const B = window.__ooga, R = B.race, T = window.BL.raceTrack.TRACKS, rounds = []; R.startCup(); for (let i = 0; i < T.length; i++) { if (i) R.nextRace(); const P = B.racers; P.start(); P.autopilot = true; R.simulate(300); P.autopilot = false; rounds.push({ track: R.selection.track, field: P.racers.map((r) => r.name).join(), all: P.order.every((r) => r.finished), ranked: P.order.every((r, k) => r.rank === k + 1 && (!k || P.order[k - 1].finishTime <= r.finishTime)) }); R.finishRace(); } const pts = Array.from(R.cup.points), you = pts[B.racers.player.index], lo = pts.filter((p) => p > you).length + 1, hi = pts.filter((p) => p >= you).length, stored = B.game.state.race.cup, place = stored ? ["gold", "silver", "bronze"].indexOf(stored.medal) + 1 : 0; const saved = stored ? stored.points === you && place >= lo && place <= hi : hi > 3; return { ok: R.cup.done && R.phase === "finished" && B.racers.racers.length === Math.min(window.BL.racers.FIELD, B.racers.all.length) && rounds.every((r) => r.all && r.ranked && r.field === rounds[0].field) && saved && T.every((t) => B.game.state.race.best[t.id]), rounds, you, lo, hi, stored }; })()`;
 // The diver starts 40 up and 56 back along its heading from the target; its glide carries it onto it.
 const dropRun = `(() => { const B = window.__ooga, D = B.drop; D.jumpNow(); const T = B.course.target, d = B.diver.state, h = Math.atan2(T.x, T.z); B.diver.place(T.x - Math.sin(h) * 56, T.y + 40, T.z - Math.cos(h) * 56, h); B.diver.jump(0, 0, 0, h); let pulled = false; for (let t = 0; t < 120 && D.phase !== "results"; t += 0.25) { if (!pulled && D.phase === "air" && d.p.y < T.y + 75) { D.deploy(); pulled = true; } D.simulate(0.25); } const r = D.result, best = B.game.state.drop.best; return { ok: D.phase === "results" && !!r && r.score > 0 && r.medal === window.BL.dropHud.medalFor(r.score) && !!best && best.score === r.score, phase: D.phase, result: r && { score: r.score, landing: r.landing, medal: r.medal } }; })()`;
 // Eight GPU rigs for two minutes, out to the island mid-run and a reload: the run comes back as saved and
@@ -4946,7 +4946,7 @@ const raceRigs = { name: "race rig poses", why: "regression: the full custom dri
     const matrices = rigs.map(rig => rig?.matrices);
     for (const id of ["bay", "gorge", "peak", "bay"]) {
       document.querySelector('[data-track="' + id + '"]').click(); B.advance(1 / 60, 1 / 60); B.housekeep();
-      rows.push({ id, records: B.renderer.stats.records, racers: B.racers.racers.length });
+      rows.push({ id, records: B.renderer.stats.records, racers: B.racers.all.length });
     }
     for (const mount of ["run", "dino", "kart"]) {
       document.querySelector('[data-mount="' + mount + '"]').click(); B.advance(1 / 60, 1 / 60);
@@ -11127,11 +11127,11 @@ scene("race", { label:"optional rig link fallback",url:hubPage(src),steps:[{name
   })()`);
   try {
     const ready=await untilPage(b,'B.scene==="race"&&!B.transitioning&&B.renderer.rigFailed&&B.renderedFrames>2',15000);
-    const r=await b.evaluate(`(()=>{const B=__ooga;return {kind:B.renderer.kind,failure:B.renderer.failure,rigFailed:B.renderer.rigFailed,ready:B.renderer.ready,drawn:B.renderer.stats.drawn,racers:B.racers.racers.length,original:B.racers.racers.every(r=>r.node.geometry.meshRig.nodes.every(n=>n.geometry.faces.length>0&&n.meshRigSource===r.node.geometry.meshRig)),faults:__rigFault.pending.size};})()`);
+    const r=await b.evaluate(`(()=>{const B=__ooga;return {kind:B.renderer.kind,failure:B.renderer.failure,rigFailed:B.renderer.rigFailed,ready:B.renderer.ready,drawn:B.renderer.stats.drawn,racers:B.racers.all.length,original:B.racers.all.every(r=>r.node.geometry.meshRig.nodes.every(n=>n.geometry.faces.length>0&&n.meshRigSource===r.node.geometry.meshRig)),faults:__rigFault.pending.size};})()`);
     record("race optional rig: forced link failure keeps WebGL rendering the full original cast",ready&&r.kind==="webgl2"&&!r.failure&&r.rigFailed&&r.ready&&r.drawn>0&&r.racers===CAST&&r.original&&r.faults>0,JSON.stringify(r));
   } finally {await b.evaluate('(()=>{const f=__rigFault;f.gl.createProgram=f.create;f.gl.getProgramParameter=f.parameter;delete window.__rigFault;})()');}
 }}]});
-scene("race", { query: "rain=0", steps: [raceStart, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: every racer finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
+scene("race", { query: "rain=0", steps: [raceStart, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of twelve runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
 scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on the target, scores its own medal and is saved as the best", dropRun), dropCrash, trip("drop")] });
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit")] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls] });
@@ -13209,10 +13209,10 @@ const raceRigChecks = async () => {
   const renderer = { createRig: BL.glRenderer.createRig, releaseGeometry: geometry => released.push(geometry) };
   const track = BL.raceTrack.build(BL.raceTrack.TRACKS[0], { renderer, slots: CAST, rain: false, hour: 12 });
   const racers = BL.racers.create({ root: scene, track, renderer, input: { add() {}, remove() {} }, fx: null });
-  const originals = racers.racers.map(racer => ({ node: racer.node, geometry: racer.node.geometry, rig: racer.node.geometry.meshRig, joints: racer.node.geometry.meshRig.nodes.slice(), sources: racer.node.geometry.meshRig.sources.slice() }));
+  const originals = racers.all.map(racer => ({ node: racer.node, geometry: racer.node.geometry, rig: racer.node.geometry.meshRig, joints: racer.node.geometry.meshRig.nodes.slice(), sources: racer.node.geometry.meshRig.sources.slice() }));
   let stable = true;
   for (const mount of ["kart", "run", "dino", "kart", "dino", "run", "kart"]) {
-    racers.setup({ track, playerName: racers.racers[0].name, playerMount: mount, lapCount: 3 });
+    racers.setup({ track, playerName: racers.all[0].name, playerMount: mount, lapCount: 3 });
     BL.scene.updateWorld(scene);
     for (const entry of originals) stable &&= entry.node.geometry === entry.geometry && entry.rig.nodes.length === 9 && entry.rig.sources.every((source, i) => source === entry.sources[i] && entry.rig.nodes[i].geometry === source && entry.rig.nodes[i].meshRigSource === entry.rig);
   }
