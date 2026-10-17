@@ -49,8 +49,18 @@
       mark(kind);
       if (onPick) onPick(kind, key);
     };
-    // The signed-in visitor's own Ooga leads the garage list, as online rows lead the roster.
-    const lead = (name) => el.racers.prepend(buttons.racer.get(name).parentElement);
+    // A signed-in visitor with an Ooga races it, as they drive only it on the island: their row stands alone
+    // in the Ooga column (moved last, so it keeps no divider) and the help stops offering a pick. `null`
+    // brings every row back.
+    const help = el.garage.querySelector(".garage-head .help"), PICK_HELP = help.textContent;
+    const lockRacer = (name) => {
+      for (const [key, b] of buttons.racer) b.parentElement.hidden = !!name && key !== name;
+      help.textContent = name ? PICK_HELP.replace("an Ooga, ", "") : PICK_HELP;
+      if (!name) return;
+      el.racers.append(buttons.racer.get(name).parentElement);
+      selection.racer = name;
+      mark("racer");
+    };
     const row = (kind, key, build) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
@@ -336,7 +346,7 @@
       buttons.track.clear();
       trackRows.clear();
     };
-    return { el, selection, buildGarage, lead, refreshTracks, show, setRank, setLap, setTime, setItem, setBoost, setPips, setSpeed, center, notice, results, setCup, minimap, speedLines, formatTime, medalFor, dispose };
+    return { el, selection, buildGarage, lockRacer, refreshTracks, show, setRank, setLap, setTime, setItem, setBoost, setPips, setSpeed, center, notice, results, setCup, minimap, speedLines, formatTime, medalFor, dispose };
   };
   BL.raceHud = { create, formatTime, medalFor };
 })();

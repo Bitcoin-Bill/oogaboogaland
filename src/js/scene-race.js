@@ -54,9 +54,7 @@
   };
   // selection persists for the page's life: the garage remembers the last pick across visits.
   const selection = { racer: contributors.activeRoster[0]?.name || null, mount: "kart", track: "bay", mirror: false };
-  // A signed-in visitor's own Ooga leads the garage list and is picked for them, on entering the garage or
-  // once the sign-in answers, until they pick another.
-  let ownPick = true;
+  // A signed-in visitor with an Ooga races it, as they drive only it on the island; the picker is for the rest.
   const ownRacer = () => {
     const own = BL.net.ownCharacter();
     return own && contributors.activeRoster.some((c) => c.name === own.handle) ? own.handle : null;
@@ -188,10 +186,19 @@
     racers.setup({ track, playerName: selection.racer, playerMount: selection.mount, lapCount: track.laps });
     items.setTrack(track);
   };
+  // The garage holds the visitor to their own Ooga when they have one; true when that changed the pick.
+  const applyOwn = () => {
+    const own = ownRacer();
+    rhud.lockRacer(own);
+    if (!own || own === selection.racer) return false;
+    selection.racer = own;
+    return true;
+  };
   // Back from a race the garage lines up freshly drawn rivals; a track picked in the garage keeps them, and
   // Race again, the next track and every race of a cup run the same field.
   const toGarage = () => {
     if (phase !== "garage") racers.draw();
+    applyOwn();
     phase = "garage";
     fx.clearParticles();
     cup.active = false;
@@ -753,13 +760,9 @@
     if (e.key === "l" || e.key === "L") demoTip(120000);
   };
   const onBlur = () => pause(true);
-  // The sign-in can answer once the garage is up: the visitor's own Ooga leads the list and is picked then,
-  // as on entering.
+  // The sign-in can answer once the garage is up; anywhere else the next garage applies it.
   const accountChanged = () => {
-    const own = ownRacer();
-    if (!own) return;
-    rhud.lead(own);
-    if (phase === "garage" && ownPick && own !== selection.racer) rhud.el.racers.querySelector(`[data-racer="${own}"]`).click();
+    if (phase === "garage" && applyOwn()) placeRacers();
   };
 
   const enter = (ctx) => {
@@ -775,22 +778,18 @@
       tracks: raceTrack.TRACKS, mounts: racersMod.MOUNTS, roster: contributors.activeRoster, best: () => game.state.race.best, mirror: () => selection.mirror,
       onPick: (kind, key) => {
         selection[kind] = key;
-        if (kind === "racer") ownPick = key === ownRacer();
         if (kind === "track") {
           buildTrack(key);
           toGarage();
         } else placeRacers();
       }
     });
-    const own = ownRacer();
-    if (own && ownPick) selection.racer = own;
     Object.assign(rhud.selection, selection);
     hud.dismissOutside(rhud.el.pause, () => pause(false));
     driftTaught = 0;
     rhud.el.mirror.hidden = !mirrorOpen();
     rhud.el.mirror.setAttribute("aria-pressed", String(selection.mirror));
     rhud.buildGarage((name) => contributors.stateFor(contributors.activeRoster.find((c) => c.name === name)));
-    if (own) rhud.lead(own);
     buildTrack(selection.track);
     agent = raceScene.agent = BL.agent.create({ groundAt: agentGround, form: "code" });
     addChild(root, agent.root);
@@ -832,7 +831,7 @@
       onHoverMove: (hit, p) => hud.tooltip.show(tooltipFor(hit), p.x, p.y, hit.owner.kind === "racer" ? hit.owner.racer.cave : null),
       onTap: (hit) => {
         if (hit && hit.owner.kind === "racer") {
-          if (phase === "garage") rhud.el.racers.querySelector(`[data-racer="${hit.owner.racer.name}"]`).click();
+          if (phase === "garage" && !ownRacer()) rhud.el.racers.querySelector(`[data-racer="${hit.owner.racer.name}"]`).click();
           else fx.say(hit.owner.racer.cave, "Ooga busy!", 1.2);
         }
       },
@@ -883,7 +882,10 @@
       for (const cave of contributors.activeRoster) hud.setRosterRow(cave.name, contributors.stateFor(cave), contributors.ageLabel(cave));
       fx.trimPool();
     }, 6e4);
-    hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Tap an Ooga, a ride and a track, then Race!" : "Pick an Ooga, a ride and a track, then Race! (Enter)"), 1200);
+    hintTimer = window.setTimeout(() => {
+      const pick = ownRacer() ? "a ride and a track" : "an Ooga, a ride and a track";
+      hud.hint(COARSE ? `Tap ${pick}, then Race!` : `Pick ${pick}, then Race! (Enter)`);
+    }, 1200);
     window.addEventListener("blur", onBlur);
     unsubscribeAccount = BL.net.subscribe(accountChanged);
     Object.assign(raceScene, {
