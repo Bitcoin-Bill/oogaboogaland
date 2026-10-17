@@ -4761,7 +4761,7 @@ const donationClientChecks = async () => {
   const paintContext = new Proxy({}, { get: () => () => {} });
   kioskContext.document.createElement = () => ({ getContext: () => paintContext });
   let capCalls = 0;
-  const caps = { minSats: 1, maxSats: 2000, lightningMaxSats: 1000 };
+  const caps = { minSats: 1, maxSats: 2100000000000000, lightningMaxSats: 1000 };
   const capped = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
     limits: () => caps, open: () => true, testNetwork: () => "",
     invoice: async () => { capCalls++; return { request: "request", lightning: "limit", invoice: { id: "chain-only", bolt11: null, expires: now / 1000 + 900 }, rate: null, bananas: null }; },
@@ -4775,11 +4775,11 @@ const donationClientChecks = async () => {
   const lightningDisabled = capped.state === "quote" && capCalls === 1;
   capped.tap(300, 350); await Promise.resolve();
   const capOnchain = capped.state === "chain";
-  capped.stop(); capped.start(); for (const key of ["Enter", "2", "0", "0", "1"]) capped.key({ key });
+  capped.stop(); capped.start(); for (const key of ["Enter", ..."2100000000000001"]) capped.key({ key });
   capped.key({ key: "Enter" });
   const overallCap = capped.state === "amount" && capCalls === 1;
   capped.stop();
-  record("donation limits: amounts above Lightning warn before Continue, keep on-chain available, disable the Lightning button, and still enforce the configured overall cap",
+  record("donation limits: amounts above Lightning warn before Continue, keep on-chain available, disable the Lightning button, and still reject invalid Bitcoin amounts",
     capWarning && capContinue && lightningDisabled && capOnchain && overallCap, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap }));
 
   const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];

@@ -357,7 +357,7 @@
       flow.sats = Number(flow.digits) || 0;
       flow.bananas = hooks.bananasFor(Math.max(1, flow.sats));
     };
-    // The API advertises separate policy limits; its overall cap still bounds on-chain tips.
+    // The API advertises a Lightning threshold and the valid Bitcoin amount range.
     const limits = () => real && hooks.limits ? hooks.limits() : null;
     const overLightning = () => real && limits() && flow.sats > limits().lightningMaxSats;
     const canLightning = () => !!flow.invoice?.bolt && !overLightning();
