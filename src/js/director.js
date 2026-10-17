@@ -541,6 +541,12 @@
       }
     }, {
       identity: () => game.state,
+      // An on-chain payment seen before its block: the active scene shows it where it can (the kiosk that made the
+      // invoice), and otherwise one the visitor left the kiosk waiting on says it is on its way, or what is still owed.
+      onSeen: (id, sats, due, left) => {
+        if (active && active.onSeen && active.onSeen(id, sats, due, left)) return;
+        if (donations.waitingOn(id)) window.BL.hud.toast(left ? `Your on-chain tip arrived short · send ${gameMod.formatLarge(left)} more sats to the same address` : "Your on-chain tip is on its way · waiting for a block");
+      },
       onPile: ({ bananas, eatPerHour }) => Object.assign(pileFeed, { bananas, eatPerHour, at: performance.now() })
     });
   });

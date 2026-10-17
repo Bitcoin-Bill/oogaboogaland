@@ -4631,14 +4631,15 @@ const gameRulesChecks = async () => {
   }
 };
 const donationClientChecks = async () => {
-  const sockets = [], timers = [], received = [];
+  const sockets = [], timers = [], received = [], seen = [];
   const context = { window: { setTimeout: fn => { const t = { fn }; timers.push(t); return t; }, clearTimeout: () => {} },
     location: { protocol: "https:", origin: "https://site.test" },
+    fetch: async () => ({ status: 200, ok: true, json: async () => ({ request: "request", invoice: { id: "invoice", expires: 1 }, bananas: null, rate: null, lightning: "unavailable" }) }),
     WebSocket: class { constructor(url) { this.url = url; sockets.push(this); } close() { this.closed = true; } } };
   runInNewContext(await readFile(new URL("../src/js/donations.js", import.meta.url), "utf8"), context);
   const D = context.window.BL.donations;
   D.useOrigin();
-  const stop = D.subscribe((d, bananas) => received.push({ d, bananas }));
+  const stop = D.subscribe((d, bananas) => received.push({ d, bananas }), { onSeen: (...a) => seen.push(a) });
   const message = data => sockets.at(-1).onmessage({ data: JSON.stringify(data) });
   message({ type: "status", open: true, network: "signet" });
   message({ type: "tally", count: 0, sats: 0, bananas: 0, last: null, hours: [], rate: null });
@@ -4658,10 +4659,15 @@ const donationClientChecks = async () => {
   const replay = sockets[1].url.endsWith("?after=paid");
   message(paid);
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
+  message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
+  message({ type: "seen", id: "chain", sats: 400, due: 1000 });
+  const heard = seen.length === 1 && seen[0].join() === "chain,400,1000,615";
+  const fallback = await D.invoice({ sats: 1000 });
+  const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, and unsubscribe closes the socket",
-    empty && tally && boards && legacyBoard && replay && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ empty, tally, boards, legacyBoard, replay, received }));
+  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
+    empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
 
   let now = Date.now();
   const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
@@ -4678,6 +4684,23 @@ const donationClientChecks = async () => {
   await quote(); now += 11000; F.update(0.1); F.key({ key: "Escape" });
   const back = F.state === "amount";
   record("donation kiosk: a real invoice expires on its quote screen, Back returns to the amount, and a confirmed payment is recognized on the quote or after expiry", quoted && expired && late && back, JSON.stringify({ quoted, expired, late, back }));
+  const waits = [];
+  const G = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
+    invoice: async () => ({ request: "request", invoice: { id: "unlit", bolt11: null, expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
+    onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: (id) => waits.push(id),
+    open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {} });
+  G.start(); for (const key of ["Enter", "1", "Enter"]) G.key({ key }); await Promise.resolve();
+  G.key({ key: "Enter" }); await Promise.resolve(); await Promise.resolve();
+  const chainOnly = G.state === "chain";
+  const short = G.seen("unlit", 400, 1000, 615) && G.state === "chain" && G.rest === 615;
+  const whole = G.seen("unlit", 1015, 1000, 0) && G.state === "confirming" && !G.seen("other", 1015, 1000, 0);
+  G.key({ key: "Escape" });
+  const staysSeen = G.state === "confirming";
+  G.key({ key: "Backspace" });
+  const noRepay = staysSeen && G.state === "confirming";
+  G.stop();
+  const waited = waits.join() === "unlit";
+  record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
