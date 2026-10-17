@@ -27,8 +27,8 @@
   const mountById = (id) => MOUNTS.find((m) => m.id === id) || MOUNTS[1];
   // The AI field: two karts and two dinos to every runner, so the back of the pack is not all on foot.
   const AI_MOUNTS = [MOUNTS[1], MOUNTS[2], MOUNTS[1], MOUNTS[2], MOUNTS[0]];
-  // The whole roster on one grid buries the visitor; a race is them and eleven drawn rivals.
-  const FIELD = 12;
+  // The whole roster on one grid buries the visitor; a race is them and fourteen drawn rivals.
+  const FIELD = 15;
   const BOOST_MUL = 1.32, BOOST_TIERS = [0, 0.55, 0.95, 1.5], DRIFT_ANGLE = 0.5;
   // The start: a throttle held from inside the last count boosts off the line, held from earlier it spins the wheels.
   const START_BOOST = 0.7, START_SPIN = 0.6, START_SPIN_TOP = 0.4, AI_START_BOOST = 0.55, AI_START_SKILL = 0.75;
