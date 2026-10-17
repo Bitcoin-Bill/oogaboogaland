@@ -6,7 +6,7 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const $ = (id) => document.getElementById(id);
-  const SUFFIX = ["st", "nd", "rd", "th", "th", "th", "th", "th"];
+  const { suffixOf } = BL.racers;
   const MAP_SIZE = 132, MAP_PAD = 10;
   const MAP_POINT = { x: 0, y: 0 };
   const SPEED_LINES = 26;
@@ -149,7 +149,7 @@
       if (rank === lastRank) return;
       lastRank = rank;
       el.rank.firstChild.data = String(rank);
-      el.rankSuffix.textContent = SUFFIX[rank - 1] || "th";
+      el.rankSuffix.textContent = suffixOf(rank);
       el.field.textContent = `/${field}`;
     };
     const setLap = (lap, laps) => {
@@ -224,6 +224,11 @@
       li.append(name, value);
       return li;
     };
+    // Centres a row in a box that scrolls; a box that does not scroll keeps its place.
+    const reveal = (box, row) => {
+      const top = row.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+      box.scrollTop = top - (box.clientHeight - row.offsetHeight) / 2;
+    };
     // rows: this race; standings: cup points so far; next: label for the next-race button, or null.
     const results = (rows, summary, { note = "", standings = null, next = null } = {}) => {
       el.podium.replaceChildren(...rows.map((r) => podiumRow(r, r.finished ? `${r.estimated ? "≈ " : ""}${formatTime(r.time)}` : "DNF")));
@@ -236,6 +241,11 @@
       el.summary.textContent = summary;
       refreshTracks();
       show("results");
+      // The tables can be longer than the card, so each opens at the visitor's row, and so does the card.
+      const you = el.podium.querySelector(".you");
+      reveal(el.podium, you);
+      if (standings) reveal(el.standings, el.standings.querySelector(".you"));
+      reveal(el.results, you);
     };
     const setCup = (cup) => {
       el.garageCup.hidden = !cup;

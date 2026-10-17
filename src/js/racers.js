@@ -32,7 +32,9 @@
   const SPIN_TIME = 1.1, RESPAWN_TIME = 1.2, INVULN = 1.6, WRONG_WAY_AFTER = 0.9;
   const CHECK_WINDOW = 4;
   const RANK_EVERY = 0.2;
-  const NAMES = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
+  // The whole roster races, so places run past 20: 11th to 13th, but 21st, 22nd, 23rd.
+  const SUFFIX = ["th", "st", "nd", "rd"];
+  const suffixOf = (n) => n % 100 - n % 10 === 10 ? "th" : SUFFIX[n % 10] || "th";
   const P = { lateral: 0, along: 0, index: 0, next: 0 };
   // Effects only for racers near the camera (EFFECT_RANGE is a squared distance), from the shared particle pool.
   const EFFECT_RANGE = 48 * 48;
@@ -624,7 +626,7 @@
     const control = (racer) => {
       player = racer;
     };
-    const rankLabel = (rank) => NAMES[rank - 1] || `${rank}th`;
+    const rankLabel = (rank) => `${rank}${suffixOf(rank)}`;
     const dispose = () => {
       player = null;
       for (const r of racers) {
@@ -665,5 +667,5 @@
       }
     };
   };
-  BL.racers = { create, MOUNTS, mountById, BOOST_MUL, BOOST_TIERS, START_BOOST, START_SPIN };
+  BL.racers = { create, MOUNTS, mountById, suffixOf, BOOST_MUL, BOOST_TIERS, START_BOOST, START_SPIN };
 })();
