@@ -4647,6 +4647,12 @@ const donationClientChecks = async () => {
   message({ type: "tally", count: 1, sats: 1000, bananas: 0.25, last: 1000, hours: [[Date.now(), 1000, 0.25]], rate: null });
   message({ type: "tally", count: "bad", sats: 0, bananas: 0, last: null, hours: [] });
   const tally = D.state.tally?.bananas === 0.25 && D.state.tally.hours[0][2] === 0.25;
+  message({ type: "board", entries: [{ handle: "banana-leader", bananas: 20, sats: 1000 }],
+    satsEntries: [{ handle: "sat-leader", bananas: 10, sats: 9000 }] });
+  const boards = D.state.board[0].handle === "banana-leader" && D.state.board[0].sats === 1000
+    && D.state.boardSats[0].handle === "sat-leader" && D.state.boardSats[0].sats === 9000;
+  message({ type: "board", entries: [{ handle: "legacy-donor", bananas: 4 }] });
+  const legacyBoard = D.state.board[0].bananas === 4 && D.state.board[0].sats === null && D.state.boardSats === null;
   const paid = { type: "donation", donation: { id: "paid", sats: 1000, handle: "tester", message: "", at: Date.now() }, bananas: { exact: 0.25, rounded: 0 } };
   message(paid); message(paid);
   sockets[0].onclose(); timers.at(-1).fn();
@@ -4659,9 +4665,9 @@ const donationClientChecks = async () => {
   const fallback = await D.invoice({ sats: 1000 });
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
-    empty && tally && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ empty, tally, replay, heard, unlit, received }));
+  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
+    empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
 
   let now = Date.now();
   const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
@@ -4688,9 +4694,13 @@ const donationClientChecks = async () => {
   const chainOnly = G.state === "chain";
   const short = G.seen("unlit", 400, 1000, 615) && G.state === "chain" && G.rest === 615;
   const whole = G.seen("unlit", 1015, 1000, 0) && G.state === "confirming" && !G.seen("other", 1015, 1000, 0);
+  G.key({ key: "Escape" });
+  const staysSeen = G.state === "confirming";
+  G.key({ key: "Backspace" });
+  const noRepay = staysSeen && G.state === "confirming";
   G.stop();
   const waited = waits.join() === "unlit";
-  record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block, and leaving waits on the invoice", chainOnly && short && whole && waited, JSON.stringify({ chainOnly, short, whole, waited, state: G.state }));
+  record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
@@ -5214,8 +5224,10 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
     const out = {};
     C.account({ backend: true, me: null, room: "off" });
     tab.click();
-    out.signedOut = !tab.hidden && !$("chat-panel").hidden && input.disabled && send.disabled && !$("chat-login").hidden && document.activeElement !== input;
+    out.signedOut = !tab.hidden && !$("chat-panel").hidden && input.disabled && send.disabled && !$("chat-status").hidden && $("chat-status-text").textContent.includes("Sign in to chat") && document.activeElement !== input;
     C.account({ backend: true, me: { id: 9, login: "Tester", display: "Tester" }, room: "live" });
+    tab.click();
+    out.folded = $("sheet").dataset.open === "false";
     tab.click();
     out.saved = JSON.parse(localStorage.getItem("oogaboogaland.sheet.v1")).tab;
     out.focused = document.activeElement === input || !matchMedia("(pointer: fine)").matches;
@@ -5386,7 +5398,7 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
   record("ooga chat: portrait and both landscape editors lift above the keyboard, stay within the visual viewport and clear positioning/listeners on blur", keyboardLayouts.every(r => r.focused && r.cleared && r.detached && [r.resized, r.scrolled].every(m => m.bottom === 200 && m.top >= r.visibleTop && m.toggleTop >= r.visibleTop && m.edge <= r.visibleBottom + 1 && m.fieldTop >= m.panelTop - 1 && m.fieldBottom <= m.panelBottom + 1)), JSON.stringify(keyboardLayouts));
   const escaped = await b.evaluate(`(() => { BL.net.sendChat = window.__chatSend; const out = { blurred: document.activeElement !== document.getElementById("chat-input"), open: document.getElementById("sheet").dataset.open === "true", tab: document.querySelector("[data-tab][aria-selected='true']").dataset.tab }; BL.chat.account({ backend: false, me: null, room: "off" }); localStorage.removeItem("oogaboogaland.sheet.v1"); return out; })()`);
   record("ooga chat: hidden without a backend, signed out asks to sign in, the last 100 lines kept as text, a reader not pulled down, a rejoin to a room that forgot keeps the page's lines, Enter sends and Escape leaves the input",
-    none.hidden && none.tab === "roster" && none.offline === false && r.signedOut && r.saved === "chat" && r.focused
+    none.hidden && none.tab === "roster" && none.offline === false && r.signedOut && r.folded && r.saved === "chat" && r.focused
     && r.history[0] === 100 && r.history[1] === "line 20" && r.capped[0] === 100 && r.capped[1] === "line 50" && r.capped[2] === 100 && r.text && r.followed
     && r.reading[0] === 0 && r.reading[1] === 100 && r.reading[2] === "line 51" && r.refollowed
     && r.rejoined[0] === 100 && r.rejoined[1] === "line 54" && r.rejoined[2] === "line 153" && r.emptyRejoin && r.readerRejoin && r.followRejoin
@@ -5396,8 +5408,8 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
 const hubBlockHeight = { name: "header clock and block height", why: "rule: the single-digit clock is centered from its visible glyphs with a time zone, and the shared chain reading is shown beneath it", run: async (b) => {
   const before = await b.evaluate(`(() => { const clock = document.getElementById("world-clock"), label = clock.querySelector("svg").getAttribute("aria-label"), text = label.replace(/^Ooga Booga time /, ""), cells = [...text].reduce((sum, ch) => sum + (ch === " " ? 2 : 4), -1), zone = (new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date()).find(part => part.type === "timeZoneName")?.value || "UTC").toUpperCase().replaceAll("−", "-"); return { height: document.getElementById("world-block-height").textContent, bananas: !!document.getElementById("world-banana-count"), label, namedImage: !clock.hasAttribute("aria-label") && clock.querySelector("svg").getAttribute("role") === "img", text, zone, cells, viewWidth: clock.querySelector("svg").viewBox.baseVal.width, cssWidth: parseFloat(clock.style.width) }; })()`);
   await b.evaluate(`BL.mempool.emit({ type: "block", height: 900123, txCount: 3210 })`);
-  const after = await b.evaluate(`(() => { const B = __ooga, height = document.getElementById("world-block-height"), block = document.getElementById("world-block"); const shown = height.textContent; B.hud.setMeter(42, 60, "Ready"); return { shown, afterMeter: height.textContent, label: block.getAttribute("aria-label"), bananas: !!document.getElementById("world-banana-count"), icon: !!block.querySelector(".banana-icon") }; })()`);
-  record("header: a single-digit clock is centered from its displayed time and local zone, while the chain feed paints block height below it and banana-meter updates cannot overwrite it", before.height === "\u2014" && before.namedImage && !before.bananas && before.text === `9:00 AM ${before.zone}` && before.viewWidth === before.cells && Math.abs(before.cssWidth - before.cells / 6) < 1e-6 && after.shown === "900,123" && after.afterMeter === after.shown && after.label === "Bitcoin block height 900123" && !after.bananas && !after.icon, JSON.stringify({ before, after }));
+  const after = await b.evaluate(`(() => { const height = document.getElementById("world-block-height"), block = document.getElementById("world-block"); const shown = height.textContent; return { shown, label: block.getAttribute("aria-label"), bananas: !!document.getElementById("world-banana-count"), icon: !!block.querySelector(".banana-icon") }; })()`);
+  record("header: a single-digit clock is centered from its displayed time and local zone, while the chain feed paints block height below it", before.height === "\u2014" && before.namedImage && !before.bananas && before.text === `9:00 AM ${before.zone}` && before.viewWidth === before.cells && Math.abs(before.cssWidth - before.cells / 6) < 1e-6 && after.shown === "900,123" && after.label === "Bitcoin block height 900123" && !after.bananas && !after.icon, JSON.stringify({ before, after }));
 } };
 const hubDestinationNames = { name: "destination accessible names", why: "regression: each visible destination label must occur in the button's accessible name", run: async (b) => {
   const rows = [];

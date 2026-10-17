@@ -373,7 +373,8 @@
       }
       if (s === "confirming") {
         if (a === "done") return hooks.close();
-        if (a === "back") return set("chain");
+        // A whole payment is already in the mempool: never ask for the same amount again.
+        if (a === "back" && !(flow.got > 0 && !flow.rest)) return set("chain");
       }
       if (s === "waiting" && (a === "cancel" || a === "back")) return set("invoice");
       if (s === "paid" && (a === "watch" || a === "back")) return hooks.watch();
@@ -697,7 +698,7 @@
         write(g, flow.reply.bananas ? `${sats(paid)} SATS · ${sats(flow.bananas)} BANANA${flow.bananas === 1 ? "" : "S"}` : `${sats(paid)} SATS`, W / 2, 218, 2, INK.gold, "center");
         write(g, seen ? "YOUR PAYMENT IS IN THE MEMPOOL. YOU CAN LEAVE:" : "THAT TAKES A BLOCK OR MORE. YOU CAN LEAVE:", W / 2, 250, 1, INK.dim, "center");
         write(g, "THE COOKER STARTS WHEN IT CONFIRMS.", W / 2, 264, 1, INK.dim, "center");
-        button(30, 326, 120, 52, "< ADDRESS", "", "back");
+        button(30, 326, 120, 52, "< ADDRESS", seen ? "off" : "", "back");
         button(160, 326, 210, 52, "DONE", "primary", "done");
         closeButton();
       } else if (s === "paid") {
