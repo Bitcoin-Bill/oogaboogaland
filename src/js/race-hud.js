@@ -49,6 +49,8 @@
       mark(kind);
       if (onPick) onPick(kind, key);
     };
+    // The signed-in visitor's own Ooga leads the garage list, as online rows lead the roster.
+    const lead = (name) => el.racers.prepend(buttons.racer.get(name).parentElement);
     const row = (kind, key, build) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
@@ -334,7 +336,7 @@
       buttons.track.clear();
       trackRows.clear();
     };
-    return { el, selection, buildGarage, refreshTracks, show, setRank, setLap, setTime, setItem, setBoost, setPips, setSpeed, center, notice, results, setCup, minimap, speedLines, formatTime, medalFor, dispose };
+    return { el, selection, buildGarage, lead, refreshTracks, show, setRank, setLap, setTime, setItem, setBoost, setPips, setSpeed, center, notice, results, setCup, minimap, speedLines, formatTime, medalFor, dispose };
   };
   BL.raceHud = { create, formatTime, medalFor };
 })();

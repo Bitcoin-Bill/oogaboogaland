@@ -54,6 +54,13 @@
   };
   // selection persists for the page's life: the garage remembers the last pick across visits.
   const selection = { racer: contributors.activeRoster[0]?.name || null, mount: "kart", track: "bay", mirror: false };
+  // A signed-in visitor's own Ooga leads the garage list and is picked for them, on entering the garage or
+  // once the sign-in answers, until they pick another.
+  let ownPick = true;
+  const ownRacer = () => {
+    const own = BL.net.ownCharacter();
+    return own && contributors.activeRoster.some((c) => c.name === own.handle) ? own.handle : null;
+  };
   // Bests are kept per track, the mirrored ones under their own key.
   const bestKey = () => selection.mirror ? `${selection.track}-m` : selection.track;
 
@@ -62,7 +69,7 @@
   let home = "hub";
   let renderer, game, world, go, lootEnabled, testBananas, root, camera, hud, rhud, hooks, input, fx, controls, track, racers, items, audio, weather, agent;
   let phase = "garage", countdown = 0, accumulator = 0, sceneTime = 0, finishedAt = 0;
-  let meterTimer = 0, stateTimer = 0, hintTimer = 0;
+  let meterTimer = 0, stateTimer = 0, hintTimer = 0, unsubscribeAccount = null;
   // revAt is the countdown time the throttle was first held through; -1 while it is off.
   let revAt = -1, crowdSwell = 0, driftTaught = 0;
   const cam = { yaw: 0, offset: 0, dist: CHASE.dist, shake: 0, lookBack: false, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, warm: false, garageYaw: 0, garageLift: 0 };
@@ -746,6 +753,14 @@
     if (e.key === "l" || e.key === "L") demoTip(120000);
   };
   const onBlur = () => pause(true);
+  // The sign-in can answer once the garage is up: the visitor's own Ooga leads the list and is picked then,
+  // as on entering.
+  const accountChanged = () => {
+    const own = ownRacer();
+    if (!own) return;
+    rhud.lead(own);
+    if (phase === "garage" && ownPick && own !== selection.racer) rhud.el.racers.querySelector(`[data-racer="${own}"]`).click();
+  };
 
   const enter = (ctx) => {
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
@@ -760,18 +775,22 @@
       tracks: raceTrack.TRACKS, mounts: racersMod.MOUNTS, roster: contributors.activeRoster, best: () => game.state.race.best, mirror: () => selection.mirror,
       onPick: (kind, key) => {
         selection[kind] = key;
+        if (kind === "racer") ownPick = key === ownRacer();
         if (kind === "track") {
           buildTrack(key);
           toGarage();
         } else placeRacers();
       }
     });
+    const own = ownRacer();
+    if (own && ownPick) selection.racer = own;
     Object.assign(rhud.selection, selection);
     hud.dismissOutside(rhud.el.pause, () => pause(false));
     driftTaught = 0;
     rhud.el.mirror.hidden = !mirrorOpen();
     rhud.el.mirror.setAttribute("aria-pressed", String(selection.mirror));
     rhud.buildGarage((name) => contributors.stateFor(contributors.activeRoster.find((c) => c.name === name)));
+    if (own) rhud.lead(own);
     buildTrack(selection.track);
     agent = raceScene.agent = BL.agent.create({ groundAt: agentGround, form: "code" });
     addChild(root, agent.root);
@@ -866,6 +885,7 @@
     }, 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Tap an Ooga, a ride and a track, then Race!" : "Pick an Ooga, a ride and a track, then Race! (Enter)"), 1200);
     window.addEventListener("blur", onBlur);
+    unsubscribeAccount = BL.net.subscribe(accountChanged);
     Object.assign(raceScene, {
       root, camera, input,
       debug: {
@@ -914,6 +934,8 @@
     window.clearInterval(stateTimer);
     window.clearTimeout(hintTimer);
     window.removeEventListener("blur", onBlur);
+    unsubscribeAccount();
+    unsubscribeAccount = null;
     window.removeEventListener("pointerdown", onGesture);
     window.removeEventListener("keydown", onGesture);
     audio.dispose();
