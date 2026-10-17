@@ -22,7 +22,7 @@
   const TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
   const $ = (id) => document.getElementById(id);
   const sheet = $("sheet"), tab = $("chat-tab"), panel = $("chat-panel"), log = $("chat-log");
-  const status = $("chat-status"), statusText = $("chat-status-text"), signIn = $("chat-login");
+  const status = $("chat-status"), statusText = $("chat-status-text");
   const form = $("chat-form"), input = $("chat-input"), left = $("chat-left"), sendButton = $("chat-send");
   const announcement = $("chat-announcement"), roomChip = $("chat-room");
   const announce = (text) => { if (announcement && announcement.textContent !== text) announcement.textContent = text; };
@@ -159,7 +159,6 @@
     if (!live) { stopWaiting(); notice = ""; }
     input.disabled = !live;
     input.placeholder = live ? "Say something" : "";
-    signIn.hidden = !!player;
     status.hidden = live;
     const chip = live ? "Live" : !player ? "Signed out" : room === "connecting" ? "Joining" : room === "paused" ? "Paused" : "Offline";
     if (roomChip.textContent !== chip) {

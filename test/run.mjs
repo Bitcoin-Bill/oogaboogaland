@@ -5201,7 +5201,7 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
     const out = {};
     C.account({ backend: true, me: null, room: "off" });
     tab.click();
-    out.signedOut = !tab.hidden && !$("chat-panel").hidden && input.disabled && send.disabled && !$("chat-login").hidden && document.activeElement !== input;
+    out.signedOut = !tab.hidden && !$("chat-panel").hidden && input.disabled && send.disabled && !$("chat-status").hidden && $("chat-status-text").textContent.includes("Sign in to chat") && document.activeElement !== input;
     C.account({ backend: true, me: { id: 9, login: "Tester", display: "Tester" }, room: "live" });
     tab.click();
     out.saved = JSON.parse(localStorage.getItem("oogaboogaland.sheet.v1")).tab;
