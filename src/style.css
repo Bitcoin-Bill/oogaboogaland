@@ -867,6 +867,7 @@ body[data-active-scene="arcade"] .magazine-hud {
 }
 
 .banana-totals,
+.banana-rates,
 .banana-board {
   border-top: 1px solid rgba(0, 0, 0, 0.4);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -882,6 +883,52 @@ body[data-active-scene="arcade"] .magazine-hud {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+
+.banana-rates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+}
+
+.banana-rate-label {
+  position: relative;
+  padding-left: 11px;
+  color: rgba(243, 239, 228, 0.58);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.banana-rates > dt:nth-of-type(2) { align-self: center; }
+
+.banana-rate-label[data-tone="live"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.banana-rates dd {
+  margin: 0;
+  color: var(--paper);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.banana-exchange { position: relative; padding-left: 19px; }
+.banana-exchange-icon { position: absolute; left: 0; top: 50%; width: 14px; height: 14px; transform: translateY(-50%); }
+.banana-exchange > span + span { margin-left: 5px; }
 
 .banana-board { margin-top: 12px; padding-top: 12px; }
 

@@ -37,7 +37,7 @@
   const T = BL.jumbotron.text, GW = T.GLYPH_W, GH = T.GLYPH_H, TR = T.TRACKING;
   const W = 400, H = 400;
   const BANANAS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const RATE = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+  const RATE = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // An amount's bounds, an invoice's life, a simulated payment's settling, and how long the paid screen holds the
   // visitor's bananas back from the cooker before it cooks them anyway.
   const MIN = 400, MAX = 1000000, EXPIRY = 300, SETTLE = 2.4, HOLD = 12;
@@ -196,9 +196,17 @@
   const qrBox = (g, x, y, size, code, dim) => {
     g.fillStyle = "#fbf6e8";
     g.fillRect(x, y, size, size);
-    const n = code.size, m = Math.floor(size / (n + 8)), o = Math.floor((size - m * n) / 2);
+    // Fill the box with only the four-module quiet zone; round cell edges, not the pitch,
+    // so integer scaling cannot turn the unused space into an oversized white border.
+    const n = code.size, quiet = 4, m = size / (n + quiet * 2);
     g.fillStyle = "#0b0d10";
-    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (code.modules[r * n + c]) g.fillRect(x + o + c * m, y + o + r * m, m, m);
+    for (let r = 0; r < n; r++) {
+      const top = Math.round((r + quiet) * m), bottom = Math.round((r + quiet + 1) * m);
+      for (let c = 0; c < n; c++) if (code.modules[r * n + c]) {
+        const left = Math.round((c + quiet) * m), right = Math.round((c + quiet + 1) * m);
+        g.fillRect(x + left, y + top, right - left, bottom - top);
+      }
+    }
     if (dim) {
       g.fillStyle = "rgba(9,12,16,0.72)";
       g.fillRect(x, y, size, size);
@@ -274,14 +282,21 @@
       flow.rate = rate || null; flow.bananas = bananas;
       rateAt = rate?.at; rateStale = !!rate?.stale;
     };
+    const priceLabel = () => {
+      const r = flow.rate;
+      if (!r) return "PRICE UNAVAILABLE";
+      const label = flow.frozenPricing ? "RECORDED BTC" : r.stale ? "STALE BTC" : r.live ? "LIVE BTCUSD" : "BTC";
+      return `${label} $${RATE.format(r.usdPerBtc)}`;
+    };
     const rateLine = (x, y, width = 340, align = "center") => {
       const r = flow.rate;
+      const color = r?.stale ? INK.red : INK.dim;
       if (width < 200) {
-        write(g, r?.stale ? "RATE · STALE" : "RATE", x, y, 1, r?.stale ? INK.red : INK.dim);
-        writeFit(g, r ? `${RATE.format(r.satsPerBanana)} SATS/BANANA` : "UNAVAILABLE", x, y + 10, 1, INK.dim, width);
+        writeFit(g, priceLabel(), x, y, 1, color, width);
+        if (r) writeFit(g, `1 BANANA ≈ ${RATE.format(1e8 / r.usdPerBtc)} SATS`, x, y + 10, 1, INK.dim, width);
         return;
       }
-      writeFit(g, r ? `1 BANANA ≈ ${RATE.format(r.satsPerBanana)} SATS${r.stale ? " · STALE" : ""}` : "PRICE UNAVAILABLE", x, y, 1, r?.stale ? INK.red : INK.dim, width, align);
+      writeFit(g, r ? `${priceLabel()} · 1 BANANA ≈ ${RATE.format(1e8 / r.usdPerBtc)} SATS` : priceLabel(), x, y, 1, color, width, align);
     };
     const set = (state) => {
       flow.state = state;
@@ -338,7 +353,7 @@
         g.fillStyle = "#fff0a8";
         g.fillRect(x + 3, y + 3, w - 6, 2);
       } else {
-        g.strokeStyle = on ? INK.amber : INK.line;
+        g.strokeStyle = on && act !== "back" ? INK.amber : INK.line;
         g.lineWidth = 2;
         g.strokeRect(x + 1, y + 1, w - 2, h - 2);
       }
@@ -671,13 +686,14 @@
         if (flow.digits) writeFit(g, sats(flow.sats), 54, 58, 4, INK.white, 236);
         else write(g, "0", 54, 58, 4, INK.dim);
         write(g, "SATS", 346, 66, 2, INK.dim, "right");
-        if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 106, 1, INK.red, "center");
+        // Keep the rate under the amount and reserve a separate status row above Continue.
+        if (real) rateLine(W / 2, 106, 320);
+        if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 332, 1, INK.red, "center");
         else if (flow.digits && !valid()) {
           const min = real ? limits()?.minSats || 1 : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
-          writeFit(g, flow.sats < min ? `MIN ${sats(min)} SATS` : `MAX ${sats(max)} SATS`, W / 2, 106, 1, INK.red, 320, "center");
+          writeFit(g, flow.sats < min ? `MIN ${sats(min)} SATS` : `MAX ${sats(max)} SATS`, W / 2, 332, 1, INK.red, 320, "center");
         }
-        else if (overLightning()) write(g, "OVER LIGHTNING LIMIT · ON-CHAIN ONLY", W / 2, 106, 1, INK.amber, "center");
-        else if (real) rateLine(W / 2, 106, 320);
+        else if (overLightning()) write(g, "OVER LIGHTNING LIMIT · ON-CHAIN ONLY", W / 2, 332, 1, INK.amber, "center");
         const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "rub"];
         keys.forEach((k, i) => {
           const x = 44 + (i % 3) * 106, y = 120 + Math.floor(i / 3) * 54;
@@ -695,8 +711,7 @@
             write(g, "X", x + 56, y + 20, 1, INK.panel, "center");
           }
         });
-        button(100, 340, 200, 48, "CONTINUE >", valid() ? "primary" : "off", "go");
-        if (overLightning()) rateLine(W / 2, 389, 320);
+        button(100, 348, 200, 40, "CONTINUE >", valid() ? "primary" : "off", "go");
         closeButton();
       } else if (s === "quote" && real) {
         const rate = flow.rate, floating = flow.reply.pricing === "receipt";
@@ -705,8 +720,8 @@
         write(g, "YOU DONATE", 42, 54, 1, INK.dim);
         writeFit(g, `${sats(flow.sats)} SATS`, 42, 70, 4, INK.gold, 316);
         if (rate) write(g, `≈ $${(flow.sats / 1e8 * rate.usdPerBtc).toFixed(2)} USD`, 42, 110, 2, INK.white);
-        write(g, "RATE", 42, 144, 1, INK.dim);
-        writeFit(g, rate ? `1 BANANA = $1 ≈ ${RATE.format(rate.satsPerBanana)} SATS` : "NO PRICE YET", 42, 156, 2, INK.white, 316);
+        write(g, "1 BANANA = $1", 42, 144, 1, INK.dim);
+        rateLine(42, 156, 316, "left");
         panel(g, 30, 176, 340, 84);
         write(g, floating ? "ESTIMATED BANANAS" : "YOU WILL MAKE", 42, 186, 1, INK.dim);
         if (rate) {

@@ -1,13 +1,16 @@
 // Live estimates only. The server independently prices each full receipt; the browser never
-// submits a price. One 2140data socket is shared by open kiosks and closed when hidden or unused.
+// submits a price. One 2140data socket is shared by open kiosks and the Bananas panel,
+// and closed when hidden or unused.
 (() => {
   "use strict";
   const BL = window.BL;
   const URL = "wss://2140data.io/", STALL = 30000, RETRY_MAX = 30000;
   let users = 0, socket = null, retry = 0, watchTimer = 0, backoff = 1000, rate = null;
+  const listeners = new Set();
+  const emit = () => { for (const listener of listeners) listener(); };
   const drop = () => {
     window.clearTimeout(watchTimer); watchTimer = 0;
-    if (rate) rate.stale = true;
+    if (rate && !rate.stale) { rate.stale = true; emit(); }
     if (!socket) return;
     const ws = socket; socket = null;
     ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
@@ -37,9 +40,10 @@
       if (!/^\d{1,12}(?:\.\d{1,8})?$/.test(text)) return;
       const cents = Math.round(Number(text) * 100);
       if (!(cents > 0)) return;
-      rate = { usdPerBtc: cents / 100, satsPerBanana: Math.round(1e10 / cents), at: Date.now(), stale: false };
+      rate = { usdPerBtc: cents / 100, satsPerBanana: 1e10 / cents, at: Date.now(), stale: false, live: true };
       backoff = 1000;
       watchdog();
+      emit();
     };
     ws.onclose = ws.onerror = reconnect;
   };
@@ -48,15 +52,19 @@
     if (document.hidden) drop();
     else connect();
   };
-  const watch = () => {
+  const watch = (onRate) => {
+    const listener = typeof onRate === "function" ? () => onRate(rate) : null;
+    if (listener) listeners.add(listener);
     if (++users === 1) {
       document.addEventListener("visibilitychange", visibility);
       connect();
     }
+    if (listener) listener();
     let active = true;
     return () => {
       if (!active) return;
       active = false;
+      if (listener) listeners.delete(listener);
       if (--users) return;
       document.removeEventListener("visibilitychange", visibility);
       window.clearTimeout(retry); retry = 0;

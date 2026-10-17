@@ -47,7 +47,7 @@ Classic scripts, each an IIFE with `"use strict"`, sharing `window.BL`. A file e
 |---|---|
 | `qr.js` | QR code for the donation link |
 | `banana-icon.js` | The Bananas panel's nine-pixel banana as painted canvas pixels and solid sign geometry, shared by the Factory donation board and kiosk |
-| `donation-rate.js` | One shared 2140data socket while a real kiosk is open, paused while hidden, for live estimates only; the server prices receipts independently |
+| `donation-rate.js` | One shared 2140data socket while a real kiosk or the Bananas panel is open, paused while hidden, for live estimates only; `watch(onRate)` optionally receives price and stale updates, and the server prices receipts independently |
 | `donation-popup.js` | The mainland donation dialog: reuses the real kiosk flow for Lightning/on-chain invoices, opens without changing scenes, handles seen payments, and closes on settlement so the current scene shows the delivery. Owned and disposed by the director; available signed in or out |
 | `math.js` | `mat4`, unit `quat`, easing, damping, hashing, `rayFromView`, stable `sortByKey` with caller-owned `sortScratch` |
 | `daylight.js` | the local solar clock: sun, moon and star frame, sky and light factors, six phases; `sample`, `createClock` |

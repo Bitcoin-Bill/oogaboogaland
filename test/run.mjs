@@ -4741,18 +4741,23 @@ const donationClientChecks = async () => {
     document: { hidden: false, addEventListener: (name, fn) => priceListeners.set(name, fn), removeEventListener: name => priceListeners.delete(name) },
     Date: { now: () => priceClock }, WebSocket: class { constructor(url) { this.url = url; priceSockets.push(this); } close() { this.closed = true; } } };
   runInNewContext(await readFile(new URL("../src/js/donation-rate.js", import.meta.url), "utf8"), rateContext);
-  const rates = rateContext.window.BL.donationRate, offOne = rates.watch(), offTwo = rates.watch();
+  const rateNotices = [];
+  const rates = rateContext.window.BL.donationRate, offOne = rates.watch(value => rateNotices.push(value && { ...value })), offTwo = rates.watch();
   priceSockets[0].onmessage({ data: JSON.stringify({ weightedPrice: "90000.12" }) });
-  const sharedRate = priceSockets.length === 1 && rates.current.usdPerBtc === 90000.12 && !rates.current.stale;
+  const sharedRate = priceSockets.length === 1 && rates.current.usdPerBtc === 90000.12 && !rates.current.stale
+    && rates.current.live && rates.current.satsPerBanana > 1111 && rates.current.satsPerBanana < 1112
+    && rateNotices.at(-1)?.usdPerBtc === 90000.12;
   priceSockets[0].onmessage({ data: JSON.stringify({ weightedPrice: "-1" }) });
   const validRate = rates.current.usdPerBtc === 90000.12;
   rateContext.document.hidden = true; priceListeners.get("visibilitychange")();
-  const hiddenRate = priceSockets[0].closed && rates.current.stale && priceTimers.size === 0;
+  const hiddenRate = priceSockets[0].closed && rates.current.stale && priceTimers.size === 0 && rateNotices.at(-1)?.stale;
   rateContext.document.hidden = false; priceListeners.get("visibilitychange")();
   priceClock++; priceSockets[1].onmessage({ data: JSON.stringify({ weightedPrice: "91000" }) });
-  offOne(); const retainedRate = !priceSockets[1].closed;
+  const noticeCount = rateNotices.length;
+  offOne(); priceClock++; priceSockets[1].onmessage({ data: JSON.stringify({ weightedPrice: "92000" }) });
+  const retainedRate = !priceSockets[1].closed && rateNotices.length === noticeCount;
   offTwo(); offTwo();
-  record("donation rate: kiosks share one socket, reject invalid prices, pause while hidden, reconnect when visible, and close the last socket and its timers exactly once",
+  record("donation rate: watchers share one socket, receive live and stale updates until released, reject invalid prices, pause while hidden, reconnect when visible, and close the last socket and its timers exactly once",
     sharedRate && validRate && hiddenRate && retainedRate && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
     JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, listeners: priceListeners.size, timers: priceTimers.size }));
 
