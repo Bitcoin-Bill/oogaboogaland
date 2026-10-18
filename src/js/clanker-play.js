@@ -376,12 +376,24 @@
       else if (name === "mode-release") release();
       else if (name === "mode-toggle") {
         if (clankers.sleeping(player)) { hud.hint("Wake this gorilla before entering shooter mode"); return true; }
+        let entryView = null;
+        if (!combat && view === "orbit") {
+          // Choose from the displayed eye around the body, even while a
+          // selection is still turning toward it. The camera's current aim
+          // and pending orbit pitch do not change the elevation threshold.
+          updateTarget();
+          entryView = BL.pilot.combatEntryView(camera.position, target);
+          captureControl(controlState);
+          cameraHandoff.cancel();
+          holdCamera(false);
+          if (entryView === "shoulder") orbit.tPitch = 0.42;
+        }
         combat = !combat;
         shoulderPointActive = carryShoulderAim = false;
         if (!combat) setCombatTooltip(null);
         targetWait = 0;
         cancelInput();
-        if (view === "orbit" && combat) setView("birds-eye");
+        if (entryView) setView(entryView);
         else if (view === "birds-eye" && !combat) {
           orbitPitch = orbit.pitch;
           setView("orbit");
@@ -391,6 +403,12 @@
         else blurCombat();
         syncCursor();
         hud.setGorilla(player, view, isCombat());
+        if (entryView) {
+          // Rebase the shared full-pose blend before solving the new boom so
+          // X keeps the exact displayed eye, roll and projection at time zero.
+          cameraHandoff.begin(controlState);
+          update(0);
+        }
       } else if (name === "act") beginJump();
       else return false;
       return true;

@@ -51,6 +51,9 @@
   const CLOSE_GROUND_RATE = 9, CLOSE_TELEPORT = 0.8;
   const WALK = { speed: 7.75, run: 1.5, gravity: 9.8, step: 0.6, ledgeRise: 2.4, ledgeSpeed: 3, ledgeDrag: 1.5 };
   const ACT_DO = "JUMP!", ACT_FLY = "Blast off!";
+  // Compare the displayed eye with the actor's normal carry focus. A view at
+  // exactly 45 degrees, or below the actor, enters shoulder combat.
+  const combatEntryView = (eye, focus) => eye.y - focus.y > Math.hypot(eye.x - focus.x, eye.z - focus.z) ? "birds-eye" : "shoulder";
   // Camera rotations carry look and up together, including a sleeper's roll.
   // Local -Z looks forward; local +Y is the top of the rendered image.
   const viewRotation = (out, fx, fy, fz, ux, uy, uz, yaw) => {
@@ -85,7 +88,7 @@
     const raw = {}, shown = {}, up = { x: 0, y: 1, z: 0 };
     const rotation = quat.create(), endpointRotation = quat.create();
     const forward = new Float64Array(3), top = new Float64Array(3);
-    let active = false, elapsed = 0;
+    let active = false, elapsed = 0, nativePosition = false;
     let sourceHead = null, sourceRoot = null, sourceHeadHidden = false;
     const restoreHead = () => {
       if (sourceHead) sourceHead.cameraHidden = sourceHeadHidden;
@@ -147,8 +150,9 @@
       const dx = pose.targetX - pose.eyeX, dy = pose.targetY - pose.eyeY, dz = pose.targetZ - pose.eyeZ;
       viewRotation(out, dx, dy, dz, pose.upX, pose.upY, pose.upZ, Math.atan2(-dx, -dz));
     };
-    const begin = (source) => {
+    const begin = (source, followPosition = false) => {
       cancel();
+      nativePosition = followPosition;
       capturePose(raw);
       for (let i = 0; i < CAMERA_POSE_FIELDS.length; i++) {
         const key = CAMERA_POSE_FIELDS[i]; shown[key] = source[key];
@@ -187,7 +191,10 @@
         quat.rotateVec(forward, rotation, 0, 0, -1);
         quat.rotateVec(top, rotation, 0, 1, 0);
         for (let i = 0; i < CAMERA_BLEND_FIELDS.length; i++) {
-          const key = CAMERA_BLEND_FIELDS[i]; shown[key] += (raw[key] - shown[key]) * amount;
+          const key = CAMERA_BLEND_FIELDS[i];
+          // Native mode-entry arcs already start at the displayed eye and
+          // preserve their radius. A second position blend would cut the arc.
+          shown[key] = nativePosition && i < 3 ? raw[key] : shown[key] + (raw[key] - shown[key]) * amount;
         }
         shown.targetX = shown.eyeX + forward[0] * length;
         shown.targetY = shown.eyeY + forward[1] * length;
@@ -2063,9 +2070,24 @@
         hud.hint(crew.sleeping ? "Wake this Ooga Booga before entering shooter mode" : "Stand up before entering shooter mode");
         return true;
       }
+      const enteringOrbit = !cave.weapon.aiming && !closeWanted && !shoulderView;
+      const enteringView = enteringOrbit ? combatEntryView(camera.position, cave.root.position) : null;
+      if (enteringOrbit) {
+        captureControl(controlTransition);
+        if (handoff.active) eyeMotionValid = false;
+        handoff.cancel();
+      }
       resumePose();
       const leavingOverhead = birdsEye();
       clearRightGesture();
+      if (enteringOrbit) {
+        shoulderView = enteringView === "shoulder";
+        // An interrupted acquisition may still display another heading than
+        // its orbit endpoint. Carry the shown heading into the overhead view.
+        const dx = camera.target.x - camera.position.x, dz = camera.target.z - camera.position.z;
+        if (Math.hypot(dx, dz) > 1e-7) orbit.yaw = orbit.tYaw = Math.atan2(-dx, -dz);
+        else if (camera.up && Math.hypot(camera.up.x, camera.up.z) > 1e-7) orbit.yaw = orbit.tYaw = Math.atan2(-camera.up.x, -camera.up.z);
+      }
       cave.weapon.aiming = !cave.weapon.aiming;
       if (!cave.weapon.aiming) {
         crew.stopBurst(cave);
@@ -2087,6 +2109,13 @@
       crew.poseWeapon(cave);
       syncAim();
       if (leavingOverhead) beginCenteredCarry(cave);
+      if (enteringOrbit) {
+        // Native aim/orbit solvers own the arc and collision constraints.
+        // Retain the complete displayed pose while they begin that handoff.
+        handoff.begin(controlTransition, true);
+        targetWait = assistedTargetWait = 0;
+        finishHandoffView(0);
+      }
       syncWeaponHud();
       syncModeHud();
       return true;
@@ -3605,5 +3634,5 @@
       return viewPitch;
     } };
   };
-  BL.pilot = { create, WALK, saveLoginView: () => saveActiveLoginView ? saveActiveLoginView() : false };
+  BL.pilot = { create, WALK, combatEntryView, saveLoginView: () => saveActiveLoginView ? saveActiveLoginView() : false };
 })();

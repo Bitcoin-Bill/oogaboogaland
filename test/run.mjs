@@ -5741,7 +5741,7 @@ const hubMapNavigation = { name: "hub map navigation", why: "regression: choosin
         P.goPreset("pile");
         if (mode !== "detached") {
           P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
-          P.navigate({ position: { x: -5, y: B.island.surfaceAt(-5, 5), z: 5 }, yaw: 0.4, pitch: 0.3, dist: 10 });
+          P.navigate({ position: { x: -5, y: B.island.surfaceAt(-5, 5), z: 5 }, yaw: 0.4, pitch: mode.startsWith("combat") ? 1.1 : 0.3, dist: 10 });
           if (P.aiming !== mode.startsWith("combat")) P.modeAction("mode-toggle");
           if (mode.endsWith("shoulder") || mode.endsWith("first-person")) { P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60); }
           if (mode.endsWith("first-person")) P.hooks.onZoom(0.8, {});
@@ -6896,7 +6896,20 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           && Date.now() - view.at >= 0 && Date.now() - view.at < 1000;
         const blend = handoff(B, P, () => portrait.click()), immediate = blend.immediate;
         const activeRefused = !BL.pilot.saveLoginView() && sessionStorage.getItem(loginKey) === null;
-        retakes.push({ signedIn, shown, nativeTab, detachedRight, selected: P.player === a, mode: P.mode, combat: P.aiming, immediate, blend, error: error(before, 3), centered: centered(), hidden: portrait.hidden, savedView, activeRefused });
+        const entries = [];
+        retakes.push({ signedIn, shown, nativeTab, detachedRight, selected: P.player === a, mode: P.mode, combat: P.aiming, immediate, blend, error: error(before, 3), centered: centered(), hidden: portrait.hidden, savedView, activeRefused, entries });
+        for (const rise of [-4, 20, 40]) {
+          P.release(true); const p = a.root.position;
+          Object.assign(C.position, { x: p.x + 20, y: p.y + rise, z: p.z });
+          Object.assign(C.target, { x: p.x - 20, y: p.y + 40, z: p.z + 2 }); C.up = { x: 0.6, y: 0.8, z: 0 };
+          C.orthoMix = 0.35; C.orthoHeight = 24;
+          double(); P.update(0.05);
+          const pending = P.cameraHandoff.active;
+          P.orbit.tPitch = rise > 20 ? 0.1 : 1.4;
+          const blend = handoff(B, P, () => P.modeAction("mode-toggle")); P.update(2);
+          entries.push({ rise, pending, blend, mode: P.mode, combat: P.aiming, selected: P.player === a,
+            projection: C.orthoMix, finite: snapshot().every(Number.isFinite) });
+        }
       }
       return { rows, retakes };
     } finally {
@@ -6912,6 +6925,10 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       && !row.combat && row.blend.smooth && row.immediate < 1e-6 && row.error < 0.001 && row.centered && row.hidden && row.nativeTab && row.detachedRight), JSON.stringify(selectionModes.retakes));
   record("login handoff: only detached views write a bounded, route-scoped camera snapshot; an active Ooga refuses and clears it",
     selectionModes.retakes.every(row => row.savedView && row.activeRefused), JSON.stringify(selectionModes.retakes));
+  record("Ooga X entry: signed in or out, a displayed eye below or exactly 45 degrees enters shoulder and only a higher eye enters bird's-eye, smoothly interrupting a rolled off-target acquisition regardless of requested orbit pitch",
+    selectionModes.retakes.every(row => row.entries.length === 3 && row.entries.every(e => e.pending && e.blend.smooth && e.selected && e.combat
+      && e.mode === (e.rise > 20 ? "birds-eye" : "shoulder") && e.projection === (e.rise > 20 ? 1 : 0) && e.finite)),
+    JSON.stringify(selectionModes.retakes.map(({ signedIn, entries }) => ({ signedIn, entries }))));
   const rightViews = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, C = B.camera, a = P.player, canvas = document.getElementById("scene"), rows = [];
     const pointer = (type, button = 2, buttons = type === "pointerdown" ? 2 : 0) => canvas.dispatchEvent(new PointerEvent(type, {
@@ -6939,6 +6956,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     click(); click(false); B.advance(1, 1 / 60); const carryFirstOut = sample();
     click(); B.advance(1, 1 / 60); const carryFirstBack = sample();
     P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
+    P.hooks.onOrbit(0, (1.1 - P.orbit.tPitch) / 0.0035); B.advance(1, 1 / 60);
     P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
     click(); click(false); B.advance(1, 1 / 60); const combatOut = sample();
     click(); B.advance(1, 1 / 60); const combatBack = sample();
@@ -7020,7 +7038,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
             else if (reason === "other-button") { pointer("pointerdown", 1, 4); pointer("pointerup", 1, 0); }
             else if (reason === "mode") { toggle(); toggle(); }
             else if (reason === "view") { P.hooks.onZoom(0.5, {}); P.hooks.onZoom(1.2, {}); P.update(2); }
-            else { P.release(true); P.possess(a); if (P.aiming !== combat) toggle(); P.hooks.onZoom(0.001, {}); P.update(2); }
+            else { P.release(true); P.possess(a); if (P.aiming !== combat) toggle(); if (P.mode !== "shoulder") P.hooks.onZoom(0.001, {}); P.update(2); }
             if (combat) P.focusAim();
             pointer("pointerdown"); P.update(0);
             interrupted.push({ reason, selected: P.player === a, mode: P.mode, combat: P.aiming,
@@ -7368,7 +7386,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     const x = diagonal * (radius - 1.5), z = x, start = { position: { x, y: I.surfaceAt(x, z), z }, yaw: Math.PI, pitch: 0.4, dist: 24 };
     const run = bird => {
       if (P.aiming) P.modeAction("mode-toggle");
-      P.navigate(start); B.advance(1, 1 / 60);
+      P.navigate({ ...start, pitch: bird ? 1.1 : start.pitch }); B.advance(1, 1 / 60);
       if (bird) {
         P.modeAction("mode-toggle"); key("keydown", "n"); key("keyup", "n"); B.advance(1.5, 1 / 60);
         const reticle = document.getElementById("weapon-reticle"), halfHeight = B.renderer.size.height / 2;
@@ -11941,7 +11959,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       B.camera.up = coverUp; P.update(0); S.overlay(0.3);
     }
     // The remaining camera regression deliberately starts combat shoulder.
-    P.action("mode-toggle"); P.zoom(0.01, "camera-fixture"); P.update(2);
+    P.action("mode-toggle"); if (P.view !== "shoulder") P.zoom(0.01, "camera-fixture"); P.update(2);
     canvas.focus();
     const key = (type, value, code = "Key" + value.toUpperCase(), location = 0) => canvas.dispatchEvent(new KeyboardEvent(type,
       { key: value, code, location, bubbles: true, cancelable: true }));
@@ -12021,6 +12039,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           const height = B.camera.target.y;
           rightClick(); rightClick(); P.update(2);
           const doubleCarry = P.view === "orbit" && !P.combat && !P.focused;
+          P.orbit(0, (1.1 - B.pilot.orbit.tPitch) / 0.0035); P.update(2);
           tap("x"); P.update(2);
           const aimed = [];
           for (let side = 0; side < 2; side++) {
@@ -12071,7 +12090,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
               else if (reason === "other-button") { pointer("pointerdown", 1, 4); pointer("pointerup", 1, 0); }
               else if (reason === "mode") { tap("x"); tap("x"); }
               else if (reason === "view") { P.zoom(0.5, {}); P.zoom(2, {}); P.update(2); }
-              else { P.release(); P.possess(e); if (P.combat !== combat) tap("x"); P.zoom(0.001, {}); P.update(2); }
+              else { P.release(); P.possess(e); if (P.combat !== combat) tap("x"); if (P.view !== "shoulder") P.zoom(0.001, {}); P.update(2); }
               if (combat && !P.focused) rightClick();
               pointer("pointerdown");
               interrupted.push({ reason, combat, selected: P.player === e, view: P.view, keptMode: P.combat === combat });
@@ -12290,7 +12309,21 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           const returned = P.player === e && P.view === "orbit" && !P.combat && !P.focused && portrait.hidden
             && centered && Math.hypot(B.camera.position.x-eye.x, B.camera.position.y-eye.y, B.camera.position.z-eye.z) < 1e-6;
           const repeated = P.possess(e) && P.player === e && P.view === "orbit" && !P.combat;
-          retakes.push({ signedIn, shown, nativeTab, detachedRight, acquisition, blend, refused, returned, repeated }); P.release();
+          const entries = [];
+          retakes.push({ signedIn, shown, nativeTab, detachedRight, acquisition, blend, refused, returned, repeated, entries });
+          for (const rise of [-4, 20, 40]) {
+            P.release(); const p = e.root.position, camera = B.camera;
+            Object.assign(camera.position, { x: p.x + 20, y: p.y + 1.25 + rise, z: p.z });
+            Object.assign(camera.target, { x: p.x - 20, y: p.y + 41.25, z: p.z + 2 }); camera.up = { x: 0.6, y: 0.8, z: 0 };
+            camera.orthoMix = 0.35; camera.orthoHeight = 24;
+            P.possess(e); P.update(0.05);
+            const pending = B.pilot.cameraHandoff.active;
+            B.pilot.orbit.tPitch = rise > 20 ? 0.1 : 1.4;
+            const blend = handoff(B, P, () => P.action("mode-toggle")); P.update(2);
+            entries.push({ rise, pending, blend, view: P.view, combat: P.combat, selected: P.player === e,
+              projection: camera.orthoMix, finite: [camera.position.x, camera.position.y, camera.position.z, camera.target.x, camera.target.y, camera.target.z].every(Number.isFinite) });
+          }
+          P.release();
         }
       } finally { P.release(); BL.net.state.me = accountAfter; BL.net.state.backend = backendAfter; }
       const sleepRows = [], sleepAccount = BL.net.state.me, sleepBackend = BL.net.state.backend;
@@ -12400,6 +12433,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   record("owned pair views: T smoothly moves the displayed camera to each actor while preserving carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.gorillaBlend.smooth && r.oogaBlend.smooth && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
   record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));
   record("gorilla selection and retake: signed in or out, selection and the last-actor portrait smoothly recenter carry/orbit at the fixed detached eye; unavailable actors leave the view alone and same-actor selection does not restart the handoff", state.retakes.length === 2 && state.retakes.every(r => r.shown && r.nativeTab && r.detachedRight && r.acquisition.smooth && r.blend.smooth && r.refused && r.returned && r.repeated), JSON.stringify(state.retakes));
+  record("gorilla X entry: signed in or out, a displayed eye below or exactly 45 degrees above its carry focus enters shoulder and only a higher eye enters bird's-eye, smoothly interrupting a rolled off-target acquisition regardless of requested orbit pitch",
+    state.retakes.every(row => row.entries.length === 3 && row.entries.every(e => e.pending && e.blend.smooth && e.selected && e.combat
+      && e.view === (e.rise > 20 ? "birds-eye" : "shoulder") && e.projection === (e.rise > 20 ? 1 : 0) && e.finite)),
+    JSON.stringify(state.retakes.map(({ signedIn, entries }) => ({ signedIn, entries }))));
   record("sleeping gorilla: signed in or out selection and right-click keep the bed, pose and detached eye; movement, combat and attacks wait for Space; release preserves sleep and waking consumes the jump press and restores incoming combat intent", state.sleepRows.length === 2 && state.sleepRows.every(r => r.fixture && r.selected && r.heldEye && r.rightIgnored && r.nativeTab && r.blocked && r.releasedAsleep && r.dormantCombat && r.woke && r.freedBed), JSON.stringify(state.sleepRows));
 } }, { name: "gorilla wall destination", why: "regression: commanding a roof gorilla to a lower point farther along the cave face stalled at the crest instead of reaching the clicked wall", run: async (b) => {
   const state = await b.evaluate(`(() => {
