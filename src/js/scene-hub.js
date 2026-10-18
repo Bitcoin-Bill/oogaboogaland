@@ -11026,6 +11026,13 @@
       grabOoga: grabClankerRider, releaseOoga: releaseClankerRider,
       mayPossess: entry => BL.net.mayDriveGorilla(entry.owner.traits.name),
       sightClear: shared.fireReachable, aimCeiling: entry => birdsEyeCeiling(entry, true), constrainCamera: constrainClankerCamera,
+      groundAt: (x, z, y) => {
+        // Sample below shoulder height in this layer, not a cave's roof or a
+        // whole gorilla footprint. Over empty space, use the actor's feet plane.
+        const floor = Math.max(island.supportAt(x, z, y, 0, ABYSS_FLOOR), solids.supportAt(x, z, y, 0, 0),
+          mempoolIsland ? mempoolIsland.floatAt(x, z, y, 0, 0) : ABYSS_FLOOR);
+        return floor > ABYSS_FLOOR ? floor : NaN;
+      },
       birdsEyeMin: GORILLA_BIRDS_EYE_MIN, maxDistance: DIST_MAX });
     createClankerEquipment(shared.workSites);
     clankers.equipment = clankerEquipment;

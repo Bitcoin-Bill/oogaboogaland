@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence and T switching agreed and implemented. Remaining camera/selection flows await agreement.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching and camera gestures that preserve carry/combat are agreed and implemented. Remaining selection/map/touch flows await agreement.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -144,12 +144,12 @@ The legacy scene Agent is a third controller, not the hub companion. It has came
 |---|---|---|---|
 | C01 | Native cursor in Ooga carry versus locked virtual cursor in gorilla carry. | Source-confirmed | Native cursor agreed and implemented below |
 | C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Escape order implemented; combat Tab navigation still pending |
-| C03 | Gorilla right-click and inward zoom can change carry to combat; Ooga preserves intent. | Source-confirmed | Pending |
+| C03 | Gorilla right-click and inward zoom can change carry to combat; Ooga preserves intent. | Source-confirmed | Mode preservation agreed and implemented below |
 | C04 | Ooga remembers mode/preserves high selection; gorilla resets combat shoulder. | Source-confirmed | Pending |
-| C05 | Ooga bird's-eye has vertical aim; gorilla has fixed center aim. | Source-confirmed | Pending |
+| C05 | Ooga bird's-eye has vertical aim; gorilla has fixed center aim. | Source-confirmed | Distinct aim models retained; gorilla right-click to shoulder aims at ground 10m ahead |
 | C06 | Hub map keeps Ooga but releases gorilla; generic presets also detach Oogas. | Source-confirmed | Pending |
 | C07 | Sheet keyboard handling and field exclusions differ by actor. | Source-confirmed dispatch paths | Gorilla sheet key guard and shared Escape UI priority implemented; other focus flows pending |
-| C08 | Bifrost mode buttons lack handlers; X/HUD and Escape differ across walking scenes. | Source-confirmed wiring | Escape implemented; X/HUD routing still pending |
+| C08 | Bifrost mode buttons lack handlers; X/HUD and Escape differ across walking scenes. | Source-confirmed wiring | Escape and missing X/HUD routing implemented; existing scene restrictions retained |
 | C09 | Virtual/native HUD gestures differ; Chat indirect focus and coarse-device gorilla capture need review. | Missing dblclick route confirmed; visual consequences untested | Pending |
 | C10 | Signed-out ownership wording exceeds available presence data; gorilla has no shared room body. | Source-confirmed boundary | Gorilla room body implemented; signed-out presence boundary unchanged |
 | C11 | Close-view look may apply twice: carry Q/E and R/F, and look-stick yaw/pitch in carry or combat, except lying. Combat keyboard Q/E applies once. | Suspected sensitivity defect, unmeasured: [first application](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2059), [tail](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2150) | Measure if runtime checks requested |
@@ -159,14 +159,14 @@ Help also lags behavior: README omits Tab, capture-only first click, detached ey
 
 ## Proposed agreement order
 
-Native/captured cursor choice, Escape order, multiplayer companions and T switching are agreed below. Other recommendations remain proposals.
+Native/captured cursor choice, Escape order, multiplayer companions, T switching and camera mode preservation are agreed below. Other recommendations remain proposals.
 
 | Order | Scenario | Proposed rule | Open choice |
 |---|---|---|---|
 | 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed; sheet key guard now aligned. |
 | 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order and detached interior exit agreed; Tab behavior remains proposed. |
 | 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Initial default: carry or combat? Memory per actor or per visitor? Preserve altitude on high selection? |
-| 4 | Camera modes | Same wheel boundaries and right-click returns for both actors. Keep camera distance changes separate from combat intent. | Retain double-right-click? Same overhead aim model for both? |
+| 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed. Existing distance stops and double-right-click behavior retained; review first-person return parity separately. |
 | 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
 | 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Gorilla multiplayer identity is now in scope and implemented below; exceptional controllers still need review. |
 
@@ -178,7 +178,7 @@ On 2026-10-18 the maintainer chose **native cursor in detached/carry** for Oogas
 
 - Gorilla combat-to-carry now releases capture and focus. It no longer constructs a virtual cursor or keeps its pointer-position/resize bookkeeping.
 - Native left-drag and wheel retain the existing interaction hooks. Tab in carry reaches native keyboard navigation, as it does for Oogas; combat Tab behavior is unchanged pending scenario 2.
-- Returning to combat requests capture. The existing carry-orbit zoom boundary still changes to combat shoulder and explicitly requests focus now that carry no longer supplies it. Whether that boundary should change combat intent is still C03, not silently decided here.
+- Returning to combat requests capture. At this checkpoint the carry-orbit zoom boundary still changed to combat shoulder and requested focus; the later camera-gesture agreement below removes that mode change.
 - Grab/throw retains its existing reticle and button handling in carry without acquiring pointer lock. Other abilities, ownership, map behavior, view defaults and scene Escape policies are unchanged.
 - The existing `gorilla camera modes` check now requires native cursor state, no focus/lock and unconsumed Tab in its carry shoulder/first-person/orbit samples. This regression coverage is authored, not run under the current **wait** policy.
 
@@ -205,6 +205,24 @@ The maintainer requested multiplayer gorilla tracking and a key to cycle their o
 - Remote gorillas use the managed gorilla rig with eased position/heading, owner name, normalized health and voice indicator. Their local AI copy releases its reservations and hides until the remote lets go. Their Ooga remains a separate crew member. Voice follows the driven actor's zone.
 - This is player presence and locomotion. Gorilla attacks, held Oogas, throws, damage authority and general NPC gorilla pose synchronization are not newly replicated. Older open pages must refresh to recognize a gorilla body; old Ooga position messages remain compatible.
 
+## Agreed change: camera gestures preserve carry/combat
+
+The maintainer approved **zoom and right-click preserve carry/combat; X switches modes**, for either actor and either sign-in state. The portrait remains the equivalent button action. Detached flight retains its existing movement keys; it has no carry/combat state.
+
+| Starting state | Zoom/right-click result | Mode |
+|---|---|---|
+| Ooga or gorilla carry | Move between first person, shoulder and orbit at the existing distance stops | Carry; native cursor |
+| Ooga or gorilla combat | Move between first person, shoulder and bird's-eye at the existing distance stops | Combat |
+| Gorilla combat bird's-eye, right-click | Shoulder view aimed at the ground 10m in front of its heading at the click | Combat; mouse look resumes |
+| Ooga combat bird's-eye, right-click | Previous close view aimed at its selected centerline point | Combat; existing movable aim range retained |
+| Controlled actor, X or portrait tap | Switch carry/combat without selecting another actor | Cursor follows the chosen mode |
+
+- Gorilla carry orbit no longer enters combat or requests capture when zoom reaches shoulder. Right-click from carry orbit also stays carry. The Ooga already preserved intent; its camera helper no longer exposes an unused combat setter, and weapon hints now identify X as the mode switch.
+- The gorilla's 10m point is a one-time selection, not a target that follows its turning body. Shoulder framing compensates for the selected shoulder and the current head/arm height. It samples ground below shoulder height in the current layer, including solid surfaces and water; with no ground there it uses the gorilla's feet plane. Residual peek is cleared on entry; later look/peek inputs remain manual.
+- X and the portrait are now wired consistently in Bifrost, DSB and the poker floor. Typing, held/modified X, venue menus, transitions, and seated poker UI retain their existing priority. Arcade's intentional carry-only walking and game controls are unchanged. Lab and Factory already forwarded X.
+- Existing double-right-click and distance thresholds remain unchanged. The gorilla always returns to shoulder; the Ooga remembers whether its previous close view was shoulder or first person. This distinction remains recorded for a later decision.
+- Existing Ooga/gorilla camera scenarios now cover both sign-in states and carry/combat preservation. The gorilla scenario projects the resulting camera ray onto the actual ground plane to check the 10m point on both shoulders. Existing Bifrost, DSB and poker scenarios cover X/portrait routing and UI priority. These checks are authored, not executed under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -225,4 +243,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Native carry cursor decision: approved; implementation and existing regression coverage updated. `npm run build`, `node --check src/js/clanker-play.js`, `node --check test/run.mjs` and `git diff --check` passed. Runtime verification remains pending under **wait**.
 - `05fc676`: gorilla room identity, bounded locomotion and remote rig transport, with server regression coverage authored.
 - Escape, multiplayer companion integration and T switching: approved; implementation and existing regression coverage updated in this checkpoint. `npm run build`, syntax checks on all 19 changed JavaScript files and `git diff --check` passed. Added network/remote checks participate in the existing unit/full path. Browser, unit and worker runtime tests remain unrun under **wait**.
-- Remaining decisions: selection/default view, wheel/right-click boundaries, map/reset handoffs, overhead aiming, touch and exceptional-controller details.
+- `18b0ef6`: Escape order, companion integration and T switching committed and pushed to the draft PR.
+- Camera gesture checkpoint: wheel/right-click preserve carry/combat; X/portrait routing completed in walking interiors; gorilla combat bird's-eye right-click aims at ground 10m ahead. `npm run build`, `node --check` on all seven changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
+- Remaining decisions: selection/default view, first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.

@@ -6601,8 +6601,31 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     P.hooks.onZoom(0.8); B.advance(1, 1 / 60); const combatFirst = sample();
     click(); click(false); B.advance(1, 1 / 60); const combatFirstOut = sample();
     click(); B.advance(1, 1 / 60); const combatFirstBack = sample();
+    const authIntent = [], account = BL.net.state.me, backend = BL.net.state.backend;
+    const character = BL.characters.get(a.traits.name);
+    const toggle = () => {
+      for (const type of ["keydown", "keyup"]) canvas.dispatchEvent(new KeyboardEvent(type, { key: "x", code: "KeyX", bubbles: true, cancelable: true }));
+    };
+    try {
+      BL.net.state.backend = true;
+      for (const signedIn of [false, true]) {
+        BL.net.state.me = signedIn ? { id: 72, login: character.github || character.handle, display: "View fixture" } : null;
+        P.exitClose(); P.navigate({ position: { x: -8, y: 0, z: 8 }, yaw: 0, pitch: 0.3, dist: 4 });
+        B.advance(1, 1 / 60);
+        for (const combat of [false, true]) {
+          if (P.aiming !== combat) toggle();
+          B.advance(1, 1 / 60);
+          const steps = [sample()];
+          for (const factor of [0.8, 1.2, 1.2]) { P.hooks.onZoom(factor); B.advance(2, 1 / 60); steps.push(sample()); }
+          click(); B.advance(1, 1 / 60); steps.push(sample());
+          for (const factor of [1.2, 0.001]) { P.hooks.onZoom(factor); B.advance(2, 1 / 60); steps.push(sample()); }
+          authIntent.push({ signedIn, combat, selected: P.player === a, steps });
+        }
+      }
+    } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
+    P.hooks.onZoom(0.8); B.advance(1, 1 / 60);
     return { rows, carryFirst, carryScrollBack, carryFirstOut, carryFirstBack, combatOut, combatBack,
-      combatFirst, combatFirstOut, combatFirstBack };
+      combatFirst, combatFirstOut, combatFirstBack, authIntent };
   })()`);
   record("view gestures: right-click returns from orbit to the prior shoulder or first-person view, and first-person scroll exits to shoulder",
     rightViews.rows.every(r => r.single.mode === "shoulder" && !r.single.combat && Math.abs(r.immediate.y - r.before.y) < 1e-6
@@ -6619,6 +6642,11 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     && rightViews.combatFirst.mode === "first-person" && rightViews.combatFirst.combat
     && rightViews.combatFirstOut.mode === "birds-eye" && rightViews.combatFirstOut.combat
     && rightViews.combatFirstBack.mode === "first-person" && rightViews.combatFirstBack.combat, JSON.stringify(rightViews));
+  record("view intent: signed-in and signed-out Oogas keep the carry/combat mode chosen by X through scroll, right-click and both distant-to-shoulder paths",
+    rightViews.authIntent.length === 4 && rightViews.authIntent.every(row => {
+      const far = row.combat ? "birds-eye" : "orbit", modes = ["shoulder", "first-person", "shoulder", far, "shoulder", far, "shoulder"];
+      return row.selected && row.steps.length === modes.length && row.steps.every((step, i) => step.mode === modes[i] && step.combat === row.combat);
+    }), JSON.stringify(rightViews.authIntent));
   const shoulderFraming = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = P.player, rows = [];
     // The preceding gesture check intentionally ends in first-person.
@@ -6775,7 +6803,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     P.hooks.onZoom(1.2); B.advance(1.5, 1 / 60); const back = __birdsSnapshot();
     P.hooks.onZoom(1.2); B.advance(1, 1 / 60); return { max, clamped, lowered, fromMax, immediate, maxStep, switchFrame, shoulder, first, back };
   })()`);
-  record("birds-eye combat: a full-height inward zoom reaches the relative-height-21 shoulder handoff promptly along a continuous path, and first-person remains reachable", Math.abs(entry.after.height - 21) < 0.01 && Math.abs(zoom.max.height - zoom.clamped.height) < 0.01 && zoom.lowered.height < zoom.max.height && zoom.lowered.mode === "birds-eye" && zoom.fromMax.height > 60 && zoom.immediate < 1e-6 && zoom.maxStep < 5 && zoom.switchFrame > 0 && zoom.switchFrame < 45 && zoom.shoulder.mode === "shoulder" && zoom.first.mode === "first-person" && zoom.back.mode === "shoulder", JSON.stringify(zoom));
+  record("birds-eye combat: a full-height inward zoom retains combat through the relative-height-21 shoulder handoff and first person along a continuous path", [zoom.max, zoom.clamped, zoom.lowered, zoom.fromMax, zoom.shoulder, zoom.first, zoom.back].every(view => view.combat) && Math.abs(entry.after.height - 21) < 0.01 && Math.abs(zoom.max.height - zoom.clamped.height) < 0.01 && zoom.lowered.height < zoom.max.height && zoom.lowered.mode === "birds-eye" && zoom.fromMax.height > 60 && zoom.immediate < 1e-6 && zoom.maxStep < 5 && zoom.switchFrame > 0 && zoom.switchFrame < 45 && zoom.shoulder.mode === "shoulder" && zoom.first.mode === "first-person" && zoom.back.mode === "shoulder", JSON.stringify(zoom));
   await b.evaluate(`(() => { const B = __ooga, reticle = document.getElementById("weapon-reticle"); B.pilot.hooks.onOrbit(0, B.renderer.size.height * 0.25 - parseFloat(reticle.style.top)); B.advance(0.5, 1 / 60); })()`);
   const handoffs = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, difference = (a, b) => Math.hypot(...a.map((n, i) => n - b[i]));
@@ -8666,9 +8694,37 @@ const bifrostEntrance = { name: "bifrost entrance", why: "playthrough: an Ooga w
   const arrived = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "bifrost"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const d = B.bifrost; return { scene: B.scene, ooga: B.crew && B.crew.player ? B.crew.player.traits.name : null, pictured: !!(d && d.pictured), outside: !!(d && d.outside) }; })()`);
   record("bifrost entrance: walking through the portal's field takes the same Ooga into the chamber, which has DSB Land's picture and the island's view back out", arrived.scene === "bifrost" && arrived.ooga === "portlandhodl" && arrived.pictured && arrived.outside, JSON.stringify(arrived));
 } };
+const walkingModeControls = async (b, scene) => {
+  const state = await b.evaluate(`(() => {
+    const P = __ooga.pilot, cave = P.player, canvas = document.getElementById("scene"), portrait = document.getElementById("mode-hud");
+    if (!cave) return { selected: false };
+    const initial = cave.weapon.aiming, tap = (options = {}) => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "x", code: "KeyX", bubbles: true, cancelable: true, ...options }));
+      canvas.dispatchEvent(new KeyboardEvent("keyup", { key: "x", code: "KeyX", bubbles: true }));
+    };
+    canvas.focus(); tap();
+    const toggled = cave.weapon.aiming !== initial && portrait.dataset.combat === String(cave.weapon.aiming);
+    let ignored = true;
+    for (const options of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) { tap(options); ignored &&= cave.weapon.aiming !== initial; }
+    portrait.click();
+    return { selected: P.player === cave, toggled, ignored, portrait: cave.weapon.aiming === initial && portrait.dataset.combat === String(initial) };
+  })()`);
+  record(scene + " modes: X and the portrait toggle the same Ooga once, while repeat and modified keys keep its mode", Object.values(state).every(Boolean), JSON.stringify(state));
+};
 const bifrostWalking = { name: "bifrost walking", why: "rule: W A S D walk the visitor's Ooga their way on screen in the chamber", run: async (b) => {
   const ooga = await walkKeys(b, "portlandhodl", 0, 7.5, [0, 2.2], 0.5);
   record("bifrost walking: W A S D walk the visitor's Ooga away, left, back and right on screen in the hall from two camera angles", allWalk(ooga), JSON.stringify(ooga));
+  await walkingModeControls(b, "bifrost");
+  const released = await b.evaluate(`(async () => {
+    const P = __ooga.pilot, cave = P.player, portrait = document.getElementById("mode-hud");
+    portrait.dispatchEvent(new PointerEvent("pointerdown", { button: 0, pointerId: 71, bubbles: true, cancelable: true }));
+    await new Promise(resolve => setTimeout(resolve, 700));
+    portrait.dispatchEvent(new PointerEvent("pointerup", { button: 0, pointerId: 71, bubbles: true, cancelable: true }));
+    const released = !P.player && __ooga.scene === "bifrost";
+    P.possess(cave);
+    return released;
+  })()`);
+  record("bifrost portrait: holding releases the Ooga without leaving the chamber", released);
 } };
 const bifrostExit = { name: "bifrost exit", why: "playthrough: walking back out through the field returns the same Ooga to the bridge's end, and Escape leaves the chamber", run: async (b) => {
   await b.evaluate(`(() => { const B = window.__ooga, E = window.BL.bifrostModels.ENTRY; B.pilot.navigate({ position: { x: 0, y: 0, z: E.field - 2.2 }, target: { x: 0, y: 1, z: E.field + 4 }, yaw: Math.PI, pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); })()`);
@@ -11290,6 +11346,46 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       tap("n"); const north = sample("north birds-eye");
       tap("x"); sample("carry orbit");
       tap("x"); sample("combat birds-eye again");
+      const gestures = [], accountBefore = BL.net.state.me, backendBefore = BL.net.state.backend;
+      const rightClick = () => {
+        for (const type of ["pointerdown", "pointerup"]) canvas.dispatchEvent(new PointerEvent(type,
+          { pointerId: 91, pointerType: "mouse", button: 2, buttons: type === "pointerdown" ? 2 : 0, bubbles: true, cancelable: true }));
+      };
+      try {
+        const character = BL.characters.get(e.owner.traits.name);
+        for (const signedIn of [false, true]) {
+          BL.net.state.backend = true;
+          BL.net.state.me = signedIn ? { id: 71, login: character.github || character.handle, display: "Camera fixture" } : null;
+          tap("x");
+          const carry = [];
+          for (const [factor, gesture] of [[0.01, "carry-in"], [0.5, "carry-first"], [2, "carry-shoulder"], [2, "carry-out"]]) {
+            P.zoom(factor, gesture); P.update(2);
+            carry.push({ view: P.view, combat: P.combat, focused: P.focused, hidden: reticle.hidden });
+          }
+          rightClick(); P.update(2);
+          const rightCarry = P.view === "shoulder" && !P.combat && !P.focused && reticle.hidden;
+          const height = B.camera.target.y;
+          rightClick(); rightClick(); P.update(2);
+          const doubleCarry = P.view === "orbit" && !P.combat && !P.focused;
+          tap("x"); P.update(2);
+          const aimed = [];
+          for (let side = 0; side < 2; side++) {
+            const p = e.root.position;
+            const point = { x: p.x + Math.sin(e.heading) * 10, z: p.z + Math.cos(e.heading) * 10 };
+            // This field fixture has no props or water at the aim point. Use
+            // the real terrain floor and project the displayed camera ray.
+            point.y = B.island.supportAt(point.x, point.z, height, 0, -120);
+            if (point.y <= -120) point.y = p.y;
+            rightClick(); P.update(2);
+            const a = B.camera.position, b = B.camera.target, t = (point.y - a.y) / (b.y - a.y);
+            const error = Math.hypot(a.x + (b.x - a.x) * t - point.x, a.z + (b.z - a.z) * t - point.z);
+            aimed.push({ view: P.view, combat: P.combat, focused: P.focused, error });
+            rightClick(); rightClick(); P.update(2);
+            if (!side) { tap("Shift", "ShiftRight", 2); P.readInput(1 / 60); }
+          }
+          gestures.push({ signedIn, carry, rightCarry, doubleCarry, aimed, returned: P.view === "birds-eye" && P.combat });
+        }
+      } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
       P.zoom(0.01, "inward"); sample("combat shoulder from overhead");
       P.zoom(0.5, "first-person"); sample("first-person before release");
       const eye = { ...B.camera.position }, target = { ...B.camera.target };
@@ -11334,7 +11430,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         const signedOutKeepsBody = B.pilot.player === e.owner && !P.active;
         pair = { retook, companion, grabKeepsBody, repeatKeepsBody, returned, samePositions, signedOutKeepsBody };
       } finally { B.pilot.release(true); P.release(); BL.net.state.me = account; BL.net.state.backend = backend; }
-      return { possessed, reset, rows, pair, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
+      return { possessed, reset, rows, gestures, pair, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
         turn: Math.abs(turned.yaw - overhead.yaw), north: Math.atan2(Math.sin(north.yaw), Math.cos(north.yaw)), originalHeadHidden, near, released };
     } finally { key("keyup", "q"); key("keyup", "Shift", "ShiftRight", 2); P.release(); }
   })()`);
@@ -11353,6 +11449,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     && released.target === "none" && released.hit === "none" && released.positionCleared && released.near === state.near
     && released.eyeDelta < 1e-6 && released.targetDelta < 1e-6, JSON.stringify(state));
   record("gorilla Escape: close the sheet, ignore key repeat, free mouse-look, detach, and remain in the detached hub on the next press", Object.values(state.escape).every(Boolean), JSON.stringify(state.escape));
+  record("gorilla camera gestures: signed in or out, wheel and right-click preserve carry/combat; combat overhead right-click aims at ground 10m ahead on either shoulder",
+    state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.returned
+      && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
+      && row.aimed.length === 2 && row.aimed.every(view => view.view === "shoulder" && view.combat && view.focused && view.error < 0.01)), JSON.stringify(state.gestures));
   record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
 } }, { name: "gorilla wall destination", why: "regression: commanding a roof gorilla to a lower point farther along the cave face stalled at the crest instead of reaching the clicked wall", run: async (b) => {
   const state = await b.evaluate(`(() => {
@@ -11686,20 +11786,27 @@ scene("poker", { query: "character=portlandhodl", steps: [{ name: "poker floor a
   await b.evaluate(`document.querySelector('[data-intro="poker"] .game-intro-go').click()`);
   const walking = await walkKeys(b, "portlandhodl", 0, 18, [0, 1.5], 0.45);
   record("poker walking: spectators move with WASD from two camera angles", allWalk(walking), JSON.stringify(walking));
+  await walkingModeControls(b, "poker");
   const r = await b.evaluate(`(() => {
     const B = __ooga, P = BL.scenes.poker.debug.poker, click = a => document.querySelector('[data-poker-action="' + a + '"]').click();
     const suit = BL.pokerModels.geometry(P.session.theme);
     const count = P.room.tables.length, seats = P.room.tables.every(t => t.chairs.length === 9), dealers = P.room.tables.every(t =>
       t.agent.parts.torso.children.some(n => n.geometry === suit.jacket)
       && [t.agent.parts.armL, t.agent.parts.armR].every(arm => [suit.sleeve, suit.cuff].every(g => arm.children.some(n => n.geometry === g))));
-    P.select(0); click("join"); for (let i = 0; i < 4; i++) click("bots"); click("start");
+    P.select(0); click("join");
+    const cave = B.pilot.player, aiming = cave.weapon.aiming;
+    BL.scenes.poker.onKey(new KeyboardEvent("keydown", { key: "x", code: "KeyX", cancelable: true }));
+    document.getElementById("mode-hud").click();
+    const modeHeld = B.pilot.player === cave && cave.weapon.aiming === aiming && document.body.hasAttribute("data-poker-seated");
+    for (let i = 0; i < 4; i++) click("bots"); click("start");
     const t = P.session.tables[0], privateCards = t.snapshot().seats.every(s => s.cards.every(c => c === null));
     let guard = 0; while (t.playing && guard++ < 500) { if (t.snapshot("local-player").legal) click("call"); B.advance(0.81, 1 / 30); }
     const done = t.snapshot(), total = done.seats.reduce((n, s) => n + s.stack, 0), shown = document.querySelector('[data-poker="street"]').textContent;
     click("stand"); P.select(9); click("bots"); click("start"); B.advance(1, 1 / 30);
-    return { count, seats, dealers, privateCards, phase: done.phase, total, shown, tableTen: P.session.tables[9].snapshot().hand, standing: !document.body.hasAttribute("data-poker-seated") };
+    return { count, seats, dealers, privateCards, modeHeld, phase: done.phase, total, shown, tableTen: P.session.tables[9].snapshot().hand, standing: !document.body.hasAttribute("data-poker-seated") };
   })()`);
   record("poker local play: ten suited dealers, 90 chairs, nine-player settlement, table ten playable and private snapshots", r.count === 10 && r.seats && r.dealers && r.privateCards && r.phase === "showdown" && r.total === 9000 && r.shown === "Hand complete" && r.tableTen === 1 && r.standing, JSON.stringify(r));
+  record("poker modes: table focus keeps X and the portrait from changing the seated Ooga's mode", r.modeHeld);
   if (process.env.POKER_SHOTS) {
     await b.evaluate(`(() => { const P = BL.scenes.poker.debug.pilot; P.release(true); P.goPreset("entrance"); __ooga.advance(2); })()`);
     await b.screenshot(join(process.env.POKER_SHOTS, "poker-floor.png"));
@@ -16363,6 +16470,7 @@ const dsbIntegrationCheckpoint={name:"dsb integration checkpoint",why:"contract:
   const read=()=>b.evaluate('({zone:BL.net.state.zone,body:__ooga.dsb?.presence.body,backend:BL.net.state.backend,room:BL.net.state.room,hidden:document.getElementById("sheet").hidden,open:document.getElementById("sheet").dataset.open})');
   let state=await read();
   record("DSB integration: static scene exposes global sheet without backend room",state.zone==="dsb-outside"&&!state.hidden&&!state.backend&&state.room==="off",JSON.stringify(state));
+  await walkingModeControls(b, "DSB");
   await b.evaluate('document.getElementById("sheet-toggle").click()');
   record("DSB integration: global roster opens and persists",await b.evaluate('document.getElementById("sheet").dataset.open==="true"&&JSON.parse(localStorage.getItem("oogaboogaland.sheet.v1")).open'));
   const focus=await b.evaluate('(()=>{document.getElementById("sheet-toggle").focus();return {x:__ooga.dsb.avatar.root.position.x,z:__ooga.dsb.avatar.root.position.z};})()');
@@ -16377,6 +16485,7 @@ const dsbIntegrationCheckpoint={name:"dsb integration checkpoint",why:"contract:
     if(id==="svrn-society"){
       await b.evaluate('__ooga.dsb.svrnMenu.open("home")');
       record("DSB integration: venue modal isolates the global sheet and owns focus",await b.evaluate('(()=>{const s=document.getElementById("sheet");return !!s.closest("[inert]")&&document.activeElement.closest(".svrn-menu")!==null&&BL.dsbMenuShell.count===1;})()'));
+      record("DSB modes: venue menus retain the Ooga and its mode when X or the portrait is pressed",await b.evaluate('(()=>{const P=__ooga.pilot,cave=P.player,aiming=cave.weapon.aiming;BL.scenes.dsb.onKey(new KeyboardEvent("keydown",{key:"x",code:"KeyX",cancelable:true}));document.getElementById("mode-hud").click();return P.player===cave&&cave.weapon.aiming===aiming&&__ooga.dsb.svrnMenu.isOpen;})()'));
       await b.key("Escape");
       record("DSB integration: closing venue restores global menu without changing saved state",await b.evaluate('!document.getElementById("sheet").closest("[inert]")&&document.getElementById("sheet").dataset.open==="true"&&BL.dsbMenuShell.count===0'));
     }

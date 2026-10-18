@@ -6,7 +6,7 @@
   const THROW_CHARGE_TIME = 1, THROW_MIN_POWER = 1 / 3, THROW_RESULT_TIME = 0.35;
   const PITCH_LIMIT = Math.PI / 2 - 0.0001, ZOOM_PAUSE = 180;
   const create = ({ canvas, camera, renderer, pilot, hud, clankers, input = null, constrainCamera = null,
-    reticleTarget = null, sightClear = null, aimCeiling = null, grabOoga = null, releaseOoga = null, mayPossess = null, birdsEyeMin = 5, maxDistance = 32 }) => {
+    reticleTarget = null, sightClear = null, aimCeiling = null, groundAt = null, grabOoga = null, releaseOoga = null, mayPossess = null, birdsEyeMin = 5, maxDistance = 32 }) => {
     const orbit = pilot.orbit, target = { x: 0, y: 0, z: 0 };
     const smashMin = clankers.smashPower(0, true), smashBase = clankers.smashPower(0, false);
     const smashMax = clankers.smashPower(1, false), smashRate = (smashMax - smashBase) / POUND_CHARGE_TIME;
@@ -386,10 +386,45 @@
     };
     on(window, "keydown", onKeyDown, true);
     on(window, "keyup", onKeyUp, true);
+    // Follow the actual stance while keeping the aim above head and shoulders.
+    const shoulderHeight = () => {
+      const head = player.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
+      BL.scene.updateWorld(player.root, player.root.parent.world);
+      const m = head.world;
+      const top = m[1] * bounds.center[0] + m[5] * bounds.center[1] + m[9] * bounds.center[2] + m[13]
+        + Math.abs(m[1]) * (bounds.max[0] - bounds.min[0]) * 0.5
+        + Math.abs(m[5]) * (bounds.max[1] - bounds.min[1]) * 0.5
+        + Math.abs(m[9]) * (bounds.max[2] - bounds.min[2]) * 0.5;
+      return Math.max(top + 0.16,
+        Math.max(player.gorilla.parts.armR.world[13], player.gorilla.parts.armL.world[13]) + 0.38);
+    };
+    const shoulderAhead = () => {
+      // Pick once from the body's heading at the click. Following its heading
+      // while it turns toward the new aim line would keep turning forever.
+      peek = 0;
+      const p = player.root.position, height = shoulderHeight(), side = shoulderSide;
+      const x = p.x + Math.sin(player.heading) * 10, z = p.z + Math.cos(player.heading) * 10;
+      const floor = groundAt ? groundAt(x, z, height) : NaN;
+      const yaw = player.heading - Math.PI + Math.asin(side / 10);
+      orbit.tYaw = orbit.yaw + Math.atan2(Math.sin(yaw - orbit.yaw), Math.cos(yaw - orbit.yaw));
+      orbitPitch = orbit.tPitch = clamp(Math.atan2(height - (Number.isFinite(floor) ? floor : p.y),
+        Math.sqrt(100 - side * side)), -PITCH_LIMIT, PITCH_LIMIT);
+      followOffset.x = followOffset.y = followOffset.z = 0;
+      pinnedFollow = false;
+      // A deliberate view change also reframes an automatic climbing handoff.
+      // Otherwise its pinned overhead anchor would prevent the shoulder dolly.
+      holdingFollow = handoffBefore || climbHandoff();
+      if (holdingFollow) {
+        orbit.tx = p.x; orbit.ty = height; orbit.tz = p.z; shoulder = side;
+      }
+    };
     const rightPress = () => {
       const now = performance.now();
       if (view === "birds-eye" || view === "orbit") {
-        combat = true; setView("shoulder"); focusCombat();
+        const overhead = view === "birds-eye";
+        setView("shoulder");
+        if (overhead) shoulderAhead();
+        focusCombat();
         rightAt = rightDownAt = -Infinity;
       } else {
         if (now - rightAt <= 350) {
@@ -469,7 +504,7 @@
         if (direction < 0 && overheadHeight <= birdsEyeMin) next = "shoulder";
       } else if (view === "orbit") {
         orbit.tDist = clamp(orbit.tDist * factor, SHOULDER_DISTANCE, maxDistance);
-        if (direction < 0 && orbit.tDist <= SHOULDER_DISTANCE) { combat = true; next = "shoulder"; focusCombat(); }
+        if (direction < 0 && orbit.tDist <= SHOULDER_DISTANCE) next = "shoulder";
       }
       if (next !== view) {
         zoomStopped = true; stoppedGesture = gesture;
@@ -638,24 +673,12 @@
         target.y = p.y + 0.15;
         target.z += Math.cos(player.heading) * ahead;
       }
-      if (first || view === "shoulder") {
+      if (first) {
         const head = player.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
         BL.scene.updateWorld(player.root, player.root.parent.world);
-        if (first) {
-          mat4.transformPoint(eye, head.world, bounds.center[0], bounds.min[1] + (bounds.max[1] - bounds.min[1]) * 0.65, bounds.max[2] + 0.01);
-          target.x = eye[0]; target.y = eye[1]; target.z = eye[2];
-        } else {
-          const m = head.world;
-          const top = m[1] * bounds.center[0] + m[5] * bounds.center[1] + m[9] * bounds.center[2] + m[13]
-            + Math.abs(m[1]) * (bounds.max[0] - bounds.min[0]) * 0.5
-            + Math.abs(m[5]) * (bounds.max[1] - bounds.min[1]) * 0.5
-            + Math.abs(m[9]) * (bounds.max[2] - bounds.min[2]) * 0.5;
-          // Follow the actual stance, from knuckle walking to standing, while
-          // keeping the centered aim line above both the head and shoulders.
-          target.y = Math.max(top + 0.16,
-            Math.max(player.gorilla.parts.armR.world[13], player.gorilla.parts.armL.world[13]) + 0.38);
-        }
-      }
+        mat4.transformPoint(eye, head.world, bounds.center[0], bounds.min[1] + (bounds.max[1] - bounds.min[1]) * 0.65, bounds.max[2] + 0.01);
+        target.x = eye[0]; target.y = eye[1]; target.z = eye[2];
+      } else if (view === "shoulder") target.y = shoulderHeight();
       if (anchored) {
         followOffset.x = orbit.tx - target.x; followOffset.y = orbit.ty - target.y; followOffset.z = orbit.tz - target.z;
       } else if (moving) {

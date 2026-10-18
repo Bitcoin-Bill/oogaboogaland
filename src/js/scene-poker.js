@@ -38,6 +38,7 @@
     panel.setFocused(focused); pilot.controls.reset();
     pilot.setActive(!focused && (seatTable < 0 || pendingStand));
   };
+  const modeAction = name => !leaving && !panel.focused && (seatTable < 0 || pendingStand) && pilot.modeAction(name);
   const placeInAisle = () => {
     if (!avatar) return;
     const p = PM.TABLES[selected];
@@ -207,7 +208,7 @@
       onTap: hit => { if (hit?.owner.kind === "poker") select(hit.owner.index); else if (hit?.owner.kind === "poker-exit") leaveFloor(); }
     });
     hud.onPreset(pilot.goPreset);
-    hud.onAction((a, v) => { if (a === "leave") leaveFloor(); else if (a === "reset-view") pilot.goPreset("entrance"); else if (a === "act") pilot.action(); else if (a.startsWith("mode-")) pilot.modeAction(a, v); });
+    hud.onAction((a, v) => { if (a === "leave") leaveFloor(); else if (a === "reset-view") pilot.goPreset("entrance"); else if (a === "act") pilot.action(); else if (a.startsWith("mode-")) modeAction(a); });
     fx = BL.fx.create({ root, input, hooks, hud, game: ctx.game, world, renderer: ctx.renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 5, z: -34 } });
     room = PM.build(theme.id); S.addChild(root, room.root);
     for (let i = 0; i < 10; i++) { input.add(room.tables[i].top, { kind: "poker", index: i }); targets.push(room.tables[i].top); }
@@ -309,7 +310,7 @@
     S.stepTweens(dt); fx.update(dt, elapsed);
   };
   const extra = (c, project) => remotes.drawNames(c, project);
-  const onKey = e => { if (e.key === "Escape") { if (panel.focused) action("walk"); else if (seatTable >= 0 && !pendingStand) action("stand"); else if (!pilot.escape()) leaveFloor(); return true; } if (e.key === "0") { pilot.goPreset("entrance"); return true; } return false; };
+  const onKey = e => { if ((e.key === "x" || e.key === "X") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && modeAction("mode-toggle")) { e.preventDefault(); return true; } if (e.key === "Escape") { if (panel.focused) action("walk"); else if (seatTable >= 0 && !pendingStand) action("stand"); else if (!pilot.escape()) leaveFloor(); return true; } if (e.key === "0") { pilot.goPreset("entrance"); return true; } return false; };
   const leave = () => {
     session.selected = selected; session.pendingStand = pendingStand;
     if (session.live) session.live.dispose();
