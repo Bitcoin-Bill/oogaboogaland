@@ -55,6 +55,30 @@ const emptyPeerPreviewProof = async () => {
    if(!(hits>0&&first>.01&&drift<1e-9&&residual<1e-9&&!rootMoved))failures++;
    contact.push({dt,side,hits,first,drift,residual,rootMoved});rig.dispose();
   }
+  const arms=[];
+  // Idle damping must not repeatedly undo the hand-to-floor correction.
+  // Exercise both meshes, frame rates and a slightly raised contact surface.
+  for(const dt of [1/30,1/60])for(const form of ['ape','code'])for(const floor of [0,.01]){
+   let enabled=true;
+   const rig=B.agent.create({groundAt:()=>0,managed:true,form,climbSolidAt:(_x,y,_z)=>enabled&&y<floor});
+   const plain=B.agent.create({groundAt:()=>0,managed:true,form});
+   const names=['armR','armL'];let drift=0,penetration=0;
+   for(let frame=0;frame<180;frame++){rig.poseManaged(dt,0,0,0,0,0);plain.poseManaged(dt,0,0,0,0,0);}
+   const settled=names.map(name=>rig.parts[name].rotation.x);
+   for(let frame=0;frame<90;frame++){
+    rig.poseManaged(dt,0,0,0,0,0);plain.poseManaged(dt,0,0,0,0,0);B.scene.updateWorld(rig.root);
+    for(let i=0;i<names.length;i++){
+     const arm=rig.parts[names[i]],v=arm.geometry.verts,m=arm.world;
+     drift=Math.max(drift,Math.abs(arm.rotation.x-settled[i]));
+     for(let j=0;j<v.length;j+=3)penetration=Math.max(penetration,floor-(m[1]*v[j]+m[5]*v[j+1]+m[9]*v[j+2]+m[13]));
+    }
+   }
+   enabled=false;
+   rig.poseManaged(dt,0,0,0,0,0);plain.poseManaged(dt,0,0,0,0,0);
+   const residual=Math.max(...names.map(name=>Math.abs(rig.parts[name].rotation.x-plain.parts[name].rotation.x)));
+   if(drift>1e-8||penetration>1e-6||residual>1e-8)failures++;
+   arms.push({dt,form,floor,drift,penetration,residual});rig.dispose();plain.dispose();
+  }
   const rendered=g=>{
    B.scene.updateWorld(g.root);const rows=[];
    const visit=(n,visible=true)=>{visible&&=n.visible;B.scene.updateLocal(n);rows.push([n.position,n.rotation,n.quaternion,n.scale,n.visible,Array.from(n.local),visible?Array.from(n.world):null]);for(const c of n.children)visit(c,visible);};
@@ -77,7 +101,7 @@ const emptyPeerPreviewProof = async () => {
    if(clear||!rejected||!unchanged||Math.abs(offset+.06)>1e-9)failures++;
    rollback.push({form,rejection,rejected,clear,unchanged,offset});rig.dispose();
   }
-  return {cases,samples,callbacks,failures,contact,rollback};
+  return {cases,samples,callbacks,failures,contact,arms,rollback};
 };
 // Rule: exercise the actual bounded rage state machine with a small physical
 // adapter. Collision and the rendered carry are covered by the hub regressions.
@@ -15630,7 +15654,7 @@ const sharedBake = visibilitySourceBakeProof();
 record("character visibility source bakes: ownership wrappers share exact immutable triangles and reject changed topology or source vertices", sharedBake.failures === 0 && sharedBake.cases >= 200, JSON.stringify(sharedBake));
 
   const emptyPeers = await emptyPeerPreviewProof();
-  record("peer pose previews: certified empty terrain preserves exact poses and peer rejection while omitting vertex probes", emptyPeers.cases === 291 && emptyPeers.failures === 0 && emptyPeers.samples > 0 && emptyPeers.callbacks > 0 && emptyPeers.contact.length === 4 && emptyPeers.rollback.length === 6, JSON.stringify(emptyPeers));
+  record("peer pose previews: certified empty terrain preserves exact poses and peer rejection while omitting vertex probes", emptyPeers.cases === 291 && emptyPeers.failures === 0 && emptyPeers.samples > 0 && emptyPeers.callbacks > 0 && emptyPeers.contact.length === 4 && emptyPeers.arms.length === 8 && emptyPeers.rollback.length === 6, JSON.stringify(emptyPeers));
   await raceRigChecks();
   await qualityFramebufferChecks();
   const north = await northTrajectoryProof();
