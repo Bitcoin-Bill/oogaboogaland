@@ -4883,12 +4883,13 @@ const donationClientChecks = async () => {
     capWarning && capContinue && lightningDisabled && capOnchain && overallCap, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap }));
 
   const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];
+  let noteFails = 0;
   for (const id of ["donation-popup", "donation-screen", "donation-handle", "donation-message", "donation-close",
     "donation-fields", "factory-donation-fields", "donation-details-status"]) elements.set(id, {
     listeners: new Map(), open: false, value: "", disabled: false,
     addEventListener(type, fn) { this.listeners.set(type, fn); }, removeEventListener(type) { this.listeners.delete(type); },
     showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; },
-    select() { this.selected = true; }, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
+    select() { this.selected = true; }, setSelectionRange() {}, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
   });
   Object.assign(kioskContext, { location: { origin: "https://site.test" }, navigator: {}, performance: { now: () => now },
     setTimeout: fn => { const id = now++; detailTimers.set(id, fn); return id; }, clearTimeout: id => detailTimers.delete(id),
@@ -4901,7 +4902,7 @@ const donationClientChecks = async () => {
   K.net = { state: { backend: true, me: null }, login() {} };
   K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX,
     invoice: async options => { invoices.push(options); return { request: "request", invoice: { id: "popup", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }; },
-    note: async (request, message, handle) => { notes.push({ request, message, handle }); return {}; },
+    note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
   const popup = K.donationPopup.create({ state: { message: "hello" } }), dialog = elements.get("donation-popup");
@@ -4914,7 +4915,9 @@ const donationClientChecks = async () => {
   await popupQuote();
   const signedIn = elements.get("donation-handle").value === "tester" && invoices.at(-1).handle === "tester";
   popupFlow.key({ key: "A" });
-  const focused = elements.get("donation-handle").focused && elements.get("donation-handle").selected;
+  const fieldKey = (key, target) => elements.get("donation-fields").listeners.get("keydown")({ key, target, stopPropagation() {}, preventDefault() {} });
+  fieldKey("Tab", elements.get("donation-handle"));
+  const focused = elements.get("donation-handle").focused && elements.get("donation-handle").selected && elements.get("donation-message").focused;
   const originalInvoice = popupFlow.invoice, invoiceCount = invoices.length;
   elements.get("donation-handle").value = "another-name";
   elements.get("donation-message").value = "m".repeat(281);
@@ -4922,8 +4925,14 @@ const donationClientChecks = async () => {
   await [...detailTimers.values()][0]();
   const edited = focused && popupFlow.state === "details" && notes.at(-1).handle === "another-name" && notes.at(-1).message.length === 280
     && notes.at(-1).request === "request" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
-  popupFlow.key({ key: "Enter" });
-  const detailsDone = popupFlow.state === "quote";
+  noteFails = 1;
+  elements.get("donation-message").value = "kept until saved";
+  elements.get("donation-fields").listeners.get("input")();
+  elements.get("donation-screen").focused = false;
+  await popupFlow.key({ key: "Enter" });
+  const failedStays = popupFlow.state === "details" && !!popupFlow.detailsError && !elements.get("donation-screen").focused;
+  await popupFlow.key({ key: "Enter" });
+  const detailsDone = failedStays && popupFlow.state === "quote" && notes.at(-1).message === "kept until saved" && elements.get("donation-screen").focused;
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
   elements.get("donation-fields").listeners.get("input")();
@@ -4943,7 +4952,7 @@ const donationClientChecks = async () => {
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
-  record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice and Enter goes back to the quote, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
+  record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice, Tab goes between its fields, a failed save keeps the screen with its error, and a saved one goes back to the quote with the keys on the popup's screen, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
     anonymous && signedIn && edited && detailsDone && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
 };
 const wallPerformance = async (b) => {

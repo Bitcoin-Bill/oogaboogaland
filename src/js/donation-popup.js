@@ -70,6 +70,8 @@
       if (!field) {
         const active = document.activeElement;
         if (active === handle || active === message) active.blur();
+        // The mainland popup keeps the keys: its canvas takes the focus back, as a click on it would.
+        if (flow && fieldFlow === flow && dialog.open) canvas.focus({ preventScroll: true });
         return;
       }
       const input = field === "message" ? message : handle;
@@ -92,12 +94,19 @@
       if (fieldFlow.invoice && fieldFlow.state !== "paid") saveTimer = setTimeout(save, 350);
     };
     // In the fields, Enter goes from the name to the message and, from the message, finishes like the screen's DONE;
-    // Escape finishes too. Their keys never reach the page behind.
+    // Escape finishes too, and Tab or Shift+Tab goes between the two. They are out of the page's tab order
+    // (tabindex -1), so the typing reaches them only with the details screen up. Their keys never reach the page behind.
     const fieldsKey = (event) => {
       event.stopPropagation();
-      if (event.isComposing || event.key !== "Enter" && event.key !== "Escape") return;
+      if (event.isComposing) return;
+      const editing = !!fieldFlow && fieldFlow.state === "details";
+      if (event.key === "Tab" && editing) {
+        event.preventDefault();
+        return focusDetails(event.target === handle ? "message" : "handle");
+      }
+      if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
-      if (!fieldFlow || fieldFlow.state !== "details") save();
+      if (!editing) save();
       else if (event.key === "Enter" && event.target === handle) focusDetails("message");
       else fieldFlow.key({ key: event.key });
     };

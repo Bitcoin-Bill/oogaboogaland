@@ -13,7 +13,8 @@
 // socket. Both kiosks show who the tip is from and its message on the quote, and edit them on a screen of their own
 // (`details`): the name, initially the signed-in login or anon, and the message, typed into the page's two hidden fields
 // (`hooks.typing()`) and drawn here in the screen's letters with a caret. Changing them updates that invoice in place,
-// keeping its payment code. Receipt-priced invoices
+// keeping its payment code, and the screen waits for that save before it closes, keeping it and its error up when the
+// save fails. Receipt-priced invoices
 // follow the live rate until full payment is detected; legacy invoices retain their quoted rate. Either
 // way the scene hands every donation back through `receive(id, bananas, handle)`, which takes the one this invoice is
 // waiting for and thanks the donor it names. The scene holds that tip's bananas until the visitor asks to watch, or
@@ -472,9 +473,13 @@
       }
       if (s === "details") {
         if (a === "name" || a === "message") return hooks.editDetails(a === "name" ? "handle" : "message");
+        // Edits to an invoice are saved before the screen that opened them shows them: a failed save keeps this one,
+        // its error up, for the visitor to retry (Enter, or DONE) before paying.
         if (a === "done" || a === "back") {
-          if (hooks.details) flow.saveDetails();
-          return set(detailsFrom);
+          if (!hooks.details || !onInvoice()) return set(detailsFrom);
+          return flow.saveDetails().then(() => {
+            if (flow.state === "details" && !flow.detailsError && !flow.detailsDirty) set(detailsFrom);
+          });
         }
       }
       if (s === "idle" && a === "start" && !closed()) return set("amount");
