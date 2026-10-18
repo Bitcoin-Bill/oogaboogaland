@@ -6,7 +6,7 @@
   const THROW_CHARGE_TIME = 1, THROW_MIN_POWER = 1 / 3, THROW_RESULT_TIME = 0.35;
   const PITCH_LIMIT = Math.PI / 2 - 0.0001, ZOOM_PAUSE = 180;
   const create = ({ canvas, camera, renderer, pilot, hud, clankers, input = null, constrainCamera = null,
-    reticleTarget = null, sightClear = null, aimCeiling = null, grabOoga = null, releaseOoga = null, birdsEyeMin = 5, maxDistance = 32 }) => {
+    reticleTarget = null, sightClear = null, aimCeiling = null, grabOoga = null, releaseOoga = null, mayPossess = null, birdsEyeMin = 5, maxDistance = 32 }) => {
     const orbit = pilot.orbit, target = { x: 0, y: 0, z: 0 };
     const smashMin = clankers.smashPower(0, true), smashBase = clankers.smashPower(0, false);
     const smashMax = clankers.smashPower(1, false), smashRate = (smashMax - smashBase) / POUND_CHARGE_TIME;
@@ -131,7 +131,7 @@
     };
     const consume = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
     const typing = (event) => event.target && (event.target.isContentEditable
-      || event.target.closest && event.target.closest("input, textarea, select, dialog"));
+      || event.target.closest && event.target.closest("input, textarea, select, dialog, #sheet"));
     const updateSmashGauge = () => {
       const percent = grabHeld ? Math.round(throwMeter * 100) : Math.round(smashMeter * 40);
       if (percent === shownPower && shownThrow === grabHeld) return;
@@ -179,9 +179,10 @@
       clankers.cancelInput();
       moving = false;
     };
-    const blurCombat = () => {
+    const blurCombat = (nativeUnlock = false) => {
       focused = false; lockPending = false; focusVersion++;
-      unlockedAt = performance.now();
+      wasLocked = false;
+      unlockedAt = nativeUnlock ? performance.now() : -Infinity;
       document.body.classList.remove("aim-cursor-focused");
       if (document.pointerLockElement === canvas) document.exitPointerLock();
       cancelInput();
@@ -199,6 +200,9 @@
         const request = canvas.requestPointerLock();
         if (request && request.then) request.then(() => {
           if (version === focusVersion) lockPending = false;
+          // A new Ooga owns capture after a T handoff. Its pilot handles a late
+          // result from this request, including cancellation by its own Escape.
+          if (!player && pilot.player) return;
           if ((!player || !focused) && document.pointerLockElement === canvas) document.exitPointerLock();
         }, failed);
       } catch (_) { failed(); }
@@ -210,7 +214,7 @@
       if (locked) {
         lockPending = false;
         if (!focused) document.exitPointerLock();
-      } else if (lost) blurCombat();
+      } else if (lost) blurCombat(true);
     };
     on(document, "pointerlockchange", lockChanged);
     on(document, "pointerlockerror", () => { if (player) lockPending = false; });
@@ -252,6 +256,8 @@
     const possess = (entry, atBoot = false) => {
       if (disposed || !entry || !entry.active || !entry.root.visible) return false;
       if (entry === player) return true;
+      const refusal = mayPossess && mayPossess(entry);
+      if (refusal) { hud.toast(refusal); return false; }
       if (!player) savedNear = camera.near;
       if (player) { blurCombat(); restoreHead(); }
       if (!clankers.possess(entry)) return false;
@@ -315,6 +321,15 @@
       else return false;
       return true;
     };
+    // Called after the scene and HUD have had a chance to close their UI.
+    const escape = () => {
+      if (!player) return false;
+      if (focused || lockPending || document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) {
+        blurCombat();
+        return true;
+      }
+      return release();
+    };
     const onKeyDown = (event) => {
       if (!player || event.metaKey || event.ctrlKey || event.altKey || typing(event)) return;
       const space = event.code === "Space" || event.key === " " || event.key === "Spacebar";
@@ -322,10 +337,9 @@
       if (space) {
         consume(event);
         if (!jumpKey && !event.repeat) { jumpKey = true; beginJump(); }
-      } else if (key === "escape" || key === "tab" && combat) {
+      } else if (key === "tab" && combat) {
         consume(event);
-        if (focused || document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) blurCombat();
-        else if (key === "escape") release();
+        if (!event.repeat) blurCombat();
       }
       else if (key === "shift" && event.code !== "ShiftRight" && event.location !== 2) { run = true; consume(event); }
       else if (key === "g") {
@@ -721,7 +735,7 @@
       release(); disposed = true;
       for (const off of listeners) off();
     };
-    return { possess, release, respawn, readInput, update, action, orbit: moveView, zoom, cancelInput, dispose,
+    return { possess, release, escape, respawn, readInput, update, action, orbit: moveView, zoom, cancelInput, dispose,
       get active() { return !!player; }, get player() { return player; }, get view() { return view; },
       get birdsEye() { return !!player && view === "birds-eye"; }, get birdsEyeMix() { return player ? camera.orthoMix || 0 : 0; },
       get firstPerson() { return !!player && view === "first-person"; },

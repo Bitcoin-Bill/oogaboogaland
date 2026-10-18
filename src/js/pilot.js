@@ -225,7 +225,7 @@
       zoomTilt = false;
       zoomPitchVelocity = 0;
     };
-    let lockPending = false, aimLocked = false, softAimFocused = false, externalControl = false, externalCombat = null, unlockedAt = -Infinity;
+    let lockPending = false, lockCancelled = false, aimLocked = false, softAimFocused = false, externalControl = false, externalCombat = null, unlockedAt = -Infinity;
     let savedPitch = 0, savedDist = 0, savedNear = camera.near, sightClear = null, cursorClear = null, aimSurface = null;
     const weaponViewReady = (cave) => active && !!cave && !cave.health.stunned && !crew.sleeping && (closeWanted || (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode);
     const shoulderBoomPitch = (pitch) => Math.max(pitch, Math.min(0, pitch + 0.22));
@@ -311,6 +311,9 @@
     };
     const unlockAim = () => {
       if (externalControl && !disposed) return;
+      lockCancelled = true;
+      aimLocked = false;
+      unlockedAt = -Infinity;
       rightDownAt = rightTapAt = -Infinity;
       rightExitHeld = false;
       setSoftAimFocus(false);
@@ -358,19 +361,22 @@
       if (!disposed && armed()) hud.hint("Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view");
     };
     const lockAim = () => {
-      if (externalControl || coarse || disposed || !armed() || lockPending || document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
+      if (externalControl || coarse || disposed || !armed()) return;
+      lockCancelled = false;
+      if (lockPending || document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
       lockPending = true;
       const request = canvas.requestPointerLock();
       if (request && request.then) request.then(() => {
         lockPending = false;
         if (externalControl && !disposed) return;
-        if (disposed || !armed()) unlockAim();
+        if (disposed || !armed() || lockCancelled) unlockAim();
         if (disposed) retireAimLock();
       }, aimLockFailed);
     };
-    const focusAim = () => {
+    const focusAim = (capture = false) => {
       if (externalControl || coarse || disposed || !armed()) return false;
       setSoftAimFocus(true);
+      if (capture) lockAim();
       return true;
     };
     const captureAimEntry = (cave) => {
@@ -1220,7 +1226,7 @@
         return;
       }
       if (!armed()) return;
-      if (e.key === "Escape" && (document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) || e.key === "Tab") {
+      if (e.key === "Tab") {
         e.preventDefault(); e.stopImmediatePropagation(); unlockAim();
       }
     };
@@ -1247,6 +1253,7 @@
       lockPending = false;
       if (externalControl && !disposed) return;
       const locked = document.pointerLockElement === canvas;
+      if (locked && lockCancelled) { document.exitPointerLock(); return; }
       if (locked) setSoftAimFocus(false);
       if (aimLocked && !locked) unlockedAt = performance.now();
       aimLocked = locked;
@@ -1869,6 +1876,18 @@
       syncWeaponHud();
       syncModeHud();
       if (!quiet) hud.toast(`${cave.traits.display} ${cave.state === "sleeping" ? "keeps sleeping" : "wanders off"}`);
+    };
+    // Scenes close their own UI first. Each remaining press frees the cursor,
+    // then lets go of the Ooga, before the scene is allowed to leave.
+    const escape = () => {
+      if (externalControl) return false;
+      if (softAimFocused || lockPending && !lockCancelled || document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) {
+        unlockAim();
+        return true;
+      }
+      if (!player()) return false;
+      release();
+      return true;
     };
     // Nearby actions consume a press; a ready jetpack leaves Space as throttle.
     const action = () => {
@@ -3017,7 +3036,7 @@
       get birdsEye() { return birdsEye(); }, get birdsEyeMix() { return camera.orthoMix || 0; }, get birdsEyeHeight() { return overheadHeight; }, get birdsEyeNorthUp() { return overheadNorthUp; },
       get birdsEyeCeiling() { return overheadCeiling; },
       get shoulderEntryMix() { return aimMix; },
-      bind, setActive, readInput, update, goPreset, navigate, transformView, enterClose, exitClose, possess, release, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
+      bind, setActive, readInput, update, goPreset, navigate, transformView, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
       return player();
     }, get assistedTarget() {
       if (birdsEye() && assistedTargetActive) return assistedTargetHit;

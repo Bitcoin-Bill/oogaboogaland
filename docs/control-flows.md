@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: initial source audit complete; first cursor decision agreed and implemented. Other flows await agreement.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence and T switching agreed and implemented. Remaining camera/selection flows await agreement.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -143,15 +143,15 @@ The legacy scene Agent is a third controller, not the hub companion. It has came
 | ID | Finding | Evidence status | Decision |
 |---|---|---|---|
 | C01 | Native cursor in Ooga carry versus locked virtual cursor in gorilla carry. | Source-confirmed | Native cursor agreed and implemented below |
-| C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Pending |
+| C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Escape order implemented; combat Tab navigation still pending |
 | C03 | Gorilla right-click and inward zoom can change carry to combat; Ooga preserves intent. | Source-confirmed | Pending |
 | C04 | Ooga remembers mode/preserves high selection; gorilla resets combat shoulder. | Source-confirmed | Pending |
 | C05 | Ooga bird's-eye has vertical aim; gorilla has fixed center aim. | Source-confirmed | Pending |
 | C06 | Hub map keeps Ooga but releases gorilla; generic presets also detach Oogas. | Source-confirmed | Pending |
-| C07 | Sheet keyboard handling and field exclusions differ by actor. | Source-confirmed dispatch paths | Pending |
-| C08 | Bifrost mode buttons lack handlers; X/HUD and Escape differ across walking scenes. | Source-confirmed wiring | Pending |
+| C07 | Sheet keyboard handling and field exclusions differ by actor. | Source-confirmed dispatch paths | Gorilla sheet key guard and shared Escape UI priority implemented; other focus flows pending |
+| C08 | Bifrost mode buttons lack handlers; X/HUD and Escape differ across walking scenes. | Source-confirmed wiring | Escape implemented; X/HUD routing still pending |
 | C09 | Virtual/native HUD gestures differ; Chat indirect focus and coarse-device gorilla capture need review. | Missing dblclick route confirmed; visual consequences untested | Pending |
-| C10 | Signed-out ownership wording exceeds available presence data; gorilla has no shared room body. | Source-confirmed boundary | Pending scope decision |
+| C10 | Signed-out ownership wording exceeds available presence data; gorilla has no shared room body. | Source-confirmed boundary | Gorilla room body implemented; signed-out presence boundary unchanged |
 | C11 | Close-view look may apply twice: carry Q/E and R/F, and look-stick yaw/pitch in carry or combat, except lying. Combat keyboard Q/E applies once. | Suspected sensitivity defect, unmeasured: [first application](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2059), [tail](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2150) | Measure if runtime checks requested |
 | C12 | Forced Arcade carry can become the Ooga's remembered mode on return. | Source-confirmed state path; intent undecided | Pending |
 
@@ -159,16 +159,16 @@ Help also lags behavior: README omits Tab, capture-only first click, detached ey
 
 ## Proposed agreement order
 
-Only the native/captured cursor choice in scenario 1 is agreed so far. The other recommendations and the separate UI-focus policy remain proposals.
+Native/captured cursor choice, Escape order, multiplayer companions and T switching are agreed below. Other recommendations remain proposals.
 
 | Order | Scenario | Proposed rule | Open choice |
 |---|---|---|---|
-| 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed. Uniform keyboard UI-focus exclusions remain C07. |
-| 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Confirm Escape order and whether detached Escape should leave interiors. |
+| 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed; sheet key guard now aligned. |
+| 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order and detached interior exit agreed; Tab behavior remains proposed. |
 | 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Initial default: carry or combat? Memory per actor or per visitor? Preserve altitude on high selection? |
 | 4 | Camera modes | Same wheel boundaries and right-click returns for both actors. Keep camera distance changes separate from combat intent. | Retain double-right-click? Same overhead aim model for both? |
 | 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
-| 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Is gorilla multiplayer identity in scope, or a separate follow-up? |
+| 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Gorilla multiplayer identity is now in scope and implemented below; exceptional controllers still need review. |
 
 Touch should provide equivalent actions using sticks/buttons and native touch UI, without requiring mouse capture. Sleeping, climbing, kiosk/table interactions and actor-specific abilities remain explicit cases to discuss.
 
@@ -182,7 +182,28 @@ On 2026-10-18 the maintainer chose **native cursor in detached/carry** for Oogas
 - Grab/throw retains its existing reticle and button handling in carry without acquiring pointer lock. Other abilities, ownership, map behavior, view defaults and scene Escape policies are unchanged.
 - The existing `gorilla camera modes` check now requires native cursor state, no focus/lock and unconsumed Tab in its carry shoulder/first-person/orbit samples. This regression coverage is authored, not run under the current **wait** policy.
 
-Found for play-test: toggle combat/carry in all three camera distances; drag, wheel, native HUD clicks and Tab in carry; capture-only canvas click and left attack after freeing combat focus; carry G/grab/throw; pending/denied capture; signed-in/out and touch behavior. The remaining C07 sheet-key interception is still open.
+Found for play-test: toggle combat/carry in all three camera distances; drag, wheel, native HUD clicks and Tab in carry; capture-only canvas click and left attack after freeing combat focus; carry G/grab/throw; pending/denied capture; signed-in/out and touch behavior. The C07 sheet-key interception is addressed in the Escape checkpoint below.
+
+## Agreed change: Escape order
+
+The maintainer approved **close active UI → free captured mouse look → detach actor → leave interior**, one step per press, for both actor types and either sign-in state. Inapplicable steps are skipped; detached on the hub does not leave.
+
+- The HUD handles visible floating panels and the open sheet before controller handlers. Nested dialog actions and Chat's editor blur remain their own first step; IME composition is left alone. Holding Escape does not cascade through multiple steps.
+- Shared `pilot.escape()` and `clankerPlay.escape()` release soft focus, pending/acquired capture, or the browser's just-released capture before releasing possession. The next explicit press can detach immediately.
+- Lab, Factory, Arcade, Bifrost and the Ember Den use the shared order after their local menus/seating actions. DSB closes venue UI, frees capture, detaches, leaves the venue, then leaves DSB from its detached exterior. Arcade retains its existing carry restriction.
+- An explicit detached interior handoff uses `world.pilotDetached`, so the hub's signed-in arrival claim does not reattach the player. Initial signed-in arrival still claims the owner's Ooga.
+- Gorilla shortcuts now respect keyboard focus inside the sheet, matching the Ooga's guard. The legacy lab Agent still has its own controller and no captured mouse look; the shared HUD closes UI before that controller detaches.
+
+## Agreed change: multiplayer companions and T switching
+
+The maintainer requested multiplayer gorilla tracking and a key to cycle their own pair. After reviewing the G conflict, they chose **T**. **G remains grab/throw for gorillas and weapon switch for Oogas.**
+
+- On the hub, T changes from the owned Ooga to its active companion, or from a companion/detached view to the owned Ooga. It changes control at the actor's existing position. Repeat and modified key presses do not cycle; input fields and focused sheet controls retain their keys. Combat selection requests mouse look; carry keeps the native cursor.
+- This operates wherever the hub's companions already exist, including its connected islands and carved caves. Separate interior scenes do not contain those companions; this work does not create gorillas in those scenes. DSB's seated T/tomato action remains local to that venue.
+- Signed-in contributors can claim only their own companion (including registered GitHub aliases and server-vouched temporary contributors). The page and room both enforce this. Signed-out/static companion play remains local and uses the same Escape/cursor flow.
+- The room body is an Ooga handle, `gorilla:<handle>`, or null when detached. Existing position snapshots retain their stride; optional bounded gorilla locomotion carries airborne/biped/climb/run/lab/office state, speed, climbing stride/direction/side and swim amount.
+- Remote gorillas use the managed gorilla rig with eased position/heading, owner name, normalized health and voice indicator. Their local AI copy releases its reservations and hides until the remote lets go. Their Ooga remains a separate crew member. Voice follows the driven actor's zone.
+- This is player presence and locomotion. Gorilla attacks, held Oogas, throws, damage authority and general NPC gorilla pose synchronization are not newly replicated. Older open pages must refresh to recognize a gorilla body; old Ooga position messages remain compatible.
 
 ## Validation and play-test queue
 
@@ -202,4 +223,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - `8d5346f`: baseline and audit scope, draft PR opened against `rock`.
 - `28fb6b8`: current flows, source references, inconsistencies, proposals and play-test queue recorded. `npm run build` passed; no runtime tests requested or run.
 - Native carry cursor decision: approved; implementation and existing regression coverage updated. `npm run build`, `node --check src/js/clanker-play.js`, `node --check test/run.mjs` and `git diff --check` passed. Runtime verification remains pending under **wait**.
-- Remaining decisions: scenarios 2–6 and UI-focus policy pending.
+- `05fc676`: gorilla room identity, bounded locomotion and remote rig transport, with server regression coverage authored.
+- Escape, multiplayer companion integration and T switching: approved; implementation and existing regression coverage updated in this checkpoint. `npm run build`, syntax checks on all 19 changed JavaScript files and `git diff --check` passed. Added network/remote checks participate in the existing unit/full path. Browser, unit and worker runtime tests remain unrun under **wait**.
+- Remaining decisions: selection/default view, wheel/right-click boundaries, map/reset handoffs, overhead aiming, touch and exceptional-controller details.

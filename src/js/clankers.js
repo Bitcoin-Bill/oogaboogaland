@@ -1999,6 +1999,7 @@
       }
     };
     const activate = (e, atPosition = false) => {
+      if (e.remoteControlled) return;
       if (rage) rage.cancel(e, "respawn");
       if (ctx.rageRelease) ctx.rageRelease(e);
       clearWallSearch(e);
@@ -2103,7 +2104,7 @@
           departPending: false, departAt: 0, departX: 0, departY: 0, departZ: 0, riseAdmitted: false,
           wallFailedX: NaN, wallFailedZ: NaN, wallFailedUntil: 0,
           levelOnlyUntil: 0, planAt: 0, progressTime: 0, progressX: NaN, progressZ: NaN, progressDistance: Infinity, progressTurn: Infinity, progressCursor: -1, progressClaim: 0, backoutX: NaN, backoutZ: NaN, alignTime: 0, failedX: NaN, failedZ: NaN, failedUntil: 0 },
-        controlled: false, pendingSite: -1, actionControlled: false,
+        controlled: false, remoteControlled: false, pendingSite: -1, actionControlled: false,
         debugMove: { active: false, cancelled: false, status: "", reason: "", target: { x: 0, y: 0, z: 0 },
           goal: { x: 0, y: 0, z: 0, heading: NaN }, candidate: 0, hops: 0, normalized: false,
           normalizeAt: 0, normalizeScore: Infinity, wallTarget: false, wallPending: false, wallFinal: false,
@@ -2178,7 +2179,7 @@
     };
     const plan = (cave, index) => {
       const e = byOwner.get(cave);
-      if (!e || !sites[index]) return;
+      if (!e || e.remoteControlled || !sites[index]) return;
       if (e === debugShuttle && index !== labSite) return;
       if (e.controlled || e.rage.active || e.drive.airborne || e.climb.active || e.debugMove.active || e.office.stage) { e.pendingSite = index; return; }
       // Reloading never evicts a gorilla whose next shift is in this cave.
@@ -5207,6 +5208,39 @@
       if (!e.drive.airborne && !e.fire.rolling && !e.climb.active) resumeEntry(e);
       return true;
     };
+    // The room owns this companion while its player is elsewhere. Free its AI
+    // reservations before hiding it; the remote pool supplies the one visible rig.
+    const setRemote = (name, on) => {
+      if (disposed) return;
+      const e = byOwner.get(crew.cavemen.get(name));
+      if (!e || e.remoteControlled === on) return;
+      if (on) {
+        if (player === e) release();
+        if (rage) rage.cancel(e, "remote");
+        if (ctx.rageRelease) ctx.rageRelease(e);
+        releasePortal(e); releaseLab(e); releaseOffice(e); releaseBed(e);
+        clearWallSearch(e);
+        e.remoteControlled = true;
+        e.active = e.root.visible = e.hasSlot = e.jump.active = false;
+        e.debugMove.active = e.debugMove.cancelled = false;
+        e.climb.active = e.climb.searchPending = e.climb.claimPending = e.climb.crestPending = false;
+        e.drive.airborne = e.drive.resume = false;
+        e.overflow = false;
+        if (e.tracked && ctx.untrack) ctx.untrack(e);
+        e.tracked = false;
+      } else {
+        e.remoteControlled = false;
+        e.retry = 0;
+        if (alive(e.owner)) activate(e);
+      }
+    };
+    const createRemote = (name, rec) => {
+      const rig = BL.agent.create({ managed: true, groundAt: () => rec.y, scale: SCALE,
+        coatClip, suitClip, suitColor: fnv1a(`office/${name}`) % BL.agent.SUIT_COLORS });
+      rig.root.matrixNative = false;
+      rig.root.matrixLiving = true;
+      return rig;
+    };
     const respawn = (e, x = 0, y = 0, z = 0) => {
       if (rage) rage.cancel(e, "respawn");
       if (ctx.rageRelease) ctx.rageRelease(e);
@@ -5223,7 +5257,7 @@
     };
     const possess = (value) => {
       const e = entryFor(value);
-      if (!e || !e.active || !e.root.visible) return false;
+      if (!e || e.remoteControlled || !e.active || !e.root.visible) return false;
       if (player === e) return true;
       if (rage) rage.cancel(e, "possession");
       if (ctx.rageRelease) ctx.rageRelease(e);
@@ -6611,6 +6645,7 @@
       }
     });
     const updateEntry = (e, dt) => {
+      if (e.remoteControlled) return;
       // Expiry, health and account/activity cancellation precede regeneration
       // and every movement controller, including swimming or climbing.
       if (rage) rage.check(e, elapsed);
@@ -7086,7 +7121,7 @@
       climbFrameBudget = 2; climbTurn = -1;
       for (let i = 0; i < list.length; i++) {
         list[i].climb.searchBudget = 2;
-        if (!list[i].rage.warpWaiting) pendingClimbSearch(list[i]);
+        if (!list[i].remoteControlled && !list[i].rage.warpWaiting) pendingClimbSearch(list[i]);
       }
       for (let i = 0; i < list.length; i++) {
         const index = (climbNext + i) % list.length, e = list[index], c = e.climb;
@@ -7112,7 +7147,7 @@
         }
         for (let i = 0; i < list.length; i++) {
           updateEntry(list[i], step);
-          if (!list[i].rage.active) recoverStall(list[i], step);
+          if (!list[i].remoteControlled && !list[i].rage.active) recoverStall(list[i], step);
         }
       }
     };
@@ -7197,7 +7232,7 @@
     };
     return { list, sync, update, target, companionTarget, hit, damage, bananaHit, debugRage, plan, startLabShuttle, debugMove, cancelDebugMove, stats, liveGeometry, dispose, contactAt,
       debugLoungeSpots,
-      possess, release, respawn, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
+      possess, release, setRemote, createRemote, respawn, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
       get player() { return player; } };
   };
   BL.clankers = { create, rageCarrying, WALK_RADIUS, WALK_HEIGHT, PROP_STEP, RAGE_SPEED };

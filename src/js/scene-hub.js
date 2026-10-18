@@ -8192,7 +8192,7 @@
     }
     footsteps.update(crew.player);
     npcSync.update(dt);
-    shareDrivenOoga(dt);
+    shareDrivenActor(dt);
     remotes.update(dt);
     mempoolIsland.wildlife.update(dt, elapsed);
     for (const cave of crew.list) if (cave.root.visible) {
@@ -8292,6 +8292,14 @@
   const onAccountChange = () => {
     claimOwnOoga();
     const driven = crew.player, released = BL.net.state.released;
+    const gorilla = clankerPlay && clankerPlay.player;
+    if (gorilla) {
+      let refusal = BL.net.mayDriveGorilla(gorilla.owner.traits.name);
+      if (!refusal && released && released.name === gorilla.netBody) refusal = "That gorilla is no longer yours to drive";
+      BL.net.state.released = null;
+      if (refusal) { clankerPlay.release(); hud.toast(refusal); }
+      return;
+    }
     if (!driven) return;
     crew.refreshRosterRow(driven);
     let refusal = BL.net.mayDrive(driven.traits.name, false);
@@ -8308,7 +8316,7 @@
     if (ownOogaClaimed || !me) return;
     const character = BL.net.ownCharacter();
     const cave = character && crew.cavemen.get(character.handle);
-    if (!cave || pilot.player) {
+    if (!cave || pilot.player || clankerPlay && clankerPlay.active) {
       ownOogaClaimed = true;
       return;
     }
@@ -8321,6 +8329,23 @@
     }
     pilot.possess(cave);
     if (crew.player === cave) hud.toast(`Welcome back, ${BL.characters.displayOf(character.handle)}: this Ooga is yours`);
+  };
+  const cycleOwnActor = () => {
+    const character = BL.net.ownCharacter();
+    if (!character) { hud.toast("Sign in as a contributor to switch between your Ooga and gorilla"); return; }
+    const cave = crew.cavemen.get(character.handle);
+    if (!cave) { hud.toast("Your Ooga is not available here"); return; }
+    if (pilot.player === cave) {
+      const gorilla = clankers.list.find(entry => entry.owner === cave);
+      if (!gorilla || !gorilla.active || !gorilla.root.visible) { hud.toast("Your gorilla is not available here yet"); return; }
+      clankerPlay.possess(gorilla);
+    } else {
+      const refusal = mayDriveOoga(cave);
+      if (refusal || crew.stateOf(cave) === "away") { hud.toast(refusal || "Your Ooga is in another place"); return; }
+      if (clankerPlay.active) clankerPlay.release();
+      pilot.possess(cave);
+      if (pilot.player === cave) pilot.focusAim(true);
+    }
   };
   // Where the driven Ooga is, as the room names it for voice and for who is shown (docs/auth-and-presence.md):
   // a cave by its mouth (EntropyLab, the Factory's tunnel and the Arcade's mouth share their halls' groups, HQ
@@ -8356,9 +8381,17 @@
     const ground = bifrostIsle.site.groundAt(x, z);
     return ground > -Infinity && feet > ground - 3;
   };
-  const zoneOf = (cave) => {
-    const p = cave.root.position, feet = p.y - cave.baseY;
-    if (playerCaveIndex) return zoneName(playerCaveIndex);
+  const zoneOf = (cave, gorilla = false) => {
+    const p = cave.root.position, feet = p.y - (gorilla ? 0 : cave.baseY);
+    if (!gorilla && playerCaveIndex) return zoneName(playerCaveIndex);
+    if (gorilla && island.cavityAt(p.x, p.z, CAMERA_COLUMN, 0, feet)
+      && feet >= CAMERA_COLUMN.floor - 1e-6 && feet < CAMERA_COLUMN.ceiling) {
+      const index = CAMERA_COLUMN.caveIndex;
+      for (const opening of CAMERA_OPENINGS) {
+        if (opening.headquarters ? index === island.headquarters.caveIndex : opening.caveIndex === index
+          && !opening.blocked && (p.x - opening.mouth.x) * opening.sr + (p.z - opening.mouth.z) * opening.cr < opening.planeZ) return zoneName(opening.caveIndex);
+      }
+    }
     if (onSphere(p.x, p.z)) return "sphere";
     if (inRainforest(p.x, feet, p.z)) return "rainforest";
     if (onBifrostIsle(p.x, feet, p.z)) return "bifrost";
@@ -8366,20 +8399,30 @@
   };
   // A new zone holds ZONE_HOLD seconds before it is reported, so a bridge's foot does not flicker voice.
   let zoneHeld = null, zoneHeldFor = 0;
-  // The room sees the Ooga this visitor drives, by name, where it is, its feet and its health; none when free
-  // roaming.
-  const shareDrivenOoga = (dt) => {
-    const driven = crew.player;
-    BL.net.setBody(driven ? driven.traits.name : null);
+  // Both body kinds share position, health and zone transport. Gorilla locomotion
+  // reuses six numbers so climbing, swimming and running survive the handoff.
+  const shareDrivenActor = (dt) => {
+    const gorilla = clankerPlay && clankerPlay.player, driven = gorilla || crew.player;
+    BL.net.setBody(gorilla ? gorilla.netBody : driven ? driven.traits.name : null);
     if (!driven) return;
-    const zone = zoneOf(driven);
+    const zone = zoneOf(driven, !!gorilla);
     if (zone === BL.net.state.zone) zoneHeld = null;
     else if (zone !== zoneHeld) {
       zoneHeld = zone;
       zoneHeldFor = 0;
     } else if ((zoneHeldFor += dt) >= ZONE_HOLD) BL.net.setZone(zone);
-    BL.net.sendPose(driven.root.position.x, driven.root.position.y - driven.baseY, driven.root.position.z, driven.root.rotation.y);
-    BL.net.setHealth(driven.health.value, driven.health.stunned);
+    const p = driven.root.position;
+    if (gorilla) {
+      const g = gorilla.netMotion, m = gorilla.motion, d = gorilla.drive;
+      g[0] = (gorilla.jump.active || d.airborne && !d.passiveFall ? 1 : 0) | (gorilla.biped ? 2 : 0)
+        | (gorilla.climb.active ? 4 : 0) | (d.run ? 8 : 0) | (m.lab ? 16 : 0) | (m.office ? 32 : 0);
+      g[1] = gorilla.speed; g[2] = m.climbStride; g[3] = m.climbDirection; g[4] = m.climbSide; g[5] = m.swim;
+      BL.net.sendPose(p.x, p.y, p.z, gorilla.heading, g);
+      BL.net.setHealth(gorilla.health.value / gorilla.health.max * 100, gorilla.health.value <= 0);
+    } else {
+      BL.net.sendPose(p.x, p.y - driven.baseY, p.z, driven.root.rotation.y);
+      BL.net.setHealth(driven.health.value, driven.health.stunned);
+    }
   };
   // Signed-in players are shown where this one is: the same zone while driving, every place on the island
   // while looking round free (no zone, no voice).
@@ -10326,10 +10369,17 @@
       return;
     }
     if (e.key === "Escape" && debugSelectedGorilla) { selectDebugGorilla(null); e.preventDefault(); return; }
+    if (e.key === "Escape") {
+      if (!e.repeat) { if (clankerPlay.active) clankerPlay.escape(); else pilot.escape(); }
+      e.preventDefault();
+      return;
+    }
+    if ((e.key === "t" || e.key === "T") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault(); cycleOwnActor(); return;
+    }
     if (clankerPlay.active) return;
     if ((e.key === "x" || e.key === "X") && !e.repeat && pilot.modeAction("mode-toggle")) return;
     if ((e.key === "1" || e.key === "2") && pilot.weaponMode(Number(e.key))) return;
-    if (e.key === "Escape") pilot.release();
     if (e.key === "b" || e.key === "B") addTestBananas(testBananas);
     if (e.key === "l" || e.key === "L") demoTip(120000);
     if (e.key === "p" || e.key === "P") {
@@ -10830,7 +10880,12 @@
     shared.outsideActorHeight = REMOTE_BODY_HEIGHT;
     shared.localOnline = localOnline;
     crew = shared.crew = crewMod.create(shared);
-    remotes = BL.remotePlayers.create({ root, crew, visible: remoteShown, posed: (cave, feet) => {
+    remotes = BL.remotePlayers.create({ root, crew, visible: remoteShown,
+      createGorilla: (name, rec) => clankers.createRemote(name, rec),
+      hideGorilla: (name, on) => {
+        if (on && clankerPlay && clankerPlay.player?.owner.traits.name === name) clankerPlay.release();
+        clankers.setRemote(name, on);
+      }, posed: (cave, feet) => {
       const p = cave.root.position, height = cave.bodyHeight || 1.4;
       floatPose(cave, feet, height, 0, now);
       mempoolIsland.wake(cave.root, p.x, feet, p.z, height, 0.35);
@@ -10961,10 +11016,15 @@
       canSmash: canClankerSmash, supportAt: clankerSupportAt, terrainSupportAt: clankerTerrainSupportAt,
       track: (entry) => trackMirrorObject(entry.root, 3.6, 4248), untrack: (entry) => untrackMirrorObject(entry.root) });
     shared.fireThreats = () => clankers.list;
-    for (const entry of clankers.list) registerClanker(entry);
+    for (const entry of clankers.list) {
+      entry.netBody = BL.net.gorillaBody(entry.owner.traits.name);
+      entry.netMotion = new Float64Array(6);
+      registerClanker(entry);
+    }
     resetRageThrowMap();
     clankerPlay = BL.clankerPlay.create({ canvas: ctx.canvas, camera, pilot, hud, clankers, input, renderer, reticleTarget,
       grabOoga: grabClankerRider, releaseOoga: releaseClankerRider,
+      mayPossess: entry => BL.net.mayDriveGorilla(entry.owner.traits.name),
       sightClear: shared.fireReachable, aimCeiling: entry => birdsEyeCeiling(entry, true), constrainCamera: constrainClankerCamera,
       birdsEyeMin: GORILLA_BIRDS_EYE_MIN, maxDistance: DIST_MAX });
     createClankerEquipment(shared.workSites);
@@ -11054,7 +11114,7 @@
     if (ctx.from === null && (preloadedJetpackWear || preloadedEquipment) && !params.has("character") && !initialCharacter) initialCharacter = contributors.activeRoster.find((entry) => crew.stateOf(crew.cavemen.get(entry.name)) === "working") || contributors.activeRoster[0];
     const initialGorilla = initialCharacter && preloadedGorilla ? crew.cavemen.get(initialCharacter.name) : null;
     // The Ooga that went into DSB, the Lightning Factory, ₿IFRÖST or Ooga Arcade comes back out as the one played.
-    const handsBack = ctx.from === "dsb" || ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade";
+    const handsBack = ctx.from === "dsb" || ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" || ctx.from === "lab";
     const returningCharacter = handsBack ? world.pilot : null;
     if (handsBack) world.pilot = null;
     if (initialGorilla) {
@@ -11074,7 +11134,8 @@
       if (returningCharacter && ctx.from === "factory") crew.selectWeapon(cave.weapon.selectedSlot, cave);
       if (initialCharacter) crew.configureWeapon(cave, preloadedWeapon, preloadedAmmo);
     }
-    ownOogaClaimed = false;
+    ownOogaClaimed = !!world.pilotDetached;
+    world.pilotDetached = false;
     claimOwnOoga();
     unsubscribeAccount = BL.net.subscribe(onAccountChange);
     const initialFirstPerson = ctx.from === null && preloadedFirstPerson && !initialGorilla;
@@ -11434,6 +11495,7 @@
     for (let i = 0; i < clankerCaptures.length; i++) finishClankerRider(clankerCaptures[i].entry, false);
     clankerCaptures.length = 0;
     clankerPlay.dispose();
+    remotes.dispose();
     breakables.dispose();
     crates.dispose();
     pile.dispose();
@@ -11449,7 +11511,6 @@
     zoneHeld = null;
     BL.net.setHub(false);
     npcSync.dispose();
-    remotes.dispose();
     remotes = npcSync = null;
     crew.dispose();
     critters.dispose();

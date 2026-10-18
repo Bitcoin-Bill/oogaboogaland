@@ -258,7 +258,7 @@
     remotes.update(dt);
     footsteps.update(drivenHere);
     mirror.phase.update(dt, elapsed); mirror.body.update(dt); mirror.body.time = mirror.phase.ripples.time;
-    if (!leaving && (seatTable < 0 || pendingStand) && Math.abs(avatar.root.position.x) < BL.bifrostModels.WINDOW.halfW
+    if (!leaving && pilot.player && (seatTable < 0 || pendingStand) && Math.abs(avatar.root.position.x) < BL.bifrostModels.WINDOW.halfW
       && avatar.root.position.z > PM.EXIT_Z) leaveFloor();
     // All ten table lights fit the lowest renderer tier; selected table goes first.
     const near = selected, lights = renderOpts.lights;
@@ -309,11 +309,12 @@
     S.stepTweens(dt); fx.update(dt, elapsed);
   };
   const extra = (c, project) => remotes.drawNames(c, project);
-  const onKey = e => { if (e.key === "Escape") { if (panel.focused) action("walk"); else if (seatTable >= 0 && !pendingStand) action("stand"); else leaveFloor(); return true; } if (e.key === "0") { pilot.goPreset("entrance"); return true; } return false; };
+  const onKey = e => { if (e.key === "Escape") { if (panel.focused) action("walk"); else if (seatTable >= 0 && !pendingStand) action("stand"); else if (!pilot.escape()) leaveFloor(); return true; } if (e.key === "0") { pilot.goPreset("entrance"); return true; } return false; };
   const leave = () => {
     session.selected = selected; session.pendingStand = pendingStand;
     if (session.live) session.live.dispose();
-    world.pilot = avatar.traits.name;
+    world.pilotDetached = !pilot.player;
+    world.pilot = pilot.player ? pilot.player.traits.name : null;
     unsubscribeAccount(); unsubscribeAccount = null; BL.net.setBody(null);
     for (const t of room.tables) t.agent.dispose();
     remotes.dispose(); remotes = null; footsteps.dispose(); footsteps = null;

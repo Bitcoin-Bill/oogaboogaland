@@ -338,8 +338,8 @@
     if ((e.key === "x" || e.key === "X") && !e.repeat && pilot.modeAction("mode-toggle")) return;
     if ((e.key === "1" || e.key === "2") && pilot.weaponMode(Number(e.key))) return;
     if (e.key === "Escape") {
-      if (pilot.player) pilot.release();
-      else go("hub");
+      if (!pilot.escape()) go("hub");
+      return;
     }
     // N spins a driven Ooga's nunchaku, C changes the colourway of one built with two.
     if ((e.key === "n" || e.key === "N") && !e.repeat && crew.twirl()) return;
@@ -527,6 +527,8 @@
     mark("visibility");
   };
   const leave = () => {
+    world.pilotDetached = !pilot.player;
+    world.pilot = pilot.player ? pilot.player.traits.name : null;
     BL.net.setBody(null);
     window.clearInterval(stateTimer);
     unsubscribeActivity();

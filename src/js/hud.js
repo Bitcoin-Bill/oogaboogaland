@@ -1497,6 +1497,7 @@
       });
       const controller = {
         open: openBoard, close: closeBoard, update: updateBoard,
+        escape() { if (!el.boardFilterMenu.hidden) showFilters(false); else closeBoard(); },
         bounds: boardBounds,
         setLayer(layer) { el.board.style.zIndex = String(layer); },
         get width() { return boardWindow.width; },
@@ -1838,6 +1839,35 @@
       el.sheet.dataset.open = String(open);
       writeSheetState(open, selectedSheetTab(), sheetHeight);
     };
+    // Registered before actor controls: a popup or the sheet takes one Escape
+    // before cursor capture or possession can change. Dialogs keep their own
+    // nested Escape actions (for example a board's filter menu).
+    on(window, "keydown", (e) => {
+      if (e.key !== "Escape" || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+      if (e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      // Chat owns IME state and first returns focus from its editor to its tab.
+      if (e.target.id === "chat-input" || e.target.id === "chat-display") return;
+      if (document.querySelector("dialog:modal") || e.target.closest && e.target.closest("dialog[open]")) return;
+      let closed = false;
+      if (floatingBoards.length) {
+        floatingBoards[floatingBoards.length - 1].escape();
+        closed = true;
+      } else {
+        for (let i = outside.length - 1; i >= 0; i--) {
+          const entry = outside[i], node = entry.node;
+          if (node.tagName === "DIALOG" ? !node.open : node.hidden || !node.getClientRects().length) continue;
+          entry.close();
+          closed = true;
+          break;
+        }
+      }
+      if (!closed && el.sheet.dataset.open === "true" && el.sheet.getClientRects().length) {
+        if (el.sheet.contains(document.activeElement)) document.activeElement.blur();
+        setSheetOpen(false);
+        closed = true;
+      }
+      if (closed) { e.preventDefault(); e.stopImmediatePropagation(); }
+    }, true);
     const selectTab = (name) => {
       for (const t of el.tabs) {
         t.setAttribute("aria-selected", String(t.dataset.tab === name));
@@ -2170,7 +2200,7 @@
   const VOICE_WORDS = { on: "In voice", speaking: "Speaking", muted: "Muted their microphone" };
   const voiceRowOf = (login, body) => {
     const character = BL.net.characterOf(login);
-    return character && liveRows.get(character.handle) || body && liveRows.get(body) || null;
+    return character && liveRows.get(character.handle) || body && liveRows.get(BL.net.bodyName(body)) || null;
   };
   const paintMarks = (row) => {
     const blocked = !!row.nextLogin && BL.voice.mutedLocally(row.nextLogin);
@@ -2196,9 +2226,9 @@
       row.host.hidden = !row.hostOn;
     }
   };
-  // A signed-in player is online on their own Ooga's row and on the row of the Ooga they drive.
+  // A signed-in player is online on their own Ooga's row and on the row of the actor's Ooga.
   const markOnline = (login, body) => {
-    const character = BL.net.characterOf(login), own = character && liveRows.get(character.handle), driven = body && liveRows.get(body);
+    const character = BL.net.characterOf(login), own = character && liveRows.get(character.handle), driven = body && liveRows.get(BL.net.bodyName(body));
     if (own) own.nextOnline = true;
     if (driven) driven.nextOnline = true;
   };

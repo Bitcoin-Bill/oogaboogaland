@@ -47,12 +47,12 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 
 | Direction | Message | Meaning |
 |---|---|---|
-| client → room | `{ t: "body", name }` | the Ooga being driven, by name; `null` when free roaming or outside the hub |
-| client → room | `{ t: "pose", x, y, z, yaw }` | that Ooga's feet and heading, at most 10 a second from the page, 20 allowed |
-| client → room | `{ t: "zone", name }` | where that Ooga is (see Zones below): voice is shared within its group, players are shown within the same zone |
+| client → room | `{ t: "body", name }` | Ooga handle, `gorilla:<handle>` for its companion, or `null` when detached/in a game |
+| client → room | `{ t: "pose", x, y, z, yaw, g? }` | the body's feet and heading, at most 10 a second from the page, 20 allowed; optional bounded gorilla locomotion below |
+| client → room | `{ t: "zone", name }` | where that body is (see Zones below): voice is shared within its group, players are shown within the same zone |
 | client → room | `{ t: "hub", on }` | this page shows the island in a visible tab: it can host the NPCs and receives their frames |
 | client → room | `{ t: "mute", on }` | this page muted or unmuted its own microphone, for everyone's roster |
-| client → room | `{ t: "hp", v, ko }` | the driven Ooga's health (0-100, in steps of 4) and whether it is knocked out; only on a change, 4 a second at most |
+| client → room | `{ t: "hp", v, ko }` | the driven body's health normalized to 0-100, in steps of 4, and knockout flag; only on a change, 4 a second at most |
 | client → room | `{ t: "chat", text }` | an Ooga Chat line (see Ooga Chat); the room names the speaker |
 | client → room | binary | the NPC host's frame: Ooga poses, gear, status and work, then its events (see The crew in step) |
 | client → room | `"ping"` every 10 s | answered `"pong"` without waking the room |
@@ -60,7 +60,7 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | room → client | `chat-history { messages }` | right after `welcome`: the chat lines the room still holds, oldest first, at most 100 |
 | room → client | `chat { id, at, login, name, text }` | a chat line, to everyone (the speaker too) |
 | room → client | `join { p }`, `leave { id, reason }`, `body { id, name }` | the roster changing |
-| room → client | `state { now, ps }` | at most 15 a second while poses arrive, none while nobody moves: `ps` is flat `id, x, y, z, yaw` runs |
+| room → client | `state { now, ps, gs? }` | at most 15 a second while poses arrive, none while nothing changes: `ps` is flat `id, x, y, z, yaw` runs; optional `gs` is `id, ...g` runs |
 | room → client | `host { id, followers }` | the page that runs the NPCs now (0 for none) and how many pages follow it; binary frames from it follow while any do |
 | room → client | `voice { peers, gens }` | the ids this player should hear and each one's publication count (a new count is a microphone published again, pulled again); sent when that changes, and after every zone message |
 | room → client | `vstate { id, voice, muted }` | a player's microphone went live or off, or they muted or unmuted it; sent only on a change |
@@ -69,6 +69,10 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | room → client | `kick { reason }`, then close 4000 | `replaced` (a newer tab), `stale` (90 s silent, swept once a minute), `full` (32 players) |
 
 Frames the room cannot read close with 4400, as does any frame over 256 characters except a chat line; out-of-bounds poses, unknown types and unusable chat lines are ignored. The pure rules are in `worker/src/protocol.js` with their checks in `worker/test/`.
+
+Gorilla locomotion `g` is six finite numbers: `[flags, speed, climbStride, climbDirection, climbSide, swim]`. The flag bits are airborne (1), biped (2), climbing (4), running (8), lab (16) and office (32); flags must be an integer 0–63. The remaining values are clamped to ±20, ±1,000,000, ±1, ±1 and 0–1 respectively. Only a gorilla body retains them. Changing body clears locomotion and resets health; the page invalidates its pose cache and reports the new actor even at identical coordinates. Welcome/join records include `g`, and room attachments preserve it through hibernation. This adds no idle timer or change to the five-number position stride.
+
+Old open pages still understand Ooga poses but cannot render the new companion identity correctly; refresh them together for multiplayer companion play. The extension carries locomotion, not attacks, captive Oogas, throws or authoritative combat damage.
 
 ### Zones
 
@@ -81,19 +85,22 @@ Where a signed-in player is decides whom they hear and see. A zone is `<group>` 
 | A cave or a portal | `lab`, `lab.hall`, `bca`, `factory`, `factory.hall`, `arcade`, `arcade.hall`, `mirror`, `hq`, `ember-den`, `dsb-outside`, `dsb-<venue>` | EntropyLab's cave (and the debug-only lab scene), B.C.A.'s office, the Lightning Factory's tunnel and hall, Ooga Arcade's mouth and hall, the Mirror cave, HQ (every entrance), the Ember Den off the Bifrost chamber, DSB Land outside and each of its venues |
 | Nowhere | `none` | off the island's edge (a cloud, flying or falling past the rim), or between scenes: hears and is heard by nobody, shown to nobody |
 
-The hub works the zone out every frame from the driven Ooga (`zoneOf` in `scene-hub.js`) and reports a new one once it has held for a quarter second, so a bridge's foot does not flicker. Every other scene declares its own (`voiceZone` on the scene object, set by the director on entry); DSB Land reports its venues as it goes. The games keep `scene-<id>`, with no Ooga driven and so no voice.
+The hub works the zone out every frame from the driven Ooga or gorilla (`zoneOf` in `scene-hub.js`) and reports a new one once it has held for a quarter second, so a bridge's foot does not flicker. Every other scene declares its own (`voiceZone` on the scene object, set by the director on entry); DSB Land reports its venues as it goes. The games keep `scene-<id>`, with no actor driven and so no voice.
 
 Each remote visitor driving an Ooga in the same zone appears as that Ooga (`src/js/remote-players.js`, in the island and every scene with Oogas to drive), eased toward the room's poses, with a nameplate: their name, a health bar under it from the room's `hp` (red while knocked out), and while they are in voice the speaker to its right (green while speaking, red with a cross when they muted their microphone). A visitor on the island who drives nothing sees everyone in the island's own places. The local crew's copy of the same Ooga steps `away` while someone else drives it and comes back when they let go, so no Ooga stands twice (the Arcade hides its crowd's copy the same way); the NPC crew keeps working and walks round remote bodies.
 
 The Ooga Boogas panel shows every signed-in player online, in every scene: the row of their own Ooga and the row of the Ooga they drive get the green dot, and online rows lead the list. One who disconnects drops back to their activity's place.
 
+A remote companion uses `BL.agent`'s managed gorilla rig instead of a caveman. Its local NPC copy releases its work/bed/portal reservations and hides while remotely driven, then returns to normal AI after release; the owner's Ooga remains in the crew. Health is a fraction of the gorilla's maximum, rendered through the existing 0–100 bar. Voice and online marks stay on the owner's roster row. Locomotion, rig geometry and disposal share the existing bounded remote-player pool.
+
 ### Who drives which Ooga
 
 Every Ooga belongs to a contributor, and ownership keys on the GitHub login alone: a character's `github`, or its handle when it has none (`bc1gui` is owned by `ottoz0r`; a different GitHub account that happens to be called `bc1gui` owns nothing).
 
-- A signed-in contributor drives **only their own** Ooga, and while they are signed in **nobody else** can drive it. The hub hands it to them on arrival (`claimOwnOoga`), once a visit, unless they already drive another. Letting go stays detached until they take control again or revisit; their face beside the location button uses the same possession path as double-clicking their Ooga.
+- A signed-in contributor drives **only their own** Ooga, and while they are signed in **nobody else** can drive it. The hub hands it to them on arrival (`claimOwnOoga`), once a visit, unless they already drive another or explicitly arrived detached from an interior. Letting go stays detached until they take control again or revisit; their face beside the location button uses the same possession path as double-clicking their Ooga.
 - Everyone else, signed in or not, drives an Ooga only when its owner is **not signed in**, **nobody else** holds it, and it is **not working** (by its real activity; the hub's temporary overrides do not count).
 - An owner arriving takes their Ooga back: the room frees it and the driver's page lets go with a notice.
+- A signed-in contributor may also claim **their own gorilla**, including a server-vouched temporary contributor. `net.mayDriveGorilla` and the room both check the companion's owner; signed-in guests cannot borrow companions. T cycles the owned pair on the hub, or retakes the Ooga when detached; G keeps its existing weapon/grab meaning. Companions remain in the hub's playable areas, rather than separate scene interiors. Signed-out/static gorilla play is local, with no room publication.
 
 The page enforces all of it (`net.mayDrive`, checked by `pilot.possess` through the scene's `mayPossess`). The room enforces ownership and who holds what (`claimRefusal` in `worker/src/protocol.js`, over the cast `npm run build:site` writes to `worker/src/characters.gen.json`), so a tampered page cannot take a contributor's Ooga; a refused claim answers `release { name, reason }` and is never shown to anyone. Whether an Ooga is working comes from activity the room does not see, so that rule is the page's alone. The rules apply only on the page served by the Worker; without a backend (GitHub Pages, the test suite) any Ooga can be driven as before.
 
@@ -126,7 +133,7 @@ The sound is an eight-second crackle over an ember rumble, synthesized in Web Au
 Signed-in players can talk (`src/js/voice.js`, `worker/src/room.js`, `worker/src/sfu.js`), over a Cloudflare Realtime SFU app per Worker (`REALTIME_APP_ID` in `wrangler.<env>.jsonc`, `REALTIME_SECRET` a Worker secret).
 
 - **Join voice** in the sheet footer asks for the microphone, then becomes **Mute** / **Unmute**; a failure says why on the button.
-- **Who hears whom: the same zone group** (see Zones). Players driving an Ooga hear each other while they are in the same group, and nobody outside it. Within a group every voice plays at the same volume, however far apart the Oogas stand. A player not driving an Ooga, in a game or nowhere (`none`) is out of voice. Every scene with an Ooga to drive keeps the driving rules, reports the Ooga driven there every frame with its pose and health (`net.setBody`, `sendPose`, `setHealth`) and clears it in `leave`. On the island, an Ooga taken over where it already stands inside a cave counts as in that cave, not only one that walked in through the mouth.
+- **Who hears whom: the same zone group** (see Zones). Players driving an Ooga or gorilla hear each other while they are in the same group, and nobody outside it. Within a group every voice plays at the same volume, however far apart the actors stand. A detached player, one in a game or nowhere (`none`) is out of voice. Every scene with an actor to drive keeps the driving rules, reports the actor driven there every frame with its pose and health (`net.setBody`, `sendPose`, `setHealth`) and clears it in `leave`. On the island, an actor taken over where it already stands inside a cave counts as in that cave, not only one that walked in through the mouth.
 - Each page opens two peer connections, one publishing its microphone (the browser offers, the SFU answers) and one receiving (the SFU offers, the browser answers). Every SFU call goes page → Worker (`POST /api/voice/{session,publish,live,pull,renegotiate,close,leave}`, same-site and signed in, 120 a minute) → room → SFU. Only the room holds the secret; a page never sees another player's session.
 - A microphone is announced only after its publishing connection is up (`live`): pulling a publication before it connects fails. The room recomputes who hears whom whenever it can change, sends `voice { peers, gens }` when a list changes, and re-checks it on every `pull`, so a page cannot pull a voice it may not hear. The last list each player got is kept in its socket's attachment (`sent`), so a room that slept still sends a list that has just gone empty; it used to assume one had been sent, which left a page hearing a player who had gone, or deaf to one who came back. Each microphone that goes live gets a new count (`gens`), so a page re-pulls a player who published again rather than staying on their dead track. Each page applies one change at a time; a change that fails, or a pull that misses a wanted voice, is retried once on a fresh receive session before the button says voice is unavailable. The first publish gets a second try, and a connection that fails or stays dropped five seconds after it was up starts voice over on its own.
 - **Alone, the microphone is off** (#181). The page's `voice` list is exactly whom it may hear, and since everyone in voice publishes, it is also everyone who could hear it: while that list is empty the page holds its microphone track off as a mute does (`stats.alone` in `voice.js`), still published so a newcomer is listed and pulls it, and turns it back on when the room lists someone. It is a client-side gate: the room is not told and needs no change, and a visitor's own mute stands. The note under the clock says "Alone · mic off".

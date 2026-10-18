@@ -857,7 +857,7 @@
       return true;
     }
     if (e.key === "Escape") {
-      leaveCave();
+      if (!pilot.escape()) leaveCave();
       return true;
     }
     return false;
@@ -1895,7 +1895,7 @@
     crewUpdate(dt);
     ambience(dt);
     audio.tick(dt);
-    if (avatar && !leaving) {
+    if (pilot.player && !leaving) {
       const p = avatar.root.position, near = nearStation(p.x, p.z, INVITE);
       if (near !== prompt) {
         prompt = near;
@@ -1917,7 +1917,8 @@
 
   const leave = () => {
     // Whoever walked in goes on as themselves: into a game, or back out to the island at this mouth.
-    if (avatar) world.pilot = avatar.traits.name;
+    world.pilotDetached = !pilot.player;
+    world.pilot = pilot.player ? pilot.player.traits.name : null;
     unsubscribeAccount();
     unsubscribeAccount = null;
     BL.net.setBody(null);

@@ -225,12 +225,14 @@
   // Back out to the island's gate, as the same Ooga.
   const leaveChamber = () => {
     if (leaving) return;
-    world.pilot = avatar ? avatar.traits.name : null;
+    world.pilotDetached = !pilot.player;
+    world.pilot = pilot.player ? pilot.player.traits.name : null;
     leaving = go("hub");
   };
   // Through a window to its world, as the same Ooga, once a transition is free to start.
   const travel = (w) => {
     if (leaving) return;
+    world.pilotDetached = false;
     world.pilot = avatar.traits.name;
     if (!go(w.row.scene, null, !!w.row.instant)) return;
     leaving = true;
@@ -238,7 +240,7 @@
   };
   const onKey = (e) => {
     if (e.key === "Escape") {
-      leaveChamber();
+      if (!pilot.escape()) leaveChamber();
       return true;
     }
     return false;
@@ -859,8 +861,8 @@
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     // Out through the field: walked into, or flown into with the free view.
     if (!leaving) {
-      if (avatar) {
-        const p = avatar.root.position;
+      if (pilot.player) {
+        const p = pilot.player.root.position;
         if (p.z > ENTRY.field && Math.abs(p.x) < ENTRY.halfW) leaveChamber();
         else windowsFrame(previousX, previousY, previousZ);
       } else {
@@ -887,7 +889,10 @@
   const leave = () => {
     // Left by Back or Forward rather than by a way out of its own, the chamber hands the Ooga on, so the next scene
     // plays the same one; the way out to the island and a window have handed theirs over already.
-    if (avatar && !leaving) world.pilot = avatar.traits.name;
+    if (!leaving) {
+      world.pilotDetached = !pilot.player;
+      world.pilot = pilot.player ? pilot.player.traits.name : null;
+    }
     unsubscribeAccount();
     unsubscribeAccount = null;
     BL.net.setBody(null);

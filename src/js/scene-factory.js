@@ -1013,9 +1013,9 @@
       return true;
     }
     if (e.key === "Escape") {
-      // The guide's open menu swallows Escape first; only with none up does Escape leave the cave.
+      // The guide closes before the cursor, the Ooga and the cave are left.
       if (greeter && greeter.escape()) return true;
-      leaveCave();
+      if (!pilot.escape()) leaveCave();
       return true;
     }
     return false;
@@ -1914,9 +1914,9 @@
     for (let i = 0; i < s.crew.length; i++) s.crew[i].agent.update(dt);
     // Out through the gate: walked into it, or flown into it with the free view.
     if (!leaving) {
-      const p = avatar ? avatar.root.position : camera.position, y = p.y - (avatar ? avatar.baseY : 0) - LAYOUT.entrance.y;
+      const driven = pilot.player, p = driven ? driven.root.position : camera.position, y = p.y - (driven ? driven.baseY : 0) - LAYOUT.entrance.y;
       const inOpening = p.x >= GATE_OPENING.minX && p.x <= GATE_OPENING.maxX && y >= GATE_OPENING.floorY - 0.12 && y < GATE_OPENING.ceilingY;
-      if (avatar) {
+      if (driven) {
         if (inOpening && p.z > HALL.front - 1.3) leaveCave();
         else peerPortal(s, previousX, previousY, previousZ);
       } else {
@@ -2087,7 +2087,8 @@
     // A visitor at the kiosk steps away first, and a tip of theirs still on its screen goes into the cooker.
     endBooth(scene);
     // Whoever walked in walks back out as themselves: the island takes the same Ooga back at this mouth.
-    if (avatar) world.pilot = avatar.traits.name;
+    world.pilotDetached = !pilot.player;
+    world.pilot = pilot.player ? pilot.player.traits.name : null;
     greeter.dispose();
     greeter = null;
     unsubscribe();
