@@ -444,7 +444,8 @@
         node.scale.x = node.scale.y = node.scale.z = Math.min(1, f.life / 0.4);
       }
     };
-    input.add(head, { kind }, { radius: HEIGHT * 7 / 32 });
+    // She is pokeable, never a target: shots and the aim pass through her to what is behind.
+    input.add(head, { kind, weaponType: "none" }, { radius: HEIGHT * 7 / 32 });
     const position = body.position, vel = { x: 0, y: 0, z: 0 }, lit = { x: 0, y: 0, z: 0 };
     // The flight path: the points she flies through in order. While she comes to someone the last one follows them.
     const path = new Float32Array(3 * 32);

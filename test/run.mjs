@@ -5810,13 +5810,21 @@ const hubWalking = { name: "hub walking", why: "regression: steering keys came o
   record("hub walking: W A S D walk an Ooga away, left, back and right on screen from two camera angles, and Right Shift+A does not restore the removed hub Agent", allWalk(ooga) && !agent, JSON.stringify({ ooga, agent }));
 } };
 // Tess on the island: a fresh, unmoved landing with an Ooga gets her offer, and the tour takes the controls cleanly.
-const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only its first speech bubble, and an Ooga walking as her tour began walked on through it", run: async (b) => {
+const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only its first speech bubble, she stopped shots aimed past her, and an Ooga walking as her tour began walked on through it", run: async (b) => {
   const guide = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = B.cavemen.get("portlandhodl"), s = BL.scenes.hub.debug.tess.state;
     const key = (type, key, code) => window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }));
     const at = () => ({ x: a.root.position.x, z: a.root.position.z }), from = (p) => Math.hypot(a.root.position.x - p.x, a.root.position.z - p.z);
     for (let t = 0; t < 12 && s.phase !== "offer"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
     const offered = s.phase === "offer", bubbles = offered ? s.beats.length : 0;
+    // A shot aimed straight at her, where she hovers by the Ooga, passes her; a tap there reaches her.
+    const root = BL.scenes.hub.debug.tess.root, head = root.children[0].children[0];
+    BL.scene.updateWorld(root, root.parent.world);
+    const C = B.camera.position, m = head.world, dx = m[12] - C.x, dy = m[13] - C.y, dz = m[14] - C.z, l = Math.hypot(dx, dy, dz);
+    const shot = {}, poke = {};
+    B.input.weaponTargets.ray(shot, C.x, C.y, C.z, dx / l, dy / l, dz / l, 60, a);
+    B.input.weaponTargets.ray(poke, C.x, C.y, C.z, dx / l, dy / l, dz / l, 60, a, null, true);
+    const shotTess = shot.owner?.kind === "tess", pokeTess = poke.owner?.kind === "tess";
     let reached = 0;
     for (let t = 0; t < 10 && offered && s.phase === "offer" && reached < bubbles - 1; t += 1 / 30) { B.advance(1 / 30, 1 / 30); reached = Math.max(reached, s.utterance); }
     // W held as Enter starts the tour, then let go.
@@ -5833,9 +5841,10 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
     for (let t = 0; t < 8 && s.holding; t += 1 / 30) B.advance(1 / 30, 1 / 30);
     const returned = !s.holding, after = at();
     key("keydown", "w", "KeyW"); B.advance(0.4, 1 / 60); key("keyup", "w", "KeyW");
-    return { offered, bubbles, reached, walked, touring, drift, returned, again: from(after), driving: P.player === a };
+    return { offered, bubbles, reached, shotTess, pokeTess, walked, touring, drift, returned, again: from(after), driving: P.player === a };
   })()`);
   record("hub guide: Tess's offer to an Ooga standing on landing says every speech bubble of its line", guide.offered && guide.bubbles > 1 && guide.reached === guide.bubbles - 1, JSON.stringify(guide));
+  record("hub guide: a shot aimed straight at Tess passes her, while a tap there still reaches her", !guide.shotTess && guide.pokeTess, JSON.stringify(guide));
   record("hub guide: an Ooga walking as the tour starts stands through it once W is let go, and walks again when the tour ends", guide.walked > 0.3 && guide.touring && guide.drift < 0.05 && guide.returned && guide.again > 0.3 && guide.driving, JSON.stringify(guide));
 } };
 const hubMapNavigation = { name: "hub map navigation", why: "regression: choosing a destination or resetting the camera must preserve the controlled actor and view family", run: async (b) => {
