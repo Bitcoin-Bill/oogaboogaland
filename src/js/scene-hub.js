@@ -8,7 +8,6 @@
   const { DROP_HEIGHT } = pileMod;
   const { CONFETTI } = fxMod;
   const params = new URLSearchParams(location.search);
-  const PILE_COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const SEED = 1;
   const DEG = Math.PI / 180;
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
@@ -6094,16 +6093,17 @@
     }
   };
   const PILE_SCREEN = { x: 0, y: 0, depth: 0 };
-  let pileHovered = false, pileTopY = 0, pileTipCount = -1, pileTipText = "";
+  let pileHovered = false, pileTopY = 0, pileTipValue = "", pileTipText = "";
   const showPileTooltip = () => {
-    if (!pile.core.visible) { hud.tooltip.hide(); return; }
+    if (!pile.core.visible) { hud.setPileValueVisible(false); hud.tooltip.hide(); return; }
     const top = pile.core.position.y + pile.core.scale.y * pileTopY + 0.3;
     const screen = renderer.project(0, top, 0, PILE_SCREEN);
-    if (!screen) { hud.tooltip.hide(); return; }
-    const count = Math.floor(world.level);
-    if (count !== pileTipCount) {
-      pileTipCount = count;
-      pileTipText = `🍌 ${PILE_COUNT.format(count)}`;
+    if (!screen) { hud.setPileValueVisible(false); hud.tooltip.hide(); return; }
+    hud.setPileValueVisible(true);
+    const value = hudMod.donationValueText();
+    if (value !== pileTipValue) {
+      pileTipValue = value;
+      pileTipText = `🍌 ${value}`;
     }
     hud.tooltip.show(pileTipText, screen.x, screen.y, null, false, true);
   };
@@ -6143,6 +6143,7 @@
   };
   const showHoverTooltip = (hit, p) => {
     pileHovered = hit?.owner.kind === "pile";
+    if (!pileHovered) hud.setPileValueVisible(false);
     poolBlockHovered = hit?.owner.kind === "poolblock" ? hit.owner : null;
     if (poolBlockHovered) {
       POOL_BLOCK_POINTER.x = p.x; POOL_BLOCK_POINTER.y = p.y;
@@ -10902,7 +10903,7 @@
     pileHovered = false;
     poolBlockHovered = poolBlockHoverIgnore = null;
     POOL_BLOCK_HIT.node = POOL_BLOCK_HIT.owner = null;
-    pileTipCount = -1;
+    pileTipValue = "";
     pileTopY = BL.scene.boundsOf(pile.core.geometry).max[1];
     addTarget(pile.core, { kind: "pile", weaponType: "none" });
     bananaCover = BL.bananaCover.create({ overlay: ctx.overlay, pile, renderOpts: RENDER_OPTS, renderer, floor: ALTAR_HEIGHT, lightVisibleAt: bananaLightVisibleAt });

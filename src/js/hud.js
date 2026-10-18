@@ -27,6 +27,24 @@
     donationStats = stats;
     if (liveDonors) liveDonors(true);
   };
+  const currentDonationRate = () => {
+    const live = BL.donationRate.current, saved = BL.donations.state.tally?.rate;
+    return live && (!saved || live.at >= saved.at) ? live : saved;
+  };
+  let valuedSats, valuedPrice, donatedValueText = "";
+  // The panel and pile label share today's value, including precision and
+  // missing-price handling. Cache formatting for the pile's overlay loop.
+  const donationValueText = () => {
+    const tally = BL.donations.real ? BL.donations.state.tally : donationStats;
+    const sats = tally ? BL.donations.real ? tally.sats : tally.totalSats : null;
+    const price = currentDonationRate()?.usdPerBtc;
+    if (!donatedValueText || sats !== valuedSats || price !== valuedPrice) {
+      valuedSats = sats; valuedPrice = price;
+      donatedValueText = sats === 0 ? DONATED_COUNT.format(0) : sats !== null && price
+        ? DONATED_COUNT.format(sats / 1e8 * price) : "—";
+    }
+    return donatedValueText;
+  };
   const MESSAGE_FADE_MS = 300;
   // The page's one toast, which every scene's HUD and the director share: a new one replaces the last.
   let toastTimer = 0, toastHideTimer = 0;
@@ -505,12 +523,7 @@
     // Value the donated sats at the current price; donor rankings retain their receipt prices.
     const showBananaRate = () => {
       if (document.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
-      const live = BL.donationRate.current, saved = BL.donations.state.tally?.rate;
-      const rate = live && (!saved || live.at >= saved.at) ? live : saved;
-      const tally = BL.donations.real ? BL.donations.state.tally : donationStats;
-      const totalSats = tally ? BL.donations.real ? tally.sats : tally.totalSats : null;
-      const total = totalSats === 0 ? DONATED_COUNT.format(0) : totalSats !== null && rate
-        ? DONATED_COUNT.format(totalSats / 1e8 * rate.usdPerBtc) : "—";
+      const rate = currentDonationRate(), total = donationValueText();
       const tone = !rate ? "wait" : rate.stale ? "stale" : rate.live ? "live" : "idle";
       const label = tone === "live" ? "LIVE BTCUSD" : tone === "stale" ? "STALE BTCUSD" : "BTCUSD";
       const price = rate ? `$${DONOR_BANANAS.format(rate.usdPerBtc)}` : "—";
@@ -521,12 +534,17 @@
       if (el.bananaExchange.textContent !== exchange) el.bananaExchange.textContent = exchange;
       if (el.bananaTotal.textContent !== total) el.bananaTotal.textContent = total;
     };
-    let stopBananaRate = null;
+    let stopBananaRate = null, pileValueVisible = false;
     const watchBananaRate = () => {
-      const visible = !document.hidden && !el.bananaPanel.hidden && el.sheet.dataset.open === "true";
+      const visible = !document.hidden && (pileValueVisible || !el.bananaPanel.hidden && el.sheet.dataset.open === "true");
       if (visible && !stopBananaRate) stopBananaRate = BL.donationRate.watch(showBananaRate);
       else if (!visible && stopBananaRate) { stopBananaRate(); stopBananaRate = null; }
       if (visible) showBananaRate();
+    };
+    const setPileValueVisible = (visible) => {
+      if (pileValueVisible === visible) return;
+      pileValueVisible = visible;
+      watchBananaRate();
     };
     const bananaRateObserver = new MutationObserver(watchBananaRate);
     bananaRateObserver.observe(el.bananaPanel, { attributes: true, attributeFilter: ["hidden"] });
@@ -2155,7 +2173,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
@@ -2289,5 +2307,5 @@
       liveOnline(row);
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, toast, STATE_LABELS, statusFor };
+  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, donationValueText, toast, STATE_LABELS, statusFor };
 })();

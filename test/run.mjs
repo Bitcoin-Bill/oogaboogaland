@@ -4873,6 +4873,27 @@ const donationClientChecks = async () => {
     sharedRate && validRate && hiddenRate && retainedRate && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
     JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, listeners: priceListeners.size, timers: priceTimers.size }));
 
+  // Regression: the pile showed whole gameplay stock (79) beside a panel valued at 77.97.
+  const valueBL = { game: {}, scene: {}, donationRate: { current: null }, donations: { real: true,
+    state: { tally: { sats: 96458, rate: { usdPerBtc: 80832.63, at: 10 } } } } };
+  runInNewContext(await readFile(new URL("../src/js/hud.js", import.meta.url), "utf8"), {
+    window: { BL: valueBL, matchMedia: () => ({ matches: false }) },
+    document: { querySelectorAll: () => [], createElementNS: () => ({ setAttribute() {}, append() {} }) }
+  });
+  const valueText = valueBL.hud.donationValueText, values = [valueText()];
+  valueBL.donationRate.current = { usdPerBtc: 100000, at: 9 }; values.push(valueText());
+  valueBL.donationRate.current.at = 11; values.push(valueText());
+  valueBL.donations.state.tally.sats = 100000; values.push(valueText());
+  valueBL.donationRate.current = null; valueBL.donations.state.tally.rate = null; values.push(valueText());
+  valueBL.donations.state.tally.sats = 0; values.push(valueText());
+  valueBL.donations.state.tally = null; values.push(valueText());
+  valueBL.donations.real = false;
+  valueBL.hud.setDonationStats({ totalSats: 250 });
+  valueBL.donationRate.current = { usdPerBtc: 100000, at: 12 }; values.push(valueText());
+  valueBL.hud.setDonationStats({ totalSats: 1250000 }); values.push(valueText());
+  record("donation display: the shared pile/panel value keeps two decimals, prefers the newest price, follows changed sats, distinguishes zero from unavailable and uses demo totals locally",
+    values.join("|") === "77.97|77.97|96.46|100.00|—|0.00|—|0.25|1,250.00", JSON.stringify(values));
+
   const drawn = [], blankGlyph = [0, 0, 0, 0, 0, 0, 0];
   kioskContext.window.BL.jumbotron.text.glyphOf = ch => { drawn.push(ch); return blankGlyph; };
   const paintContext = new Proxy({}, { get: () => () => {} });
