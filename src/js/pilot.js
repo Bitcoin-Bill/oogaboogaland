@@ -3363,7 +3363,6 @@
       hud.setWeapon(false, false, 0);
       hud.setMagazine(0, 0, 0, false);
       if (hud.setMode) hud.setMode(null, false, "detached", false);
-      if (hud.setCameraControls) hud.setCameraControls(false);
       controls.dispose();
       crew = fx = input = null;
     };
@@ -3406,7 +3405,6 @@
       } catch (_) { return false; }
     };
     saveActiveLoginView = saveLoginView;
-    if (hud.setCameraControls) hud.setCameraControls(!!follow);
     return { orbit, hooks, controls, cursor: carryCursor, captureControl, capturePose, restorePose, focusAim, setExternalControl,
       loginViewRestored: !!loginView, loginContext: loginView?.context || null, get poseHeld() { return !!restoredPose; }, get aiming() { return armed(); },
       // Scenery follows the displayed blend, not the entry's local clock:

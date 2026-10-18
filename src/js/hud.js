@@ -242,8 +242,6 @@
       act: $("act"),
       mode: $("mode-hud"),
       modeDestination: $("destination-hud"),
-      destinationPicker: $("destination-picker"), destinationList: $("destination-list"), destinationStatus: $("destination-picker-status"),
-      resetCamera: $("reset-camera-hud"),
       modeFree: $("freeroam-icon"),
       modeFace: $("mode-face-icon"),
       modeHealth: $("mode-health"),
@@ -599,47 +597,22 @@
       el.act.textContent = label;
     };
     let actionHandler = null;
-    const DETACHED_NAMES = { pile: "Pile", lab: "Lab", mirror: "Mirror", underground: "HQ", basement: "Basement", mempool: "Mempool", factory: "Lightning Factory", arcade: "Ooga Arcade", bca: "B.C.A.", gate: "North gate", bifrost: "₿IFRÖST", timechain: "Timechain Sphere" };
+    const DETACHED_NAMES = { pile: "Pile", lab: "Lab", mirror: "Mirror", underground: "HQ", basement: "Basement", mempool: "Mempool", factory: "LN Factory", arcade: "Ooga Arcade", bca: "B.C.A.", gate: "North gate", bifrost: "₿IFRÖST", timechain: "TC Sphere" };
     let destinationNames = [];
+    let destinationIndex = -1;
     let detachedPreset = "pile", detachedNameShown = false, detachedSelectionShown = false, areaLabel = "";
-    const setCameraControls = (visible) => { el.resetCamera.hidden = !visible; };
-    const closeDestinations = () => {
-      if (el.destinationPicker.open) el.destinationPicker.close();
-      el.modeDestination.setAttribute("aria-expanded", "false");
-    };
     const setDestinations = (names) => {
       destinationNames = names.filter(name => DETACHED_NAMES[name]);
-      el.destinationList.replaceChildren();
-      for (const name of destinationNames) {
-        const button = document.createElement("button");
-        button.type = "button"; button.dataset.destination = name; button.textContent = DETACHED_NAMES[name];
-        el.destinationList.append(button);
-      }
+      destinationIndex = destinationNames.indexOf(detachedPreset);
       el.modeDestination.hidden = !modeVisible || !destinationNames.length;
-      if (!destinationNames.length) closeDestinations();
     };
-    const openDestinations = () => {
-      if (!destinationNames.length || el.destinationPicker.open || !actionHandler || actionHandler("map-open") === false) return;
-      for (const button of el.destinationList.children) {
-        if (button.dataset.destination === detachedPreset && detachedSelectionShown) button.setAttribute("aria-current", "location");
-        else button.removeAttribute("aria-current");
-      }
-      el.destinationStatus.textContent = modeSelected ? "Travel with your character and camera." : "Move the camera to a destination.";
-      el.destinationPicker.showModal();
-      el.modeDestination.setAttribute("aria-expanded", "true");
+    const cycleDestinations = () => {
+      if (!destinationNames.length || !actionHandler) return;
+      // A refused arrival must not trap the next press at the same place.
+      // Only a successful navigation updates the displayed destination.
+      destinationIndex = (destinationIndex + 1) % destinationNames.length;
+      actionHandler("mode-preset", destinationNames[destinationIndex]);
     };
-    on(el.destinationList, "click", (event) => {
-      const button = event.target.closest("[data-destination]");
-      if (!button || !actionHandler) return;
-      const result = actionHandler("mode-preset", button.dataset.destination);
-      if (result === true) closeDestinations();
-      else el.destinationStatus.textContent = typeof result === "string" ? result : "That destination is unavailable. Choose another place.";
-    });
-    on(el.destinationPicker, "keydown", (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault(); event.stopPropagation(); closeDestinations();
-    });
-    on(el.destinationPicker, "close", () => el.modeDestination.setAttribute("aria-expanded", "false"));
     let destinationAnchored = false, destinationX = 0, destinationY = 0, destinationZ = 0;
     const showAreaLabel = () => {
       if (el.modeDestinationName.textContent !== areaLabel) el.modeDestinationName.textContent = areaLabel;
@@ -664,6 +637,7 @@
     const setDetachedView = (name, announce = false, position = null) => {
       if (!DETACHED_NAMES[name]) return;
       detachedPreset = name;
+      destinationIndex = destinationNames.indexOf(name);
       destinationAnchored = !!position;
       if (position) { destinationX = position.x; destinationY = position.y; destinationZ = position.z; }
       detachedSelectionShown = true;
@@ -1623,7 +1597,6 @@
       }
     }, true);
     dismissOutside(el.feed, closeFeed);
-    dismissOutside(el.destinationPicker, closeDestinations);
     dismissOutside(el.recipe, closeRecipe);
     dismissOutside(el.board, () => mainBoard.close());
     // The prompt is written to be pasted, so it leaves in one click.
@@ -1730,8 +1703,7 @@
       else if (b.dataset.action === "recipe-close") closeRecipe();
       else if (b.dataset.action === "recipe-copy") copyRecipe(b);
       else if (b.dataset.action === "intro-go") b.closest("[data-intro]").hidden = true;
-      else if (b === el.modeDestination) openDestinations();
-      else if (b.dataset.action === "map-close") closeDestinations();
+      else if (b === el.modeDestination) cycleDestinations();
       else if (b.dataset.action === "account-login") BL.net.login();
       else if (b.dataset.action === "account-logout") BL.net.logout();
       else if (b.dataset.action === "account-rejoin") BL.net.rejoin();
@@ -2177,15 +2149,13 @@
       closeFeed();
       closeRecipe();
       closeBoard(true);
-      closeDestinations();
-      setCameraControls(false);
       destinationNames = [];
-      el.destinationList.replaceChildren();
+      destinationIndex = -1;
       mainBoard.dispose();
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setCameraControls, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.

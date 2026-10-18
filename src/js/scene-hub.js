@@ -11234,7 +11234,6 @@
     hud.setDestinations(["pile", "lab", "mirror", "underground", "basement", "mempool", "factory", "arcade", "bca", "gate", "bifrost", "timechain"]);
     hud.onAction((action, value) => {
       if (factoryDeparting || bifrostDeparting) return false;
-      if (action === "map-open") { (clankerPlay.active ? clankerPlay : pilot).freeCursor(); return true; }
       if (action === "mode-retake") {
         if (pilot.player || clankerPlay.active) return;
         const last = hud.retakeActor;
@@ -11249,7 +11248,10 @@
       else if (action === "clear-loot") clearLoot();
       else if (action === "reset") resetDemo();
       else if (action === "act") pilot.action();
-      else if (action === "mode-preset") return navigate(value);
+      else if (action === "mode-preset") {
+        (clankerPlay.active ? clankerPlay : pilot).freeCursor();
+        return navigate(value);
+      }
       else if (action.startsWith("mode-")) pilot.modeAction(action);
       else if (action === "jetpack-toggle") toggleJetpack();
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);

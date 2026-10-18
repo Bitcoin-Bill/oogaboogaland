@@ -2343,31 +2343,6 @@ body[data-active-scene="arcade"] .magazine-hud {
   background: linear-gradient(160deg, #615645, #50483c 55%, #3e3932);
 }
 
-.camera-reset-hud {
-  font-size: 11px;
-  line-height: 1.3;
-  text-align: center;
-}
-
-body[data-active-scene="arcade"] #reset-camera-hud:not([hidden]) {
-  display: flex;
-}
-
-.destination-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.destination-list button {
-  min-height: 44px;
-}
-
-.destination-list button[aria-current="location"] {
-  border-color: var(--accent);
-}
-
 .mode-hud::after {
   content: "";
   position: absolute;

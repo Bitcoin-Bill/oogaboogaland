@@ -475,14 +475,12 @@
 
     <div class="equipment-hud" id="equipment-hud">
       <div class="weapon-equipment-row">
-      <button type="button" class="mode-hud" id="destination-hud" data-action="map-open" data-selected="false"
-        aria-labelledby="detached-destination-name destination-hud-label" aria-haspopup="dialog" aria-controls="destination-picker" aria-expanded="false" title="Map · choose a destination" hidden>
+      <button type="button" class="mode-hud" id="destination-hud" data-action="mode-preset" data-selected="false"
+        aria-labelledby="detached-destination-name destination-hud-label" title="Map · cycle destinations" hidden>
         <img class="freeroam-icon" id="freeroam-icon" alt="" aria-hidden="true">
         <span class="detached-destination-name" id="detached-destination-name" aria-live="polite"></span>
-        <span id="destination-hud-label" hidden>Map. Choose a destination</span>
+        <span id="destination-hud-label" hidden>Map. Cycle destinations</span>
       </button>
-      <button type="button" class="mode-hud camera-reset-hud" id="reset-camera-hud" data-action="reset-view"
-        aria-label="Reset camera (0)" title="Reset camera · 0" hidden><span>Reset<br>camera</span></button>
       <button type="button" class="mode-hud" id="own-ooga-hud" data-action="mode-retake" data-selected="true"
         aria-label="Return to your last character" title="Return to your last character" hidden>
         <canvas class="mode-face-icon" id="own-ooga-face-icon" width="48" height="48" aria-hidden="true"></canvas>
@@ -1510,14 +1508,6 @@
       <p class="help">Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.</p>
     </dialog>
     <div id="factory-donation-fields" hidden></div>
-    <dialog class="modal" id="destination-picker" aria-labelledby="destination-picker-title" aria-describedby="destination-picker-status">
-      <div class="panel-head">
-        <h2 id="destination-picker-title"><span data-sign>Destinations</span></h2>
-        <button type="button" class="modal-close" data-action="map-close" aria-label="Close destinations">&times;</button>
-      </div>
-      <div class="destination-list" id="destination-list"></div>
-      <p class="help" id="destination-picker-status" role="status"></p>
-    </dialog>
     <dialog class="modal" id="feed" aria-label="Feed the Ooga Boogas">
       <div class="panel-head">
         <h2><span data-sign>Feed the Ooga Boogas</span></h2>
