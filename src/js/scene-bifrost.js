@@ -139,7 +139,7 @@
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the
   // room every frame, so signed-in players in the chamber hear each other (voice needs a driven Ooga).
-  const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name, contributors.stateFor(cave.contributor) === "working");
+  const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name);
   const accountChanged = () => {
     if (!avatar) return;
     const released = BL.net.state.released;
@@ -551,8 +551,10 @@
     // The visitor's Ooga: `character=` on a page that opens here, else the one handed over, else a free view.
     const asked = ctx.from === null ? new URLSearchParams(location.search).get("character")?.trim().toLowerCase() : null;
     const named = asked ? contributors.roster.find((c) => c.name.toLowerCase() === asked) : null;
-    const picked = named || world.pilot && contributors.roster.find((c) => c.name === world.pilot) || null;
-    const playerName = picked && !BL.net.mayDrive(picked.name, contributors.stateFor(picked) === "working") ? picked.name : null;
+    const returningOwn = pilot.loginViewRestored && BL.net.ownCharacter();
+    const picked = returningOwn ? contributors.roster.find(c => c.name === returningOwn.handle)
+      : named || world.pilot && contributors.roster.find((c) => c.name === world.pilot) || null;
+    const playerName = picked && !BL.net.mayDrive(picked.name) ? picked.name : null;
     world.pilot = null;
     if (playerName) {
       playerWorld = { level: 0, weapons: new Map(), magazine: { owned: false, count: 0, ammo: 0, carrier: null } };
@@ -568,8 +570,10 @@
       // Back from a world, out of its window: standing in front of it, facing the mechanism. In from the island: through
       // the field at the tunnel's end.
       const from = scene.windows.find((w) => w.kind === "travel" && w.row.scene === ctx.from);
-      if (from) standBefore(from, 2.8);
-      else if (ctx.from === "hub") pilot.navigate(GATE);
+      if (!pilot.loginViewRestored) {
+        if (from) standBefore(from, 2.8);
+        else if (ctx.from === "hub") pilot.navigate(GATE);
+      }
     }
     unsubscribeAccount = BL.net.subscribe(accountChanged);
     // Other signed-in players in the chamber, as the Oogas they drive.

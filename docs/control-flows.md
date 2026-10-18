@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in and selection guards are implemented. Remaining selection/map/touch flows await agreement.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake are implemented. Map/reset, distance-stop parity and touch details remain open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -225,7 +225,7 @@ The maintainer approved **zoom and right-click preserve carry/combat; X switches
 
 ## Selection and retake review after `9d38a28`
 
-This records the PR behavior at `9d38a28`, distinct from the upstream tables above. Source inspection only. The contributor-only sign-in and selection guards below supersede the signed-in guest and unavailable-target rows; the other selection proposals still await agreement.
+This records the PR behavior at `9d38a28`, distinct from the upstream tables above. Source inspection only. The agreed contributor-only sign-in and shared-selection checkpoints below supersede these historical rows.
 
 | Account situation | Ooga selection | Gorilla selection | Retake |
 |---|---|---|---|
@@ -248,7 +248,7 @@ Signed-out pages have no room socket or roster of remote players. Their local se
 
 Evidence: [Ooga retake/selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/pilot.js#L1726), [gorilla selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/clanker-play.js#L255), [hub account/T handling](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L8288), [world/HUD routing](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L11084).
 
-Recommended flow at that checkpoint; only the ownership/availability guard in item 1 is now implemented:
+Recommended flow at that checkpoint; the later shared-selection agreement implements this with the detached-camera rule below replacing item 4:
 
 1. Use the same selection path for world double-click, a retake button and T. Check ownership and availability before releasing the current actor; explain refusals and keep the current view/control intact.
 2. While detached, offer **Return to [last actor]** for both Oogas and gorillas, signed in or out. Retake at the actor's current position, without teleporting it. Disable with a reason if it is unavailable in the current scene. Keep T's already agreed own-pair meaning, including own Ooga from detached.
@@ -273,7 +273,26 @@ The same rule applies when reading existing sessions for account, room, voice an
 
 Hub world Ooga selection, the own-Ooga portrait and T now validate ownership, local availability and remote control before releasing a controlled gorilla. Refusal shows a reason and retains the current actor, camera and carry/combat mode. Gorilla possession already validates its target before handing off. A missing own-character mapping refuses selection rather than permitting signed-in borrowing.
 
-This checkpoint does not change successful selection's camera/mode defaults or add a last-actor retake button. Items 2–6 above remain proposals. Auth, room, permission and existing hub regressions were extended; these changes remain in the draft PR and have not been deployed or runtime-tested.
+That checkpoint did not change successful selection's camera/mode defaults or add a last-actor retake button. Those are covered by the subsequent agreement below. Auth, room, permission and existing hub regressions were extended; these changes remain in the draft PR and have not been deployed or runtime-tested.
+
+## Agreed change: selection, retake and detached camera
+
+The maintainer approved the shared selection flow and last-actor portrait, retaining T's existing meaning. Their camera clarification replaces the proposed high/close split: **every acquisition from detached view keeps the camera eye exactly where it is, recenters its look on the chosen actor, and enters carry/orbit with the native cursor**. This applies to world double-click/tap, the retake portrait, T and automatic sign-in. Direct switches between controlled actors preserve carry/combat and the view family.
+
+| Situation | Current agreed flow |
+|---|---|
+| Detached, either sign-in state | Double-click/tap an available actor or use the last-actor portrait. Eye position stays fixed; look recenters; carry/orbit starts without capture. The actor stays at its existing position. |
+| Controlling an actor | Selecting the same actor does nothing. Selecting another permitted actor carries mode and view family across. Escape and portrait hold remain the explicit detach actions. |
+| Last-actor portrait | Shown only while detached after a successful selection in this scene. It shows the last Ooga or gorilla and its health, signed in or out. Unavailable or forbidden retakes explain the refusal and preserve the detached view. |
+| Signed-in contributor | Only the owned pair is selectable. T switches that pair; from detached it selects the own Ooga, independently of which actor the portrait remembers. |
+| Signed out or static | Available bundled Oogas and companions are local choices, including working Oogas. T does not switch. Local control does not show a green online marker. |
+| Settled sleeping actor | Selection retains sleep. Space or WAKE UP consumes a wake action; movement and attacks wait. An actor still walking to bed is awake and remains ordinarily controllable. |
+| Logout | Eligible bundled control remains local; a temporary actor requires sign-in and is released. Retake always rechecks the current account and target availability. |
+
+- The fixed eye is held while the actor and camera input remain still, including viewpoints above or below the ordinary orbit limits. The first wheel gesture approaches the normal range proportionally. Deliberate movement/look/zoom resumes normal camera following and constraints.
+- GitHub sign-in navigates away from the page. A bounded, tab-local session-storage snapshot carries eye/target/up/FOV and the route through that round trip; DSB adds an allowlisted venue id to rebuild the same room. It is consumed once, only on a matching route within ten minutes with an eligible account. Denied storage or a missing/expired snapshot uses the normal landing camera. Restored arrival selects the available own Ooga without scene arrival framing, cinematics or debug presets overriding the camera.
+- Auto-claim no longer forces the owner's activity state to working. Settled Oogas and gorillas retain sleep until explicitly woken. The gorilla room payload adds a sleeping bit and resting pose within its existing six-number locomotion record so other players see the controlled sleeper correctly.
+- Existing selection, camera, ownership, remote-rig and protocol checks are extended. Runtime results remain pending under **wait**; actual OAuth navigation, touch and multiplayer should be included in maintainer play-testing.
 
 ## Validation and play-test queue
 
@@ -287,6 +306,8 @@ For the maintainer's play-test, exercise each agreed flow with:
 2. Ooga/gorilla/detached; carry/combat; shoulder/first-person/orbit/overhead; native cursor, successful lock, denied/lost lock, and blur/resume.
 3. World selection, portrait tap/hold, X, wheel/pinch, right-click/double-right-click, Tab/Escape, map/reset, and each walking scene boundary.
 4. Keyboard-focused sheet buttons, Chat, native form controls and modal dialogs; mouse and coarse/touch devices; clean console throughout.
+5. Detached selection/retake/T/sign-in from close, distant, overhead and underground viewpoints; eye position stays fixed until actor movement or deliberate view input. Include a real GitHub round trip on hub and interior routes, plus expired/denied session storage.
+6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
 
 ## Review checkpoints
 
@@ -302,4 +323,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - `3571c69`: signed-in-only local green markers and selection review committed and pushed.
 - `e4ada46`: contributor-only OAuth/session access, room admission and historical guest eviction committed and pushed.
 - Contributor-only sign-in and selection guards: approved; server admission/session/room rules and client ownership/selection paths updated. `npm run build`, `node --check` on all 17 changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
-- Remaining decisions: selection/default view, first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.
+- `de18caa`: owned-pair selection guards committed and pushed; refusal preserves current control.
+- Shared selection and retake: approved with fixed-eye carry/orbit acquisition from detached, active mode/view preservation, last-actor portrait for both sign-in states, locally available working Oogas and explicit sleeper wake. GitHub returns retain the camera across hub/interior startup, including the registered DSB venue. `npm run build`, `node --check` on all 15 changed JavaScript files and `git diff --check` passed. Existing regression coverage was extended; runtime tests and actual OAuth navigation remain unrun under **wait**.
+- Remaining decisions: first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.

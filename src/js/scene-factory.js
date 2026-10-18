@@ -165,7 +165,7 @@
   let scene = null, greeter = null, actPrompt = false;
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the
   // room every frame, so signed-in players in the hall hear each other (voice needs a driven Ooga).
-  const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name, contributors.stateFor(cave.contributor) === "working");
+  const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name);
   const accountChanged = () => {
     if (!avatar) return;
     const released = BL.net.state.released;
@@ -1622,8 +1622,10 @@
     // free.
     const asked = ctx.from === null ? new URLSearchParams(location.search).get("character")?.trim().toLowerCase() : null;
     const named = asked ? contributors.roster.find((c) => c.name.toLowerCase() === asked) : null;
-    const picked = named || world.pilot && contributors.roster.find((c) => c.name === world.pilot) || null;
-    const playerName = picked && !BL.net.mayDrive(picked.name, contributors.stateFor(picked) === "working") ? picked.name : null;
+    const returningOwn = pilot.loginViewRestored && BL.net.ownCharacter();
+    const picked = returningOwn ? contributors.roster.find(c => c.name === returningOwn.handle)
+      : named || world.pilot && contributors.roster.find((c) => c.name === world.pilot) || null;
+    const playerName = picked && !BL.net.mayDrive(picked.name) ? picked.name : null;
     world.pilot = null;
     if (playerName) {
       // Keep the visitor's weapons and magazines across the doorway. The
@@ -1645,11 +1647,15 @@
       world.magazine = playerWorld.magazine;
       pilot.bind(shared);
       avatar = people.cavemen.get(playerName);
+      if (pilot.loginViewRestored) {
+        Object.assign(avatar.root.position, { x: ARRIVAL.position.x, y: ARRIVAL.position.y + avatar.baseY, z: ARRIVAL.position.z });
+        avatar.root.rotation.y = ARRIVAL.yaw + Math.PI;
+      }
       pilot.possess(avatar);
       people.selectWeapon(avatar.weapon.selectedSlot, avatar);
       // An arrival, as on the island: the Ooga stands a step inside the gate facing the core and the view starts
       // settled over its shoulder, never sweeping in from wherever the new camera began.
-      pilot.navigate(ARRIVAL);
+      if (!pilot.loginViewRestored) pilot.navigate(ARRIVAL);
       scene.gate.phase.body.track(avatar.root, avatar.traits.height * 2, Math.max(avatar.headOpen.verts.length, avatar.headClosed.verts.length));
       for (const t of scene.tunnels) t.body.track(avatar.root, avatar.traits.height * 2, Math.max(avatar.headOpen.verts.length, avatar.headClosed.verts.length));
     }
@@ -1682,7 +1688,7 @@
     // With no Ooga the visitor cannot talk to the guide: a hint points them to the island to pick one.
     if (!avatar) hud.hint(`${BL.factoryGreeter.NAME} the guide gives tours here — pick an Ooga on the island first`);
     // Sent from the island's dialog to tip: on to the kiosk's glass at the first frame, once the pilot has placed the view.
-    scene.toKiosk = ctx.place === "kiosk" && scene.corner;
+    scene.toKiosk = !pilot.loginViewRestored && ctx.place === "kiosk" && scene.corner;
 
     factoryScene.root = root;
     factoryScene.camera = camera;

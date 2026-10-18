@@ -5171,6 +5171,7 @@
     };
     const entryFor = (value) => value === undefined ? player : typeof value === "number" ? list[value]
       : value && value.gorilla ? value : byOwner.get(value);
+    const sleeping = (e = player) => !!e && (e.sleep.stage === "asleep" || e.sleep.stage === "settle");
     const resumeEntry = (e) => {
       e.drive.resume = false; e.hasSlot = false;
       if (e.debugMove.active) { e.phase = e.route === "exit" ? "leave" : "chill"; resetDebugRoute(e); return; }
@@ -5204,6 +5205,8 @@
       if (!player) return false;
       const e = player;
       cancelInput(); player = null; e.controlled = false;
+      if (sleeping(e)) { e.drive.resume = false; return true; }
+      if (e.sleep.slot >= 0 && !sleeps(e.owner)) releaseBed(e);
       e.drive.resume = true;
       if (!e.drive.airborne && !e.fire.rolling && !e.climb.active) resumeEntry(e);
       return true;
@@ -5262,8 +5265,9 @@
       if (rage) rage.cancel(e, "possession");
       if (ctx.rageRelease) ctx.rageRelease(e);
       release(); player = e; e.controlled = true; e.drive.resume = false;
-      // A hand on a sleeper wakes it. Its bed stays its own while its Ooga sleeps on.
-      if (e.sleep.stage) { e.sleep.stage = ""; e.gorilla.chest.scale.y = 1; e.exitFootprint = false; }
+      const asleep = sleeping(e);
+      // Selecting a settled sleeper keeps its bed and pose until an explicit wake.
+      if (e.sleep.stage && !asleep) { e.sleep.stage = ""; e.gorilla.chest.scale.y = 1; e.exitFootprint = false; }
       e.fire.panic.active = false;
       cancelDebugMove(e);
       e.climb.debugStuck = false;
@@ -5275,6 +5279,11 @@
       d.x = d.z = 0; d.heading = e.heading; d.run = d.jumpHeld = d.jumpDown = d.jumpPressed = d.cancelled = false; d.jumpBuffer = 0;
       d.avoidSide = d.avoidTime = 0;
       d.vx = d.vy = d.vz = 0; d.airborne = e.jump.active;
+      if (asleep) {
+        d.airborne = false; d.grounded = true; d.jumps = 0;
+        e.speed = 0; e.phase = "sleep"; e.route = "";
+        return true;
+      }
       if (e.jump.active) {
         const j = e.jump, direction = j.reverse ? -1 : 1;
         d.vx = (j.toX - j.fromX) / j.duration * direction;
@@ -5289,8 +5298,23 @@
       e.phase = "controlled"; e.route = ""; e.exitFootprint = true;
       return true;
     };
+    const wake = () => {
+      if (!sleeping()) return false;
+      const e = player;
+      e.sleep.stage = ""; e.gorilla.chest.scale.y = 1;
+      e.lounge = ""; e.loungeDepart = false; e.recover = Math.max(e.recover, 1.2);
+      e.footprintMode = "walk"; e.phase = "controlled"; e.route = ""; e.exitFootprint = true;
+      // The wake press is consumed; holding it must not turn into a jump.
+      cancelInput();
+      return true;
+    };
     const control = (input) => {
       if (!player || !input) return false;
+      if (sleeping()) {
+        if (input.jumpPressed) wake();
+        else cancelInput();
+        return true;
+      }
       const d = player.drive;
       d.x = Number.isFinite(input.x) ? clamp(input.x, -1, 1) : 0;
       d.z = Number.isFinite(input.z) ? clamp(input.z, -1, 1) : 0;
@@ -5401,7 +5425,7 @@
     const smashPower = (charge = 0, combo = quickSmash(player)) => (2.5 + 2.5 * clamp(charge, 0, 1)) * (combo ? 0.25 : 1);
     const smash = (charge = 0, combo = quickSmash(player), power = smashPower(charge, combo)) => {
       const e = player;
-      if (!e || e.climb.active || e.fire.rolling || e.parked || e.beat || e.pound > 0 && !e.poundHit) return false;
+      if (!e || sleeping(e) || e.climb.active || e.fire.rolling || e.parked || e.beat || e.pound > 0 && !e.poundHit) return false;
       if (e.recover > 0 && !combo) return false;
       if (ctx.canSmash ? !ctx.canSmash(e) : !expandGesture(e, 2.25)) return false;
       const duration = e.gorilla.pound(e.drive.airborne, charge, combo);
@@ -5414,7 +5438,7 @@
     };
     const chestBeat = () => {
       const e = player;
-      if (!e || e.climb.active || e.fire.rolling || e.drive.airborne || e.recover > 0 || e.parked || e.pound || e.beat) return false;
+      if (!e || sleeping(e) || e.climb.active || e.fire.rolling || e.drive.airborne || e.recover > 0 || e.parked || e.pound || e.beat) return false;
       if (!expandGesture(e, 1.55)) return false;
       const p = e.root.position;
       e.speed = e.drive.vx = e.drive.vz = 0;
@@ -6242,8 +6266,8 @@
     // home; beds are dealt for the day by a hash of the roster's names (`bedsToday`), so the choice is random,
     // reproducible, the same on every page, and never reshuffled under a sleeper. Stages: "go" along the path, "settle" turning onto the bed, "asleep", then "return" back
     // along the path once its Ooga wakes, after which the ordinary work and chill machinery takes over.
-    // A hand on it wins: possession wakes it where it lies, and a release while its Ooga still sleeps walks it
-    // back to bed from where it stands.
+    // Selection keeps a settled sleeper in bed until Space wakes it. A release while its Ooga still sleeps
+    // walks an awakened gorilla back to bed from where it stands.
     const SLEEP_POSES = ["left", "right", "back"], SLEEP_REACH = 1.1, SLEEP_ARRIVE = 0.3, SLEEP_STALL = 25, SLEEP_MARK = 1.9, DAY_MS = 86400000;
     // Who sleeps where today: every gorilla's bed, worked out once a day from the roster's names alone. Each takes
     // the first bed still free in its own shuffled order, in roster order, so the answer never depends on who
@@ -6385,6 +6409,7 @@
       }
       if (s.stage === "asleep") {
         e.speed = 0;
+        if (e.controlled) e.lounge = s.pose;
         // Slow breath in the chest, and a mark of sleep from its mouth now and then.
         e.gorilla.chest.scale.y = 1 + Math.sin(elapsed * 1.4 + e.index) * 0.018;
         if ((s.mark -= dt) <= 0 && ctx.sleep.mark) {
@@ -6667,6 +6692,7 @@
       if (e.controlled || e.mode !== "chilling" || e.fire.burning) e.motion.groom = 0;
       if (e.controlled || e.fire.burning) e.loungeDepart = false;
       e.parkFor = Math.max(0, e.parkFor - dt);
+      if (e.controlled && sleeping(e)) { updateSleep(e, dt, beforeX, beforeY, beforeZ); return; }
       // An Ooga asleep sends its gorilla to bed, not away. "busy" lets the rest of this update walk it out of a
       // room or put its work down first; with no bed to be had it is hidden as it always was.
       const bedtime = ctx.sleep && sleeps(e.owner) && !e.controlled && !e.drive.airborne && !e.fire.rolling && !e.fire.burning && !e.climb.active
@@ -7232,7 +7258,7 @@
     };
     return { list, sync, update, target, companionTarget, hit, damage, bananaHit, debugRage, plan, startLabShuttle, debugMove, cancelDebugMove, stats, liveGeometry, dispose, contactAt,
       debugLoungeSpots,
-      possess, release, setRemote, createRemote, respawn, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
+      possess, release, sleeping, wake, setRemote, createRemote, respawn, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
       get player() { return player; } };
   };
   BL.clankers = { create, rageCarrying, WALK_RADIUS, WALK_HEIGHT, PROP_STEP, RAGE_SPEED };

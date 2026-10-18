@@ -32,7 +32,7 @@
 // page muted its microphone, and `state.body` is the actor this page reports driving.
 // `setHealth` reports the driven actor's health (on a change, at most HP_MS apart), which other pages draw over
 // it; remote records carry `hp` and `ko`.
-// Gorilla poses optionally add `g`: flags (air, biped, climb, run, lab, office), speed, climb stride,
+// Gorilla poses optionally add `g`: flags (air, biped, climb, run, lab, office, sleep), speed, climb stride,
 // climb direction, climb side and swim. Each remote reuses its six values; ordinary poses keep their format.
 // Ooga Chat: `sendChat` sends a line (sanitized as donation messages are, CHAT_MAX characters at most) while the
 // room is live; `subscribeChat` hears the room's lines as `fn(lines, joined, receipt)`: one new line, or on every
@@ -125,7 +125,7 @@
     if (rec.bodyKind !== "gorilla" || !Array.isArray(values) || values.length < offset + 6) return;
     for (let i = 0; i < 6; i++) if (!Number.isFinite(values[offset + i])) return;
     const flags = values[offset];
-    if (!Number.isInteger(flags) || flags < 0 || flags > 63) return;
+    if (!Number.isInteger(flags) || flags < 0 || flags > 127) return;
     const g = rec.gData || (rec.gData = new Float64Array(6));
     g[0] = flags;
     g[1] = Math.max(-20, Math.min(20, values[offset + 1]));
@@ -344,6 +344,7 @@
   // Sign-in is a full navigation through GitHub; the Worker brings the visitor back to this path.
   const login = () => {
     if (!state.backend) return;
+    if (BL.pilot && BL.pilot.saveLoginView) BL.pilot.saveLoginView();
     location.assign(`/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`);
   };
 
@@ -519,7 +520,7 @@
   const ownCharacter = () => state.me && characterOf(state.me.login);
 
   /** null when this visitor may drive the Ooga named `name`; otherwise the words that say why not. */
-  const mayDrive = (name, working) => {
+  const mayDrive = (name) => {
     if (!state.backend) return null;
     const owner = BL.characters.get(name);
     if (state.me) return owner && ownCharacter() === owner ? null : "Drive your own Ooga";
@@ -531,7 +532,7 @@
       if (rec.login.toLowerCase() === ownerLogin) return `${who} is here and drives this Ooga`;
       if (rec.body && rec.body.toLowerCase() === wanted) return `Someone is already driving ${who}`;
     }
-    return working ? `${who} is working: pick a resting or sleeping Ooga` : null;
+    return null;
   };
 
   const mayDriveGorilla = (name) => {

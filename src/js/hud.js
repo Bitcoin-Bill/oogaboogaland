@@ -635,49 +635,48 @@
     const nextDetachedView = () => DETACHED_PRESETS[(DETACHED_PRESETS.indexOf(detachedPreset) + 1) % DETACHED_PRESETS.length];
     let gorillaEntry = null, gorillaView = "orbit", gorillaCombat = false;
     let modeName = "", modeGeometry = null, modeSelected = false, modeCombat = false, modeView = "detached", modeHealth = -1, modeHealthMax = 0, modeGorilla = false;
-    let modeCave = null, modeVisible = true, ownOoga = null, ownPortraitCave = null, ownGeometry = null, ownPortraitGeometry = null, ownHealth = -1, ownHealthMax = 0;
-    const syncOwnOoga = () => {
-      const shown = modeVisible && !!ownOoga && ownOoga !== modeCave;
+    let modeCave = null, modeVisible = true, retakePortraitActor = null, retakeGeometry = null, retakePortraitGeometry = null, retakeHealth = -1, retakeHealthMax = 0;
+    const retake = { actor: null, gorilla: false };
+    const syncRetakeActor = () => {
+      const actor = retake.actor;
+      const shown = modeVisible && !!actor && !modeCave && !gorillaEntry;
       if (el.ownOoga.hidden === shown) el.ownOoga.hidden = !shown;
       if (!shown) return;
-      const geometry = ownOoga.parts.head.geometry, portraitGeometry = ownOoga.portraitHead;
-      if (ownOoga !== ownPortraitCave || geometry !== ownGeometry || portraitGeometry !== ownPortraitGeometry) {
-        renderFaceIcon(el.ownOogaFace, ownOoga);
+      const cave = retake.gorilla ? actor.owner : actor, gorilla = retake.gorilla ? actor.gorilla : null;
+      const geometry = gorilla ? gorilla.parts.head.geometry : cave.parts.head.geometry;
+      const portraitGeometry = gorilla ? geometry : cave.portraitHead;
+      if (actor !== retakePortraitActor || geometry !== retakeGeometry || portraitGeometry !== retakePortraitGeometry) {
+        renderFaceIcon(el.ownOogaFace, cave, gorilla);
         el.ownOoga.dataset.portrait = "face-crop";
-        if (ownOoga !== ownPortraitCave) {
-          const label = `Return to ${ownOoga.traits.display}, your Ooga`;
+        if (actor !== retakePortraitActor) {
+          const name = cave.traits.display;
+          const label = gorilla ? `Return to ${name}'s gorilla` : `Return to ${name}, Ooga`;
           el.ownOoga.setAttribute("aria-label", label);
           el.ownOoga.title = label;
+          el.ownOoga.dataset.gorilla = String(!!gorilla);
+          el.ownOogaHealth.setAttribute("aria-label", `${gorilla ? "Gorilla" : "Ooga"} health: ${name}`);
         }
-        ownPortraitCave = ownOoga;
-        ownGeometry = geometry;
-        ownPortraitGeometry = portraitGeometry;
+        retakePortraitActor = actor;
+        retakeGeometry = geometry;
+        retakePortraitGeometry = portraitGeometry;
       }
-      const source = ownOoga.health, max = source ? source.max : BL.crew.HEALTH_MAX;
+      const source = actor.health, max = source ? source.max : BL.crew.HEALTH_MAX;
       const health = source ? Math.max(0, Math.min(max, source.value)) : max;
-      if (health !== ownHealth || max !== ownHealthMax) {
-        ownHealth = health; ownHealthMax = max;
+      if (health !== retakeHealth || max !== retakeHealthMax) {
+        retakeHealth = health; retakeHealthMax = max;
         el.ownOogaHealthFill.style.transform = `scaleY(${health / max})`;
         el.ownOogaHealth.setAttribute("aria-valuemax", String(max));
         el.ownOogaHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
       }
     };
-    const setOwnOoga = (cave) => {
-      if (cave !== ownOoga) {
-        ownOoga = cave;
-        if (!cave) {
-          ownPortraitCave = ownGeometry = ownPortraitGeometry = null;
-          ownHealth = -1; ownHealthMax = 0;
-          el.ownOogaFace.width = ICON_PX;
-        }
-      }
-      syncOwnOoga();
-    };
+    // Legacy account updates never replace the last actor successfully controlled.
+    const setOwnOoga = () => syncRetakeActor();
     const setMode = (cave, combat = false, view = cave ? "orbit" : "detached", visible = true) => {
       const gorilla = gorillaEntry ? gorillaEntry.gorilla : null;
       modeCave = gorilla ? null : cave;
       modeVisible = visible;
-      syncOwnOoga();
+      if (gorillaEntry || cave) { retake.actor = gorillaEntry || cave; retake.gorilla = !!gorillaEntry; }
+      syncRetakeActor();
       if (gorilla) { cave = gorillaEntry.owner; combat = gorillaCombat; view = gorillaView; visible = true; }
       const selected = !!cave, name = selected ? cave.traits.name : "", shown = selected ? cave.traits.display : "";
       if (!visible) fadeDetachedName(true);
@@ -941,7 +940,7 @@
       el.jetpackFuelValue.firstChild.data = `${percent}%`;
     };
     const setGorilla = (entry, view = "orbit", combat = false) => {
-      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat) { syncOwnOoga(); return; }
+      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat) { syncRetakeActor(); return; }
       if (entry !== gorillaEntry) finishPrimary(true);
       gorillaEntry = entry;
       gorillaView = view;
@@ -2122,7 +2121,10 @@
       tooltip.hide();
       clearModeHold();
       modePointer = -1;
-      setOwnOoga(null);
+      retake.actor = null; retake.gorilla = false;
+      retakePortraitActor = retakeGeometry = retakePortraitGeometry = null;
+      retakeHealth = -1; retakeHealthMax = 0;
+      el.ownOogaFace.width = ICON_PX;
       setGorilla(null);
       setMode(null, false, "detached", false);
       setPrimary(false, false, null);
@@ -2138,7 +2140,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setOwnOoga, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.

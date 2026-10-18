@@ -12,15 +12,15 @@ test("poses inside the bounds are accepted, rounded and their yaw wrapped", () =
     assert.equal(parseClientMessage(JSON.stringify({ t: "pose", x: BOUND_XZ, y, z: -BOUND_XZ, yaw: 0 })).y, y,
       "climbing and airborne companions use the existing body's full height bounds");
   }
-  const g = parseClientMessage(JSON.stringify({ t: "pose", x: 0, y: 25, z: 0, yaw: 0, g: [63, 30, -2e6, 2, -2, 3] }));
-  assert.deepEqual(g.g, [63, 20, -1e6, 1, -1, 1], "gorilla locomotion is bounded independently of position");
+  const g = parseClientMessage(JSON.stringify({ t: "pose", x: 0, y: 25, z: 0, yaw: 0, g: [127, 30, -2e6, 2, -2, 3] }));
+  assert.deepEqual(g.g, [127, 20, -1e6, 1, -1, 1], "gorilla locomotion, including sleep, is bounded independently of position");
 });
 
 test("poses out of bounds or not numbers are ignored, not fatal", () => {
   for (const bad of [{ x: BOUND_XZ + 1, y: 0, z: 0, yaw: 0 }, { x: 0, y: 500, z: 0, yaw: 0 }, { x: "1", y: 0, z: 0, yaw: 0 }, { x: 0, y: 0, z: 0 }]) {
     assert.equal(parseClientMessage(JSON.stringify({ t: "pose", ...bad })), null, JSON.stringify(bad));
   }
-  for (const g of [null, {}, [], [4, 0, 0, 0, 0], [4, 0, 0, 0, 0, 0, 0], [64, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0],
+  for (const g of [null, {}, [], [4, 0, 0, 0, 0], [4, 0, 0, 0, 0, 0, 0], [128, 0, 0, 0, 0, 0], [-1, 0, 0, 0, 0, 0],
     [0.5, 0, 0, 0, 0, 0], [4, "1", 0, 0, 0, 0], [4, 0, null, 0, 0, 0]]) {
     assert.equal(parseClientMessage(JSON.stringify({ t: "pose", x: 0, y: 0, z: 0, yaw: 0, g })), null, JSON.stringify(g));
   }

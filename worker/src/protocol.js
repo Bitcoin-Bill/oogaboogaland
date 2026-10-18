@@ -105,9 +105,9 @@ export const parseClientMessage = (text) => {
     const pose = { t: "pose", x: round(x), y: round(y), z: round(z), yaw: round(Math.atan2(Math.sin(yaw), Math.cos(yaw))) };
     if (msg.g !== undefined) {
       const g = msg.g;
-      // Bits: airborne, biped, climbing, running, lab stance, office stance. These
+      // Bits: airborne, biped, climbing, running, lab stance, office stance, sleeping. These
       // are visual locomotion only; no client may transmit a captive or hit here.
-      if (!Array.isArray(g) || g.length !== 6 || !g.every(finite) || !Number.isInteger(g[0]) || g[0] < 0 || g[0] > 63) return null;
+      if (!Array.isArray(g) || g.length !== 6 || !g.every(finite) || !Number.isInteger(g[0]) || g[0] < 0 || g[0] > 127) return null;
       pose.g = [g[0], round(Math.max(-20, Math.min(20, g[1]))), round(Math.max(-1e6, Math.min(1e6, g[2]))),
         round(Math.max(-1, Math.min(1, g[3]))), round(Math.max(-1, Math.min(1, g[4]))), round(Math.max(0, Math.min(1, g[5])))];
     }

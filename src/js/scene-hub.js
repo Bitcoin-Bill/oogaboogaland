@@ -8282,27 +8282,36 @@
       bcaMouth.phase.body.time = bcaMouth.phase.ripples.time;
     }
   };
-  // Whether this visitor may take an Ooga: the rules live in `net.mayDrive`; working means the Ooga's
-  // real activity, not a scene override (a return from DSB marks its Ooga working to wake it).
-  const mayDriveOoga = (cave) => cave.contributor ? BL.net.mayDrive(cave.traits.name, contributors.stateFor(cave.contributor) === "working") : null;
+  // Signed-in visitors own their pair; bundled actors are available for local play when signed out.
+  const mayDriveOoga = (cave) => cave.contributor ? BL.net.mayDrive(cave.traits.name) : null;
+  const actorTransition = {};
   // Validate a new Ooga before giving up the current actor or its camera.
-  const selectOoga = (cave, direct = false) => {
+  const selectOoga = (cave) => {
     if (!cave || crew.cavemen.get(cave.traits.name) !== cave) { hud.toast("That Ooga is not available here"); return false; }
-    if (cave !== pilot.player) {
-      const refusal = mayDriveOoga(cave);
-      if (refusal) { hud.toast(refusal); return false; }
-      if (cave.remoteControlled) { hud.toast(`Someone is already driving ${cave.traits.display}`); return false; }
-      if (crew.stateOf(cave) === "away" || cave.state !== "working" && cave.state !== "chilling" && cave.state !== "sleeping") {
-        hud.toast(`${cave.traits.display} is in another place`);
-        return false;
-      }
+    if (cave === pilot.player) return true;
+    const refusal = mayDriveOoga(cave);
+    if (refusal) { hud.toast(refusal); return false; }
+    if (cave.remoteControlled) { hud.toast(`Someone is already driving ${cave.traits.display}`); return false; }
+    if (crew.stateOf(cave) === "away" || cave.state !== "working" && cave.state !== "chilling" && cave.state !== "sleeping") {
+      hud.toast(`${cave.traits.display} is in another place`);
+      return false;
     }
-    if (clankerPlay.active) clankerPlay.release();
-    if (direct) {
-      pilot.possess(cave);
-      if (pilot.player === cave) pilot.focusAim(true);
-    } else pilot.hooks.onDoubleTap({ owner: { kind: "caveman", cave } });
+    if (clankerPlay.active) {
+      clankerPlay.captureControl(actorTransition);
+      clankerPlay.release();
+      pilot.possess(cave, actorTransition);
+    } else pilot.possess(cave);
     return pilot.player === cave;
+  };
+  const selectGorilla = (entry) => {
+    if (!entry || !clankers.list.includes(entry) || !entry.active || !entry.root.visible) {
+      hud.toast("That gorilla is not available here"); return false;
+    }
+    if (clankerPlay.player === entry) return true;
+    const refusal = BL.net.mayDriveGorilla(entry.owner.traits.name);
+    if (refusal) { hud.toast(refusal); return false; }
+    if (entry.remoteControlled) { hud.toast("Someone is already driving that gorilla"); return false; }
+    return clankerPlay.possess(entry);
   };
   const RELEASE_WORDS = { "owner-here": "Its owner arrived and took their Ooga back", taken: "Someone else is already driving that Ooga", "not-yours": "Contributors drive only their own Ooga" };
   // Where accounts exist, this visitor's driving counts as online (the roster's green dot) only signed in.
@@ -8342,10 +8351,6 @@
     // Another tab of this account drives it: its remote copy has sent this one away.
     if (crew.stateOf(cave) === "away") return;
     ownOogaClaimed = true;
-    if (!contributors.debugState && crew.stateOf(cave) !== "working") {
-      cave.override = "working";
-      crew.refreshStates(true);
-    }
     pilot.possess(cave);
     if (crew.player === cave) hud.toast(`Welcome back, ${BL.characters.displayOf(character.handle)}: this Ooga is yours`);
   };
@@ -8357,8 +8362,8 @@
     if (pilot.player === cave) {
       const gorilla = clankers.list.find(entry => entry.owner === cave);
       if (!gorilla || !gorilla.active || !gorilla.root.visible) { hud.toast("Your gorilla is not available here yet"); return; }
-      clankerPlay.possess(gorilla);
-    } else selectOoga(cave, true);
+      selectGorilla(gorilla);
+    } else selectOoga(cave);
   };
   // Where the driven Ooga is, as the room names it for voice and for who is shown (docs/auth-and-presence.md):
   // a cave by its mouth (EntropyLab, the Factory's tunnel and the Arcade's mouth share their halls' groups, HQ
@@ -8428,8 +8433,10 @@
     if (gorilla) {
       const g = gorilla.netMotion, m = gorilla.motion, d = gorilla.drive;
       g[0] = (gorilla.jump.active || d.airborne && !d.passiveFall ? 1 : 0) | (gorilla.biped ? 2 : 0)
-        | (gorilla.climb.active ? 4 : 0) | (d.run ? 8 : 0) | (m.lab ? 16 : 0) | (m.office ? 32 : 0);
+        | (gorilla.climb.active ? 4 : 0) | (d.run ? 8 : 0) | (m.lab ? 16 : 0) | (m.office ? 32 : 0)
+        | (gorilla.sleep.stage === "asleep" ? 64 : 0);
       g[1] = gorilla.speed; g[2] = m.climbStride; g[3] = m.climbDirection; g[4] = m.climbSide; g[5] = m.swim;
+      if (g[0] & 64) g[3] = gorilla.sleep.pose === "left" ? -1 : gorilla.sleep.pose === "right" ? 1 : 0;
       BL.net.sendPose(p.x, p.y, p.z, gorilla.heading, g);
       BL.net.setHealth(gorilla.health.value / gorilla.health.max * 100, gorilla.health.value <= 0);
     } else {
@@ -11098,14 +11105,12 @@
         if (factoryDeparting || bifrostDeparting) return;
         if (gorillaBehindBillboard(hit, p)) return;
         if (hit && hit.owner.kind === "clanker") {
-          if (clankerPlay.player === hit.owner.entry) clankerPlay.release();
-          else if (clankerPlay.possess(hit.owner.entry)) selectDebugGorilla(null);
+          if (selectGorilla(hit.owner.entry)) selectDebugGorilla(null);
           return;
         }
         if (debugMovementTap(hit, p)) return;
         if (hit && (hit.owner.prop === "timechainchair" || hit.owner.cave?.traits.name === "SaniExp" && timechainIsland?.seat.active)) { spinTimechainChair(); return; }
         if (hit && hit.owner.kind === "caveman") { selectOoga(hit.owner.cave); return; }
-        if (clankerPlay.active) clankerPlay.release();
         pilot.hooks.onDoubleTap(hit, p);
       }
     });
@@ -11117,8 +11122,11 @@
     hud.onAction((action, value) => {
       if (factoryDeparting || bifrostDeparting) return;
       if (action === "mode-retake") {
-        const character = BL.net.ownCharacter(), cave = character && crew.cavemen.get(character.handle);
-        if (!cave || cave !== pilot.player) selectOoga(cave);
+        if (pilot.player || clankerPlay.active) return;
+        const last = hud.retakeActor;
+        if (!last) hud.toast("Select an Ooga or gorilla first");
+        else if (last.gorilla) selectGorilla(last.actor);
+        else selectOoga(last.actor);
         return;
       }
       if (clankerPlay.active && clankerPlay.action(action)) return;
@@ -11135,8 +11143,8 @@
     });
     crew.refreshStates(true);
     unsubscribeActivity = contributors.subscribe(() => crew.refreshStates());
-    let initialCharacter = ctx.from === null && preloadedCharacter ? contributors.activeRoster.find((entry) => entry.name.toLowerCase() === preloadedCharacter) : null;
-    if (ctx.from === null && (preloadedJetpackWear || preloadedEquipment) && !params.has("character") && !initialCharacter) initialCharacter = contributors.activeRoster.find((entry) => crew.stateOf(crew.cavemen.get(entry.name)) === "working") || contributors.activeRoster[0];
+    let initialCharacter = ctx.from === null && !pilot.loginViewRestored && preloadedCharacter ? contributors.activeRoster.find((entry) => entry.name.toLowerCase() === preloadedCharacter) : null;
+    if (ctx.from === null && !pilot.loginViewRestored && (preloadedJetpackWear || preloadedEquipment) && !params.has("character") && !initialCharacter) initialCharacter = contributors.activeRoster.find((entry) => crew.stateOf(crew.cavemen.get(entry.name)) === "working") || contributors.activeRoster[0];
     const initialGorilla = initialCharacter && preloadedGorilla ? crew.cavemen.get(initialCharacter.name) : null;
     // The Ooga that went into DSB, the Lightning Factory, ₿IFRÖST or Ooga Arcade comes back out as the one played.
     const handsBack = ctx.from === "dsb" || ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" || ctx.from === "lab";
@@ -11163,11 +11171,11 @@
     world.pilotDetached = false;
     claimOwnOoga();
     unsubscribeAccount = BL.net.subscribe(onAccountChange);
-    const initialFirstPerson = ctx.from === null && preloadedFirstPerson && !initialGorilla;
+    const initialFirstPerson = ctx.from === null && preloadedFirstPerson && !initialGorilla && !pilot.loginViewRestored;
     if (initialFirstPerson) pilot.enterClose(true);
     if (returningCharacter) navigate(ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" ? ctx.from : "pile");
     else if (ctx.from === "bifrost" && !ctx.place) navigate("bifrost");
-    else if (!crew.sleeping && !initialGorilla && (ctx.place || preloadedView || initialCharacter || initialFirstPerson)) navigate(ctx.place || preloadedView || "pile");
+    else if (!pilot.loginViewRestored && !crew.sleeping && !initialGorilla && (ctx.place || preloadedView || initialCharacter || initialFirstPerson)) navigate(ctx.place || preloadedView || "pile");
     if (initialCharacter && !initialGorilla && preloadedJetpack) {
       grantJetpack(pilot.player, preloadedJetpackWear);
     }
@@ -11432,7 +11440,7 @@
       syncMirrorDamage(true);
     }
     pilot.update(0);
-    if (ctx.from === null && !initialGorilla) restorePositionDebug();
+    if (ctx.from === null && !initialGorilla && !pilot.loginViewRestored) restorePositionDebug();
     if (initialGorilla) {
       const entry = clankers.list.find(entry => entry.owner === initialGorilla);
       if (clankerPlay.possess(entry, true)) {

@@ -130,20 +130,21 @@
     };
 
     const poseGorilla = (entry, rec, dt) => {
-      const g = rec.g, flags = g ? g[0] : 0, motion = entry.motion;
+      const g = rec.g, sleeping = !!(g && g[0] & 64), flags = sleeping ? 0 : g ? g[0] : 0, motion = entry.motion;
       motion.walkGait = flags & 8 ? "gallop" : "knuckle";
       motion.climb = flags & 4 ? 1 : 0;
       motion.climbStride = g ? g[2] : 0;
       motion.climbDirection = g ? g[3] : 0;
       motion.climbSide = g ? g[4] : 0;
-      motion.swim = g ? g[5] : 0;
+      motion.swim = g && !sleeping ? g[5] : 0;
       motion.lab = !!(flags & 16);
       // The lab normally forces an upright pose; preserve the sender's explicit biped bit on its approach.
       motion.labRunIn = !(flags & 2);
       motion.office = !!(flags & 32);
       motion.officeRise = flags & 2 ? 1 : 0;
-      const speed = g ? g[1] : Math.hypot(entry.dx, entry.dz) / Math.max(dt, 1e-3);
-      entry.cave.poseManaged(dt, entry.x, entry.y, entry.z, entry.yaw, speed, !!(flags & 1), !!(flags & 2), "", motion);
+      const speed = sleeping ? 0 : g ? g[1] : Math.hypot(entry.dx, entry.dz) / Math.max(dt, 1e-3);
+      const lounge = sleeping ? g[3] < -0.5 ? "left" : g[3] > 0.5 ? "right" : "back" : "";
+      entry.cave.poseManaged(dt, entry.x, entry.y, entry.z, entry.yaw, speed, !!(flags & 1), !!(flags & 2), lounge, motion);
     };
 
     const update = (dt) => {
