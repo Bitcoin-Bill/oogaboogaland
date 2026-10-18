@@ -46,7 +46,7 @@
     // Each puppet's own quaternions: the crew's are never written from here.
     const quats = list.map(() => ({ root: quat.create(), armL: quat.create(), armR: quat.create(), head: quat.create(), club: quat.create(), gun: quat.create() }));
     const TQ = quat.create();
-    let role = "solo", sendIn = 0, sinceSent = 0, sentFloats = -1, seen = -1, frames = 0, events = [];
+    let role = "solo", hostId = null, sendIn = 0, sinceSent = 0, sentFloats = -1, seen = -1, frames = 0, events = [];
 
     const driven = (cave) => cave === crew.player || !!cave.remoteControlled;
     const holders = list.map((cave) => [cave.parts.armL, cave.parts.armR, cave.root, cave.sleepWeapons]);
@@ -245,7 +245,8 @@
       if (!buffer || buffer.byteLength < HEADER * 4) return;
       const header = new Uint32Array(buffer, 0, HEADER);
       const count = header[2], eventBytes = header[3], recordBytes = (HEADER + count * RECORD) * 4;
-      if (header[0] !== FORMAT || header[1] !== signature || count > n || buffer.byteLength !== recordBytes + eventBytes) return;
+      if (header[0] !== FORMAT || header[1] !== signature) { release(); return; }
+      if (count > n || buffer.byteLength !== recordBytes + eventBytes) return;
       const f = new Float32Array(buffer, 0, recordBytes / 4);
       for (let k = 0; k < count; k++) {
         const o = HEADER + k * RECORD, i = f[o];
@@ -383,13 +384,15 @@
     const update = (dt) => {
       const st = net.state;
       const next = st.room !== "live" || !st.hostId ? "solo" : st.hostId === st.selfId ? "host" : "follow";
-      if (next !== role) {
-        // Leaving follow hands the Oogas back to their own AI where they stand; a new host sends at once.
+      const hostChanged = hostId !== null && st.hostId !== hostId;
+      if (next !== role || hostChanged) {
+        // A new host or leaving follow hands the Oogas back to their own AI where they stand.
         if (role === "follow") release();
-        role = next;
+        role = next; hostId = st.hostId;
         sendIn = 0;
         sentFloats = -1;
-        seen = -1;
+        // net retains the previous host's frame until another binary message arrives.
+        seen = hostChanged ? st.npcVersion : -1;
         resetEvents();
       }
       if (role === "host") {
@@ -419,7 +422,7 @@
           cave.puppet = false;
           continue;
         }
-        cave.puppet = true;
+        cave.puppet = !!have[i];
         if (have[i]) apply(i, cave, dt);
       }
       if (pendingEvents) {
