@@ -3014,7 +3014,7 @@
       rememberDebugPoint(d, false, p.x, p.y, p.z);
       if (labEscape === e) labEscape = null;
       e.stuck.escapeLeft = 0;
-      releasePortal(e); releaseLab(e); e.hasSlot = false; e.pendingSite = -1;
+      releasePortal(e); releaseLab(e); releaseOffice(e); e.hasSlot = false; e.pendingSite = -1;
       e.roam.departPending = false; e.roam.pose = ""; e.loungeHeading = NaN;
       if (e.lounge) leaveLounge(e);
       e.parked = false; e.pound = e.beat = e.stand = e.rest = 0;
@@ -5235,6 +5235,7 @@
       e.climb.debugStuck = false;
       e.roam.departPending = false;
       releaseLab(e);
+      releaseOffice(e);
       releasePortal(e); e.hasSlot = false; e.pendingSite = -1;
       const d = e.drive, p = e.root.position;
       d.x = d.z = 0; d.heading = e.heading; d.run = d.jumpHeld = d.jumpDown = d.jumpPressed = d.cancelled = false; d.jumpBuffer = 0;
@@ -6298,7 +6299,7 @@
           return "busy";
         }
         if (!reserveBed(e)) return false;
-        releasePortal(e); releaseLab(e); clearWallSearch(e);
+        releasePortal(e); releaseLab(e); releaseOffice(e); clearWallSearch(e);
         e.hasSlot = false; e.pendingSite = -1; e.parked = false; e.rest = e.pound = e.beat = e.stand = 0;
         e.roam.departPending = false; e.roam.count = e.roam.index = 0;
         if (e.lounge) { leaveLounge(e); e.lounge = ""; e.loungeDepart = false; e.recover = Math.max(e.recover, 0.65); }
@@ -6517,7 +6518,7 @@
     const resetRageWarp = e => {
       // Clear old movement without releasing the newly captured Ooga.
       // The brief wall visit has no supporting floor; its return is checked.
-      clearWallSearch(e); releasePortal(e); releaseLab(e);
+      clearWallSearch(e); releasePortal(e); releaseLab(e); releaseOffice(e);
       if (climbTurn === e.index) climbTurn = -1;
       if (labEscape === e) { e.stuck.escapeLeft = 0; labEscape = null; }
       const c = e.climb, d = e.drive, m = e.motion, jump = e.jump, p = e.root.position;
@@ -6589,7 +6590,7 @@
         }
       },
       begin: e => {
-        clearWallSearch(e); releasePortal(e); releaseLab(e);
+        clearWallSearch(e); releasePortal(e); releaseLab(e); releaseOffice(e);
         if (labEscape === e) { e.stuck.escapeLeft = 0; labEscape = null; }
         e.debugMove.active = false; e.roam.count = e.roam.index = 0; e.roam.departPending = false;
         if (e.lounge) leaveLounge(e);
@@ -6653,7 +6654,8 @@
       }
       if (!e.active) { if (!e.retry) activate(e); return; }
       // Taken over, enraged, alight, climbing, thrown or ordered about: the desk and the routine let go at once.
-      if (e.office.stage && (e.controlled || e.rage.active || e.fire.burning || e.fire.rolling || e.fire.panic.active || e.climb.active
+      if ((e.office.stage || e.office.desk >= 0 || e.office.wait >= 0)
+        && (e.controlled || e.rage.active || e.fire.burning || e.fire.rolling || e.fire.panic.active || e.climb.active
         || e.jump.active || e.drive.airborne || e.debugMove.active)) releaseOffice(e);
       if (e.sleep.stage && !sleeps(e.owner) && alive(e.owner) && !e.controlled && !e.drive.airborne && !e.fire.rolling && !e.fire.burning && !e.climb.active
         && updateWake(e, dt, beforeX, beforeY, beforeZ)) return;
@@ -6735,6 +6737,7 @@
       if (e.mode !== e.owner.state) {
         e.roam.departPending = false;
         releasePortal(e);
+        releaseOffice(e);
         e.lab.yielding = 0; e.lab.yieldFor = null; e.lab.yieldReady = false;
         if (e.lounge) leaveLounge(e);
         e.mode = e.owner.state; e.hasSlot = false;

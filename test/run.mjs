@@ -4441,6 +4441,8 @@ const workCaveTrips = async (b) => {
     const B = __ooga, S = BL.scene, scene = BL.scenes.hub, dt = 1 / 20;
     const update = scene.update; scene.update = () => {}; B.pilot.release(true); B.setPileLevel(100000);
     const actors = B.crew.list.filter(c => c.state === "working");
+    const repos = ["oogaboogax/entropylab", "oogaboogax/oogaboogaland", "oogaboogax/lightningfoundry"];
+    const sites = repos.map(repo => B.crew.workSites.findIndex(site => site.repo === repo));
     const rows = actors.map(c => ({ name: c.contributor.name, outbound: [0, 0, 0], returned: [0, 0, 0],
       phase: "", stall: 0, maximumStall: 0, maximumStep: 0, missingRoutes: 0,
       resets: c.progress.resets, jumps: c.avoidance.navigation.jumps }));
@@ -4449,14 +4451,16 @@ const workCaveTrips = async (b) => {
       for (; frames < 6000; frames++) {
         for (let i = 0; i < actors.length; i++) {
           const c = actors[i], row = rows[i], p = c.root.position;
+          const site = sites.indexOf(c.work.site);
+          if (site < 0 && (c.work.phase === "shoot" || c.work.phase === "reload")) throw new Error("Worker visited a cave outside this fixture");
           if (c.work.phase === "shoot" && row.phase !== "shoot") {
-            row.outbound[c.work.site]++;
+            row.outbound[site]++;
             // Shorten shooting, leaving outbound, return, reload and the
             // companion handoff on the actual scene update path.
             c.weapon.ammo = 0; c.weapon.spareAmmo.fill(0);
             c.work.emptyTime = 0.5; c.work.rest = 0; c.work.plannedSite = -1;
           }
-          if (c.work.phase === "reload" && row.phase !== "reload") row.returned[c.work.site]++;
+          if (c.work.phase === "reload" && row.phase !== "reload") row.returned[site]++;
           row.phase = c.work.phase; row.x = p.x; row.z = p.z;
         }
         update(dt, time += dt); S.updateWorld(scene.root);
@@ -4478,11 +4482,11 @@ const workCaveTrips = async (b) => {
         rows[i].resets = actors[i].progress.resets - rows[i].resets;
         rows[i].jumps = actors[i].avoidance.navigation.jumps - rows[i].jumps;
       }
-      return { frames, rows, sites: B.crew.workSites.map(site => site.repo) };
+      return { frames, rows, sites: sites.map(index => B.crew.workSites[index]?.repo) };
     } finally { scene.update = update; }
   })()`);
   record("work movement cave trips: five workers retain path routes and finish repeated trips to lab, OBL and LF without stuck loops, jumps or relocation",
-    r.sites.length === 3 && r.rows.length === 5 && r.rows.every(row => row.outbound.every(n => n >= 2)
+    r.sites.length === 3 && r.sites.every(Boolean) && r.rows.length === 5 && r.rows.every(row => row.outbound.every(n => n >= 2)
       && row.returned.every(n => n >= 2) && row.maximumStall < 5 && row.maximumStep <= 2.8 / 20 + 1e-6
       && row.missingRoutes === 0 && row.resets === 0 && row.jumps === 0), JSON.stringify(r));
   const rejoin = await b.evaluate(`(() => {
@@ -14642,7 +14646,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
       const hiddenGear = !oldest.sleepWeapons.visible && !item.visible && oldest.parts.gun.parent === oldest.sleepWeapons;
       const roofSleep = crew.list.filter(c => c.bedroll?.outdoor).every(c => c.bedTravel.mode === "rest" && c.root.visible && c.root.position.y >= 8
         && c.root.quaternion && c.parts.head.geometry === c.headClosed);
-      const savedNet = BL.net;
+      const savedNet = BL.net, savedSites = crew.workSites;
       let sync, sharedGear = false;
       try {
         BL.net = { state: { room: "live", hostId: "host", selfId: "host", followers: 1, npcVersion: 1 }, sendNpc(bytes) { this.npcFrame = bytes.slice().buffer; } };
@@ -14655,7 +14659,26 @@ record("character visibility source bakes: ownership wrappers share exact immuta
         sync.update(0.3);
         sharedGear = !item.visible && !oldest.sleepWeapons.visible && !jetNode.visible && oldest.remoteOutdoorSleep;
         oldest.jet = savedJet;
-      } finally { if (sync) sync.dispose(); BL.net = savedNet; }
+        sync.dispose();
+        // Site indexes mean the same cave only when the ordered catalog matches.
+        crew.workSites = [{ mouth: { id: "c11" } }, { mouth: { id: "c10" } }];
+        BL.net.state.selfId = "host";
+        let plans = 0;
+        const options = { crew, fx: {}, onPlan: () => plans++, onHit: noop, onModelChange: noop };
+        sync = BL.npcSync.create(options);
+        sync.update(0.3); sync.recordPlan(oldest, 1); sync.update(0.3);
+        sync.dispose();
+        crew.workSites.reverse();
+        BL.net.state.selfId = "follower"; BL.net.state.npcVersion++;
+        sync = BL.npcSync.create(options); sync.update(0.3);
+        const rejected = sync.frames === 0 && plans === 0;
+        sync.dispose();
+        crew.workSites = [{ mouth: { id: "c11" } }, { mouth: { id: "c10" } }];
+        sync = BL.npcSync.create(options); sync.update(0.3);
+        const accepted = sync.frames === 1 && plans === 1;
+        record("NPC sync: matching ordered work sites accept poses and events; reordered sites reject the frame", accepted && rejected,
+          JSON.stringify({ accepted, rejected }));
+      } finally { if (sync) sync.dispose(); crew.workSites = savedSites; BL.net = savedNet; }
       newest.contributor.lastContributionAt = now;
       crew.refreshStates(); crew.update(1.1, 1.1);
       const priority = bed.sleeper === next && crew.list.filter(c => c.bedroll === bed).length === 1;

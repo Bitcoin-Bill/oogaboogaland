@@ -6,14 +6,14 @@
 // runs it and the others show it through remote-players.js. With no room, no host or when hosting, every
 // Ooga runs its own AI as before.
 //
-// A frame: a Uint32 header [FORMAT, signature of the crew's names, record count, event bytes], one RECORD
+// A frame: a Uint32 header [FORMAT, signature of ordered crew names and work sites, record count, event bytes], one RECORD
 // of floats per Ooga, then the events since the last frame as UTF-8 JSON. A record carries what shows:
 // the body (root transform and visibility, legs, arms, head and eyes, torso), the gear (where the club and
 // rifle hang and how, the rifle's bananas, the flash, the snack, the bed's weapons), status (stun birds,
 // fire embers and scorch, colourway, a built-in jetpack's flame) and the work the gorillas follow (state,
 // phase, cave, planned cave). Events are what happens once: speech, sleep marks, dust and sparks, every
 // shot's flight, and the gorillas' plan and hit, so each page's gorillas react to the host's crew.
-// Pages built from a different cast (signature) or format ignore each other's frames.
+// Pages built from a different cast, work-site order (signature) or format ignore each other's frames.
 // Cost: the host sends only while the room reports followers (`net.state.followers`), and a frame whose
 // records match the last one sent, with no events, waits up to KEEP_S before it goes again.
 // One sync per hub visit: `create` after the crew, `update` after crew.update each frame, `dispose` in leave.
@@ -38,7 +38,8 @@
     const net = BL.net;
     const list = crew.list.filter((cave) => !cave.contributor.temporary), n = list.length;
     const index = new Map(list.map((cave, i) => [cave, i]));
-    const signature = fnv1a(list.map((cave) => cave.traits.name).join(",")) >>> 0;
+    const signature = fnv1a(JSON.stringify([list.map((cave) => cave.traits.name),
+      (crew.workSites || []).map((site) => site.mouth?.id || site.repo)])) >>> 0;
     const out = new Float32Array(HEADER + n * RECORD), outHeader = new Uint32Array(out.buffer, 0, HEADER);
     const target = new Float32Array(n * RECORD), sent = new Float32Array(HEADER + n * RECORD);
     const have = new Uint8Array(n), fresh = new Uint8Array(n);
