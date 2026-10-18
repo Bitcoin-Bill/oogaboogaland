@@ -4259,14 +4259,17 @@
     if (throwing && rec.warpVisit) return false;
     const p = cave.root.position, hand = clankerGripAt(entry), handY = hand[1];
     // Rage aims a direction; moving the hand through the swing must not
-    // change its 45-degree release. Player throws still aim at a point.
+    // change its 45-degree release. Only close combat throws aim at a point;
+    // carry and bird's-eye throw forward at 45 degrees from the release hand.
     const fixed = rec.autonomous && aim;
     const tx = fixed ? aim.dx : aim ? aim.ox + aim.dx * 24 - hand[0] : Math.sin(entry.heading);
     const ty = fixed ? aim.dy : aim ? aim.oy + aim.dy * 24 - handY : 1;
     const tz = fixed ? aim.dz : aim ? aim.oz + aim.dz * 24 - hand[2] : Math.cos(entry.heading);
     const launch = 6 + 12 * clamp(charge, 0, 1), distance = Math.hypot(tx, ty, tz) || 1;
-    const vx = tx / distance * launch + (rec.autonomous ? 0 : carryX), vy = ty / distance * launch;
-    const vz = tz / distance * launch + (rec.autonomous ? 0 : carryZ);
+    // Inherited running speed must not flatten or turn a fixed-angle throw.
+    const carry = !rec.autonomous && !!aim;
+    const vx = tx / distance * launch + (carry ? carryX : 0), vy = ty / distance * launch;
+    const vz = tz / distance * launch + (carry ? carryZ : 0);
     if (throwing && rec.autonomous && rageMappedLand(entry.rage.edgeLand) && !rageThrowMap.ready) return false;
     if (throwing && rec.autonomous && !(rageMappedLand(entry.rage.edgeLand)
       ? rageMappedLaunchClear(entry, cave, p.x, handY, p.z, vx, vy, vz)
@@ -4327,13 +4330,11 @@
     if (!throwing) return finishClankerRider(entry, false);
     if (rec.throwing || rec.warpVisit) return false;
     rec.throwing = true; rec.time = 0; rec.charge = charge;
+    rec.aimed = !!aim;
+    if (!aim) return true;
     const target = rec.aim;
-    target.ox = aim ? aim.ox : entry.root.position.x;
-    target.oy = aim ? aim.oy : entry.root.position.y;
-    target.oz = aim ? aim.oz : entry.root.position.z;
-    target.dx = aim ? aim.dx : Math.sin(entry.heading);
-    target.dy = aim ? aim.dy : 0;
-    target.dz = aim ? aim.dz : Math.cos(entry.heading);
+    target.ox = aim.ox; target.oy = aim.oy; target.oz = aim.oz;
+    target.dx = aim.dx; target.dy = aim.dy; target.dz = aim.dz;
     return true;
   };
   const rageRelease = (entry) => finishClankerRider(entry, false);
@@ -8245,7 +8246,7 @@
           const scale = THROW_CARRY_SPEED_MAX / carrySpeed;
           carryX *= scale; carryZ *= scale;
         }
-        finishClankerRider(entry, true, rec.charge, rec.aim, carryX, carryZ);
+        finishClankerRider(entry, true, rec.charge, rec.aimed ? rec.aim : null, carryX, carryZ);
       }
     }
     for (let i = 0; i < clankers.list.length; i++) {
@@ -10205,7 +10206,7 @@
     }
   };
   const registerClanker = (entry) => {
-    entry.capture = { entry, cave: null, autonomous: false, player: false, throwing: false, posed: false,
+    entry.capture = { entry, cave: null, autonomous: false, player: false, throwing: false, posed: false, aimed: false,
       blocked: "", blockedPart: "", blockedStage: "", warpSpot: -1, warpVisit: false,
       warpAnkleX: 0, warpAnkleY: 0, warpAnkleZ: 0, warpFromX: 0, warpFromY: 0, warpFromZ: 0, warpFromHeading: 0,
       flightRadius: PLAYER_RADIUS, flightBottom: 0, flightTop: 0,

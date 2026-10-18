@@ -752,8 +752,9 @@
           hud.el.gorillaSmash.blur();
         }
         if (grabHeld && grabActive) {
-          viewRay();
-          releaseOoga(player, true, charge, ray);
+          const aimed = isCombat() && (view === "first-person" || view === "shoulder");
+          if (aimed) viewRay();
+          releaseOoga(player, true, charge, aimed ? ray : null);
           grabActive = false; grabSpent = true;
           throwResult = THROW_RESULT_TIME;
         }

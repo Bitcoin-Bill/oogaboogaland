@@ -10517,7 +10517,7 @@ scene("hub", { label: "gorilla carry jump", query: "status=chillin", steps: [{ n
       && Number(document.getElementById("gorilla-strength").getAttribute("aria-valuenow")) > strength;
     button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 3, bubbles: true }));
     button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 0, buttons: 2, bubbles: true }));
-    const chordReleased = e.capture.throwing;
+    const chordReleased = e.capture.throwing && !e.capture.aimed;
     const heldThroughRelease = c.grabbedBy === e;
     button.dispatchEvent(new PointerEvent("pointerup", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 0, bubbles: true }));
     for (let i = 0; i < 17; i++) B.advance(1 / 60, 1 / 60);
@@ -14968,7 +14968,7 @@ releaseGeometry(geometry); applyRig(res.programs.mesh, { geometry: {} }, 1); app
 const carriedReleaseProof = () => {
   const source = readFileSync(join(root, "src/js/scene-hub.js"), "utf8");
   const from = source.indexOf("  const finishClankerRider = "), to = source.indexOf("  const releaseClankerRider = ", from);
-  const rows = [];
+  const rows = [], launches = [];
   for (const ceiling of [1.5, 2.5, 6]) {
     const cave = { root: { position: { x: 0, y: 3, z: 0 } }, baseY: 0, bodyHeight: 2, viewLift: 0,
       leap: {}, hop: 0, hopV: 0 };
@@ -14982,8 +14982,27 @@ const carriedReleaseProof = () => {
     rows.push({ ceiling, released, held: cave.grabbedBy === entry, feet: cave.root.position.y,
       queries, throwing: entry.capture.throwing });
   }
-  return { rows, valid: rows[0].released === false && rows[0].held && !rows[0].throwing && rows[0].queries.every(y => y >= 0)
-    && rows.slice(1).every(r => r.released && !r.held && r.feet >= 0 && r.feet + 2 <= r.ceiling && r.queries.every(y => y >= 0)) };
+  for (const charge of [0, 1]) for (const aimed of [false, true]) {
+    const cave = { root: { position: { x: 0, y: 3, z: 0 } }, baseY: 0, bodyHeight: 2, viewLift: 0, leap: {} };
+    const entry = { capture: { cave, autonomous: false, warpVisit: false, aim: {}, aimed: true }, motion: {}, heading: Math.PI / 2 };
+    cave.grabbedBy = entry;
+    const context = { entry, charge, aim: aimed ? { ox: 0, oy: 3, oz: 0, dx: 0, dy: 0, dz: -1 } : null,
+      clamp: (x, a, b) => Math.max(a, Math.min(b, x)), STEP_MAX: 0.35,
+      clankerGripAt: () => [0, 3, 0], ceilingAt: () => Infinity, playerSupportAt: () => 0,
+      crew: { recoverDragged() {}, poseWeapon() {} } };
+    const end = source.indexOf("  const rageRelease = ", to);
+    const released = runInNewContext(source.slice(from, end) + `
+      releaseClankerRider(entry, true, charge, aim);
+      finishClankerRider(entry, true, entry.capture.charge, entry.capture.aimed ? entry.capture.aim : null, 3, 4);`, context);
+    const vx = cave.leap.vx, vy = cave.hopV, vz = cave.leap.vz;
+    launches.push({ charge, aimed, released, recordedAim: entry.capture.aimed, vx, vy, vz,
+      valid: aimed ? Math.abs(vx - 3) < 1e-8 && vy === 0 && Math.abs(vz - (charge ? -14 : -2)) < 1e-8
+        : vy > 0 && Math.abs(Math.atan2(vy, Math.hypot(vx, vz)) - Math.PI / 4) < 1e-8
+          && vx > 0 && Math.abs(vz) < 1e-8 && Math.abs(Math.hypot(vx, vy, vz) - (charge ? 18 : 6)) < 1e-8 });
+  }
+  return { rows, launches, valid: rows[0].released === false && rows[0].held && !rows[0].throwing && rows[0].queries.every(y => y >= 0)
+    && rows.slice(1).every(r => r.released && !r.held && r.feet >= 0 && r.feet + 2 <= r.ceiling && r.queries.every(y => y >= 0))
+    && launches.every(r => r.released && r.recordedAim === r.aimed && r.valid) };
 };
 
 const visibilitySourceBakeProof = () => {
@@ -15606,7 +15625,7 @@ record("terrain glyph layouts: warm visits preserve exact registries and rendere
   record("browser driver: broken transports retire every pending command and owned child, discovery is bounded, and pool ownership remains exclusive", driver.cases === 17 && driver.failures === 0, JSON.stringify(driver));
 
 const carriedRelease = carriedReleaseProof();
-record("gorilla release: insufficient upright headroom retains the grab without querying below the current floor", carriedRelease.valid, JSON.stringify(carriedRelease));
+record("gorilla release: insufficient upright headroom retains the grab; unaimed throws keep a forward 45-degree launch at either charge despite running momentum, while aimed throws retain their target and momentum", carriedRelease.valid, JSON.stringify(carriedRelease));
 const sharedBake = visibilitySourceBakeProof();
 record("character visibility source bakes: ownership wrappers share exact immutable triangles and reject changed topology or source vertices", sharedBake.failures === 0 && sharedBake.cases >= 200, JSON.stringify(sharedBake));
 
