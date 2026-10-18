@@ -177,10 +177,8 @@ export const playerFromHeaders = (headers) => {
 // Who may drive which Ooga or companion. `cast` is the character rows the build writes from src/characters/
 // (`npm run characters:json`): every Ooga is a contributor's, keyed by handle, owned by its handle and
 // its GitHub login alone: a handle that differs from the login is a name, and some other GitHub account
-// may hold it. A contributor drives only their own Ooga or gorilla; companions cannot be borrowed online.
-// Anyone else drives an Ooga only while its owner is
-// not in the room and nobody else holds it. Whether an Ooga is working comes from activity the room does
-// not see, so that rule stays with the page.
+// may hold it. Only owners join the room, and they drive only their own Ooga or gorilla.
+// Signed-out local play never claims a room body.
 export const castIndex = (cast) => {
   const owners = new Map(), handleOf = new Map();
   for (const row of cast) {
@@ -192,25 +190,20 @@ export const castIndex = (cast) => {
   return { owners, handleOf };
 };
 
-/** null when `login` may drive `body` now; otherwise the refusal reason. `players` iterates { login, body }. */
-export const claimRefusal = (index, login, body, players, contributor = false) => {
-  if (body === null) return null;
-  const want = bodyName(body).toLowerCase();
+export const ownedBody = (index, login, contributor = false) => {
+  if (typeof login !== "string") return null;
   const me = login.toLowerCase();
   const own = index.handleOf.get(me);
-  if (own) return own === want ? null : "not-yours";
-  const owner = index.owners.get(want);
   // Only the Worker can vouch for this fallback. Never shadow a curated alias,
   // never grant another visitor an unbundled body, and never mutate the shared cast.
-  if (contributor && !index.owners.has(me)) return want === me ? null : "not-yours";
-  if (!owner) return "unknown";
-  if (body.startsWith("gorilla:")) return "not-yours";
-  for (const p of players) {
-    if (p.login.toLowerCase() === me) continue;
-    if (p.login.toLowerCase() === owner) return "owner-here";
-    if (p.body && p.body.toLowerCase() === want) return "taken";
-  }
-  return null;
+  return own || (contributor && !index.owners.has(me) ? me : null);
+};
+
+/** null when `login` owns `body`; otherwise the refusal reason. */
+export const claimRefusal = (index, login, body, _players, contributor = false) => {
+  if (body === null) return null;
+  const own = ownedBody(index, login, contributor);
+  return own && own === bodyName(body).toLowerCase() ? null : "not-yours";
 };
 
 // Voice: who hears whom. Players driving an Ooga or gorilla hear each other at one volume in the same

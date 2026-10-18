@@ -76,35 +76,39 @@ test("identity comes only from the Worker's headers, all or nothing", () => {
   assert.equal(playerFromHeaders(h({ "x-player-id": "42" })), null);
 });
 
-test("body ownership: owners have their Ooga and gorilla; only unheld Oogas with absent owners may be borrowed", async () => {
-  const { castIndex, claimRefusal } = await import("../src/protocol.js");
+test("body ownership: only an Ooga owner may join and claim their own Ooga or gorilla", async () => {
+  const { castIndex, claimRefusal, ownedBody } = await import("../src/protocol.js");
   const cast = castIndex([
     { handle: "bc1gui", github_login: "ottoz0r" },
     { handle: "portlandhodl", github_login: "portlandhodl" },
     { handle: "rules-without-rulers", github_login: "rules-without-rulers" },
   ]);
   const room = (...players) => players.map(([login, body = null]) => ({ login, body }));
+  assert.equal(ownedBody(cast, "OTTOZ0R"), "bc1gui");
+  assert.equal(ownedBody(cast, "visitor"), null);
+  assert.equal(ownedBody(cast, "new-ooga", true), "new-ooga");
+  assert.equal(ownedBody(cast, "bc1gui", true), null, "a verified contributor cannot shadow another owner's alias");
   // A contributor, known by GitHub login: their own Ooga, and nothing else.
   assert.equal(claimRefusal(cast, "ottoz0r", "bc1gui", room()), null);
   assert.equal(claimRefusal(cast, "OTTOZ0R", "BC1GUI", room()), null);
   assert.equal(claimRefusal(cast, "ottoz0r", "portlandhodl", room()), "not-yours");
   // A handle is a name, not a login: another account called bc1gui owns nothing.
-  assert.equal(claimRefusal(cast, "bc1gui", "bc1gui", room(["ottoz0r"])), "owner-here");
-  // A visitor: only while the owner is away and nobody else holds it.
-  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room()), null);
-  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["portlandhodl"])), "owner-here");
-  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["someone", "portlandhodl"])), "taken");
-  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["visitor", "portlandhodl"])), null);
-  assert.equal(claimRefusal(cast, "visitor", "nobody-real", room()), "unknown");
+  assert.equal(claimRefusal(cast, "bc1gui", "bc1gui", room(["ottoz0r"])), "not-yours");
+  // An old guest session never gains a body, even if nobody else is present.
+  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room()), "not-yours");
+  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["portlandhodl"])), "not-yours");
+  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["someone", "portlandhodl"])), "not-yours");
+  assert.equal(claimRefusal(cast, "visitor", "portlandhodl", room(["visitor", "portlandhodl"])), "not-yours");
+  assert.equal(claimRefusal(cast, "visitor", "nobody-real", room()), "not-yours");
   assert.equal(claimRefusal(cast, "visitor", null, room(["portlandhodl"])), null);
   // Eligibility is a Worker-vouched flag, persisted in the room's attachment.
-  assert.equal(claimRefusal(cast, "new-ooga", "new-ooga", room()), "unknown");
+  assert.equal(claimRefusal(cast, "new-ooga", "new-ooga", room()), "not-yours");
   assert.equal(claimRefusal(cast, "new-ooga", "NEW-OOGA", room(), true), null);
   assert.equal(claimRefusal(cast, "new-ooga", "portlandhodl", room(), true), "not-yours");
-  assert.equal(claimRefusal(cast, "visitor", "new-ooga", room(["new-ooga", "new-ooga"])), "unknown");
+  assert.equal(claimRefusal(cast, "visitor", "new-ooga", room(["new-ooga", "new-ooga"])), "not-yours");
   assert.equal(claimRefusal(cast, "ottoz0r", "ottoz0r", room(), true), "not-yours");
   assert.equal(claimRefusal(cast, "ottoz0r", "bc1gui", room(), true), null);
-  assert.equal(claimRefusal(cast, "bc1gui", "bc1gui", room(["ottoz0r"]), true), "owner-here");
+  assert.equal(claimRefusal(cast, "bc1gui", "bc1gui", room(["ottoz0r"]), true), "not-yours");
   // The prefix chooses the companion, never a different identity or permission.
   assert.equal(claimRefusal(cast, "ottoz0r", "gorilla:bc1gui", room()), null);
   assert.equal(claimRefusal(cast, "OTTOZ0R", "gorilla:BC1GUI", room()), null);
@@ -112,8 +116,8 @@ test("body ownership: owners have their Ooga and gorilla; only unheld Oogas with
   assert.equal(claimRefusal(cast, "ottoz0r", "gorilla:ottoz0r", room(), true), "not-yours", "canonical handle, not its login alias");
   assert.equal(claimRefusal(cast, "visitor", "gorilla:portlandhodl", room()), "not-yours", "a signed-in visitor cannot borrow a gorilla");
   assert.equal(claimRefusal(cast, "visitor", "gorilla:portlandhodl", room(["portlandhodl", "gorilla:portlandhodl"])), "not-yours");
-  assert.equal(claimRefusal(cast, "visitor", "gorilla:nobody-real", room()), "unknown");
-  assert.equal(claimRefusal(cast, "new-ooga", "gorilla:new-ooga", room()), "unknown");
+  assert.equal(claimRefusal(cast, "visitor", "gorilla:nobody-real", room()), "not-yours");
+  assert.equal(claimRefusal(cast, "new-ooga", "gorilla:new-ooga", room()), "not-yours");
   assert.equal(claimRefusal(cast, "new-ooga", "gorilla:NEW-OOGA", room(), true), null);
   assert.equal(claimRefusal(cast, "new-ooga", "gorilla:portlandhodl", room(), true), "not-yours");
   assert.equal(claimRefusal(cast, "bc1gui", "gorilla:bc1gui", room(), true), "not-yours", "temporary identity cannot shadow a curated alias");

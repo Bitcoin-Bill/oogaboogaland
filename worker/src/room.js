@@ -21,7 +21,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   CLOSE_KICK, CLOSE_PROTOCOL, MAX_PLAYERS, MOVE_HZ, STALE_MS, SWEEP_MS, TICK_HZ,
-  NPC_FRAME_MAX, NPC_HZ, OUTSIDE, HP_HZ, VOICE_TRACK, CHAT_HZ, CHAT_BURST, CHAT_BUCKET_KEEP, CHAT_RETRY_KEEP, chatLog, castIndex, bodyName, electHost, npcFollowers, claimRefusal, parseClientMessage, playerFromHeaders, spawnPoint, takeToken, voicePeers,
+  NPC_FRAME_MAX, NPC_HZ, OUTSIDE, HP_HZ, VOICE_TRACK, CHAT_HZ, CHAT_BURST, CHAT_BUCKET_KEEP, CHAT_RETRY_KEEP, chatLog, castIndex, bodyName, ownedBody, electHost, npcFollowers, claimRefusal, parseClientMessage, playerFromHeaders, spawnPoint, takeToken, voicePeers,
 } from "./protocol.js";
 import { sha256Hex } from "./crypto.js";
 import { getPlayer } from "./db.js";
@@ -58,6 +58,9 @@ export class Room extends DurableObject {
       const a = ws.deserializeAttachment();
       if (a) this.players.set(a.id, this.record(ws, a));
     }
+    // Old guest sockets can survive a deployment in hibernated attachments.
+    // Use the ordinary departure path so peers drop their presence and voice.
+    for (const p of this.players.values()) if (!ownedBody(CAST, p.login, p.contributor)) this.evict(p, "revoked");
     this.hostId = electHost(this.players.values());
     this.followers = npcFollowers(this.players.values(), this.hostId);
   }
@@ -106,7 +109,7 @@ export class Room extends DurableObject {
     if (path.startsWith("/voice/")) return this.voiceRequest(path.slice("/voice/".length), request);
     if (request.headers.get("upgrade") !== "websocket") return new Response("Expected WebSocket", { status: 426 });
     const who = playerFromHeaders(request.headers);
-    if (!who) return new Response("Forbidden", { status: 403 });
+    if (!who || !ownedBody(CAST, who.login, who.contributor)) return new Response("Contributors with an Ooga only", { status: 403 });
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -124,7 +127,7 @@ export class Room extends DurableObject {
     const p = this.record(server, { ...who, body: null, x: spawn.x, y: 0, z: spawn.z, yaw: spawn.yaw });
     server.serializeAttachment(this.attachment(p));
     // An owner arriving takes either body back from whoever holds it.
-    const login = p.login.toLowerCase(), own = CAST.handleOf.get(login) || (p.contributor && !CAST.owners.has(login) ? login : null);
+    const own = ownedBody(CAST, p.login, p.contributor);
     if (own) for (const o of this.players.values()) if (o.body && bodyName(o.body).toLowerCase() === own) this.release(o, "owner-here");
     this.players.set(p.id, p);
 
@@ -148,6 +151,7 @@ export class Room extends DurableObject {
   webSocketMessage(ws, message) {
     const p = this.byWs(ws);
     if (!p) return;
+    if (!ownedBody(CAST, p.login, p.contributor)) { this.evict(p, "revoked"); return; }
     if (typeof message !== "string") {
       this.npcFrame(p, message);
       return;
@@ -361,6 +365,10 @@ export class Room extends DurableObject {
     if (!this.sfu) return json({ error: "voice is not configured" }, 503);
     const p = this.players.get(Number(request.headers.get("x-player-id")));
     if (!p) return json({ error: "join the island first" }, 409);
+    if (!ownedBody(CAST, p.login, p.contributor)) {
+      this.evict(p, "revoked");
+      return json({ error: "contributors with an Ooga only" }, 403);
+    }
     let body = {};
     try {
       body = await request.json();
@@ -452,6 +460,7 @@ export class Room extends DurableObject {
   async alarm() {
     const now = Date.now();
     for (const p of [...this.players.values()]) {
+      if (!ownedBody(CAST, p.login, p.contributor)) { this.evict(p, "revoked"); continue; }
       // The existing operator D1 ban also ends active presence at the next successful sweep.
       // Retry on a later alarm if D1 is unavailable; never infer a ban from a failed read.
       if (this.env.DB) {

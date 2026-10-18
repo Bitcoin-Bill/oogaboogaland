@@ -1,6 +1,6 @@
 # Sign-in and presence
 
-How a visitor becomes a player on the Cloudflare-hosted island. Everything here lives in `worker/` and `src/js/net.js`; the page served anywhere else (GitHub Pages, a file, `npm run serve`) finds no backend and behaves exactly as before.
+How a contributor with their own Ooga becomes a player on the Cloudflare-hosted island. Other visitors explore signed out. Everything here lives in `worker/` and `src/js/net.js`; the page served anywhere else (GitHub Pages, a file, `npm run serve`) finds no backend and behaves exactly as before.
 
 New Oogatron contributors can receive a server-verified default character before
 their file reaches a deployed bundle. Eligibility, merge-time generation and the
@@ -18,15 +18,16 @@ PR ownership check are described in [Contributor onboarding](contributor-onboard
 
 ## Signing in
 
-1. The footer's **Sign in with GitHub** calls `BL.net.login()`, which navigates to `/auth/login?next=<current path>`.
+1. The footer's **Contributor sign-in** calls `BL.net.login()`, which navigates to `/auth/login?next=<current path>`.
 2. `/auth/login` (rate limited, 10 a minute per IP) makes 32 random bytes of `state`, stores `state.<next>` in a ten-minute `HttpOnly` cookie (`__Host-obl_oauth` on https), and redirects to GitHub's authorize page. No scopes are requested: the public profile is all we read.
 3. GitHub sends the visitor to `/auth/callback?code=…&state=…`. The Worker checks `state` against the cookie in constant time and clears it, trades the code for an access token, reads `GET https://api.github.com/user`, and **discards the token**.
-4. The player row is upserted by GitHub's numeric id (a renamed login stays the same player). A banned player gets 403.
+4. Before writing a player or session, the Worker requires an owned character: an existing bundled character matched by its owning GitHub login, or a verified Oogatron contributor eligible for a temporary character. A character alias cannot be claimed by a different GitHub account. Ineligible accounts get 403. The eligible player row is upserted by GitHub's numeric id (a renamed login stays the same player if it still owns a character). A banned player gets 403.
 5. A session is 32 random bytes; the browser gets it in `__Host-obl_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`, 30 days) and D1 keeps only its SHA-256. The visitor lands back on `next`, which must be a same-site path.
 
 ## Being signed in
 
-- `GET /api/me` answers `{ "player": null, "donations": false }` or `{ "player": { id, login, display, look, createdAt }, "donations": false }`, always 200, so a signed-out page logs nothing. `avatar_url` stays server-side while the content policy blocks GitHub images. `donations` is true once the Worker has its bananapayserver binding (`DONATIONS`): the page then takes real donations through its own address (`donations.useOrigin`), and until then stays simulated.
+- `GET /api/me` answers `{ "player": null, "character": null, "donations": false }` or `{ "player": { id, login, display, look, createdAt }, "character": { handle, joined, lastCommit }, "donations": false }`, always 200, so a signed-out page logs nothing. `avatar_url` stays server-side while the content policy blocks GitHub images. `donations` is true once the Worker has its bananapayserver binding (`DONATIONS`): the page then takes real donations through its own address (`donations.useOrigin`), and until then stays simulated.
+- Session reads recheck character eligibility for account, room, voice and signed-in donation attribution. Old guest cookies no longer identify a signed-in player. Bundled owners do not depend on Oogatron availability; an unbundled owner must still be verified by the bounded cached lookup.
 - The session is touched at most once every ten minutes, so reading it is not a write per request.
 - `PATCH /api/me` with `{ "display": "…" }` sets the in-game name: the character set of `donations.sanitize`, 3–24 characters.
 - A cron at 04:00 UTC deletes expired sessions; they are refused on read before that anyway.
@@ -35,6 +36,7 @@ PR ownership check are described in [Contributor onboarding](contributor-onboard
 
 - **Sign out** posts `/auth/logout`, which deletes that session row and clears the cookie. `/auth/logout?all=1` ends every session of the player.
 - `DELETE /api/me` deletes the player and every session.
+- These two removal paths accept a valid historical session even if its account no longer qualifies to sign in, so the visitor can still remove it. They grant no other access.
 - Every state-changing request must carry the site's own `Origin` (or `Sec-Fetch-Site: same-origin`); anything else is 403.
 
 ## What is stored
@@ -65,8 +67,8 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | room → client | `voice { peers, gens }` | the ids this player should hear and each one's publication count (a new count is a microphone published again, pulled again); sent when that changes, and after every zone message |
 | room → client | `vstate { id, voice, muted }` | a player's microphone went live or off, or they muted or unmuted it; sent only on a change |
 | room → client | `hp { id, v, ko }` | a player's driven Ooga's health changed (a new body starts at 100) |
-| room → client | `release { name, reason }` | a claim refused (`not-yours`, `owner-here`, `taken`, `unknown`) or an Ooga taken back by its arriving owner |
-| room → client | `kick { reason }`, then close 4000 | `replaced` (a newer tab), `stale` (90 s silent, swept once a minute), `full` (32 players) |
+| room → client | `release { name, reason }` | a claim refused (`not-yours`) or a legacy claim freed on owner arrival (`owner-here`) |
+| room → client | `kick { reason }`, then close 4000 | `replaced` (a newer tab), `stale` (90 s silent, swept once a minute), `full` (32 players), `revoked` (account access removed) |
 
 Frames the room cannot read close with 4400, as does any frame over 256 characters except a chat line; out-of-bounds poses, unknown types and unusable chat lines are ignored. The pure rules are in `worker/src/protocol.js` with their checks in `worker/test/`.
 
@@ -98,10 +100,13 @@ A remote companion uses `BL.agent`'s managed gorilla rig instead of a caveman. I
 Every Ooga belongs to a contributor, and ownership keys on the GitHub login alone: a character's `github`, or its handle when it has none (`bc1gui` is owned by `ottoz0r`; a different GitHub account that happens to be called `bc1gui` owns nothing).
 
 - A signed-in contributor drives **only their own** Ooga, and while they are signed in **nobody else** can drive it. The hub hands it to them on arrival (`claimOwnOoga`), once a visit, unless they already drive another or explicitly arrived detached from an interior. Letting go stays detached until they take control again or revisit; their face beside the location button uses the same possession path as double-clicking their Ooga.
-- A signed-in visitor without a personal character can borrow an Ooga only when its owner is **not signed in**, **nobody else** holds it, and it is **not working** (by its real activity; the hub's temporary overrides do not count).
+- Every signed-in player has an owned character. There is no signed-in borrowing path; a missing client character mapping refuses selection until the owned character is available.
 - Signed-out visitors can play nonworking bundled Oogas locally. They have no room socket or remote roster, so their page cannot know which owners are online elsewhere. This local control is not a multiplayer claim and does not show a green signed-in marker. Static hosting has no working/ownership gate and likewise does not mark local control online.
-- An owner arriving takes their Ooga back: the room frees it and the driver's page lets go with a notice.
-- A signed-in contributor may also claim **their own gorilla**, including a server-vouched temporary contributor. `net.mayDriveGorilla` and the room both check the companion's owner; signed-in guests cannot borrow companions. T cycles the owned pair on the hub, or retakes the Ooga when detached; G keeps its existing weapon/grab meaning. Companions remain in the hub's playable areas, rather than separate scene interiors. Signed-out/static gorilla play is local, with no room publication.
+- A signed-in contributor may also claim **their own gorilla**, including a server-vouched temporary contributor. `net.mayDriveGorilla` and the room both check the companion's owner. T cycles the owned pair on the hub, or retakes the Ooga when detached; G keeps its existing weapon/grab meaning. Companions remain in the hub's playable areas, rather than separate scene interiors. Signed-out/static gorilla play is local, with no room publication.
+
+Hub world selection, the own-Ooga portrait and T validate the target before releasing a controlled gorilla. A refused or unavailable Ooga leaves the current actor, camera and carry/combat mode intact and shows the reason.
+
+The room rejects accounts without an owned body before accepting their socket. Historical guest attachments are evicted when the room wakes, receives their next message, or runs its existing stale sweep, so they cannot keep chat, voice or NPC-host access. This adds no timer or background contributor lookup; an already accepted temporary contributor retains its verified attachment until reconnect.
 
 The page enforces all of it (`net.mayDrive`, checked by `pilot.possess` through the scene's `mayPossess`). The room enforces ownership and who holds what (`claimRefusal` in `worker/src/protocol.js`, over the cast `npm run build:site` writes to `worker/src/characters.gen.json`), so a tampered page cannot take a contributor's Ooga; a refused claim answers `release { name, reason }` and is never shown to anyone. Whether an Ooga is working comes from activity the room does not see, so that rule is the page's alone. The rules apply only on the page served by the Worker; without a backend (GitHub Pages, the test suite) any Ooga can be driven as before.
 

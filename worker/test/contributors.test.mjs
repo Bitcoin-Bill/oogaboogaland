@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { contributorRows, createContributorLookup } from "../src/contributor-policy.js";
+import { contributorRows, createContributorLookup, createOwnedCharacterLookup } from "../src/contributor-policy.js";
 import { missingCharacters, characterSource, retiredCharacters, queuedDefaults } from "../../scripts/sync-characters.mjs";
 import { checkCharacterIdentities, identityAdvice } from "../../scripts/contributor-pr.mjs";
 import { declaredIdentity, mayAuthorIdentity } from "../../scripts/character-identity.mjs";
@@ -424,6 +424,38 @@ test("signed-in lookups coalesce requests, expire without timers and fail closed
   assert.equal(calls, 2);
   now += 15001; fail = false;
   assert.equal((await lookup("new-ooga")).handle, "new-ooga");
+});
+
+test("sign-in belongs to the bundled GitHub owner, never an account named after their alias", async () => {
+  let requests = 0;
+  const lookup = createOwnedCharacterLookup([{ handle: "Cave-Name", github_login: "real-owner",
+    joined_at: "2026-09-01T00:00:00Z", last_commit_at: "2026-10-04T11:00:00Z" }], async () => {
+    requests++;
+    return { handle: "cave-name", joined: 1, lastCommit: 2 };
+  });
+  assert.deepEqual(await lookup("REAL-OWNER"), { handle: "Cave-Name", joined: 1788220800, lastCommit: 1791111600 });
+  assert.equal(await lookup("cave-name"), null, "a valid dynamic row cannot shadow a bundled alias");
+  assert.equal(requests, 0, "bundled ownership and occupied aliases need no Oogatron request");
+});
+
+test("only verified commit contributors gain temporary access; outages revoke that fallback but preserve bundled owners", async () => {
+  let now = NOW, fail = false, calls = 0;
+  const dynamic = createContributorLookup(async () => {
+    calls++;
+    if (fail) throw new Error("offline");
+    return Response.json(snapshot(person("new-ooga"), person("issue-author", { counts: { commits: 0, issues: 2, prs: 1 } })));
+  }, () => now);
+  const lookup = createOwnedCharacterLookup([{ handle: "Cave-Name", github_login: "real-owner",
+    joined_at: "2026-09-01T00:00:00Z", last_commit_at: "2026-10-04T11:00:00Z" }], dynamic);
+  assert.equal((await lookup("new-ooga")).handle, "new-ooga");
+  assert.equal(await lookup("issue-author"), null);
+  assert.equal(await lookup("visitor"), null);
+  fail = true; now += 60001;
+  assert.equal((await lookup("real-owner")).handle, "Cave-Name");
+  assert.equal(calls, 1, "bundled owner never refreshes dynamic data");
+  assert.equal(await lookup("new-ooga"), null);
+  assert.equal((await lookup("REAL-OWNER")).handle, "Cave-Name");
+  assert.equal(calls, 2);
 });
 
 test("the browser accepts one matching temporary identity without reordering the bundled crew", () => {
