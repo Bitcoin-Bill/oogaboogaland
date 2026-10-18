@@ -17,6 +17,7 @@
     const acquiredAt = { x: 0, y: 0, z: 0 };
     const acquiredEye = { x: 0, y: 0, z: 0 };
     const previousEye = { x: 0, y: 0, z: 0 };
+    const shoulderPoint = { x: 0, y: 0, z: 0 };
     const eye = new Float64Array(3), rayView = mat4.create(), cameraUp = { x: 0, y: 1, z: 0 };
     const ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
     const hit = { node: null, owner: null, x: 0, y: 0, z: 0, distance: 0, type: "object" };
@@ -31,6 +32,7 @@
     let actMode = -1;
     let handoffBefore = false, holdingFollow = false, pinnedFollow = false, viewChanged = false, moving = false;
     let acquisitionHold = false;
+    let shoulderPointActive = false;
     let shoulderSide = SHOULDER_SIDE, peek = 0, orbitPitch = 0.42, overheadHeight = 14, headHidden = null, savedHeadHidden = false;
     let overheadEntry = false;
     let targetWait = 0, rightAt = -Infinity, rightDownAt = -Infinity, rightTravel = 0;
@@ -64,6 +66,7 @@
     };
     const setView = (next, zoomDistance = null) => {
       if (next === view) return;
+      shoulderPointActive = false;
       if (view !== "birds-eye") orbitPitch = orbit.tPitch;
       view = next; viewChanged = true;
       overheadEntry = false;
@@ -244,6 +247,7 @@
       hud.setAct(mode === 6 ? "WAKE UP!" : mode === 5 ? "IN AIR" : mode === 4 ? "JUMP OFF" : mode === 3 ? "ROLLING!" : mode === 2 ? "DROP & ROLL" : mode === 1 ? "DOUBLE JUMP" : "JUMP");
     };
     const beginJump = () => {
+      shoulderPointActive = false;
       if (clankers.wake()) { jumpTap = false; syncCursor(); }
       else if (player.fire.burning) {
         jumpTap = false;
@@ -270,6 +274,7 @@
       restoreHead(); resetReticle();
       clankers.release();
       player = null; combat = false; wasLocked = false;
+      shoulderPointActive = false;
       holdingFollow = handoffBefore = pinnedFollow = viewChanged = moving = false;
       acquisitionHold = false;
       overheadEntry = false;
@@ -293,6 +298,7 @@
       pilot.release(true);
       rebasePilot();
       player = entry;
+      shoulderPointActive = false;
       smashMeter = smashBase;
       pilot.setExternalControl(true, isCombat);
       combat = incoming.active && incoming.combat; focused = wasLocked = false;
@@ -363,6 +369,7 @@
       else if (name === "mode-toggle") {
         if (clankers.sleeping(player)) { hud.hint("Wake this gorilla before entering shooter mode"); return true; }
         combat = !combat;
+        shoulderPointActive = false;
         if (!combat) setCombatTooltip(null);
         targetWait = 0;
         cancelInput();
@@ -480,9 +487,14 @@
       const p = player.root.position, height = shoulderHeight(), side = shoulderSide;
       const x = p.x + Math.sin(player.heading) * 10, z = p.z + Math.cos(player.heading) * 10;
       const floor = groundAt ? groundAt(x, z, height) : NaN;
+      // A shortened boom may need a different anchor. Keep this world point
+      // until deliberate input replaces the view, rather than picking again
+      // from the heading as the gorilla turns toward its initial aim.
+      shoulderPoint.x = x; shoulderPoint.y = Number.isFinite(floor) ? floor : p.y; shoulderPoint.z = z;
+      shoulderPointActive = true;
       const yaw = player.heading - Math.PI + Math.asin(side / 10);
       orbit.tYaw = orbit.yaw + Math.atan2(Math.sin(yaw - orbit.yaw), Math.cos(yaw - orbit.yaw));
-      orbitPitch = orbit.tPitch = clamp(Math.atan2(height - (Number.isFinite(floor) ? floor : p.y),
+      orbitPitch = orbit.tPitch = clamp(Math.atan2(height - shoulderPoint.y,
         Math.sqrt(100 - side * side)), -PITCH_LIMIT, PITCH_LIMIT);
       followOffset.x = followOffset.y = followOffset.z = 0;
       pinnedFollow = false;
@@ -552,6 +564,7 @@
     };
     const moveView = (dx, dy) => {
       if (!player) return false;
+      if (dx || dy) shoulderPointActive = false;
       if (view === "birds-eye") {
         if (dx) { orbit.tYaw -= dx * 0.004; viewChanged = true; }
         return true;
@@ -573,6 +586,7 @@
       zoomGesture = gesture; zoomAt = now; zoomDirection = direction;
       if (fresh) zoomStopped = false;
       if (zoomStopped) return true;
+      shoulderPointActive = false;
       viewChanged = true;
       let next = view, nextDistance = null;
       if (view === "first-person" && direction > 0) next = "shoulder";
@@ -698,13 +712,14 @@
       updateSmashGauge();
       const axes = pilot.controls.read();
       const shoulderCombat = isCombat() && view === "shoulder";
-      if (shoulderCombat && axes.shiftTap) { shoulderSide = -shoulderSide; viewChanged = true; }
+      if (shoulderCombat && axes.shiftTap) { shoulderSide = -shoulderSide; shoulderPointActive = false; viewChanged = true; }
       const planted = shoulderCombat && axes.peek && !run;
       peek = damp(peek, planted ? axes.x * 0.34 : 0, 14, dt);
       const moveX = planted ? 0 : axes.x, moveY = planted ? 0 : axes.y;
       const turn = isCombat() ? view === "birds-eye" ? axes.orbitYaw : clamp(axes.yaw + axes.orbitYaw, -1, 1) : axes.yaw;
       if (turn || axes.pitch || planted) viewChanged = true;
       moving = Math.hypot(moveX, moveY) > 0.05;
+      if (turn || axes.pitch || planted || moving) shoulderPointActive = false;
       orbit.tYaw += turn * 1.7 * dt;
       if (view === "birds-eye") {
         orbit.tYaw += axes.yaw * 1.7 * dt;
@@ -761,7 +776,7 @@
       }
       const looking = viewChanged || Math.abs(orbit.tYaw - orbit.yaw) > 0.00001
         || Math.abs(orbit.tPitch - orbit.pitch) > 0.00001 || Math.abs(orbit.tDist - orbit.dist) > 0.00001;
-      if (anchored && !looking) {
+      if (anchored && !looking && camera.orthoMix === 0) {
         updateReticle(dt); hud.setGorilla(player, view, isCombat()); showAct();
         return;
       }
@@ -806,8 +821,9 @@
       camera.orthoHeight = Math.max(0.1, orbit.dist * 2 * Math.tan(camera.fov / 2));
       cameraUp.x = -sy * Math.sin(orbit.pitch); cameraUp.y = cp; cameraUp.z = -cy * Math.sin(orbit.pitch);
       camera.up = cameraUp;
-      // Shoulder framing keeps its fixed boom through scenery and stone.
-      if (constrainCamera && !acquisitionHold && view !== "shoulder") constrainCamera(player, camera, anchored, previousEye, first, overhead);
+      // The scene can shorten an underground combat boom before restoring its roof.
+      if (constrainCamera && !acquisitionHold) constrainCamera(player, camera, anchored, previousEye, first, overhead,
+        shoulderPointActive && view === "shoulder" ? shoulderPoint : null);
       if (first && orbit.dist < 0.65 && !headHidden) {
         headHidden = player.gorilla.parts.head; savedHeadHidden = headHidden.cameraHidden; headHidden.cameraHidden = true;
       } else if (!first && headHidden) {
@@ -837,6 +853,7 @@
       orbit.tx += dx; orbit.ty += dy; orbit.tz += dz;
       camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
       camera.target.x += dx; camera.target.y += dy; camera.target.z += dz;
+      if (shoulderPointActive) { shoulderPoint.x += dx; shoulderPoint.y += dy; shoulderPoint.z += dz; }
       viewChanged = true; targetWait = 0;
     };
     const travelRefusal = () => {
@@ -860,6 +877,7 @@
       acquiredAt.x += dx; acquiredAt.y += dy; acquiredAt.z += dz;
       acquiredEye.x += dx; acquiredEye.y += dy; acquiredEye.z += dz;
       previousEye.x += dx; previousEye.y += dy; previousEye.z += dz;
+      if (shoulderPointActive) { shoulderPoint.x += dx; shoulderPoint.y += dy; shoulderPoint.z += dz; }
       targetWait = 0; setCombatTooltip(null);
       return true;
     };
@@ -870,6 +888,7 @@
     };
     const resetCamera = () => {
       if (!player || clankers.player !== player || !player.active || !player.root.visible) return false;
+      shoulderPointActive = false;
       const first = view === "first-person", overhead = view === "birds-eye";
       acquisitionHold = pinnedFollow = handoffBefore = overheadEntry = false;
       holdingFollow = climbHandoff();

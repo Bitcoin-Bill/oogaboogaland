@@ -6738,6 +6738,9 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           for (const factor of [0.8, 1.2, 1.2]) { P.hooks.onZoom(factor, {}); B.advance(2, 1 / 60); steps.push(sample()); }
           click(); B.advance(1, 1 / 60); steps.push(sample());
           for (const factor of [1.2, 0.001]) { P.hooks.onZoom(factor, {}); B.advance(2, 1 / 60); steps.push(sample()); }
+          P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60); const rightFirst = sample();
+          click(); click(false); B.advance(1, 1 / 60); const rightFar = sample();
+          click(); B.advance(1, 1 / 60); const rightBack = sample();
           // Time-stamped events exercise the shared wheel path, including a
           // burst longer than the old 350 ms shoulder hold and a fresh pause.
           P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
@@ -6753,7 +6756,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           P.hooks.onZoom(0.001, pinch); B.advance(2, 1 / 60);
           P.hooks.onZoom(2, pinch); B.advance(1, 1 / 60); const heldPinch = sample();
           authIntent.push({ signedIn, combat, selected: P.player === a, steps,
-            inward, freshInward, outward, freshOutward, heldPinch });
+            rightFirst, rightFar, rightBack, inward, freshInward, outward, freshOutward, heldPinch });
         }
       }
     } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
@@ -6795,7 +6798,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     return { rows, carryFirst, carryScrollBack, carryFirstOut, carryFirstBack, combatOut, combatBack,
       combatFirst, combatFirstOut, combatFirstBack, authIntent, touch };
   })()`);
-  record("view gestures: right-click returns from orbit to the prior shoulder or first-person view, and first-person scroll exits to shoulder",
+  record("view gestures: right-click enters shoulder from orbit or bird's-eye even after a double right-click left first person, and first-person scroll exits to shoulder",
     rightViews.rows.every(r => r.single.mode === "shoulder" && !r.single.combat && Math.abs(r.immediate.y - r.before.y) < 1e-6
       && r.out.mode === "orbit" && !r.out.combat && Math.abs(r.out.distance - 6) < 0.01 && r.out.wanted === 6
       && r.wheelOut.mode === "orbit" && !r.wheelOut.combat && Math.abs(r.wheelOut.wanted - r.wheelStart * 1.2) < 0.01
@@ -6806,16 +6809,18 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     && rightViews.carryFirst.mode === "first-person" && !rightViews.carryFirst.combat
     && rightViews.carryScrollBack.mode === "shoulder" && !rightViews.carryScrollBack.combat
     && rightViews.carryFirstOut.mode === "orbit" && !rightViews.carryFirstOut.combat
-    && rightViews.carryFirstBack.mode === "first-person" && !rightViews.carryFirstBack.combat
+    && rightViews.carryFirstBack.mode === "shoulder" && !rightViews.carryFirstBack.combat
     && rightViews.combatOut.mode === "birds-eye" && rightViews.combatOut.combat && rightViews.combatOut.height === 21
     && rightViews.combatBack.mode === "shoulder" && rightViews.combatBack.combat
     && rightViews.combatFirst.mode === "first-person" && rightViews.combatFirst.combat
     && rightViews.combatFirstOut.mode === "birds-eye" && rightViews.combatFirstOut.combat
-    && rightViews.combatFirstBack.mode === "first-person" && rightViews.combatFirstBack.combat, JSON.stringify(rightViews));
+    && rightViews.combatFirstBack.mode === "shoulder" && rightViews.combatFirstBack.combat, JSON.stringify(rightViews));
   record("view intent: signed-in and signed-out Oogas keep the carry/combat mode chosen by X through scroll, right-click and both distant-to-shoulder paths",
     rightViews.authIntent.length === 4 && rightViews.authIntent.every(row => {
       const far = row.combat ? "birds-eye" : "orbit", modes = ["shoulder", "first-person", "shoulder", far, "shoulder", far, "shoulder"];
-      return row.selected && row.steps.length === modes.length && row.steps.every((step, i) => step.mode === modes[i] && step.combat === row.combat);
+      return row.selected && row.steps.length === modes.length && row.steps.every((step, i) => step.mode === modes[i] && step.combat === row.combat)
+        && [row.rightFirst, row.rightFar, row.rightBack].every(step => step.combat === row.combat)
+        && row.rightFirst.mode === "first-person" && row.rightFar.mode === far && row.rightBack.mode === "shoulder";
     }), JSON.stringify(rightViews.authIntent));
   record("Ooga zoom stops: signed in or out, long wheel bursts stop at shoulder in both directions, a pause starts the next step, and reversing one pinch cannot cross the stop",
     rightViews.authIntent.every(row => [row.inward, row.outward, row.heldPinch].every(s => s.mode === "shoulder" && s.combat === row.combat)
@@ -6836,7 +6841,11 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       const C = B.camera, p = a.root.position, dx = C.position.x - C.target.x, dz = C.position.z - C.target.z, length = Math.hypot(dx, dz);
       const side = ((C.position.x - p.x) * dz - (C.position.z - p.z) * dx) / length / a.traits.height;
       BL.scene.updateWorld(a.root); const w = a.parts.head.world, head = B.project(w[12], w[13], w[14], {});
-      return { mode: P.mode, side, headOffset: B.renderer.size.width / 2 - head.x };
+      const eyeY = p.y - a.baseY + a.headOffset * 0.95 + a.viewLift;
+      const clear = B.island.clearAt(C.position.x, C.position.y - 0.3, C.position.z, 0.3, 0.6)
+        && B.island.voxelSegmentClearAt(p.x, eyeY - 0.3, p.z, C.position.x, C.position.y - 0.3, C.position.z, 0.3, 0.6)
+        && B.headquarters.solids.props.segmentClear(p.x, eyeY - 0.3, p.z, C.position.x, C.position.y - 0.3, C.position.z, 0.3, 0.6);
+      return { mode: P.mode, side, headOffset: B.renderer.size.width / 2 - head.x, clear, cutaway: B.renderOpts.birdsEyeCutaway };
     };
     for (const location of [{ x: -8, y: 0, z: 8 }, { x: 6, y: B.island.headquarters.basement.floor, z: 0 }]) {
       P.navigate({ position: location, yaw: 0, pitch: 0.3, dist: 4 }); B.advance(1, 1 / 60);
@@ -6852,7 +6861,10 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     }
     return rows;
   })()`);
-  record("shoulder combat: zooming toward the feet keeps the normal head-side framing above and below ground, including after mouse-look", shoulderFraming.length === 4 && shoulderFraming.every(row => row.baseline.side > 0.5 && [row.settled, row.looking].every(s => s.mode === "shoulder" && Math.abs(s.side - row.baseline.side) < 0.001 && s.headOffset > 0)), JSON.stringify(shoulderFraming));
+  record("shoulder combat: zooming toward the feet keeps normal head-side framing on the surface and a clear, shortened shoulder boom underground, including after mouse-look", shoulderFraming.length === 4 && shoulderFraming.every(row => row.baseline.side > 0
+    && [row.settled, row.looking].every(s => s.mode === "shoulder" && s.headOffset > 0
+      && (row.floor >= 0 ? row.baseline.side > 0.5 && Math.abs(s.side - row.baseline.side) < 0.001
+        : s.side > 0 && s.side <= shoulderFraming[0].baseline.side + 0.001 && s.clear && !s.cutaway))), JSON.stringify(shoulderFraming));
   const entry = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, C = B.camera, a = P.player;
     P.navigate({ position: { x: -8, y: 0, z: 8 }, yaw: 0, pitch: 0.3, dist: 4 }); B.advance(1, 1 / 60);
@@ -7510,18 +7522,34 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
       && entries.every(entry => !entry.cap.node.visible) && D.headquarters.rampMarkers.every(marker => !marker.node.visible && !marker.arrow.visible)
       && B.crew.list.every(cave => !cave.root.cutawayWholeHidden) && B.clankers.list.every(entry => !entry.root.cutawayWholeHidden)
       && D.props.every(prop => !prop.node.cutawayWholeHidden);
+    const geometryHead = new Float64Array(3);
+    const geometryClear = (actor, gorilla = false) => {
+      const p = actor.root.position, eye = B.camera.position, radius = 0.3;
+      let x = p.x, y = gorilla ? p.y : p.y - actor.baseY + actor.headOffset * 0.95 + actor.viewLift, z = p.z;
+      if (gorilla) {
+        BL.scene.updateWorld(actor.root, actor.root.parent.world);
+        const head = actor.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
+        BL.math.mat4.transformPoint(geometryHead, head.world, bounds.center[0], bounds.min[1] + (bounds.max[1] - bounds.min[1]) * 0.65, bounds.max[2] + 0.01);
+        x = geometryHead[0]; y = geometryHead[1]; z = geometryHead[2];
+      }
+      return I.clearAt(eye.x, eye.y - radius, eye.z, radius, radius * 2)
+        && I.voxelSegmentClearAt(x, y - radius, z, eye.x, eye.y - radius, eye.z, radius, radius * 2)
+        && D.headquarters.solids.props.segmentClear(x, y - radius, z, eye.x, eye.y - radius, eye.z, radius, radius * 2);
+    };
     const cutState = () => ({ mode: P.mode, player: !!P.player, combat: P.aiming, clear: cutClear(), mix: P.birdsEyeMix, fade: B.renderOpts.cutawayFade, rock: B.renderOpts.cutawayRockMix,
-      eyeY: B.camera.position.y, ceiling: H.basement.ceiling,
+      geometryClear: !!P.player && geometryClear(P.player), eyeY: B.camera.position.y, ceiling: H.basement.ceiling,
       markers: D.headquarters.rampMarkers.reduce((count, marker) => count + (marker.node.visible ? 1 : 0), 0),
       cuts: B.renderOpts.cutawayMaxY < 1e5 ? [B.renderOpts.cutawayMaxY] : regions.slice(0, B.renderOpts.cutawayRegionCount).map(r => r.y) });
     const transition = (name, action, frames = 60) => {
       const before = cutState(); action(); const immediate = Math.abs(P.birdsEyeMix - before.mix), immediateFade = Math.abs(B.renderOpts.cutawayFade - before.fade);
       let last = before, mixStep = 0, fadeStep = 0, cutStep = 0, fadeError = 0, capError = 0, minCut = Infinity, maxCut = -Infinity, changed = 0, direction = true, blended = 0, withoutPlayer = 0;
-      let rockError = Math.abs(before.rock - before.fade), maxRegions = 0, carryClear = true, firstClear = false;
+      let rockError = Math.abs(before.rock - before.fade), maxRegions = 0, carryClear = true, firstClear = false, blockedCloseFrames = 0, blockedRetained = true, residualRestored = false, residualSafe = true;
       for (let i = 0; i < frames; i++) {
         B.advance(1 / 60, 1 / 60); const s = cutState(); mixStep = Math.max(mixStep, Math.abs(s.mix - last.mix)); fadeError = Math.max(fadeError, Math.abs(s.fade - s.mix));
         if (!i) firstClear = s.clear;
         if (!s.player || !s.combat) carryClear = carryClear && s.clear;
+        if (s.combat && s.mode !== "birds-eye" && !s.geometryClear) { blockedCloseFrames++; blockedRetained = blockedRetained && s.fade > 0; }
+        if (s.combat && s.mode !== "birds-eye" && s.geometryClear && s.mix > 0) { residualSafe = residualSafe && s.clear; residualRestored ||= s.clear; }
         fadeStep = Math.max(fadeStep, Math.abs(s.fade - last.fade));
         rockError = Math.max(rockError, Math.abs(s.rock - s.fade));
         maxRegions = Math.max(maxRegions, B.renderOpts.cutawayRegionCount);
@@ -7538,7 +7566,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
         if (B.renderOpts.cutawayMaxY < 1e5) for (const e of D.terrainSections) if (e.cap.node.visible) capError = Math.max(capError, Math.abs(e.cap.node.world[13] + 0.002 - B.renderOpts.cutawayMaxY));
         last = s;
       }
-      return { name, before, after: last, immediate, immediateFade, mixStep, fadeStep, cutStep, fadeError, rockError, capError, span: maxCut - minCut, changed, direction, blended, withoutPlayer, maxRegions, carryClear, firstClear };
+      return { name, before, after: last, immediate, immediateFade, mixStep, fadeStep, cutStep, fadeError, rockError, capError, span: maxCut - minCut, changed, direction, blended, withoutPlayer, maxRegions, carryClear, firstClear, blockedCloseFrames, blockedRetained, residualRestored, residualSafe };
     };
     const toggle = () => P.modeAction("mode-toggle"), transitions = [];
     transitions.push(transition("basement carry exit", toggle));
@@ -7550,6 +7578,12 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     const carryRoofs = [], G = B.clankerPlay, C = B.clankers, e = C.list.find(entry => entry.owner === a);
     const account = BL.net.state.me, backend = BL.net.state.backend, character = BL.characters.get(a.traits.name);
     const pressX = () => { key("keydown", "x", "KeyX"); key("keyup", "x", "KeyX"); };
+    const canvas = document.getElementById("scene"), rect = canvas.getBoundingClientRect();
+    const rightClick = () => {
+      for (const type of ["pointerdown", "pointerup"]) canvas.dispatchEvent(new PointerEvent(type,
+        { pointerId: 93, pointerType: "mouse", button: 2, buttons: type === "pointerdown" ? 2 : 0,
+          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true, cancelable: true }));
+    };
     try {
       BL.net.state.backend = true;
       for (const signedIn of [false, true]) for (const gorilla of [false, true]) for (const q of places.filter(place => place.name === "HQ" || place.name === "basement")) {
@@ -7564,9 +7598,9 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
         P.goPreset("pile");
         Object.assign(B.camera.position, { x: q.x + 3, y: q.floor + 25, z: q.z + 5 });
         Object.assign(B.camera.target, { x: q.x, y: q.floor + 1, z: q.z }); B.camera.up = { x: 0, y: 1, z: 0 };
-        const controller = gorilla ? G : P, actor = gorilla ? e : a;
+        const controller = gorilla ? G : P, actor = gorilla ? e : a, zoom = factor => gorilla ? G.zoom(factor, {}) : P.hooks.onZoom(factor, {});
         const read = () => ({ view: gorilla ? G.view : P.mode, combat: gorilla ? G.combat : P.aiming, controlled: controller.player === actor,
-          clear: cutClear(), cut: B.renderOpts.birdsEyeCutaway, mix: B.camera.orthoMix || 0, eye: B.camera.position.y });
+          clear: cutClear(), cut: B.renderOpts.birdsEyeCutaway, geometryClear: geometryClear(actor, gorilla), mix: B.camera.orthoMix || 0, eye: B.camera.position.y });
         const advance = (frames, requireClear = false) => {
           let clear = true;
           for (let i = 0; i < frames; i++) { B.advance(1 / 60, 1 / 60); if (requireClear) clear = clear && cutClear(); }
@@ -7577,10 +7611,25 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
         pressX(); const carryExit = advance(1, true);
         const carrySettling = advance(12, true);
         pressX(); const overheadAgain = advance(90);
+        rightClick();
+        let shoulder, blocked = 0, retained = true, residualRestored = false, residualSafe = true, shoulderFrames = 0;
+        for (; shoulderFrames < 150; shoulderFrames++) {
+          B.advance(1 / 60, 1 / 60); shoulder = read();
+          if (shoulder.view === "shoulder" && !shoulder.geometryClear) { blocked++; retained = retained && shoulder.cut; }
+          if (shoulder.view === "shoulder" && shoulder.geometryClear && shoulder.mix > 0) { residualSafe = residualSafe && shoulder.clear; residualRestored ||= shoulder.clear; }
+          if (shoulder.view === "shoulder" && shoulder.clear && shoulder.geometryClear && shoulder.mix === 0) break;
+        }
+        zoom(0.5);
+        let first, firstFrames = 0, firstClear = true;
+        for (; firstFrames < 90; firstFrames++) {
+          B.advance(1 / 60, 1 / 60); first = read(); firstClear = firstClear && first.clear;
+          if (first.view === "first-person" && (gorilla ? B.pilot.orbit.dist < 0.01 : P.closeMix === 1)) break;
+        }
+        zoom(2); advance(1); zoom(2); advance(90);
         controller.release(true); const detached = advance(1, true);
         document.getElementById("own-ooga-hud").click(); const retaken = advance(1, true);
         carryRoofs.push({ signedIn, gorilla, floor: q.name, ceiling: q.floor === H.floor ? H.ceiling : H.basement.ceiling,
-          acquired, overhead, carryExit, carrySettling, overheadAgain, detached, retaken });
+          acquired, overhead, carryExit, carrySettling, overheadAgain, closeExit: { shoulder, blocked, retained, residualRestored, residualSafe, shoulderFrames, first, firstClear, firstFrames }, detached, retaken });
       }
     } finally { G.release(); P.release(true); BL.net.state.me = account; BL.net.state.backend = backend; }
     P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
@@ -7692,10 +7741,10 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     && state.cache.every(c => c.cacheEntries <= 16) && state.cache.some(c => c.cacheEntries === 16)
     && state.landmarks.length === 3 && state.landmarks.every(p => p[0] === 0 && p[1] === 0) && state.clouds > 0 && state.weather > 0, JSON.stringify({ ...state, rows: rows.map(r => ({ name: r.name, zoomStable: r.zoomStable, zoomMoved: r.zoomMoved, caps: r.caps })) }));
   record("birds-eye combat: the pile, HQ hearth and basement center align on screen at every selected floor despite their different elevations", rows.every(r => r.orthoMix === 1 && r.centerError < 0.001), JSON.stringify(rows.map(({ name, centerError, orthoMix }) => ({ name, centerError, orthoMix }))));
-  record("birds-eye combat: carry clears every cut immediately while combat retains a stable underground slice through high-eye shoulder handoffs and projection reversal", state.transitions.length === 8
+  record("birds-eye combat: carry clears every cut immediately; an underground shoulder handoff keeps its slice while blocked, then restores intact terrain once the displayed camera is clear", state.transitions.length === 8
     && state.transitions.every(r => r.immediate < 1e-6 && r.mixStep < 0.08 && r.cutStep < 5 && r.rockError < 1e-6 && r.capError < 1e-5 && r.maxRegions <= 8 && r.carryClear)
-    && [4, 5].every(i => state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0 && state.transitions[i].fadeStep === 0 && state.transitions[i].span === 0)
-    && state.transitions[4].after.eyeY > state.transitions[4].after.ceiling
+    && state.transitions[4].blockedCloseFrames > 0 && state.transitions[4].blockedRetained && state.transitions[4].residualSafe
+    && state.transitions[4].after.clear && state.transitions[4].after.geometryClear && state.transitions[4].after.eyeY < state.transitions[4].after.ceiling
     && state.transitions[7].fadeError < 1e-6 && state.transitions[7].span > 1 && state.transitions[7].changed >= 10 && state.transitions[7].direction && state.transitions[7].blended >= 10
     && state.transitions[1].after.mix > 0 && state.transitions[1].after.mix < 1
     && state.transitions[2].before.mix === state.transitions[1].after.mix
@@ -7708,6 +7757,12 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
       && r.carryExit.mix > 0
       && [r.overhead, r.overheadAgain].every(s => s.controlled && s.combat && s.view === "birds-eye" && s.cut && s.mix === 1)
       && !r.detached.controlled && !r.detached.combat && r.detached.clear && r.detached.clearThroughout && r.retaken.view === "orbit"), JSON.stringify(state.carryRoofs));
+  record("underground combat: both actors and sign-in states retain the cut while the entering shoulder camera crosses intact rock, then restore all cover in clear shoulder and first-person views", state.carryRoofs.every(r => {
+    const c = r.closeExit;
+    return c.blocked > 0 && c.retained && c.residualSafe && c.shoulderFrames < 150 && c.firstFrames < 90
+      && c.shoulder.view === "shoulder" && c.shoulder.eye < r.ceiling && c.first.view === "first-person" && c.firstClear
+      && [c.shoulder, c.first].every(s => s.controlled && s.combat && s.clear && s.geometryClear);
+  }), JSON.stringify(state.carryRoofs.map(r => ({ signedIn: r.signedIn, gorilla: r.gorilla, floor: r.floor, ...r.closeExit }))));
   const released = state.released;
   record("birds-eye combat: releasing the actor restores terrain, weather, caps, paths, markers and whole hidden actors on the first detached update", released.before.mix === 1 && released.before.fade === 1
     && released.immediateFade < 1e-6 && released.firstClear && released.carryClear && released.withoutPlayer === 0
@@ -11586,6 +11641,14 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           }
           rightClick(); P.update(2);
           const rightCarry = P.view === "shoulder" && !P.combat && !P.focused && reticle.hidden;
+          const firstReturns = [];
+          const fromFirst = combat => {
+            P.zoom(0.5, {}); P.update(2); const first = P.view;
+            rightClick(); rightClick(); P.update(2); const far = P.view;
+            rightClick(); P.update(2);
+            firstReturns.push({ combat, first, far, back: P.view, keptMode: P.combat === combat });
+          };
+          fromFirst(false);
           const height = B.camera.target.y;
           rightClick(); rightClick(); P.update(2);
           const doubleCarry = P.view === "orbit" && !P.combat && !P.focused;
@@ -11605,6 +11668,8 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             rightClick(); rightClick(); P.update(2);
             if (!side) { tap("Shift", "ShiftRight", 2); P.readInput(1 / 60); }
           }
+          rightClick(); P.update(2); fromFirst(true);
+          rightClick(); rightClick(); P.update(2);
           const returned = P.view === "birds-eye" && P.combat, stops = [];
           const read = () => ({ view: P.view, combat: P.combat, distance: B.pilot.orbit.tDist });
           for (const combat of [false, true]) {
@@ -11641,7 +11706,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             stops.push({ combat, inward, freshInward, outward, freshOutward, heldPinch, immediate, firstStep, targetStep, maxStep, trackingError, finite });
             P.zoom(2, {}); P.update(2);
           }
-          gestures.push({ signedIn, carry, rightCarry, doubleCarry, aimed, returned, stops });
+          gestures.push({ signedIn, carry, rightCarry, doubleCarry, firstReturns, aimed, returned, stops });
         }
       } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
       const mapRows = [], map = document.getElementById("destination-hud"), picker = document.getElementById("destination-picker");
@@ -11866,6 +11931,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   record("gorilla camera gestures: signed in or out, wheel and right-click preserve carry/combat; combat overhead right-click aims at ground 10m ahead on either shoulder",
     state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.returned
       && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
+      && row.firstReturns.length === 2 && row.firstReturns.every(view => view.first === "first-person" && view.far === (view.combat ? "birds-eye" : "orbit") && view.back === "shoulder" && view.keptMode)
       && row.aimed.length === 2 && row.aimed.every(view => view.view === "shoulder" && view.combat && view.focused && view.error < 0.01)), JSON.stringify(state.gestures));
   record("gorilla zoom stops: the shared wheel path stops long bursts at shoulder in both directions and continues only after a pause; one pinch stays stopped after reversal, and a small outward scroll starts a smooth view change",
     state.gestures.every(row => row.stops.length === 2 && row.stops.every(stop =>

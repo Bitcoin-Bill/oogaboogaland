@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset and combat-only island cutaways are implemented. Right-click first-person return parity, combat Tab navigation and remaining touch details are still open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration and right-click return to shoulder are implemented. Right-click focus/sleep/gesture parity, combat Tab navigation and remaining touch details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -166,7 +166,7 @@ Native/captured cursor choice, Escape order, multiplayer companions, T switching
 | 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed; sheet key guard now aligned. |
 | 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order and detached interior exit agreed; Tab behavior remains proposed. |
 | 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Agreed below: detached acquisition keeps the eye and enters carry/orbit; active switches keep mode/view; same-actor selection does nothing. |
-| 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed, including whole-gesture shoulder stops and nearby scroll entry below. Review right-click first-person return parity separately. |
+| 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed, including whole-gesture shoulder stops, nearby scroll entry and right-click always returning to shoulder. |
 | 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
 | 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Gorilla multiplayer identity is now in scope and implemented below; exceptional controllers still need review. |
 
@@ -214,13 +214,13 @@ The maintainer approved **zoom and right-click preserve carry/combat; X switches
 | Ooga or gorilla carry | Move between first person, shoulder and orbit at the existing distance stops | Carry; native cursor |
 | Ooga or gorilla combat | Move between first person, shoulder and bird's-eye at the existing distance stops | Combat |
 | Gorilla combat bird's-eye, right-click | Shoulder view aimed at the ground 10m in front of its heading at the click | Combat; mouse look resumes |
-| Ooga combat bird's-eye, right-click | Previous close view aimed at its selected centerline point | Combat; existing movable aim range retained |
+| Ooga combat bird's-eye, right-click | Shoulder view aimed at its selected centerline point | Combat; existing movable aim range retained |
 | Controlled actor, X or portrait tap | Switch carry/combat without selecting another actor | Cursor follows the chosen mode |
 
 - Gorilla carry orbit no longer enters combat or requests capture when zoom reaches shoulder. Right-click from carry orbit also stays carry. The Ooga already preserved intent; its camera helper no longer exposes an unused combat setter, and weapon hints now identify X as the mode switch.
 - The gorilla's 10m point is a one-time selection, not a target that follows its turning body. Shoulder framing compensates for the selected shoulder and the current head/arm height. It samples ground below shoulder height in the current layer, including solid surfaces and water; with no ground there it uses the gorilla's feet plane. Residual peek is cleared on entry; later look/peek inputs remain manual.
 - X and the portrait are now wired consistently in Bifrost, DSB and the poker floor. Typing, held/modified X, venue menus, transitions, and seated poker UI retain their existing priority. Arcade's intentional carry-only walking and game controls are unchanged. Lab and Factory already forwarded X.
-- Existing double-right-click and distance thresholds remain unchanged. The gorilla always returns to shoulder; the Ooga remembers whether its previous close view was shoulder or first person. This distinction remains recorded for a later decision.
+- Existing double-right-click and distance thresholds remain unchanged. The later right-click agreement below removes the Ooga's remembered first-person return; both actors now return to shoulder.
 - Existing Ooga/gorilla camera scenarios now cover both sign-in states and carry/combat preservation. The gorilla scenario projects the resulting camera ray onto the actual ground plane to check the 10m point on both shoulders. Existing Bifrost, DSB and poker scenarios cover X/portrait routing and UI priority. These checks are authored, not executed under **wait**.
 
 ## Selection and retake review after `9d38a28`
@@ -358,9 +358,41 @@ Source inspection found that cutaway activation used the remaining projection bl
 
 - One shared combat requirement now applies to both actors, regardless of sign-in. Combat bird's-eye reveals the current floor and ramps using the existing height and head-clearance rules.
 - Switching to carry or detaching clears the cut, local regions, ramp openings, section caps and ramp markers on the next scene update, even while the camera's projection continues blending. Props and actors hidden as whole units by slicing are restored too. Detached acquisition/retake stays in intact carry/orbit.
-- Within combat, bird's-eye/shoulder transitions retain slicing while their projection blends or the eye is still above the lower-level ceiling. Both actors use that same geometric rule; the Ooga-only orbit/entry exception is removed. The Mempool chamber retains its existing intact roof when a close camera is inside it.
+- The initial checkpoint retained combat slicing while projection blended or the eye remained above the actor's cut plane. The maintainer clarified that shoulder and first-person must restore the intact island once the camera is in view. Source inspection found that the old height test could retain a slice indefinitely in a settled shoulder view, including when its eye was already in the room.
+- A bird's-eye exit now retains its cut until the displayed close camera has a clear volume and connection to the actor through the intact terrain, ramp slopes, entrance frames, beds and solid props. This includes the Mempool roof. Residual projection alone does not postpone restoration underground. Once restored, ordinary close-view obstructions do not reopen the slice.
+- Underground combat close cameras shorten their boom toward clear air near the actor, blended through the existing entry motion. The Ooga then resolves its selected aim point from the corrected eye. A clear gorilla shoulder target keeps the original aim ray while its boom shortens; if that target is blocked, its saved 10m world point guides the corrected view until deliberate input changes it. First-person correction keeps its look direction. Pinned climbing handoffs complete their projection and pending cutaway recovery. Carry/orbit remains unrestricted.
 - The gorilla overlay now checks combat intent as the Ooga overlay already did, so a sleeping gorilla with a retained bird's-eye view does not bypass ordinary rock visibility.
 - Existing floor/cutaway regressions are updated for carry restoration, detached release/retake and both actors/sign-in states. Runtime results remain pending under **wait**.
+
+## Right-click review after `a7b806f`
+
+This is a source audit, not a runtime observation. Once an actor is controlled, the handlers have no sign-in branch; the differences below apply signed in and out.
+
+| Starting state | Ooga at audit checkpoint | Gorilla at audit checkpoint |
+|---|---|---|
+| Combat bird's-eye | Returns to shoulder and preserves the selected world aim point, except a remembered first-person double-click exit can return directly to first person | Always enters shoulder aimed at ground 10m ahead of the heading at the click |
+| Carry orbit | Enters shoulder toward the clicked world point, with the same remembered first-person exception | Enters shoulder using the retained view direction |
+| Combat shoulder or first person, captured | Single press keeps the view; holding focuses weapon aim (narrower FOV, slower look and movement) | Single press keeps the view; no weapon-aim hold effect |
+| Combat shoulder or first person, cursor freed | Right press attempts recapture without attacking; native-lock failure differs from the distant-view fallback | Right press does not recapture; ordinary left canvas click does |
+| Carry shoulder or first person | Single press keeps view; no weapon-aim effect | Same |
+| Short double-right-click in either close view | Returns to carry orbit or combat bird's-eye; remembers a first-person departure | Returns to carry orbit or combat bird's-eye; no first-person memory |
+| Settled sleeping actor | Rejects right-click view changes without waking | Still accepts view changes; effective combat/capture remain off |
+| Interrupted gestures | Blur/cancel clears double-click history; other-button presses invalidate it | Blur/cancel and other-button presses can leave timing behind; right-button release can also complete a pending left-button action because release matches pointer ID alone |
+
+Both use a first tap of at most 350ms and 8px movement, followed by a second press within 350ms. Holding or dragging right alone is not carry-mode camera look. The browser context menu is suppressed. Detached camera has no actor close-view right-click transition.
+
+Evidence: [Ooga gesture state and routing](https://github.com/OogaBoogaX/oogaboogaland/blob/a7b806fb16fd0ba47aea1f4ebf2469c5afb5f383/src/js/pilot.js#L1161), [Ooga view handoff and hidden return](https://github.com/OogaBoogaX/oogaboogaland/blob/a7b806fb16fd0ba47aea1f4ebf2469c5afb5f383/src/js/pilot.js#L1691), [gorilla target and right press](https://github.com/OogaBoogaX/oogaboogaland/blob/a7b806fb16fd0ba47aea1f4ebf2469c5afb5f383/src/js/clanker-play.js#L476), [gorilla release routing](https://github.com/OogaBoogaX/oogaboogaland/blob/a7b806fb16fd0ba47aea1f4ebf2469c5afb5f383/src/js/clanker-play.js#L609).
+
+**Agreed and implemented:** right-click from bird's-eye always enters third-person shoulder for either actor, never directly first person. The Ooga's hidden first-person memory is removed, including its carry-orbit return path. Carry/combat and existing target selection are preserved. First person remains a fresh inward scroll from shoulder. Existing actor/auth camera scenarios now include first-person → double-right-click distant → right-click shoulder.
+
+**Recommended next; not yet implemented:**
+
+- Keep single right-click in a close view there, and double-right-click returning to the distant view for its current mode.
+- Make a right-click with freed combat cursor recapture mouse look consistently for both actors without attacking or seeding a double-click. Keep Ooga held precision aim as a weapon ability; no corresponding gorilla attack is implied.
+- Ignore view-changing right-clicks while asleep; Space remains the explicit wake action.
+- Clear gesture timing on blur, cancellation, other-button input and actor/mode changes. Match button as well as pointer ID when finishing gorilla attacks, so releasing right cannot finish a left-button charge.
+
+Carry-orbit target selection (clicked point versus retained direction) and native right-drag look can be discussed separately.
 
 ## Validation and play-test queue
 
@@ -378,7 +410,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
 7. Long wheel swipes with momentum, fresh scrolls and new pinches in both directions through shoulder, for both actors and sign-in states. Check small outward increments, low ceilings, floors at different heights, both carry/combat modes and right-click after nearby bird's-eye zoom.
 8. Map open/cancel, all destinations, arrival refusal followed by another choice, controlled Ooga/gorilla and detached travel, and Reset camera / 0 in each walking scene. Include close/overhead views, underground arrivals, occupied destinations, sleepers, seated/climbing/airborne actors, both sign-in states and a second multiplayer page.
-9. HQ, basement and Mempool cutaways with each actor signed in/out: combat bird's-eye reveals the floor; X to carry and detachment restore it immediately; combat close-view handoffs retain safe clearance; detached retake keeps intact carry/orbit.
+9. HQ, basement and Mempool cutaways with each actor signed in/out: combat bird's-eye reveals the floor; X to carry and detachment restore it immediately; close-view exits retain the cut while obstructed, restore only once clear and settle with an intact island; detached retake keeps intact carry/orbit. Include steep Ooga aim, gorilla 10m ground aim with a blocked shoulder target, low roofs, both shoulders, pinned climbing handoffs and direct first-person zoom during the descent.
 
 ## Review checkpoints
 
@@ -404,4 +436,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Destination travel and camera reset: approved; picker, guarded actor travel, separate Reset camera / 0, interior visibility and DSB retake distinction implemented. `npm run build`, `node --check` on all 13 changed JavaScript files and `git diff --check` passed. Existing regressions were extended; runtime checks remain unrun under **wait**.
 - `f7db4a4`: destination travel and camera reset committed and pushed.
 - Combat-only island cutaway: shared mode gate and geometric handoff rule implemented for Oogas/clankers; carry and detached restore all cover. `npm run build`, `node --check` on both changed JavaScript files and `git diff --check` passed. Existing floor/cutaway regressions cover both actors and sign-in states; runtime checks remain unrun under **wait**.
-- Remaining decisions: right-click first-person return parity, combat Tab navigation, touch and exceptional-controller details.
+- `a7b806f`: combat-only lower-level cutaways committed and pushed.
+- Right-click source review: remaining focus, weapon-aim, sleep and gesture differences logged. Always returning to shoulder is approved and implemented; other recommendations remain proposals. Clear-camera restoration of lower-floor combat cutaways is also approved and implemented. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing camera regressions cover first-person departures returning to shoulder and lower-floor restoration for both actors/sign-in states. Runtime checks remain unrun under **wait**.
+- Remaining decisions: right-click focus/sleep/gesture parity, combat Tab navigation, touch and exceptional-controller details.

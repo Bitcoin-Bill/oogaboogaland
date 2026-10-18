@@ -251,7 +251,7 @@
   const CUTAWAY_TOP = 16, CUTAWAY_REGION_CAP = 8;
   const CUTAWAY_RAMP_START = 0.12, CUTAWAY_RAMP_END = 0.88;
   const CUTAWAY_FLOOR_RATE = 56, CUTAWAY_FLOOR_DEADBAND = 0.015;
-  let cutawayHeight = NaN, cutawayFeet = 0, cutawayPlayer = null;
+  let cutawayHeight = NaN, cutawayFeet = 0, cutawayPlayer = null, cutawayHandoffPlayer = null;
   let cutawayX = 0, cutawayZ = 0, cutawayHeadY = 0, cutawayHill = false, cutawayPool = 0;
   let cutawayProgress = NaN, cutawayLevel = 0, cutawayHillMix = 0;
   let cutawayTravelRamp = null, cutawayTravelChannel = -1, cutawayTravelStation = 0;
@@ -5136,7 +5136,16 @@
     cutawayPool = !player || !mempoolIsland.overAt(player.root.position.x, player.root.position.z, -1) ? 0
       : mempoolIsland.coveredAt(player.root.position.x, actorFeet + 0.5, player.root.position.z) ? 2 : 1;
     const subterranean = player && (cutawayPool ? cutawayPool === 2 : actorFeet < -STEP_MAX);
-    const showRampMarkers = !!player && cameraMix > 0.5;
+    if (!combat) cutawayHandoffPlayer = null;
+    else if (cutawayHandoffPlayer) cutawayHandoffPlayer = player;
+    if (overhead) cutawayHandoffPlayer = player;
+    else if (cutawayHandoffPlayer && (!subterranean || combatCameraReady(player, gorilla))) cutawayHandoffPlayer = null;
+    // Keep an overhead exit open until the displayed eye has reached clear
+    // air connected to the actor. A restored close view never reopens the
+    // island merely because furniture or a wall later blocks its camera.
+    const active = combat && (overhead || (subterranean ? cutawayHandoffPlayer === player : cameraMix > 0));
+    const mix = active ? cameraMix : 0;
+    const showRampMarkers = active && cameraMix > 0.5;
     for (const lintel of headquartersRimLintels) lintel.visible = !showRampMarkers;
     for (const marker of headquarters.rampMarkers) {
       marker.node.visible = marker.frame.visible = marker.arrow.visible = showRampMarkers;
@@ -5149,15 +5158,7 @@
       const z = up.x * downhill.x + up.y * downhill.y + up.z * downhill.z;
       marker.node.rotation.y = Math.atan2(-x, -z);
     }
-    // An eye still inside the Mempool roof must see the intact chamber, even
-    // when a shoulder/orbit transition lifts it above the actor's cut height.
-    const poolInteriorView = cutawayPool === 2 && !overhead
-      && mempoolIsland.coveredAt(camera.position.x, camera.position.y, camera.position.z);
-    const mix = poolInteriorView ? 0 : cameraMix;
-    const active = combat && !poolInteriorView && (mix > 0 || overhead
-      || subterranean && camera.position.y > birdsEyeCeiling(player, gorilla));
-    // Combat handoffs retain the cut while the eye is above the ceiling, for
-    // either actor. Floor/ramp progress still follows the character's height.
+    // Floor/ramp progress continues to follow the character during the dolly.
     const rockMix = active && subterranean ? 1 : mix;
     RENDER_OPTS.birdsEyeCutaway = active;
     RENDER_OPTS.cutawayFade = rockMix;
@@ -6707,6 +6708,8 @@
   const CAMERA_REQUESTED = { x: 0, y: 0, z: 0 };
   const CAMERA_FROM = { x: 0, y: 0, z: 0 };
   const CAMERA_VOLUME_FROM = { x: 0, y: 0, z: 0 };
+  const COMBAT_CAMERA_HEAD = { x: 0, y: 0, z: 0 };
+  const COMBAT_CAMERA_POINT = new Float64Array(3);
   const CAMERA_RECOVERY = { x: 0, y: 0, z: 0 };
   const CAMERA_MANUAL_VIEW = { x: 0, y: 0, z: 0 }, CAMERA_MANUAL_BODY = { x: 0, y: 0, z: 0 };
   const CAMERA_TRAIL = new Float64Array(CAMERA_TRAIL_CAPACITY * 3);
@@ -7394,6 +7397,64 @@
       setVec(out, p.x, p.y - player.baseY + player.headOffset * CLOSE_VIEW.eyeRatio, p.z);
     }
   };
+  const combatCameraUnderground = (player, gorilla) => {
+    const p = player.root.position, feet = p.y - (gorilla ? 0 : player.baseY);
+    return mempoolIsland.overAt(p.x, p.z, -1) ? mempoolIsland.coveredAt(p.x, feet + 0.5, p.z) : feet < -STEP_MAX;
+  };
+  const combatCameraSegmentClear = (a, x, y, z) => {
+    if (!cameraSegmentClear(a.x, a.y, a.z, x, y, z)
+      || !solids.segmentClear(a.x, a.y - CAMERA_RADIUS, a.z, x, y - CAMERA_RADIUS, z, CAMERA_RADIUS, CAMERA_RADIUS * 2)) return false;
+    // The voxel sweep excludes rendered ramp prisms. Sample their actual
+    // camera volume as the ordinary close-camera sweep does.
+    const steps = Math.max(1, Math.min(1024, Math.ceil(Math.hypot(x - a.x, y - a.y, z - a.z) / (island.unit * 0.5))));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      if (!island.clearAt(lerp(a.x, x, t), lerp(a.y, y, t) - CAMERA_RADIUS, lerp(a.z, z, t), CAMERA_RADIUS, CAMERA_RADIUS * 2)) return false;
+    }
+    return true;
+  };
+  const combatCameraAnchor = (player, gorilla) => {
+    const p = player.root.position, a = COMBAT_CAMERA_HEAD, feet = p.y - (gorilla ? 0 : player.baseY);
+    if (gorilla) {
+      const head = player.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
+      updateWorld(player.root, player.root.parent.world);
+      math.mat4.transformPoint(COMBAT_CAMERA_POINT, head.world, bounds.center[0], bounds.min[1] + (bounds.max[1] - bounds.min[1]) * 0.65, bounds.max[2] + 0.01);
+      setVec(a, COMBAT_CAMERA_POINT[0], COMBAT_CAMERA_POINT[1], COMBAT_CAMERA_POINT[2]);
+    } else setVec(a, p.x, feet + player.headOffset * 0.95 + player.viewLift, p.z);
+    if (combatCameraSegmentClear(a, a.x, a.y, a.z)) return true;
+    // A posed head can press against a roof. Search only the actor's standing
+    // volume, never bisect from an origin already embedded in stone.
+    const top = a.y;
+    for (let i = 1; i <= 4; i++) {
+      setVec(a, p.x, lerp(top, feet + CAMERA_RADIUS + 0.05, i / 4), p.z);
+      if (combatCameraSegmentClear(a, a.x, a.y, a.z)) return true;
+    }
+    return false;
+  };
+  const combatCameraReady = (player, gorilla) => combatCameraAnchor(player, gorilla)
+    && combatCameraSegmentClear(COMBAT_CAMERA_HEAD, camera.position.x, camera.position.y, camera.position.z);
+  const constrainCombatCamera = (player, eye, progress, gorilla = false, target = null, aimPoint = null) => {
+    if (!combatCameraUnderground(player, gorilla)) return false;
+    if (!combatCameraAnchor(player, gorilla)) return true;
+    const head = COMBAT_CAMERA_HEAD;
+    if (combatCameraSegmentClear(head, eye.x, eye.y, eye.z)) return true;
+    // A clear shoulder target preserves the gorilla's selected aim ray while
+    // shortening its boom. Otherwise approach the safe body anchor.
+    const from = target && combatCameraSegmentClear(head, target.x, target.y, target.z) ? target : head;
+    const dx = eye.x - from.x, dy = eye.y - from.y, dz = eye.z - from.z;
+    let low = 0, high = 1;
+    for (let i = 0; i < 10; i++) {
+      const t = (low + high) * 0.5, x = from.x + dx * t, y = from.y + dy * t, z = from.z + dz * t;
+      if (combatCameraSegmentClear(from, x, y, z) && combatCameraSegmentClear(head, x, y, z)) low = t;
+      else high = t;
+    }
+    // The existing entry blend keeps the descending camera continuous. Once
+    // it settles, its eye is wholly inside the proven clear prefix.
+    const t = progress >= 1 ? low : 1 - Math.max(0, progress) * (1 - low);
+    setVec(eye, from.x + dx * t, from.y + dy * t, from.z + dz * t);
+    if (target && from === head && aimPoint) setVec(target, aimPoint.x, aimPoint.y, aimPoint.z);
+    return true;
+  };
   const enterFreeCameraView = (eye) => {
     if (cameraClearAt(eye.x, eye.y, eye.z)) return false;
     // A low orbit focus may overlap a walkable prop or the ground: lift the eye over that support first.
@@ -7580,7 +7641,9 @@
   const clampCamera = (p, closeMix = 0, closeClearance = CLEARANCE, smoothStep = false, dt = 0, resetSmooth = false, directView = false, freeMove = false, preserveExitAngle = false) => {
     const requestedX = p.x, requestedY = p.y, requestedZ = p.z;
     const player = pilot && pilot.player;
-    if (cameraUnrestricted && player && closeMix > 0 && !preserveExitAngle && !(pilot.birdsEyeMix > 0)) {
+    const combatClose = player && pilot.aiming && !pilot.birdsEye
+      && constrainCombatCamera(player, p, pilot.shoulderEntryMix);
+    if (!combatClose && cameraUnrestricted && player && closeMix > 0 && !preserveExitAngle && !(pilot.birdsEyeMix > 0)) {
       cameraHeadAt(CAMERA_VOLUME_FROM, player);
       cameraReentering = !cameraClearAt(CAMERA_PREVIOUS.x, CAMERA_PREVIOUS.y, CAMERA_PREVIOUS.z) || !cameraSegmentClear(CAMERA_PREVIOUS.x, CAMERA_PREVIOUS.y, CAMERA_PREVIOUS.z, CAMERA_VOLUME_FROM.x, CAMERA_VOLUME_FROM.y, CAMERA_VOLUME_FROM.z);
       cameraUnrestricted = false;
@@ -7589,7 +7652,7 @@
     }
     // Orbit views retain their chosen pose everywhere.
     // A close-view dolly starting in rock keeps its authored path to the final head position.
-    if (pilot?.birdsEyeMix > 0 || preserveExitAngle || closeMix === 0 || cameraReentering && closeMix < 1) {
+    if (combatClose || pilot?.birdsEyeMix > 0 || preserveExitAngle || closeMix === 0 || cameraReentering && closeMix < 1) {
       if (pilot?.birdsEyeMix > 0 || preserveExitAngle || closeMix === 0) { cameraUnrestricted = true; cameraReentering = false; }
       cameraManualContact = false;
       let index = 0;
@@ -9619,8 +9682,16 @@
   const clankerCameraClear = (x, y, z, toX, toY, toZ) =>
     island.voxelSegmentClearAt(x, y, z, toX, toY, toZ, 0.1, 0.15)
     && solids.segmentClear(x, y, z, toX, toY, toZ, 0.1, 0.15);
-  const constrainClankerCamera = (entry, view, hold = false, previousEye = null, firstPerson = false, birdsEye = false) => {
+  const constrainClankerCamera = (entry, view, hold = false, previousEye = null, firstPerson = false, birdsEye = false, aimPoint = null) => {
     const a = view.target, b = view.position;
+    if (clankerPlay.combat && !birdsEye && (!hold || cutawayHandoffPlayer === entry)) {
+      const x = b.x, y = b.y, z = b.z;
+      if (constrainCombatCamera(entry, b, 1 - (view.orthoMix || 0), true, firstPerson ? null : a, aimPoint)) {
+        if (firstPerson) { a.x += b.x - x; a.y += b.y - y; a.z += b.z - z; }
+        return;
+      }
+    }
+    if (clankerPlay.view === "shoulder") return;
     if (clankerPlay.view === "orbit") {
       // Match the Ooga carry orbit: keep its chosen boom through stone and
       // track the cave at the eye without changing the camera position.
@@ -11557,7 +11628,7 @@
     cutawayX = cutawayZ = cutawayHeadY = 0;
     cutawayHill = false;
     cutawayPool = 0; poolShade = poolUnder = 0;
-    cutawayPlayer = null;
+    cutawayPlayer = cutawayHandoffPlayer = null;
     cutawayPathBounds = null;
     cutawayTravelRamp = null; cutawayTravelChannel = -1; cutawayTravelStation = 0;
     CUTAWAY_PATH_STATE.lo.fill(0); CUTAWAY_PATH_STATE.hi.fill(0); CUTAWAY_PATH_STATE.mix.fill(0); CUTAWAY_PATH_STATE.windowMix.fill(0); CUTAWAY_PATH_STATE.active = 0; CUTAWAY_PATH_STATE.version++;

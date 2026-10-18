@@ -231,7 +231,7 @@
     let peekTarget = 0, peekMix = 0;
     let aimCave = null, aimMix = 0, aimVelocity = 0, adsMix = 0, ads = false, disposed = false;
     let aimLeftAccepted = false, aimLeftFocused = false, aimReleaseEvent = null;
-    let rightDownAt = -Infinity, rightTapAt = -Infinity, rightTravel = 0, rightExitHeld = false, rightReturnFirstPerson = false;
+    let rightDownAt = -Infinity, rightTapAt = -Infinity, rightTravel = 0, rightExitHeld = false;
     let primaryButtonCave = null;
     const buttonTarget = { x: 0, y: 0, z: 0 };
     let reticleRadius = -1;
@@ -1184,7 +1184,6 @@
           if (now - rightTapAt <= RIGHT_DOUBLE_TIME) {
             e.preventDefault(); e.stopImmediatePropagation();
             ads = false;
-            rightReturnFirstPerson = closeWanted;
             shooterView(false);
             rightExitHeld = true;
             return;
@@ -1198,13 +1197,13 @@
         e.preventDefault(); e.stopImmediatePropagation();
         if (!closeWanted && !shoulderView) {
           const rect = canvas.getBoundingClientRect();
-          resumeRightView(e.clientX - rect.left, e.clientY - rect.top);
+          shooterView(true, e.clientX - rect.left, e.clientY - rect.top);
         }
         return;
       }
       if (birdsEye() && e.button === 2 && e.type === "pointerdown") {
         e.preventDefault(); e.stopImmediatePropagation();
-        resumeRightView(renderer.size.width / 2, renderer.size.height / 2);
+        shooterView(true, renderer.size.width / 2, renderer.size.height / 2);
         return;
       }
       e.preventDefault(); e.stopImmediatePropagation();
@@ -1693,7 +1692,6 @@
       const cave = player();
       if (!weaponViewReady(cave)) return;
       rightDownAt = rightTapAt = -Infinity;
-      if (active) rightReturnFirstPerson = false;
       if (active && birdsEye() && !closeWanted) {
         anchorOverheadPointer(cave);
         // The assisted hit may be centred on an object and refreshed on a
@@ -1773,11 +1771,6 @@
       crew.poseWeapon(cave);
       syncWeaponHud();
       syncModeHud();
-    };
-    const resumeRightView = (px, py) => {
-      const firstPerson = rightReturnFirstPerson;
-      shooterView(true, px, py);
-      if (firstPerson && shoulderView) enterClose();
     };
     const modeAction = (action) => {
       const cave = player();
