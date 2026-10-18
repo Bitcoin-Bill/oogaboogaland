@@ -1004,6 +1004,7 @@
   };
   const onKey = (e) => {
     if (scene.booth.mode) return boothKey(scene, e);
+    if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) return pilot.resetCamera();
     if ((e.key === "x" || e.key === "X") && !e.repeat && pilot.modeAction("mode-toggle")) return true;
     if ((e.key === "1" || e.key === "2") && pilot.weaponMode(Number(e.key))) return true;
     if (e.key === "g" || e.key === "G") return pilot.weaponAction("weapon-toggle");
@@ -1590,10 +1591,7 @@
       }
       else if (action === "reset") { game.resetAll(); location.reload(); }
       else if (action === "leave") leaveCave();
-      else if (action === "reset-view") {
-        endBooth(scene);
-        pilot.goPreset("entrance");
-      }
+      else if (action === "reset-view") pilot.resetCamera();
       else if (action === "act") { if (!greeter || !greeter.act()) pilot.action(); }
       else if (action.startsWith("mode-")) pilot.modeAction(action);
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);

@@ -5647,17 +5647,23 @@ const hubBlockHeight = { name: "header clock and block height", why: "rule: the 
   record("header: a single-digit clock is centered from its displayed time and local zone, while the chain feed paints block height below it", before.height === "\u2014" && before.namedImage && !before.bananas && before.text === `9:00 AM ${before.zone}` && before.viewWidth === before.cells && Math.abs(before.cssWidth - before.cells / 6) < 1e-6 && after.shown === "900,123" && after.label === "Bitcoin block height 900123" && !after.bananas && !after.icon, JSON.stringify({ before, after }));
 } };
 const hubDestinationNames = { name: "destination accessible names", why: "regression: each visible destination label must occur in the button's accessible name", run: async (b) => {
-  const rows = [];
   await b.send("Accessibility.enable");
-  await b.evaluate(`__ooga.pilot.goPreset("pile"); __ooga.advance(0.1, 1 / 60)`);
-  for (const [preset, expected] of [["lab", "Lab"], ["mirror", "Mirror"], ["underground", "HQ"], ["basement", "Basement"], ["mempool", "Mempool"], ["pile", "Pile"]]) {
-    const label = await b.evaluate(`(() => { document.getElementById("destination-hud").click(); __ooga.advance(0.1, 1 / 60); return document.getElementById("detached-destination-name").textContent; })()`);
-    const tree = await b.send("Accessibility.getFullAXTree");
-    const names = tree.result.nodes.filter(node => node.role?.value === "button" && node.name?.value.includes("Ooga Booga Land destinations")).map(node => node.name.value);
-    rows.push({ preset, expected, label, names });
-  }
-  await b.evaluate(`__ooga.pilot.goPreset("pile"); __ooga.advance(0.1, 1 / 60)`);
-  record("destinations: every visible place label is included in the actual browser accessibility name", rows.every(row => row.label === row.expected && row.names.length === 1 && row.names[0].toLowerCase().includes(row.label.toLowerCase())), JSON.stringify(rows));
+  const picker = await b.evaluate(`(() => {
+    const map = document.getElementById("destination-hud"); map.click();
+    return { open: document.getElementById("destination-picker").open, expanded: map.getAttribute("aria-expanded"),
+      choices: [...document.querySelectorAll("#destination-list [data-destination]")].map(button => [button.dataset.destination, button.textContent]) };
+  })()`);
+  const tree = await b.send("Accessibility.getFullAXTree");
+  const names = tree.result.nodes.filter(node => node.role?.value === "button").map(node => node.name?.value);
+  const closed = await b.evaluate(`(() => {
+    document.querySelector('#destination-picker [data-action="map-close"]').click();
+    const map = document.getElementById("destination-hud");
+    return !document.getElementById("destination-picker").open && map.getAttribute("aria-expanded") === "false";
+  })()`);
+  const expected = ["pile", "lab", "mirror", "underground", "basement", "mempool", "factory", "arcade", "bca", "gate", "bifrost", "timechain"];
+  record("destinations: the Map opens a named dialog with all twelve individually named places and reports its open state accessibly", picker.open && picker.expanded === "true" && closed
+    && tree.result.nodes.some(node => node.role?.value === "dialog" && node.name?.value === "Destinations")
+    && picker.choices.length === expected.length && expected.every(id => picker.choices.some(([name, label]) => name === id && names.includes(label))), JSON.stringify(picker));
 } };
 const hubWalking = { name: "hub walking", why: "regression: steering keys came out mirrored, and the removed hub Agent could still be summoned", run: async (b) => {
   // Use the running check's clear patch: seeded scenery now places a rock at the old (-8, 8) start.
@@ -5717,47 +5723,92 @@ const hubWalking = { name: "hub walking", why: "regression: steering keys came o
   await b.key("Escape");
   record("hub walking: W A S D walk an Ooga away, left, back and right on screen from two camera angles, and Right Shift+A does not restore the removed hub Agent", allWalk(ooga) && !agent, JSON.stringify({ ooga, agent }));
 } };
-const hubMapNavigation = { name: "hub map navigation", why: "regression: the map could not advance after Lab and departing arrivals lost their location label", run: async (b) => {
+const hubMapNavigation = { name: "hub map navigation", why: "regression: choosing a destination or resetting the camera must preserve the controlled actor and view family", run: async (b) => {
   const r = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, H = B.hud, a = B.cavemen.get("portlandhodl");
-    const map = document.getElementById("destination-hud"), label = document.getElementById("detached-destination-name");
-    const rows = [];
-    for (const mode of ["detached", "carry", "combat", "first-person"]) {
-      P.goPreset("pile"); if (mode !== "detached") P.possess(a);
-      if (mode === "combat" && !P.aiming) P.modeAction("mode-toggle");
-      if (mode === "first-person") P.enterClose(true);
-      P.controls.reset();
-      map.click(); B.advance(0.1, 1 / 60);
-      const lab = label.textContent === "Lab" && !map.hidden;
-      // This is the event target/coordinate pair used by the locked cursor.
-      const rect = map.getBoundingClientRect();
-      map.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
-      B.advance(0.1, 1 / 60);
-      const mirror = label.textContent === "Mirror";
-      const cycle = [];
-      for (const next of ["HQ", "Basement", "Mempool", "Pile"]) { map.click(); B.advance(0.1, 1 / 60); cycle.push(label.textContent === next); }
-      rows.push({ mode, lab, mirror, cycle, possession: mode === "detached" ? !P.player : P.player === a });
-    }
+    const map = document.getElementById("destination-hud"), label = document.getElementById("detached-destination-name"), picker = document.getElementById("destination-picker");
+    const reset = document.getElementById("reset-camera-hud"), rows = [], net = BL.net.state, account = net.me, backend = net.backend;
+    const character = BL.characters.get(a.traits.name), xyz = p => [p.x, p.y, p.z];
+    const snapshot = () => ({ actor: xyz(a.root.position), eye: xyz(B.camera.position), target: xyz(B.camera.target), mode: P.mode, combat: P.aiming, player: P.player === a });
+    const error = (a, b) => Math.max(...a.map((n, i) => Math.abs(n - b[i])));
+    const choose = name => picker.querySelector('[data-destination="' + name + '"]').click();
+    const unchanged = (before, after) => error(before.actor, after.actor) < 1e-6 && error(before.eye, after.eye) < 1e-6
+      && error(before.target, after.target) < 1e-6 && before.mode === after.mode && before.combat === after.combat && before.player === after.player;
+    const changeFraming = () => { if (P.birdsEye) P.hooks.onZoom(1.15, {}); else P.hooks.onOrbit(30, -20); P.update(1); };
+    try {
+      net.backend = true;
+      for (const signedIn of [false, true]) for (const mode of ["detached", "carry-orbit", "carry-shoulder", "carry-first-person", "combat-birds-eye", "combat-shoulder", "combat-first-person"]) {
+        net.me = signedIn ? { id: 72, login: character.github || character.handle, display: "Map fixture" } : null;
+        P.goPreset("pile");
+        if (mode !== "detached") {
+          P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+          P.navigate({ position: { x: -5, y: B.island.surfaceAt(-5, 5), z: 5 }, yaw: 0.4, pitch: 0.3, dist: 10 });
+          if (P.aiming !== mode.startsWith("combat")) P.modeAction("mode-toggle");
+          if (mode.endsWith("shoulder") || mode.endsWith("first-person")) { P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60); }
+          if (mode.endsWith("first-person")) P.hooks.onZoom(0.8, {});
+        }
+        B.advance(1, 1 / 60); P.controls.reset();
+        const before = snapshot(), prepared = mode === "detached" ? !P.player : before.player && before.mode === mode.slice(mode.indexOf("-") + 1)
+          && before.combat === mode.startsWith("combat"); map.click();
+        const opened = picker.open && unchanged(before, snapshot());
+        picker.querySelector('[data-action="map-close"]').click();
+        const cancelled = !picker.open && unchanged(before, snapshot());
+        // The virtual cursor delivers this same target and coordinate pair.
+        const rect = map.getBoundingClientRect();
+        map.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+        choose("lab"); const after = snapshot(), delta = after.actor.map((n, i) => n - before.actor[i]);
+        const translated = !before.player || error(after.eye.map((n, i) => n - before.eye[i]), delta) < 1e-5
+          && error(after.target.map((n, i) => n - before.target[i]), delta) < 1e-5;
+        const arrived = !picker.open && label.textContent === "Lab" && before.player === after.player && before.mode === after.mode && before.combat === after.combat;
+        changeFraming();
+        const resetBefore = snapshot(); reset.click(); const button = snapshot();
+        changeFraming(); const keyBefore = snapshot();
+        document.getElementById("scene").dispatchEvent(new KeyboardEvent("keydown", { key: "0", code: "Digit0", bubbles: true, cancelable: true }));
+        document.getElementById("scene").dispatchEvent(new KeyboardEvent("keyup", { key: "0", code: "Digit0", bubbles: true, cancelable: true }));
+        const key = snapshot(), resetKept = [button, key].every(s => error(s.actor, resetBefore.actor) < 1e-6
+          && s.player === resetBefore.player && s.mode === resetBefore.mode && s.combat === resetBefore.combat
+          && s.eye.concat(s.target).every(Number.isFinite));
+        rows.push({ signedIn, mode, prepared, opened, cancelled, arrived, translated, moved: Math.hypot(...after.eye.map((n, i) => n - before.eye[i])),
+          resetKept, resetChanged: error(button.eye.concat(button.target), resetBefore.eye.concat(resetBefore.target)) > 1e-5
+            && error(key.eye.concat(key.target), keyBefore.eye.concat(keyBefore.target)) > 1e-5 });
+      }
+    } finally { net.me = account; net.backend = backend; }
+    P.goPreset("pile"); P.possess(a); if (P.aiming) P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
+    map.click(); const beforeRefusal = snapshot(), grabbedBy = a.grabbedBy;
+    let refusal;
+    try {
+      a.grabbedBy = {};
+      choose("lab");
+      const blocked = picker.open && unchanged(beforeRefusal, snapshot()) && document.getElementById("destination-picker-status").textContent.includes("released");
+      a.grabbedBy = grabbedBy; choose("mirror");
+      refusal = { blocked, otherChoice: !picker.open && label.textContent === "Mirror" && P.player === a };
+    } finally { a.grabbedBy = grabbedBy; if (picker.open) picker.close(); }
     P.goPreset("pile"); P.possess(a); if (P.aiming) P.modeAction("mode-toggle");
-    map.click(); B.advance(0.1, 1 / 60);
+    map.click(); choose("lab"); B.advance(0.1, 1 / 60);
     P.hooks.onOrbit(10, 0); P.hooks.onZoom(1.05); B.advance(0.1, 1 / 60);
     const looking = label.textContent === "Lab";
+    const lab = B.mouths.find(mouth => mouth.id === "c11");
+    P.orbit.yaw = P.orbit.tYaw = lab.ry;
     const start = { ...a.root.position };
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS" })); B.advance(1, 1 / 60);
     window.dispatchEvent(new KeyboardEvent("keyup", { key: "s", code: "KeyS" })); B.advance(0.1, 1 / 60);
     const departed = { distance: Math.hypot(a.root.position.x - start.x, a.root.position.z - start.z), label: label.textContent, visible: label.classList.contains("show") };
     const areas = [];
-    // HQ and Basement are map destinations, not detached camera presets.
-    for (const [name, clicks] of [["underground", 2], ["basement", 1], ["timechain", 0]]) {
-      if (clicks) for (let i = 0; i < clicks; i++) map.click();
-      else P.goPreset(name);
+    // Use authored detached arrivals: a preserved distant camera may correctly
+    // be refused by the enclosed HQ or Basement's arrival geometry.
+    P.release(true); P.goPreset("pile");
+    for (const name of ["underground", "basement", "timechain"]) {
+      map.click(); choose(name);
       B.advance(0.1, 1 / 60); H.fadeDetachedName(true); B.advance(0.1, 1 / 60);
       areas.push({ name, label: label.textContent });
     }
     P.release(true); P.goPreset("pile");
-    return { rows, looking, departed, areas };
+    return { rows, refusal, looking, departed, areas };
   })()`);
-  record("hub map: native and locked-cursor clicks cycle through Lab, Mirror, HQ, Basement, Mempool and Pile in every view, and possession is retained", r.rows.every(row => row.lab && row.mirror && row.cycle.every(Boolean) && row.possession), JSON.stringify(r.rows));
+  record("hub map: signed in or out, opening or cancelling never moves anything; choosing a place retains the Ooga, carry/combat and view family and translates its camera", r.rows.length === 14
+    && r.rows.every(row => row.prepared && row.opened && row.cancelled && row.arrived && row.translated && row.moved > 1), JSON.stringify(r.rows));
+  record("hub reset: button and 0 reset framing without relocating an Ooga, changing its mode or view family, or acquiring an actor while detached", r.rows.every(row => row.resetKept && row.resetChanged), JSON.stringify(r.rows));
+  record("hub map refusal: a held Ooga stays put with an explanation and the open picker accepts another choice once released", r.refusal.blocked && r.refusal.otherChoice, JSON.stringify(r.refusal));
   record("hub map: looking keeps the arrival label; actual travel shows HUB, and underground and sphere arrivals resolve to their broader areas", r.looking && r.departed.distance > 1.5 && r.departed.label === "HUB" && r.departed.visible
     && r.areas.map(row => row.label).join(",") === "HQ,B1,SPHERE", JSON.stringify({ looking: r.looking, departed: r.departed, areas: r.areas }));
 } };
@@ -11568,6 +11619,45 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           gestures.push({ signedIn, carry, rightCarry, doubleCarry, aimed, returned, stops });
         }
       } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
+      const mapRows = [], map = document.getElementById("destination-hud"), picker = document.getElementById("destination-picker");
+      const xyz = p => [p.x, p.y, p.z], error = (a, b) => Math.max(...a.map((n, i) => Math.abs(n - b[i])));
+      const mapState = () => ({ actor: xyz(e.root.position), eye: xyz(B.camera.position), target: xyz(B.camera.target), view: P.view, combat: P.combat, controlled: P.player === e && e.controlled });
+      const unchanged = (a, b) => error(a.actor, b.actor) < 1e-6 && error(a.eye, b.eye) < 1e-6 && error(a.target, b.target) < 1e-6
+        && a.view === b.view && a.combat === b.combat && a.controlled === b.controlled;
+      try {
+        const character = BL.characters.get(e.owner.traits.name);
+        BL.net.state.backend = true;
+        for (const signedIn of [false, true]) for (const combat of [false, true]) for (const view of ["shoulder", "first-person", combat ? "birds-eye" : "orbit"]) {
+          BL.net.state.me = signedIn ? { id: 71, login: character.github || character.handle, display: "Map fixture" } : null;
+          if (P.combat !== combat) P.action("mode-toggle");
+          if (P.view === "first-person") P.zoom(2, {}); else if (P.view !== "shoulder") P.zoom(0.001, {});
+          P.update(2);
+          if (view !== "shoulder") { P.zoom(view === "first-person" ? 0.5 : 2, {}); P.update(2); }
+          const before = mapState(); map.click();
+          const opened = picker.open && unchanged(before, mapState());
+          picker.querySelector('[data-action="map-close"]').click();
+          const cancelled = !picker.open && unchanged(before, mapState());
+          map.click(); picker.querySelector('[data-destination="' + (mapRows.length % 2 ? "lab" : "mirror") + '"]').click();
+          const after = mapState(), delta = after.actor.map((n, i) => n - before.actor[i]);
+          const arrived = !picker.open && after.controlled && after.view === view && after.combat === combat
+            && Math.hypot(...delta) > 1 && error(after.eye.map((n, i) => n - before.eye[i]), delta) < 1e-5
+            && error(after.target.map((n, i) => n - before.target[i]), delta) < 1e-5;
+          if (P.birdsEye) P.zoom(1.15, {}); else P.orbit(30, -20); P.update(1);
+          const resetBefore = mapState(); document.getElementById("reset-camera-hud").click(); const button = mapState();
+          if (P.birdsEye) P.zoom(1.15, {}); else P.orbit(30, -20); P.update(1);
+          const keyboardBefore = mapState();
+          tap("0", "Digit0"); const keyboard = mapState();
+          const resetKept = [button, keyboard].every(s => s.controlled && error(s.actor, resetBefore.actor) < 1e-6
+            && s.view === view && s.combat === combat && s.eye.concat(s.target).every(Number.isFinite));
+          mapRows.push({ signedIn, combat, view, prepared: before.controlled && before.view === view && before.combat === combat,
+            opened, cancelled, arrived, resetKept, resetChanged: error(button.eye.concat(button.target), resetBefore.eye.concat(resetBefore.target)) > 1e-5
+              && error(keyboard.eye.concat(keyboard.target), keyboardBefore.eye.concat(keyboardBefore.target)) > 1e-5 });
+        }
+      } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; if (picker.open) picker.close(); }
+      // Restore the prior fixture's combat overhead state for its Escape chain.
+      if (P.view === "first-person") P.zoom(2, {});
+      if (P.view === "shoulder") P.zoom(2, {});
+      P.update(2);
       P.zoom(0.01, "inward"); sample("combat shoulder from overhead");
       P.zoom(0.5, "first-person"); sample("first-person before release");
       const eye = { ...B.camera.position }, target = { ...B.camera.target };
@@ -11729,7 +11819,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         C.wake(); e.owner.override = ownerOverride; e.owner.state = ownerState; P.release();
         BL.net.state.me = sleepAccount; BL.net.state.backend = sleepBackend;
       }
-      return { possessed, acquired, reset, rows, gestures, pair, selection, transitions, retakes, sleepRows, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
+      return { possessed, acquired, reset, rows, gestures, mapRows, pair, selection, transitions, retakes, sleepRows, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
         turn: Math.abs(turned.yaw - overhead.yaw), north: Math.atan2(Math.sin(north.yaw), Math.cos(north.yaw)), originalHeadHidden, near, released };
     } finally { key("keyup", "q"); key("keyup", "Shift", "ShiftRight", 2); P.release(); }
   })()`);
@@ -11759,6 +11849,9 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       && stop.freshOutward.view === (stop.combat ? "birds-eye" : "orbit") && stop.freshOutward.combat === stop.combat
       && Math.abs(stop.freshOutward.distance - stop.outward.distance * Math.exp(8 * 0.0025)) < 0.001
       && stop.immediate < 1e-6 && stop.firstStep < 0.01 && stop.targetStep < 0.01 && stop.maxStep < 1 && stop.trackingError < 0.001 && stop.finite)), JSON.stringify(state.gestures));
+  record("gorilla map: signed in or out, picker open/cancel keeps the current view still and travel retains the gorilla, mode and view family while translating the camera", state.mapRows.length === 12
+    && state.mapRows.every(row => row.prepared && row.opened && row.cancelled && row.arrived), JSON.stringify(state.mapRows));
+  record("gorilla reset: button and 0 reset camera framing while retaining the actor's position, carry/combat and view family", state.mapRows.every(row => row.resetKept && row.resetChanged), JSON.stringify(state.mapRows));
   record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
   record("owned pair views: direct T switches preserve carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
   record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));
@@ -12606,8 +12699,17 @@ scene("dsb", { label: "dsb shared player", url: hubPage(dist), steps: [{ name: "
   record("dsb shared player: shared walking moves the actor", move > 0.2, String(move));
   await b.evaluate(`document.querySelector('[data-action="dsb-lookout"]').click(); __ooga.advance(0.4)`);
   record("dsb shared player: lookout remains a free camera", await b.evaluate('__ooga.pilot.player === null && __ooga.camera.position.y > 5'));
-  await b.evaluate(`document.querySelector('[data-scene="dsb"] [data-action="reset-view"]').click(); __ooga.advance(0.4)`);
-  record("dsb shared player: leaving lookout restores the same playable actor", await b.evaluate('__ooga.pilot.player === __ooga.dsb.avatar'));
+  const reset = await b.evaluate(`(() => {
+    const B = __ooga, a = B.dsb.avatar, p = { ...a.root.position }, mode = B.pilot.mode;
+    const button = document.getElementById("reset-camera-hud"); button.click();
+    return { shown: !button.hidden, detached: !B.pilot.player && B.pilot.mode === mode,
+      unmoved: Math.hypot(a.root.position.x - p.x, a.root.position.y - p.y, a.root.position.z - p.z) < 1e-6,
+      mapHidden: document.getElementById("destination-hud").hidden,
+      retake: !document.getElementById("own-ooga-hud").hidden && B.hud.retakeActor?.actor === a };
+  })()`);
+  record("dsb shared player: reset keeps the lookout detached and the Ooga in place, exposes its return portrait and hides unsupported Map travel", Object.values(reset).every(Boolean), JSON.stringify(reset));
+  await b.evaluate(`document.getElementById("own-ooga-hud").click(); __ooga.advance(0.4)`);
+  record("dsb shared player: the last-actor portrait leaves lookout and restores the same playable actor", await b.evaluate('__ooga.pilot.player === __ooga.dsb.avatar'));
   await dsbApproach(b, "tv"); await b.key(" ");
   await b.key("v");
   record("dsb shared player: TV opens with weapons suspended", await b.evaluate('__ooga.dsb.tv.isOpen && !__ooga.dsb.avatar.weapon.triggerHeld'));
@@ -16308,7 +16410,7 @@ for(const fallback of [false,true])scene("dsb",{label:"Portara aperture "+(fallb
   const cycles=await b.evaluate(`(()=>{const B=__ooga,G=B.dsb.gate,records=[],rows=[],geometry=G.horizon.geometry,children=G.root.children.slice();for(let i=0;i<3;i++){const start=i*13000;__gateClock=start;const activated=G.activate();__gateClock=start+1000;__shoreline.advance(.05);const surge=G.kawoosh.visible&&G.horizon.portalReveal===.5&&G.kawoosh.scale.x===G.halfWidth*.5&&G.kawoosh.scale.z===G.halfHeight*.5;__gateClock=start+2000;__shoreline.advance(.05);records.push(B.renderer.stats?.records||0);const active=G.state==="ACTIVE"&&G.horizon.visible&&G.horizon.portalReveal===1&&!G.kawoosh.visible;__gateClock=start+12225;__shoreline.advance(.05);const closing=G.state==="SHUTDOWN"&&G.horizon.portalReveal===.5;__gateClock=start+12450;__shoreline.advance(.05);rows.push(activated&&surge&&active&&closing&&G.state==="OFF"&&!G.horizon.visible&&!G.kawoosh.visible&&G.horizon.geometry===geometry&&G.root.children.every((n,k)=>n===children[k]));}return {rows,records};})()`);
   record("Portara "+kind+": repeated reveal, rectangular surge and shutdown retain fixed geometry and renderer records",cycles.rows.every(Boolean)&&cycles.records.every(n=>n===cycles.records[0]),JSON.stringify(cycles));
   if(!fallback){const state=await b.evaluate(`(${shorelineState.toString()})()`);record("Portara WebGL: rectangular shader compiles and draws without API errors or context loss",shorelineHealthy(state)&&state.readbacks===0,JSON.stringify(state));b.shorelineHealthy=shorelineHealthy(state)&&output.getStore().results.every(r=>r.ok);b.shorelineSoftware=/SwiftShader|llvmpipe|software/i.test(state.gpu);}
-  await b.evaluate(`(()=>{document.querySelector('[data-action="reset-view"]').click();const B=__ooga,D=B.dsb;B.pilot.navigate({position:{x:-45,y:D.land.groundAt(-45,-44),z:-44},yaw:0,pitch:.2,dist:6});__shoreline.advance(.1);window.__portaraGate=D.gate;document.getElementById("dsb-context").click();})()`);
+  await b.evaluate(`(()=>{document.getElementById("own-ooga-hud").click();const B=__ooga,D=B.dsb;B.pilot.navigate({position:{x:-45,y:D.land.groundAt(-45,-44),z:-44},yaw:0,pitch:.2,dist:6});__shoreline.advance(.1);window.__portaraGate=D.gate;document.getElementById("dsb-context").click();})()`);
   record("Portara "+kind+": existing contextual dialer opens",await b.evaluate('__ooga.dsb.gate.isOpen&&document.getElementById("ooga-portal-menu").open'));
   await b.evaluate('__gateClock=50000;document.querySelector("#ooga-portal-menu button[data-destination]").click();__gateClock=52000;__shoreline.advance(.1)');
   // Return is a direct Director fade, never the inbound DSB tunnel. Retain the
@@ -16370,7 +16472,7 @@ const dsbWaterCheckpoint = { name: "dsb water checkpoint", why: "contract: Aegea
   const canvas=await b.evaluate('new URLSearchParams(location.search).has("canvas2d")');
   record("DSB FFT: finite, periodic, animated; depth grows offshore; renderer stays available",r.finite&&r.loop&&r.moved&&r.depthFar>r.depthNear&&(canvas?r.kind==="canvas2d":r.kind==="webgl2"&&r.textures===2),JSON.stringify(r));
   if(!canvas){
-    await b.evaluate(`document.querySelector('[data-action="reset-view"]').click()`);
+    await b.evaluate(`document.getElementById("own-ooga-hud").click()`);
     const before=await b.evaluate('({x:__ooga.dsb.avatar.root.position.x,z:__ooga.dsb.avatar.root.position.z})');
     await b.send("Input.dispatchKeyEvent",{type:"keyDown",key:"s",code:"KeyS"});
     await b.evaluate('__ooga.advance(.3)');

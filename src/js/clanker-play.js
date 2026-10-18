@@ -839,12 +839,60 @@
       camera.target.x += dx; camera.target.y += dy; camera.target.z += dz;
       viewChanged = true; targetWait = 0;
     };
+    const travelRefusal = () => {
+      if (!player) return "Choose a gorilla before travelling.";
+      if (grabHeld || grabActive || throwPointer >= 0) return "Let go of the Ooga before travelling.";
+      if (actPointer >= 0 || jumpKey || jumpTap || smashPointer >= 0) return "Finish your action before travelling.";
+      return clankers.travelRefusal();
+    };
+    const travel = (position) => {
+      if (travelRefusal()) return false;
+      const p = player.root.position, x = p.x, y = p.y, z = p.z;
+      if (!clankers.travel(position)) return false;
+      cancelInput();
+      const dx = p.x - x, dy = p.y - y, dz = p.z - z;
+      // Translate the displayed view and every retained world-space anchor.
+      // A pending dolly or detached acquisition keeps its existing framing.
+      target.x += dx; target.y += dy; target.z += dz;
+      orbit.tx += dx; orbit.ty += dy; orbit.tz += dz;
+      camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
+      camera.target.x += dx; camera.target.y += dy; camera.target.z += dz;
+      acquiredAt.x += dx; acquiredAt.y += dy; acquiredAt.z += dz;
+      acquiredEye.x += dx; acquiredEye.y += dy; acquiredEye.z += dz;
+      previousEye.x += dx; previousEye.y += dy; previousEye.z += dz;
+      targetWait = 0; setCombatTooltip(null);
+      return true;
+    };
+    const freeCursor = () => {
+      if (!player) return false;
+      blurCombat();
+      return true;
+    };
+    const resetCamera = () => {
+      if (!player || clankers.player !== player || !player.active || !player.root.visible) return false;
+      const first = view === "first-person", overhead = view === "birds-eye";
+      acquisitionHold = pinnedFollow = handoffBefore = overheadEntry = false;
+      holdingFollow = climbHandoff();
+      followOffset.x = followOffset.y = followOffset.z = 0;
+      peek = 0; shoulder = view === "shoulder" ? shoulderSide : 0;
+      orbit.yaw = orbit.tYaw = overhead ? orbit.yaw : player.heading - Math.PI;
+      orbitPitch = first ? 0 : 0.42;
+      orbit.pitch = orbit.tPitch = overhead ? PITCH_LIMIT : orbitPitch;
+      if (overhead) overheadHeight = clamp(birdsEyeMin, SHOULDER_DISTANCE, maxDistance);
+      orbit.dist = orbit.tDist = first ? 0 : overhead ? overheadHeight : view === "shoulder" ? SHOULDER_DISTANCE : 6;
+      updateTarget();
+      orbit.target = target; orbit.tx = target.x; orbit.ty = target.y; orbit.tz = target.z;
+      camera.near = first ? 0.05 : savedNear; camera.orthoMix = overhead ? 1 : 0;
+      viewChanged = true; targetWait = 0;
+      update(0);
+      return true;
+    };
     const dispose = () => {
       if (disposed) return;
       release(); disposed = true;
       for (const off of listeners) off();
     };
-    return { possess, release, escape, respawn, captureControl, readInput, update, action, orbit: moveView, zoom, cancelInput, dispose,
+    return { possess, release, escape, respawn, travelRefusal, travel, freeCursor, resetCamera, captureControl, readInput, update, action, orbit: moveView, zoom, cancelInput, dispose,
       get active() { return !!player; }, get player() { return player; }, get view() { return view; },
       get birdsEye() { return !!player && view === "birds-eye"; }, get birdsEyeMix() { return player ? camera.orthoMix || 0 : 0; },
       get firstPerson() { return !!player && view === "first-person"; },

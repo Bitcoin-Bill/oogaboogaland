@@ -5258,6 +5258,48 @@
       }
       activate(e, e.controlled);
     };
+    const travelRefusal = () => {
+      const e = player;
+      if (!e || !e.controlled || e.remoteControlled || !e.active || !e.root.visible) return "Choose a gorilla before travelling.";
+      if (sleeping(e)) return "Wake your gorilla before travelling.";
+      if (e.lounge || e.loungeDepart || e.office.stage || e.motion.officeSeat > 0) return "Stand up before travelling.";
+      const c = e.climb, d = e.drive;
+      if (c.active || c.mountPending || c.waitRelease || c.openingExit || c.openingStagePending || c.handoffDirection
+        || d.climbTurnTimer > 0 || e.motion.openingSettle > 0) return "Finish climbing before travelling.";
+      if (d.airborne || e.jump.active || !d.grounded) return "Land before travelling.";
+      if (e.capture?.cave || e.motion.dragging) return "Let go of the Ooga before travelling.";
+      if (e.fire.rolling || e.fire.requested || e.fire.rollRecover > 0) return "Finish rolling before travelling.";
+      if (e.pound > 0 || e.beat > 0 || e.stand > 0 || e.recover > 0 || e.actionControlled || e.motion.smash
+        || e.motion.poundCharge > 0 || e.motion.throwProgress > 0 || e.gorilla.smashActive || d.motionRecover > 0
+        || d.jumpHeld || d.jumpPressed || d.jumpBuffer > 0) return "Finish your action before travelling.";
+      return null;
+    };
+    // The scene validates the destination before this location-only handoff.
+    // Health, fire, ownership and facing survive travel unchanged.
+    const travel = (position) => {
+      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)
+        || travelRefusal()) return false;
+      const e = player, p = e.root.position, d = e.drive, m = e.motion;
+      cancelInput();
+      clearWallSearch(e); releasePortal(e); releaseLab(e); releaseOffice(e); releaseBed(e);
+      if (labEscape === e) { e.stuck.escapeLeft = 0; labEscape = null; }
+      e.roam.count = e.roam.index = 0; e.roam.departPending = e.roam.propDeparture = false;
+      e.backoutLeft = e.speed = e.rest = e.blocked = e.retry = 0;
+      e.phase = "controlled"; e.route = ""; e.hasSlot = false; e.pendingSite = -1;
+      d.vx = d.vy = d.vz = d.jumps = 0;
+      d.airborne = d.passiveFall = d.resume = d.wallRelease = d.motionEnvelope = false; d.grounded = true;
+      m.takeoff = m.landing = m.supportOffset = m.climb = m.climbDirection = m.climbSide = m.mantle = 0;
+      m.climbBlend = m.climbGripX = m.climbGripY = m.climbGripZ = NaN; m.climbGripRelease = 0;
+      m.verifyGrip = m.workExit = false;
+      p.x = position.x; p.y = position.y; p.z = position.z;
+      setGoal(e, p.x, p.y, p.z);
+      syncLab(e); syncOffice(e);
+      e.gorilla.poseManaged(0, p.x, p.y, p.z, e.heading, 0, false, e.biped, "", m);
+      e.radius = Math.max(WALK_RADIUS, e.gorilla.bodyRadius + 0.1);
+      e.height = Math.max(WALK_HEIGHT, e.gorilla.bodyHeight + 0.04);
+      labEnvelope(e);
+      return true;
+    };
     const possess = (value) => {
       const e = entryFor(value);
       if (!e || e.remoteControlled || !e.active || !e.root.visible) return false;
@@ -7258,7 +7300,7 @@
     };
     return { list, sync, update, target, companionTarget, hit, damage, bananaHit, debugRage, plan, startLabShuttle, debugMove, cancelDebugMove, stats, liveGeometry, dispose, contactAt,
       debugLoungeSpots,
-      possess, release, sleeping, wake, setRemote, createRemote, respawn, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
+      possess, release, sleeping, wake, setRemote, createRemote, respawn, travelRefusal, travel, control, cancelInput, smash, smashPower, quickSmash, chestBeat, ignite, dropRoll, supportRemoved,
       get player() { return player; } };
   };
   BL.clankers = { create, rageCarrying, WALK_RADIUS, WALK_HEIGHT, PROP_STEP, RAGE_SPEED };

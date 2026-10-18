@@ -15,7 +15,8 @@ npm run watch   # the same, rebuilding on every change under src/
 
 ## The island
 
-- **Destinations:** press the hub/map button to cycle places, or select a dot. **MEMPOOL** goes to the underground room below the rainforest lake.
+- **Destinations:** press **Map** on the island, then choose a place. Your controlled Ooga or gorilla travels with its camera, keeping its heading, framing and carry/combat mode; while detached, only the camera travels. Opening or cancelling the picker leaves the view in place. **Mempool** goes to the underground room below the rainforest lake. Wake, stand or finish climbing/jumping before travelling; a blocked arrival leaves the picker open for another choice.
+- **Reset camera:** the **Reset camera** button or **0** restores framing at your current location in walking scenes. It keeps your actor, carry/combat mode and view type; detached stays detached. Use the last-actor portrait to retake control. Camera viewpoint tabs release control and remain separate from travel and reset.
 - **Fly:** **W A S D**, **Q E** turn, **Z**/**Space** up, **X** down; drag to orbit, scroll to zoom. On a phone the left stick moves and the right stick looks.
 - **Select or retake:** double-click/tap an Ooga or gorilla. From detached view, the camera stays in place and turns toward the actor in carry/orbit mode. The detached portrait returns to the last actor you controlled, signed in or out. Selecting the current actor does nothing; Escape or holding its portrait detaches.
 - **Play an Ooga:** hold **Left Shift** while moving to run. **Space** jumps (twice for a double jump) and uses whatever is beside you. Selecting a sleeping Ooga or gorilla leaves it sleeping; **Space** wakes it.

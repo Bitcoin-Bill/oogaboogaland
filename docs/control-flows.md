@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake are implemented. Map/reset, distance-stop parity and touch details remain open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel and camera-only reset are implemented. Right-click first-person return parity, combat Tab navigation and remaining touch details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -296,7 +296,7 @@ The maintainer approved the shared selection flow and last-actor portrait, retai
 
 ## Map and reset-view review after `94aa144`
 
-Source inspection only; this section records current behavior and recommendations, not an implemented map/reset decision. These actions do not branch on sign-in. Ownership controls which actor can be selected; signed-in navigation also changes the position/body reported to the room.
+Historical source inspection at `94aa144`; this section records behavior before the approved map/reset implementation below. These actions did not branch on sign-in. Ownership controlled which actor could be selected; signed-in navigation also changed the position/body reported to the room.
 
 | Current action | Controlled Ooga | Controlled gorilla | Detached |
 |---|---|---|---|
@@ -312,7 +312,7 @@ Evidence: [hub destination validation and handoff](https://github.com/OogaBoogaX
 - Ooga travel silently wakes a manually controlled sleeper and clears seating, ladder, jump and flight motion. DSB Walk does not check whether possession succeeded before calling navigation without a detached target; an unavailable avatar can reach a missing-target dereference. These are source-confirmed paths requiring regression coverage, not observed runtime failures. [Relocation](https://github.com/OogaBoogaX/oogaboogaland/blob/94aa14408f1478cb87197c9eeb58c8f435a48181/src/js/crew.js#L5523), [detached target use](https://github.com/OogaBoogaX/oogaboogaland/blob/94aa14408f1478cb87197c9eeb58c8f435a48181/src/js/pilot.js#L2898).
 - Existing hub map checks cover Ooga/detached cycle behavior and labels, and DSB checks cover Overview → Walk. Gorilla/auth combinations, blocked-cycle escape and interior destination usability are not covered by those assertions. No runtime checks were run for this review.
 
-Recommended flow, awaiting agreement:
+Recommended flow at the audit checkpoint (subsequently approved):
 
 1. **Map means destination travel.** Open a scene-appropriate destination picker without changing actor or camera. Choosing a place moves the controlled Ooga or gorilla and its camera together; detached selection moves only the camera. Retain carry/combat and the view family. This is an explicit travel action; the fixed-eye rule still applies when acquiring/retaking an actor.
 2. **Reset camera means reframing only.** Keep the current actor and its position, carry/combat and view family, restoring comfortable framing for that view. Detached reset stays detached and levels/reframes around its current focal point. It must not retake, detach, transport or wake an actor. Use a consistent label and entry point in walking scenes.
@@ -332,6 +332,24 @@ The maintainer requested a fresh scroll to cross shoulder view in either directi
 - Carry/combat and signed-in/out behavior stay the same. Detached zoom and special seated/sleeping Ooga camera paths retain their existing view families; no shoulder camera is added where one is unavailable.
 - Regression coverage is extended in the existing camera scenarios; execution remains pending under **wait**.
 
+## Agreed change: destination travel and camera reset
+
+The maintainer approved destination travel plus a separate camera-only reset, shared by Oogas, gorillas and detached view in either sign-in state.
+
+| Control | Controlling an Ooga or gorilla | Detached |
+|---|---|---|
+| Map | Opens a destination picker and frees the cursor. Choosing a valid arrival translates the actor and camera together, retaining heading, relative framing, carry/combat and view family. | Opens the same picker; choosing a place moves only the camera using its destination framing. |
+| Cancel / Escape in picker | Closes the picker, retaining actor, mode and camera. The cursor stays available. | Closes the picker without travel or acquisition. |
+| Reset camera / 0 | Restores comfortable framing for the current view family around the same actor, without moving, detaching, waking or switching mode. Existing cursor focus is preserved. | Remains detached; orbit reframes around the current focal point and eye-level view levels its look at the same eye position. |
+| Last-actor portrait | Not shown while controlling an actor. | Retakes the remembered actor using the agreed fixed-eye carry/orbit acquisition. |
+
+- The island picker exposes Pile, Lab, Mirror, HQ, Basement, Mempool, Lightning Factory, Ooga Arcade, B.C.A., North gate, ₿IFRÖST and Timechain Sphere. Opening it does not reframe or move an actor; travelling does not recapture combat look. Click the canvas to resume aiming.
+- Arrival checks include support, the controlled actor's body size, other local/remote actors and the translated camera eye. A refusal keeps actor and camera in place and leaves the picker open with an explanation, so another destination can be chosen. A viewpoint too large for a room can be refused rather than silently replacing its framing.
+- Sleeping, seated, held, climbing, airborne or busy actors must finish that state before travel. Travel has its own guarded relocation path; it does not reuse respawn healing/recovery or silently wake a sleeper. Existing respawn and authored scene-arrival behavior remain separate.
+- Reset camera is available in the hub and the six walking interiors: Lab, Factory, Arcade, Bifrost, DSB and Poker. Scene interactions and transition guards still apply. Unsupported interior Map buttons are hidden. Existing camera tabs and DSB's Island overview explicitly identify themselves as camera viewpoints that release control.
+- DSB no longer uses a Walk/reset action to acquire an actor or overwrite detached acquisition framing. Its last-actor portrait supplies retake, and its ordinary scene arrival remains unchanged.
+- Existing map, camera, accessibility, remote-actor and DSB regressions are extended for the new flow. These are authored coverage, not runtime results; play-testing remains pending under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -347,6 +365,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 5. Detached selection/retake/T/sign-in from close, distant, overhead and underground viewpoints; eye position stays fixed until actor movement or deliberate view input. Include a real GitHub round trip on hub and interior routes, plus expired/denied session storage.
 6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
 7. Long wheel swipes with momentum, fresh scrolls and new pinches in both directions through shoulder, for both actors and sign-in states. Check small outward increments, low ceilings, floors at different heights, both carry/combat modes and right-click after nearby bird's-eye zoom.
+8. Map open/cancel, all destinations, arrival refusal followed by another choice, controlled Ooga/gorilla and detached travel, and Reset camera / 0 in each walking scene. Include close/overhead views, underground arrivals, occupied destinations, sleepers, seated/climbing/airborne actors, both sign-in states and a second multiplayer page.
 
 ## Review checkpoints
 
@@ -368,4 +387,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Map/reset review: current actor/auth/scene behavior, missing map dots, blocked-cycle trap, inert interior destination controls and reset naming differences recorded. Recommendations await agreement; no map/reset runtime behavior changed.
 - `de88eb7`: map/reset source audit committed and pushed for review.
 - Independent scroll steps: approved; both actors stop at shoulder for the whole gesture and scroll into bird's-eye from nearby. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing regressions cover long native wheel bursts and actual two-finger pinch handoffs; runtime checks remain unrun under **wait**.
-- Remaining decisions: right-click first-person return parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.
+- `6ba9434`: independent scroll steps and nearby bird's-eye entry committed and pushed.
+- Destination travel and camera reset: approved; picker, guarded actor travel, separate Reset camera / 0, interior visibility and DSB retake distinction implemented. `npm run build`, `node --check` on all 13 changed JavaScript files and `git diff --check` passed. Existing regressions were extended; runtime checks remain unrun under **wait**.
+- Remaining decisions: right-click first-person return parity, combat Tab navigation, touch and exceptional-controller details.

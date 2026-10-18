@@ -239,6 +239,7 @@
     pilot.setActive(false);
   };
   const onKey = (e) => {
+    if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !leaving) return pilot.resetCamera();
     if ((e.key === "x" || e.key === "X") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !leaving) {
       if (pilot.modeAction("mode-toggle")) { e.preventDefault(); return true; }
     }
@@ -541,7 +542,7 @@
     hud.onPreset(pilot.goPreset);
     hud.onAction((action) => {
       if (action === "leave") leaveChamber();
-      else if (action === "reset-view") pilot.goPreset("entrance");
+      else if (action === "reset-view") pilot.resetCamera();
       else if (!leaving && action.startsWith("mode-")) pilot.modeAction(action);
     });
     fx = fxMod.create({ root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 7, z: 0 } });

@@ -19,8 +19,8 @@
   const SNAP = 8;
   const WALK_SPEED = 0.35;
   const NAME_FONT = "bold 11px ui-monospace, monospace";
-  // The crew keeps remote bodies at this height for walking round them.
-  const BODY_HEIGHT = 2.2;
+  // Preserve the existing Ooga footprint; gorillas expose their posed envelope.
+  const BODY_RADIUS = 0.3, BODY_HEIGHT = 2.2;
   // Nameplate parts, in CSS pixels: the health bar under the name, the 9-pixel speaker right of it.
   const BAR_W = 32, BAR_H = 4, BAR_GAP = 3, ICON_GAP = 4;
   const NAME_STROKE = "rgba(20, 14, 8, 0.85)", NAME_FILL = "#f3efe4", BAR_TRACK = "rgba(0, 0, 0, 0.55)";
@@ -46,7 +46,7 @@
   const create = ({ root, crew = null, posed = null, visible = sameZone, hide = null, createGorilla = null, hideGorilla = null }) => {
     const net = BL.net;
     const bodies = new Map();
-    const actorPool = Array.from({ length: MAX }, () => ({ x: 0, y: 0, z: 0 }));
+    const actorPool = Array.from({ length: MAX }, () => ({ x: 0, y: 0, z: 0, radius: BODY_RADIUS, height: BODY_HEIGHT }));
     const actorList = [];
 
     // The crew's Ooga of this name goes away while a remote drives it; its own override comes back after.
@@ -179,6 +179,8 @@
         if (!entry.cave.root.visible) continue;
         const actor = actorPool[n++];
         actor.x = entry.x; actor.y = entry.y; actor.z = entry.z;
+        actor.radius = entry.gorilla ? entry.cave.bodyRadius : BODY_RADIUS;
+        actor.height = entry.gorilla ? entry.cave.bodyHeight : BODY_HEIGHT;
       }
       actorList.length = 0;
       for (let i = 0; i < n; i++) actorList.push(actorPool[i]);

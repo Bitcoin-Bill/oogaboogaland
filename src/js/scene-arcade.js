@@ -848,6 +848,7 @@
   let canvasEl = null;
   const toggleMute = () => { const off = audio.setMuted(!audio.muted); hud.toast(off ? "Sound off" : "Sound on"); };
   const onKey = (e) => {
+    if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) return pilot.resetCamera();
     if (e.key === "m" || e.key === "M") {
       toggleMute();
       return true;
@@ -1694,7 +1695,7 @@
     hud.onPreset(pilot.goPreset);
     hud.onAction((action) => {
       if (action === "leave") leaveCave();
-      else if (action === "reset-view") pilot.goPreset("entrance");
+      else if (action === "reset-view") pilot.resetCamera();
       else if (action === "mode-retake") pilot.modeAction(action);
       else if (action === "arcade-mute") toggleMute();
     });

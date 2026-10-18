@@ -367,6 +367,13 @@
       resetPointer(preserveZoom);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
+    const freeCursor = () => {
+      if (externalControl || disposed) return false;
+      controls.reset();
+      if (player()) crew.steer(0, 0, 0, 0, 0);
+      unlockAim();
+      return true;
+    };
     // Another playable actor shares the canvas and controls, but owns its own
     // aim events and pointer lock until it hands the pilot control back.
     const setExternalControl = (active, combat = null) => {
@@ -2144,6 +2151,65 @@
       orbit.tPitch = p.pitch;
       orbit.tDist = p.dist;
     };
+    // Reset framing in the current place. Unlike a preset or navigation, this
+    // never releases, relocates or wakes the actor, nor changes cursor focus.
+    const resetCamera = () => {
+      if (!follow || !active || externalControl || disposed) return false;
+      const cave = player(), overhead = birdsEye(), yaw = overhead ? overheadYaw : cave ? cave.root.rotation.y + Math.PI : orbit.yaw;
+      restoredPose = null;
+      carrySelection = centeredCarry = false;
+      carryExitMode = carryFocusRemaining = 0;
+      headOrbit = exitAngleHold = entryRebase = entryOffsetActive = false;
+      releaseMix = 0;
+      eyeMotionValid = false; dollyTime = DOLLY_HANDOFF;
+      distanceVelocity = zoomPitchVelocity = closeVelocity = aimVelocity = overheadVelocity = carryExitVelocity = 0;
+      zoomTilt = trailingViewInput = trailingZoomInput = false;
+      trailingPitchChosen = true;
+      overheadToShoulder = false;
+      cursorAim = cursorOccluded = aimAtCursor = aimPreserveFacing = false;
+      clearFeedback(); resetAssist();
+      quat.fromEuler(entryRoll, 0, 0, 0);
+      camera.up = null;
+      orbit.yaw = orbit.tYaw = yaw;
+      orbit.pitch = orbit.tPitch = closeWanted ? 0 : SHOULDER_PITCH;
+      closeMix = closeWanted ? 1 : 0;
+      closeExitScale = 1; closeCave = closeWanted ? cave : null;
+      closeCameraActive = !!cave && closeWanted && !aimView();
+      aimMix = 1;
+      if (cave) {
+        const p = crew.sleeping && cave.root.quaternion ? cave.sleepHead : cave.root.position;
+        followTarget.x = orbit.tx = p.x; followTarget.z = orbit.tz = p.z;
+        followTarget.y = orbit.ty = p === cave.sleepHead ? p.y : p.y - cave.baseY + follow.y + cave.viewLift;
+        orbit.target = followTarget;
+        orbit.dist = orbit.tDist = carryOrbitMin;
+        if (closeWanted && syncLyingView(cave)) lyingYaw = lyingPitch = 0;
+        if (overhead) {
+          beginOverhead(cave, false, true);
+          overheadYaw = overheadTargetYaw = overheadEntryYaw = overheadNorthStartYaw = yaw;
+          overheadTime = OVERHEAD_TIME; overheadMix = 1; overheadNorthTime = OVERHEAD_NORTH_TIME;
+          overheadHeight = overheadWanted = overheadDefault;
+          overheadPointerMoved = false;
+          overheadAim.x = p.x; overheadAim.y = p.y - cave.baseY; overheadAim.z = p.z;
+        }
+      } else if (closeWanted) {
+        // Free first person keeps its eye and physics; reset only its look.
+        freeTarget.x = orbit.tx = camera.position.x;
+        freeTarget.y = orbit.ty = camera.position.y;
+        freeTarget.z = orbit.tz = camera.position.z;
+        orbit.target = freeTarget;
+      } else {
+        const portrait = clamp(1 - renderer.size.width / Math.max(1, renderer.size.height), 0, 0.6);
+        freeTarget.x = orbit.tx = camera.target.x;
+        freeTarget.y = orbit.ty = camera.target.y + portrait * 0.6;
+        freeTarget.z = orbit.tz = camera.target.z;
+        orbit.target = freeTarget;
+        orbit.yaw = orbit.tYaw = view.yaw;
+        orbit.pitch = orbit.tPitch = view.pitch;
+        orbit.dist = orbit.tDist = view.dist;
+      }
+      update(0);
+      return true;
+    };
     // Call before the crew moves: reads keys and sticks for this frame.
     const readInput = (dt) => {
       if (!active || externalControl) return;
@@ -2677,7 +2743,7 @@
             freeFallValid = true;
           }
           previousFloor = freeFloorY;
-          if (freeCloud && !freeFalling && !freeCloud.wrapped && freeCloud.node.visible && freeCloud.node.parent) {
+          if (dt > 0 && freeCloud && !freeFalling && !freeCloud.wrapped && freeCloud.node.visible && freeCloud.node.parent) {
             eyeX += freeCloud.dx; eyeZ += freeCloud.dz;
             freeTarget.x += freeCloud.dx; freeTarget.z += freeCloud.dz;
           }
@@ -2822,7 +2888,8 @@
     // A connected doorway changes the world frame, not the control mode or
     // camera blend. Keep its cached anchors and orientations in that frame too.
     const portalPoints = [camera.position, camera.target, freeTarget, followTarget, entryPosition, previousEye,
-      previousAnchor, motionAnchor, overheadAim, aimEntryBody, aimEntry, aimPoint, cursorItem, cursorPoint, targetOrigin, buttonTarget];
+      previousAnchor, motionAnchor, overheadAim, aimEntryBody, aimEntry, aimPoint, cursorItem, cursorPoint, targetOrigin, buttonTarget,
+      carrySelectionEye, carrySelectionBody];
     const portalVectors = [headOrbitOffset, overheadEntry, eyeVelocity, dollyVelocity, anchorVelocity, sleepCameraUp, cursorUp];
     const portalRotations = [orbitRotation, headRotation, cameraRotation, releaseRotation, overheadRotation,
       overheadStartRotation, overheadViewRotation, carryStartRotation, aimEntryRotation, aimLookRotation, aimPanRotation];
@@ -2855,6 +2922,43 @@
       restoredPose = null;
       clearFeedback();
       assistedTargetActive = false; assistedTargetWait = 0;
+    };
+    const travelMatrix = new Float64Array(16);
+    mat4.identity(travelMatrix);
+    const travelRefusal = () => {
+      const cave = player();
+      if (!active || externalControl || disposed) return "Finish the current interaction before travelling";
+      if (!cave) return "Choose an Ooga before travelling";
+      if (mayPossess) { const denied = mayPossess(cave); if (denied) return denied; }
+      if (!cave.root.visible || cave.remoteControlled || cave.health.stunned) return "This Ooga cannot travel right now";
+      if (crew.sleeping || cave.bedTravel.manual) return "Wake up before travelling";
+      if (cave.bedTravel.mode) return "Finish getting up before travelling";
+      if (cave.camp.seat) return "Stand up before travelling";
+      if (cave.camp.rolling) return "Finish rolling before travelling";
+      if (cave.grabbedBy) return "Wait until this Ooga is released before travelling";
+      if (cave.ladder && (cave.ladder.plane || cave.ladder.mix > 0)) return "Finish climbing before travelling";
+      if (cave.hop > 0.001 || Math.abs(cave.hopV) > 0.001 || cave.jet && cave.jet.thrust || cave.rocketJumpTime > 0 || cave.leap.thrown) return "Land before travelling";
+      return null;
+    };
+    // The scene validates support and the translated camera before calling.
+    // Translation preserves the view family, framing, heading and focus.
+    const travel = (position) => {
+      if (travelRefusal() || !position || !Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) return false;
+      const cave = player(), p = cave.root.position, lift = cave.viewLift;
+      travelMatrix[12] = position.x - p.x;
+      travelMatrix[13] = position.y + cave.baseY - p.y;
+      travelMatrix[14] = position.z - p.z;
+      crew.relocatePlayer(position, cave.root.rotation.y);
+      crew.elevate(lift);
+      transformView(travelMatrix, 0);
+      controls.reset(); resetPointer();
+      freeStrafe = freeForward = freeClimb = 0;
+      eyeMotionValid = false; dollyTime = DOLLY_HANDOFF;
+      distanceVelocity = zoomPitchVelocity = overheadVelocity = carryExitVelocity = 0;
+      eyeVelocity.x = eyeVelocity.y = eyeVelocity.z = 0;
+      dollyVelocity.x = dollyVelocity.y = dollyVelocity.z = 0;
+      anchorVelocity.x = anchorVelocity.y = anchorVelocity.z = 0;
+      return true;
     };
     // The scene supplies a safe arrival and resets its collision history first.
     // navigate changes location only, never the visitor's mode or chosen Ooga.
@@ -3114,6 +3218,7 @@
       hud.setWeapon(false, false, 0);
       hud.setMagazine(0, 0, 0, false);
       if (hud.setMode) hud.setMode(null, false, "detached", false);
+      if (hud.setCameraControls) hud.setCameraControls(false);
       controls.dispose();
       crew = fx = input = null;
     };
@@ -3156,6 +3261,7 @@
       } catch (_) { return false; }
     };
     saveActiveLoginView = saveLoginView;
+    if (hud.setCameraControls) hud.setCameraControls(!!follow);
     return { orbit, hooks, controls, cursor: carryCursor, captureControl, capturePose, restorePose, focusAim, setExternalControl,
       loginViewRestored: !!loginView, loginContext: loginView?.context || null, get poseHeld() { return !!restoredPose; }, get aiming() { return armed(); },
       // Scenery follows the displayed blend, not the entry's local clock:
@@ -3163,7 +3269,7 @@
       get birdsEye() { return birdsEye(); }, get birdsEyeMix() { return camera.orthoMix || 0; }, get birdsEyeHeight() { return overheadHeight; }, get birdsEyeNorthUp() { return overheadNorthUp; },
       get birdsEyeCeiling() { return overheadCeiling; },
       get shoulderEntryMix() { return aimMix; },
-      bind, setActive, readInput, update, goPreset, navigate, transformView, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
+      bind, setActive, readInput, update, goPreset, resetCamera, freeCursor, navigate, travelRefusal, travel, transformView, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
       return player();
     }, get assistedTarget() {
       if (birdsEye() && assistedTargetActive) return assistedTargetHit;

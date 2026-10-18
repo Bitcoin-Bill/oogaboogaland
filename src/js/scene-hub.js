@@ -7140,9 +7140,15 @@
     }
     return true;
   };
-  const navigate = (name, respawn = false) => {
+  const navigate = (name, respawn = false, preserveActor = !respawn) => {
     const destination = NAVIGATION, p = destination.position, target = destination.target;
-    const player = pilot.player, close = pilot.closeWanted, basement = name === "basement", underground = name === "underground" || basement;
+    const gorilla = preserveActor && clankerPlay.active ? clankerPlay.player : null, ooga = pilot.player, player = gorilla || ooga;
+    const travel = preserveActor && !!player, controller = gorilla ? clankerPlay : pilot;
+    const close = gorilla ? clankerPlay.firstPerson : pilot.closeWanted, basement = name === "basement", underground = name === "underground" || basement;
+    if (travel) {
+      const refusal = controller.travelRefusal();
+      if (refusal) { hud.toast(refusal); return refusal; }
+    }
     const randomPile = respawn && name === "pile";
     let x = 0, z = 0, yaw = 0, pitch = 0.18, dist = player ? 6 : 8;
     if (name === "pile") {
@@ -7197,7 +7203,7 @@
       setVec(target, 0, (basement ? island.headquarters.basement.floor : island.headquarters.floor) + 0.8, 0);
       pitch = player ? 0.4 : 0.15;
       dist = player ? 6 : 8;
-    } else return;
+    } else return "That destination is unavailable.";
     BL.scene.updateWorld(root);
     let found = false;
     // Mouth approaches need room on both axes: a prop can block the whole
@@ -7210,13 +7216,45 @@
         p.z = z - Math.sin(yaw) * offset + Math.cos(yaw) * depth;
         p.y = name === "timechain" ? timechainIsland.place.y : name === "mempool" ? mempoolIsland.place.y + mempoolIsland.layout.FLOOR : name === "bifrost" ? bifrostIsle.site.arrival.y : underground ? (basement ? island.headquarters.basement.floor : island.headquarters.floor) : island.surfaceAt(p.x, p.z);
       }
-      if (name !== "timechain" && name !== "bifrost" && name !== "mempool" && !island.onLand(p.x, p.z) || !navigationClearAt(p.x, p.y + 1e-5, p.z, PLAYER_RADIUS, player ? player.bodyHeight : 1.6)) continue;
+      if (name !== "timechain" && name !== "bifrost" && name !== "mempool" && !island.onLand(p.x, p.z)) continue;
+      if (travel) {
+        const floor = gorilla ? clankerSupportAt(gorilla, p.x, p.z, p.y, STEP_MAX) : playerSupportAt(p.x, p.z, p.y, p.y, player);
+        if (!Number.isFinite(floor) || Math.abs(floor - p.y) > STEP_MAX) continue;
+        p.y = floor;
+      }
+      const radius = gorilla ? Math.max(BL.clankers.WALK_RADIUS, gorilla.gorilla.bodyRadius + 0.1) : Math.max(PLAYER_RADIUS, player?.bodyRadius || 0);
+      const height = gorilla ? Math.max(BL.agent.LAB_HEIGHT, BL.clankers.WALK_HEIGHT, gorilla.gorilla.bodyHeight + 0.04) : player ? player.bodyHeight : 1.6;
+      if (!navigationClearAt(p.x, p.y + 1e-5, p.z, radius, height)) continue;
+      if (gorilla && !clankerCylinderClear(p.x, p.y, p.z, p.x, p.y, p.z, radius, height, gorilla)) continue;
+      if (travel) {
+        let occupied = false;
+        for (const other of crew.list) {
+          if (other === player || !other.root.visible) continue;
+          const q = other.root.position, feet = q.y - other.baseY;
+          if (p.y < feet + other.bodyHeight && p.y + height > feet && Math.hypot(p.x - q.x, p.z - q.z) < radius + other.bodyRadius) { occupied = true; break; }
+        }
+        if (occupied) continue;
+        if (!gorilla && clankers) for (const entry of clankers.list) {
+          if (entry.active && !clankerBodySegmentClear(entry, p.x, p.y + 1e-5, p.z, p.x, p.y + 1e-5, p.z, radius, height)) { occupied = true; break; }
+        }
+        if (occupied) continue;
+        const outside = remotes?.actors();
+        if (outside) for (const q of outside) {
+          if (p.y < q.y + q.height && p.y + height > q.y && Math.hypot(p.x - q.x, p.z - q.z) < radius + q.radius) { occupied = true; break; }
+        }
+        if (occupied) continue;
+      }
       destination.yaw = Math.atan2(p.x - target.x, p.z - target.z);
-      destination.pitch = close ? Math.atan2(p.y + (player ? player.headOffset * CLOSE_VIEW.eyeRatio : CLOSE_VIEW.eyeHeight) - target.y, Math.hypot(p.x - target.x, p.z - target.z)) : pitch;
+      destination.pitch = !travel && close ? Math.atan2(p.y + (player ? player.headOffset * CLOSE_VIEW.eyeRatio : CLOSE_VIEW.eyeHeight) - target.y, Math.hypot(p.x - target.x, p.z - target.z)) : pitch;
       const arrivalDist = dist + depth;
       destination.dist = arrivalDist;
       let eyeX, eyeY, eyeZ;
-      if (close) {
+      if (travel) {
+        const from = player.root.position;
+        eyeX = camera.position.x + p.x - from.x;
+        eyeY = camera.position.y + p.y - from.y + (gorilla ? 0 : player.baseY);
+        eyeZ = camera.position.z + p.z - from.z;
+      } else if (close) {
         eyeX = p.x - (player ? Math.sin(destination.yaw) * CLOSE_VIEW.eyeForward : 0);
         eyeY = p.y + (player ? player.headOffset * CLOSE_VIEW.eyeRatio : CLOSE_VIEW.eyeHeight);
         eyeZ = p.z - (player ? Math.cos(destination.yaw) * CLOSE_VIEW.eyeForward : 0);
@@ -7229,36 +7267,38 @@
       }
       if (!navigationClearAt(eyeX, eyeY - CAMERA_RADIUS, eyeZ, CAMERA_RADIUS, CAMERA_RADIUS * 2)) continue;
       setVec(CAMERA_PREVIOUS, eyeX, eyeY, eyeZ);
-      setVec(camera.position, eyeX, eyeY, eyeZ);
+      if (!travel) setVec(camera.position, eyeX, eyeY, eyeZ);
       found = true;
       break arrivals;
     }
     if (!found) {
-      if (!randomPile) hud.toast("That arrival is blocked. Choose another map dot.");
-      return;
+      const refusal = "That arrival is blocked. Choose another destination.";
+      if (!randomPile) hud.toast(refusal);
+      return refusal;
     }
-    // A destination switches a gorilla driver back to free view after validating the arrival.
-    if (clankerPlay.active) clankerPlay.release();
+    if (travel && !controller.travel(p)) return "That character cannot travel right now.";
+    if (!travel && clankerPlay.active) clankerPlay.release();
     if (enteringTween) { enteringTween.alive = false; enteringTween = null; }
     entering = false;
     cameraPreviousValid = cameraTerrainValid = cameraTerrainRecovering = cameraManualContact = false;
     cameraUnrestricted = cameraReentering = false;
     cameraTrailPlayer = null;
     cameraTrailCount = cameraTrailNext = cameraEntranceIndex = cameraTerrainEntranceIndex = 0;
-    caveEntryPlayer = player;
+    caveEntryPlayer = ooga;
     const index = underground ? CAMERA_OPENINGS.find((opening) => opening.headquarters).caveIndex : 0;
-    playerCaveIndex = player ? index : 0;
+    playerCaveIndex = ooga ? index : 0;
     setCameraCave(index);
     setVec(PLAYER_PREVIOUS, p.x, p.y, p.z);
     setVec(PLAYER_POSITION, p.x, p.y, p.z);
-    pilot.navigate(destination);
-    if (player && player.jet && !jetpackAllowed(player)) {
-      crew.removeJetpack(player);
+    if (!travel) pilot.navigate(destination);
+    if (ooga && ooga.jet && !jetpackAllowed(ooga)) {
+      crew.removeJetpack(ooga);
       pilot.showAct();
     }
-    syncMatrixInside(player);
+    syncMatrixInside(ooga);
     hud.setDetachedView(name, true, player ? player.root.position : close ? camera.position : pilot.orbit.target);
     hud.tooltip.hide();
+    return true;
   };
   const updateAreaLabel = () => {
     const gorilla = clankerPlay.active ? clankerPlay.player : null, player = gorilla || pilot.player;
@@ -10397,6 +10437,9 @@
     if ((e.key === "t" || e.key === "T") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault(); cycleOwnActor(); return;
     }
+    if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault(); (clankerPlay.active ? clankerPlay : pilot).resetCamera(); return;
+    }
     if (clankerPlay.active) return;
     if ((e.key === "x" || e.key === "X") && !e.repeat && pilot.modeAction("mode-toggle")) return;
     if ((e.key === "1" || e.key === "2") && pilot.weaponMode(Number(e.key))) return;
@@ -11119,8 +11162,10 @@
     now = 0;
     hud.onPreset(name => { if (!factoryDeparting && !bifrostDeparting) navigate(name); });
     hud.setDetachedView("pile");
+    hud.setDestinations(["pile", "lab", "mirror", "underground", "basement", "mempool", "factory", "arcade", "bca", "gate", "bifrost", "timechain"]);
     hud.onAction((action, value) => {
-      if (factoryDeparting || bifrostDeparting) return;
+      if (factoryDeparting || bifrostDeparting) return false;
+      if (action === "map-open") { (clankerPlay.active ? clankerPlay : pilot).freeCursor(); return true; }
       if (action === "mode-retake") {
         if (pilot.player || clankerPlay.active) return;
         const last = hud.retakeActor;
@@ -11135,11 +11180,11 @@
       else if (action === "clear-loot") clearLoot();
       else if (action === "reset") resetDemo();
       else if (action === "act") pilot.action();
-      else if (action === "mode-preset") navigate(value);
+      else if (action === "mode-preset") return navigate(value);
       else if (action.startsWith("mode-")) pilot.modeAction(action);
       else if (action === "jetpack-toggle") toggleJetpack();
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);
-      else if (action === "reset-view") pilot.goPreset("pile");
+      else if (action === "reset-view") return (clankerPlay.active ? clankerPlay : pilot).resetCamera();
     });
     crew.refreshStates(true);
     unsubscribeActivity = contributors.subscribe(() => crew.refreshStates());
@@ -11173,9 +11218,9 @@
     unsubscribeAccount = BL.net.subscribe(onAccountChange);
     const initialFirstPerson = ctx.from === null && preloadedFirstPerson && !initialGorilla && !pilot.loginViewRestored;
     if (initialFirstPerson) pilot.enterClose(true);
-    if (returningCharacter) navigate(ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" ? ctx.from : "pile");
-    else if (ctx.from === "bifrost" && !ctx.place) navigate("bifrost");
-    else if (!pilot.loginViewRestored && !crew.sleeping && !initialGorilla && (ctx.place || preloadedView || initialCharacter || initialFirstPerson)) navigate(ctx.place || preloadedView || "pile");
+    if (returningCharacter) navigate(ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" ? ctx.from : "pile", false, false);
+    else if (ctx.from === "bifrost" && !ctx.place) navigate("bifrost", false, false);
+    else if (!pilot.loginViewRestored && !crew.sleeping && !initialGorilla && (ctx.place || preloadedView || initialCharacter || initialFirstPerson)) navigate(ctx.place || preloadedView || "pile", false, false);
     if (initialCharacter && !initialGorilla && preloadedJetpack) {
       grantJetpack(pilot.player, preloadedJetpackWear);
     }
