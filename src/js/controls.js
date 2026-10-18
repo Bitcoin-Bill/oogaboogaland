@@ -9,7 +9,8 @@
   const KNOB = 18;
   const keyName = (e) => e.key === "Shift" && (e.code === "ShiftRight" || e.location === 2) ? "peek" : KEYS[e.key.toLowerCase()];
   const uiKey = (e) => e.target && (e.target.isContentEditable || e.target.closest
-    && e.target.closest("input, textarea, select, button, a[href], summary, [role='button'], [role='dialog'], dialog, #sheet"));
+    && (e.target.closest("input, textarea, select, [role='dialog'], dialog, #sheet")
+      || (e.key === "Tab" || e.key === "Enter" || e.key === " ") && e.target.closest("button, a[href], summary, [role='button']")));
   // Joystick state x/y track the pointer normalized to -1..1.
   const joystick = (el) => {
     const knob = el.firstElementChild;
@@ -85,7 +86,7 @@
       }
       if (uiKey(e)) return;
       const key = e.code || e.key;
-      if (blockedKeys.has(key) || e.repeat && !downKeys.has(key)
+      if (blockedKeys.has(key)
         || e.shiftKey && (blockedKeys.has("ShiftLeft") || blockedKeys.has("ShiftRight") || blockedKeys.has("Shift"))) { consumeKey(e); return; }
       // A physical keyboard has a bounded set of simultaneous presses.
       if (downKeys.size < 64) downKeys.add(key);
@@ -97,6 +98,11 @@
     };
     const releaseKeys = () => {
       downKeys.clear(); blockedKeys.clear(); tabConsumed = false;
+      pointerButtons = blockedPointerButtons = 0;
+    };
+    const blurKeys = () => {
+      for (const key of downKeys) blockedKeys.add(key);
+      downKeys.clear(); tabConsumed = false;
       pointerButtons = blockedPointerButtons = 0;
     };
     const onKeyDown = (e) => {
@@ -135,7 +141,7 @@
     if (tabNavigation) {
       window.addEventListener("keydown", captureKeyDown, true);
       window.addEventListener("keyup", captureKeyUp, true);
-      window.addEventListener("blur", releaseKeys);
+      window.addEventListener("blur", blurKeys);
     }
     const moveStick = move ? joystick(move) : null;
     const lookStick = look ? joystick(look) : null;
@@ -155,7 +161,7 @@
       held.boost = 0;
     };
     const onBoostClick = (e) => {
-      if (boostClick && e.detail > 0) { e.preventDefault(); e.stopImmediatePropagation(); }
+      if (boostClick && e.detail > 0) { e.preventDefault(); e.stopImmediatePropagation(); boost.blur(); }
       boostClick = false;
     };
     if (boost) {
@@ -202,7 +208,7 @@
       if (tabNavigation) {
         window.removeEventListener("keydown", captureKeyDown, true);
         window.removeEventListener("keyup", captureKeyUp, true);
-        window.removeEventListener("blur", releaseKeys);
+        window.removeEventListener("blur", blurKeys);
       }
       releaseKeys();
       if (boost) {

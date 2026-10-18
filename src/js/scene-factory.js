@@ -1923,7 +1923,7 @@
       if (driven) {
         if (inOpening && p.z > HALL.front - 1.3) leaveCave();
         else peerPortal(s, previousX, previousY, previousZ);
-      } else {
+      } else if (!avatar) {
         const a = pilot.controls.read();
         if (inOpening && Math.hypot(a.x, a.y) > 0.05 && p.z > HALL.front - 2.2) leaveCave();
       }

@@ -405,7 +405,6 @@
     }];
     mark("pile");
     // As in the hub: where accounts exist, driving shows online only for a signed-in visitor.
-    shared.localOnline = () => !BL.net.state.backend || !!BL.net.state.me;
     shared.outsideActors = () => remotes ? remotes.actors() : NO_ACTORS;
     shared.outsideActorHeight = BL.remotePlayers.BODY_HEIGHT;
     crew = shared.crew = crewMod.create(shared);

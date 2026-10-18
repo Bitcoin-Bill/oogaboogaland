@@ -13,8 +13,8 @@
 //
 // Who drives which Ooga, on the page served by the Worker (`mayDrive`; the room enforces the same
 // ownership through its own copy of the cast): a signed-in contributor drives only their own Ooga, and
-// nobody else drives it while they are here; everyone else, signed in or not, drives an Ooga only while
-// its owner is away, nobody else holds it, and it is not working. Ownership keys on the GitHub login
+// nobody else drives it while they are here. Signed-out visitors can drive available bundled Oogas
+// locally, including working ones; temporary contributors must sign in. Ownership keys on the GitHub login
 // alone (`github`, else the handle). A claim the room refuses, or an owner arriving, lands as `released`.
 // A body is its Ooga's canonical handle, or `gorilla:<handle>` for that Ooga's companion. Signed-in
 // visitors drive only their own gorilla; signed-out pages can still play companions locally.
@@ -497,6 +497,7 @@
     z = Math.max(-BOUND_XZ, Math.min(BOUND_XZ, z));
     y = Math.max(BOUND_Y_MIN, Math.min(BOUND_Y_MAX, y));
     if (state.bodyKind !== "gorilla") g = null;
+    if (g) for (let i = 0; i < 6; i++) if (!Number.isFinite(g[i])) { g = null; break; }
     let changed = !!g && !gKnown;
     if (g && !changed) for (let i = 0; i < 6; i++) if (g[i] !== gSent[i]) { changed = true; break; }
     if (!changed && Math.abs(x - px) < 0.005 && Math.abs(y - py) < 0.005 && Math.abs(z - pz) < 0.005 && Math.abs(yaw - pyaw) < 0.01) return;

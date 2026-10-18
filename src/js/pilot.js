@@ -1217,7 +1217,10 @@
       const zoomRate = OVERHEAD_ZOOM_RATE + (OVERHEAD_ZOOM_FAST - OVERHEAD_ZOOM_RATE) * Math.sqrt(travel);
       const impulse = (overheadVelocity + zoomRate * delta) * dt;
       const decay = Math.exp(-zoomRate * dt);
-      overheadHeight = overheadWanted + (delta + impulse) * decay;
+      const nextHeight = overheadWanted + (delta + impulse) * decay;
+      // Close overhead entry permits a much longer dolly than the old minimum.
+      // Bound each step without slowing the final approach to shoulder.
+      overheadHeight += clamp(nextHeight - overheadHeight, -240 * dt, 240 * dt);
       overheadVelocity = (overheadVelocity - zoomRate * impulse) * decay;
       if (Math.abs(overheadHeight - overheadWanted) < 0.001 && Math.abs(overheadVelocity) < 0.01) {
         overheadHeight = overheadWanted; overheadVelocity = 0;

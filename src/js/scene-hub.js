@@ -7202,7 +7202,7 @@
       setVec(target, 0, (basement ? island.headquarters.basement.floor : island.headquarters.floor) + 0.8, 0);
       pitch = player ? 0.4 : 0.15;
       dist = player ? 6 : 8;
-    } else return "That destination is unavailable.";
+    } else { hud.toast("That destination is unavailable."); return "That destination is unavailable."; }
     BL.scene.updateWorld(root);
     let found = false;
     // Mouth approaches need room on both axes: a prop can block the whole
@@ -7216,7 +7216,7 @@
         p.y = name === "timechain" ? timechainIsland.place.y : name === "mempool" ? mempoolIsland.place.y + mempoolIsland.layout.FLOOR : name === "bifrost" ? bifrostIsle.site.arrival.y : underground ? (basement ? island.headquarters.basement.floor : island.headquarters.floor) : island.surfaceAt(p.x, p.z);
       }
       if (name !== "timechain" && name !== "bifrost" && name !== "mempool" && !island.onLand(p.x, p.z)) continue;
-      if (travel) {
+      if (player) {
         const floor = gorilla ? clankerSupportAt(gorilla, p.x, p.z, p.y, STEP_MAX) : playerSupportAt(p.x, p.z, p.y, p.y, player);
         if (!Number.isFinite(floor) || Math.abs(floor - p.y) > STEP_MAX) continue;
         p.y = floor;
@@ -8413,8 +8413,6 @@
     return clankerPlay.possess(entry);
   };
   const RELEASE_WORDS = { "owner-here": "Its owner arrived and took their Ooga back", taken: "Someone else is already driving that Ooga", "not-yours": "Contributors drive only their own Ooga" };
-  // Where accounts exist, this visitor's driving counts as online (the roster's green dot) only signed in.
-  const localOnline = () => !BL.net.state.backend || !!BL.net.state.me;
   // The account or the room changed: an Ooga driven here that is no longer this visitor's to drive is let go.
   const onAccountChange = () => {
     claimOwnOoga();
@@ -11019,7 +11017,6 @@
     // Signed-in visitors elsewhere, as the Oogas they drive; the crew walks round them.
     shared.outsideActors = () => remotes.actors();
     shared.outsideActorHeight = REMOTE_BODY_HEIGHT;
-    shared.localOnline = localOnline;
     crew = shared.crew = crewMod.create(shared);
     remotes = BL.remotePlayers.create({ root, crew, visible: remoteShown,
       createGorilla: (name, rec) => clankers.createRemote(name, rec),
@@ -11590,6 +11587,7 @@
     if (DEBUG_GORILLA_MOVE) hud.toast("Gorilla movement debug · click a gorilla, then a destination");
   };
   const leave = () => {
+    actorTransition.sourceRoot = actorTransition.sourceHead = null;
     resetRageThrowMap(false);
     if (factoryMouth && factoryMouth.snap) snapFactoryView();
     if (bifrostIsle && bifrostIsle.snap) snapBifrostView();

@@ -310,6 +310,7 @@
       pilot.setExternalControl(true, isCombat);
       combat = incoming.active && incoming.combat; focused = wasLocked = false;
       view = incoming.active ? incoming.view : "orbit";
+      if (combat && view === "orbit") view = BL.pilot.combatEntryView(camera.position, entry.root.position);
       overheadEntry = false;
       shoulderSide = incoming.side < 0 ? -SHOULDER_SIDE : SHOULDER_SIDE;
       shoulder = view === "shoulder" ? shoulderSide : 0; peek = 0; actMode = -1;
@@ -839,13 +840,12 @@
       const planted = shoulderCombat && axes.peek && !run;
       peek = damp(peek, planted ? axes.x * 0.34 : 0, 14, dt);
       const moveX = planted ? 0 : axes.x, moveY = planted ? 0 : axes.y;
-      const turn = isCombat() ? view === "birds-eye" ? axes.orbitYaw : clamp(axes.yaw + axes.orbitYaw, -1, 1) : axes.yaw;
+      const turn = isCombat() ? clamp(axes.yaw + axes.orbitYaw, -1, 1) : axes.yaw;
       if (turn || axes.pitch || planted) viewChanged = true;
       moving = Math.hypot(moveX, moveY) > 0.05;
       if (turn || axes.pitch || planted || moving) shoulderPointActive = carryShoulderAim = false;
       orbit.tYaw += turn * 1.7 * dt;
       if (view === "birds-eye") {
-        orbit.tYaw += axes.yaw * 1.7 * dt;
         const delta = Math.atan2(Math.sin(orbit.tYaw - orbit.yaw), Math.cos(orbit.tYaw - orbit.yaw));
         orbit.tYaw = orbit.yaw + delta;
         // Match the gorilla's turning rate so it keeps facing the fixed reticle.

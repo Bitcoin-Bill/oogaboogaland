@@ -75,7 +75,7 @@
   const ORDERS = ["Banana split! Ooga slurp slurp.", "Coconut milk, fresh from coconut. Ahh.", "Grub on stick. Ooga crunch!", "Lava pop. Hot hot hot. Good!"];
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
-  let leaving = false, people = null, avatar = null, playerWorld = null, screens = null, shownFrame = -1, prompt = null;
+  let leaving = false, openingGame = false, people = null, avatar = null, playerWorld = null, screens = null, shownFrame = -1, prompt = null;
   let stations = null, blocks = null, carnival = null, staff = null, orders = 0, ticketBoard = null, prizeUi = null;
   let crowd = null, spin = null;
   let audio = null, bots = null, walkers = null, motes = null, power = null, disco = null, fame = null, shelf = null, lit = null;
@@ -141,7 +141,7 @@
   // Into a game; a carnival machine names which of its kind (`place`), and the game comes back to it.
   const open = (id, place = null) => {
     if (leaving) return;
-    leaving = true;
+    leaving = openingGame = true;
     go(id, place);
   };
   const play = (i) => open(GAMES[i].id);
@@ -1731,6 +1731,7 @@
       Object.assign(avatar.root.position, { x: at.x, y: avatar.baseY + supportAt(at.x, at.z, retroFrom ? MEZZ.y : 1), z: at.z });
       avatar.root.rotation.y = at.facing;
       pilot.possess(avatar);
+      if (!pilot.loginViewRestored) pilot.navigate({ position: { x: at.x, y: avatar.root.position.y - avatar.baseY, z: at.z }, yaw: at.facing - Math.PI, pitch: 0.18, dist: 4 });
       // Empty-handed, as in Ooga Mine: no rifle on the back, no aiming, and the mine's words for the controls.
       avatar.weapon.secondaryOwned = false;
       people.selectWeapon(0, avatar);
@@ -1775,7 +1776,7 @@
       if (won > 0) { back.flash = 3; fx.burst(back.x, 1.8, back.z, 30, SPARKS, 2.4); }
     }
     lightUp();
-    leaving = false;
+    leaving = openingGame = false;
     shownFrame = -1;
     prompt = null;
     orders = 0;
@@ -1918,8 +1919,9 @@
 
   const leave = () => {
     // Whoever walked in goes on as themselves: into a game, or back out to the island at this mouth.
-    world.pilotDetached = !pilot.player;
-    world.pilot = pilot.player ? pilot.player.traits.name : null;
+    const traveller = pilot.player || openingGame && avatar;
+    world.pilotDetached = !traveller;
+    world.pilot = traveller ? traveller.traits.name : null;
     unsubscribeAccount();
     unsubscribeAccount = null;
     BL.net.setBody(null);

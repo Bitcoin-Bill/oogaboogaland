@@ -873,7 +873,7 @@
         const p = pilot.player.root.position;
         if (p.z > ENTRY.field && Math.abs(p.x) < ENTRY.halfW) leaveChamber();
         else windowsFrame(previousX, previousY, previousZ);
-      } else {
+      } else if (!avatar) {
         const a = pilot.controls.read(), p = camera.position;
         if (Math.hypot(a.x, a.y) > 0.05 && p.z > ENTRY.field - 1.2 && Math.abs(p.x) < ENTRY.halfW) leaveChamber();
       }

@@ -196,7 +196,10 @@
       if (tracked && tracked.pointerType !== e.pointerType) return;
       const p = local(e);
       pointers.set(e.pointerId, p);
-      if (document.pointerLockElement !== canvas) canvas.setPointerCapture(e.pointerId);
+      if (document.pointerLockElement !== canvas) {
+        // A cancelled or synthetic pointer may no longer exist in the browser.
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) { if (err.name !== "NotFoundError") throw err; }
+      }
       if (pointers.size === 2) {
         clearLongPress();
         if (gesture && gesture.mode === "grab") {
