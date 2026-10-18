@@ -5289,6 +5289,15 @@ const raceOwn = { name: "race own ooga", why: "rule: a signed-in visitor with an
   })()`);
   record("race own ooga: a signed-in visitor's garage offers only their own Ooga and races it, and signing out offers every Ooga again", r.signedIn.rows.length === 1 && r.signedIn.rows[0] === r.own && r.signedIn.picked === r.own && r.signedIn.player === r.own && r.signedIn.last && r.signedIn.help && r.signedOut.rows === CAST && r.signedOut.help && r.restored, JSON.stringify(r));
 } };
+// Picking judges a racer's head and torso by their ancestors, so an Ooga off the field must hang, body and all,
+// under its hidden racer node; one never seated once floated detached and visible at a stale place.
+const raceBench = { name: "race bench", why: "regression: Oogas never drawn into the field stayed pickable at stale transforms", run: async (b) => {
+  const r = await b.evaluate(`(() => { const P = window.__ooga.racers, field = new Set(P.racers);
+    const bench = P.all.filter((r) => !field.has(r));
+    return { built: P.all.length, field: field.size, bench: bench.length, detached: P.all.filter((r) => r.cave.root.parent !== r.node).map((r) => r.name).slice(0, 5), shownOff: bench.filter((r) => r.node.visible).length, hiddenOn: P.racers.filter((r) => !r.node.visible).length };
+  })()`);
+  record("race bench: every Ooga's body hangs under its racer, and only the field is shown", r.built === CAST && r.bench === CAST - r.field && r.bench > 0 && r.detached.length === 0 && r.shownOff === 0 && r.hiddenOn === 0, JSON.stringify(r));
+} };
 const raceMirror = { name: "race mirror", why: "rule: a gold cup opens the mirror tracks, and steering stays true on them", run: async (b) => {
   // The autopilot's cup before this can win gold against a field of fifteen, so the save starts without a
   // cup, as a fresh visitor's does (in memory and in storage alike), and a race lets the garage read it.
@@ -11593,7 +11602,7 @@ scene("race", { label:"optional rig link fallback",url:hubPage(src),steps:[{name
     record("race optional rig: forced link failure keeps WebGL rendering the full original cast",ready&&r.kind==="webgl2"&&!r.failure&&r.rigFailed&&r.ready&&r.drawn>0&&r.racers===CAST&&r.original&&r.faults>0,JSON.stringify(r));
   } finally {await b.evaluate('(()=>{const f=__rigFault;f.gl.createProgram=f.create;f.gl.getProgramParameter=f.parameter;delete window.__rigFault;})()');}
 }}]});
-scene("race", { query: "rain=0&draw=0", steps: [raceStart, raceOwn, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of fifteen runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
+scene("race", { query: "rain=0&draw=0", steps: [raceStart, raceOwn, raceBench, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of fifteen runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
 scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on the target, scores its own medal and is saved as the best", dropRun), dropCrash, trip("drop")] });
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit")] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls] });

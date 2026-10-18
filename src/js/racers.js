@@ -73,6 +73,9 @@
       const body = node;
       const flame = createNode({ geometry: raceModels.boostFlame(), visible: false });
       addChild(root, node);
+      // The body sits under its hidden wrapper from the start: picking judges a part by its ancestors, so an
+      // Ooga that never makes the field stays hidden and unpickable. `seat` dresses it when it races.
+      addChild(node, cave.root);
       const seed = mulberry32(fnv1a(contributor.name + "/driver"));
       const racer = {
         index: i, name: contributor.name, traits, cave, node, body, flame, mount: null, ride: null, baseY: cave.root.position.y,
