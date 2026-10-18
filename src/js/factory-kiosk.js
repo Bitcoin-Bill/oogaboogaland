@@ -676,16 +676,16 @@
     };
     // `text` at scale `s`, cut to `room` pixels with an ellipsis when it would run over.
     const clip = (text, s, room) => width(text, s) <= room ? text : text.slice(0, Math.max(1, Math.floor(room / ((GW + TR) * s)) - 3)) + "...";
-    // The amount's and the quote's row at `y`: who the tip is from and its message, as one wide button that opens them.
-    // A name too long for the big size drops to the small one.
-    const detailsRow = (y) => {
-      const h = 34, room = 324 - width("EDIT", 1) - 10, value = hooks.details();
-      panel(g, 30, y, 340, h, INK.amber);
-      buttons.push({ x: 30, y, w: 340, h, act: "details" });
+    // The amount's and the quote's row, as wide as the panels around it: who the tip is from and its message, as one
+    // button that opens them. A name too long for the big size drops to the small one.
+    const detailsRow = (y, x = 30, w = 340, h = 34) => {
+      const room = w - 16 - width("EDIT", 1) - 10, value = hooks.details();
+      panel(g, x, y, w, h, INK.amber);
+      buttons.push({ x, y, w, h, act: "details" });
       const name = `FROM @${value.handle || "anon"}`, s = width(name, 2) <= room ? 2 : 1;
-      write(g, clip(name, s, room), 38, y + 4, s, INK.gold);
-      write(g, value.message ? clip(value.message, 1, room) : "NO MESSAGE", 38, y + 22, 1, value.message ? INK.white : INK.dim);
-      write(g, "EDIT", 362, y + Math.round((h - GH) / 2), 1, INK.amber, "right");
+      write(g, clip(name, s, room), x + 8, y + 4, s, INK.gold);
+      write(g, value.message ? clip(value.message, 1, room) : "NO MESSAGE", x + 8, y + h - 12, 1, value.message ? INK.white : INK.dim);
+      write(g, "EDIT", x + w - 8, y + Math.round((h - GH) / 2), 1, INK.amber, "right");
     };
     // The details screen's message, wrapped at word breaks into MSG_COLS columns (hard breaks when that would need
     // more than MSG_LINES lines): each line's start written into MSG_STARTS, the text's end after the last, and the
@@ -744,8 +744,8 @@
         // The keypad, short enough to leave the name and message their row above CONTINUE.
         const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "rub"];
         keys.forEach((k, i) => {
-          const x = 44 + (i % 3) * 106, y = 118 + Math.floor(i / 3) * 44, mid = y + 19;
-          button(x, y, 100, 38, k === "clear" ? "CLEAR" : k === "rub" ? "" : k, "", k, k.length === 1 ? 3 : 2);
+          const x = 44 + (i % 3) * 106, y = 118 + Math.floor(i / 3) * 42, mid = y + 18;
+          button(x, y, 100, 36, k === "clear" ? "CLEAR" : k === "rub" ? "" : k, "", k, k.length === 1 ? 3 : 2);
           if (k === "rub") {
             g.fillStyle = INK.white;
             g.beginPath();
@@ -759,7 +759,7 @@
             write(g, "X", x + 56, mid - 3, 1, INK.panel, "center");
           }
         });
-        if (hooks.details) detailsRow(292);
+        if (hooks.details) detailsRow(292, 44, 312);
         button(100, 348, 200, 40, "CONTINUE >", valid() ? "primary" : "off", "go");
         closeButton();
       } else if (s === "quote" && real) {
