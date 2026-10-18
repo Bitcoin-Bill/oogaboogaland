@@ -78,8 +78,133 @@
     }
     quat.normalize(out);
   };
+  const CAMERA_HANDOFF_TIME = 0.4;
+  const CAMERA_POSE_FIELDS = ["eyeX", "eyeY", "eyeZ", "targetX", "targetY", "targetZ", "upX", "upY", "upZ", "hasUp", "fov", "near", "orthoMix", "orthoHeight"];
+  const CAMERA_BLEND_FIELDS = ["eyeX", "eyeY", "eyeZ", "fov", "near", "orthoMix", "orthoHeight"];
+  const cameraHandoff = (camera, renderer) => {
+    const raw = {}, shown = {}, up = { x: 0, y: 1, z: 0 };
+    const rotation = quat.create(), endpointRotation = quat.create();
+    const forward = new Float64Array(3), top = new Float64Array(3);
+    let active = false, elapsed = 0;
+    let sourceHead = null, sourceRoot = null, sourceHeadHidden = false;
+    const restoreHead = () => {
+      if (sourceHead) sourceHead.cameraHidden = sourceHeadHidden;
+      sourceHead = sourceRoot = null;
+    };
+    // A rapid return can make the retained outgoing head the new controller's
+    // head. Hand its original flag back before that controller records it.
+    const takeHead = (head) => { if (sourceHead === head) restoreHead(); };
+    const overlapsHead = (node, margin) => {
+      if (!node.visible) return false;
+      if (node.geometry) {
+        const b = boundsOf(node.geometry), m = node.world, c = b.center;
+        const x = m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12] - camera.position.x;
+        const y = m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13] - camera.position.y;
+        const z = m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14] - camera.position.z;
+        const scale = Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2],
+          m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
+        const radius = b.radius * scale + margin;
+        if (x * x + y * y + z * z <= radius * radius) return true;
+      }
+      for (let i = 0; i < node.children.length; i++) if (overlapsHead(node.children[i], margin)) return true;
+      return false;
+    };
+    const checkHead = () => {
+      if (!sourceHead) return;
+      updateWorld(sourceRoot, sourceRoot.parent ? sourceRoot.parent.world : undefined);
+      const tangent = Math.tan(camera.fov * 0.5), aspect = renderer.size.width / Math.max(1, renderer.size.height);
+      const margin = camera.near * Math.sqrt(1 + tangent * tangent * (1 + aspect * aspect));
+      if (!overlapsHead(sourceHead, margin)) restoreHead();
+    };
+    const capturePose = (out) => {
+      out.eyeX = camera.position.x; out.eyeY = camera.position.y; out.eyeZ = camera.position.z;
+      out.targetX = camera.target.x; out.targetY = camera.target.y; out.targetZ = camera.target.z;
+      out.hasUp = !!camera.up;
+      out.upX = camera.up ? camera.up.x : 0; out.upY = camera.up ? camera.up.y : 1; out.upZ = camera.up ? camera.up.z : 0;
+      out.fov = camera.fov; out.near = camera.near;
+      out.orthoMix = camera.orthoMix || 0; out.orthoHeight = camera.orthoHeight || 0;
+      return out;
+    };
+    const capture = (out, head = null, hidden = false, root = null) => {
+      checkHead();
+      capturePose(out);
+      // Rapid retargeting carries the still-overlapping original head across
+      // release, without ever replacing its original visibility flag.
+      out.sourceHead = sourceHead || head;
+      out.sourceRoot = sourceHead ? sourceRoot : root;
+      out.sourceHeadHidden = sourceHead ? sourceHeadHidden : hidden;
+      return out;
+    };
+    const write = (pose) => {
+      camera.position.x = pose.eyeX; camera.position.y = pose.eyeY; camera.position.z = pose.eyeZ;
+      camera.target.x = pose.targetX; camera.target.y = pose.targetY; camera.target.z = pose.targetZ;
+      up.x = pose.upX; up.y = pose.upY; up.z = pose.upZ;
+      camera.up = pose.hasUp ? up : null;
+      camera.fov = pose.fov; camera.near = pose.near;
+      camera.orthoMix = pose.orthoMix; camera.orthoHeight = pose.orthoHeight;
+    };
+    const poseRotation = (out, pose) => {
+      const dx = pose.targetX - pose.eyeX, dy = pose.targetY - pose.eyeY, dz = pose.targetZ - pose.eyeZ;
+      viewRotation(out, dx, dy, dz, pose.upX, pose.upY, pose.upZ, Math.atan2(-dx, -dz));
+    };
+    const begin = (source) => {
+      cancel();
+      capturePose(raw);
+      for (let i = 0; i < CAMERA_POSE_FIELDS.length; i++) {
+        const key = CAMERA_POSE_FIELDS[i]; shown[key] = source[key];
+      }
+      poseRotation(rotation, shown);
+      elapsed = 0; active = true;
+      write(shown);
+      // If the incoming controller already hides this same head, it owns its
+      // restoration. Otherwise retain only the outgoing overlapping head.
+      if (source.sourceHead && !source.sourceHead.cameraHidden) {
+        sourceHead = source.sourceHead; sourceRoot = source.sourceRoot; sourceHeadHidden = source.sourceHeadHidden;
+        sourceHead.cameraHidden = true;
+        checkHead();
+      }
+      return true;
+    };
+    const restore = () => { if (active) write(raw); };
+    const ease = t => t * t * t * (10 + t * (-15 + 6 * t));
+    const apply = (dt) => {
+      if (!active) { checkHead(); return false; }
+      // Endpoint solvers retain their own camera history. Never feed the
+      // displayed acquisition blend back into collision or orbit damping.
+      capturePose(raw);
+      const before = ease(elapsed / CAMERA_HANDOFF_TIME);
+      elapsed = Math.min(CAMERA_HANDOFF_TIME, elapsed + Math.max(0, dt));
+      if (elapsed === CAMERA_HANDOFF_TIME) { active = false; checkHead(); return true; }
+      const amount = (ease(elapsed / CAMERA_HANDOFF_TIME) - before) / (1 - before);
+      if (amount > 0) {
+        const fromLength = Math.hypot(shown.targetX - shown.eyeX, shown.targetY - shown.eyeY, shown.targetZ - shown.eyeZ);
+        const toLength = Math.hypot(raw.targetX - raw.eyeX, raw.targetY - raw.eyeY, raw.targetZ - raw.eyeZ);
+        const length = Math.max(1e-6, fromLength + (toLength - fromLength) * amount);
+        poseRotation(endpointRotation, raw);
+        // Follow the previous displayed rotation toward the live destination;
+        // a moving actor crossing a half turn cannot flip the chosen arc.
+        quat.slerpTo(rotation, endpointRotation, amount);
+        quat.rotateVec(forward, rotation, 0, 0, -1);
+        quat.rotateVec(top, rotation, 0, 1, 0);
+        for (let i = 0; i < CAMERA_BLEND_FIELDS.length; i++) {
+          const key = CAMERA_BLEND_FIELDS[i]; shown[key] += (raw[key] - shown[key]) * amount;
+        }
+        shown.targetX = shown.eyeX + forward[0] * length;
+        shown.targetY = shown.eyeY + forward[1] * length;
+        shown.targetZ = shown.eyeZ + forward[2] * length;
+        shown.upX = top[0]; shown.upY = top[1]; shown.upZ = top[2]; shown.hasUp = true;
+      }
+      write(shown);
+      checkHead();
+      return true;
+    };
+    const cancel = () => { active = false; restoreHead(); };
+    return { capture, begin, restore, apply, cancel, takeHead, get active() { return active; } };
+  };
   const create = (ctx) => {
     const { renderer, canvas, camera, hud, presets, dist: [DIST_MIN, DIST_MAX], follow, fly, clampTarget, clampCamera, coarse, close = null, ceilingAt = null, mayPossess = null } = ctx;
+    const handoff = cameraHandoff(camera, renderer);
+    let solvingHandoff = false;
     let crew = null, fx = null, input = null, reticleTarget = null, active = true;
     let ownAccount = null, ownCrew = null, ownOoga = null;
     const syncOwnOoga = () => {
@@ -328,11 +453,9 @@
       out.pitch = overhead ? Math.PI / 2 : orbit.pitch;
       out.distance = overhead ? overheadHeight - cave.baseY : orbit.dist;
       out.height = overhead ? overheadHeight : cave ? camera.position.y - cave.root.position.y + cave.baseY : orbit.dist;
-      out.eyeX = camera.position.x; out.eyeY = camera.position.y; out.eyeZ = camera.position.z;
-      out.fov = camera.fov;
       out.side = shoulderSideTarget < 0 ? -1 : 1;
       out.focused = softAimFocused || document.pointerLockElement === canvas;
-      return out;
+      return handoff.capture(out, hiddenHead ? hiddenHead.parts.head : null, hiddenHeadCameraHidden, hiddenHead ? hiddenHead.root : null);
     };
     const assistedView = () => birdsEye() || overheadExit > 0 && aimAtCursor;
     const carryCursor = BL.cursor.create({ canvas, requestLock: () => lockAim(), unlock: () => unlockAim() });
@@ -770,6 +893,7 @@
       return resolveReticleTarget(out, cave, true) && (!primary || out.type === "object");
     };
     const updateFeedback = (cave, dt) => {
+      if (solvingHandoff) return;
       if (hitRemaining > 0) {
         hitRemaining = Math.max(0, hitRemaining - dt);
         const strength = Math.round(hitRemaining / HIT_TIME * 100) / 100;
@@ -810,6 +934,13 @@
       if (y !== assistedReticleY) { assistedReticleY = y; reticle.style.top = `${y}px`; }
       if (birdsEye() && carryCursor.active && !carryCursor.visible) {
         carryCursor.placeCanvas(x, y, renderer.size.width, renderer.size.height);
+      }
+    };
+    const syncReticleRadius = () => {
+      const radius = Math.round(spreadRadius() * 100) / 100;
+      if (radius !== reticleRadius) {
+        reticleRadius = radius;
+        reticle.style.setProperty("--reticle-radius", `${radius}px`);
       }
     };
     const resetAssist = () => {
@@ -964,6 +1095,7 @@
       assistedTargetWait = 0;
     };
     const updateBirdsEyeAim = (cave, dt) => {
+      if (solvingHandoff) return;
       const p = cave.root.position, feet = p.y - cave.baseY;
       const halfWidth = renderer.size.width / 2, halfHeight = renderer.size.height / 2;
       overheadX = halfWidth;
@@ -1484,6 +1616,7 @@
     const hideHead = (cave) => {
       if (hiddenHead === cave) return;
       restoreHead();
+      handoff.takeHead(cave.parts.head);
       hiddenHead = cave;
       hiddenHeadCameraHidden = cave.parts.head.cameraHidden;
       cave.parts.head.cameraHidden = true;
@@ -1512,6 +1645,7 @@
     // the placed camera; a hidden head never skips, so it always restores.
     const HEAD_HIDE_RANGE = 6;
     const syncHeadVisibility = (cave) => {
+      if (solvingHandoff) return;
       if (!cave) { restoreHead(); return; }
       if (!hiddenHead) {
         const dx = camera.position.x - cave.root.position.x, dy = camera.position.y - cave.root.position.y, dz = camera.position.z - cave.root.position.z;
@@ -2047,6 +2181,9 @@
       else if (cave.jet) hud.hint(coarse ? "Left stick flies · pinch in for first person · hold Blast off to climb" : "WASD flies · scroll in for first person · hold Space to climb · Escape to let go");
       else hud.hint(coarse ? "Left stick walks · pinch in for first person · JUMP! jumps or uses a nearby control" : "WASD walks · right-click to aim · scroll to change view · Space to jump or use a nearby control");
       syncModeHud();
+      handoff.begin(incoming);
+      targetWait = assistedTargetWait = 0;
+      finishHandoffView(0);
       return true;
     };
     const rememberSleepView = () => {
@@ -2055,6 +2192,7 @@
       releaseMix = 1;
     };
     const release = (quiet = false) => {
+      handoff.cancel();
       restoredPose = null;
       endCenteredCarry();
       const cave = player();
@@ -2265,6 +2403,7 @@
     const goPreset = (name) => {
       const p = presets[name];
       if (!p) return;
+      handoff.cancel();
       eyeMotionValid = false;
       dollyTime = DOLLY_HANDOFF;
       distanceVelocity = 0;
@@ -2291,6 +2430,7 @@
     // never releases, relocates or wakes the actor, nor changes cursor focus.
     const resetCamera = () => {
       if (!follow || !active || externalControl || disposed) return false;
+      handoff.cancel();
       clearRightGesture();
       const cave = player(), overhead = birdsEye(), yaw = overhead ? overheadYaw : cave ? cave.root.rotation.y + Math.PI : orbit.yaw;
       restoredPose = null;
@@ -2625,11 +2765,7 @@
       if (reticle.dataset.ads !== String(ads)) reticle.dataset.ads = String(ads);
       // Use the same cone and current FOV as the emitted shots, including
       // the ADS transition. Write the DOM only while its visible size changes.
-      const radius = Math.round(spreadRadius() * 100) / 100;
-      if (radius !== reticleRadius) {
-        reticleRadius = radius;
-        reticle.style.setProperty("--reticle-radius", `${radius}px`);
-      }
+      if (!solvingHandoff) syncReticleRadius();
       // Pose tracks the same ray without collision work between shots.
       if (aimAtCursor) {
         aimPoint.x = cursorPoint.x; aimPoint.y = cursorPoint.y; aimPoint.z = cursorPoint.z;
@@ -2672,7 +2808,7 @@
       carryCursor.updateAim(aimMix);
       eyeMotionValid = false;
     };
-    const update = (dt) => {
+    const updateCamera = (dt) => {
       if (externalControl) return;
       if (restoredPose) {
         applyPose(restoredPose);
@@ -3022,8 +3158,29 @@
       previousAnchor.x = motionAnchor.x; previousAnchor.y = motionAnchor.y; previousAnchor.z = motionAnchor.z;
       eyeMotionValid = true;
     };
-    // A connected doorway changes the world frame, not the control mode or
-    // camera blend. Keep its cached anchors and orientations in that frame too.
+    const finishHandoffView = (dt) => {
+      const cave = player();
+      if (birdsEye()) updateBirdsEyeAim(cave, dt);
+      else if (armed()) {
+        if (overheadExit) {
+          if (aimAtCursor && projectAim(cursorPoint)) positionReticle(assistedTargetScreen.x, assistedTargetScreen.y);
+          else positionReticle(renderer.size.width / 2, renderer.size.height / 2);
+        }
+        syncReticleRadius();
+        updateFeedback(cave, dt);
+      }
+      syncHeadVisibility(cave);
+    };
+    const update = (dt) => {
+      if (externalControl) return;
+      const blending = handoff.active;
+      if (blending) { handoff.restore(); solvingHandoff = true; }
+      updateCamera(dt);
+      solvingHandoff = false;
+      if (handoff.apply(dt) || blending) finishHandoffView(dt);
+    };
+    // A connected doorway retains control mode and transforms the displayed
+    // camera plus cached anchors. An acquisition blend ends at that boundary.
     const portalPoints = [camera.position, camera.target, freeTarget, followTarget, entryPosition, previousEye,
       previousAnchor, motionAnchor, overheadAim, aimEntryBody, aimEntry, aimPoint, cursorItem, cursorPoint, targetOrigin, buttonTarget,
       carrySelectionEye, carrySelectionBody];
@@ -3032,6 +3189,7 @@
       overheadStartRotation, overheadViewRotation, carryStartRotation, aimEntryRotation, aimLookRotation, aimPanRotation];
     const portalRotation = quat.create();
     const transformView = (m, yaw) => {
+      handoff.cancel();
       for (const p of portalPoints) {
         const x = p.x, y = p.y, z = p.z;
         p.x = m[0] * x + m[4] * y + m[8] * z + m[12];
@@ -3101,6 +3259,7 @@
     // The scene supplies a safe arrival and resets its collision history first.
     // navigate changes location only, never the visitor's mode or chosen Ooga.
     const navigate = (destination) => {
+      handoff.cancel();
       clearRightGesture();
       restoredPose = null;
       centeredCarry = false;
@@ -3230,6 +3389,7 @@
       camera.orthoHeight = pose.orthoHeight ?? 2 * Math.tan(camera.fov / 2) * pose.orbit[2];
     };
     const restorePose = (pose, exactCamera = true) => {
+      handoff.cancel();
       clearRightGesture();
       const cave = player();
       restoredPose = null;
@@ -3317,6 +3477,7 @@
     };
     const setActive = (value) => {
       if (active === value) return;
+      handoff.cancel();
       active = value;
       controls.reset();
       unlockAim();
@@ -3328,6 +3489,7 @@
       reticle.hidden = !value || !armed();
     };
     const dispose = () => {
+      handoff.cancel();
       if (saveActiveLoginView === saveLoginView) saveActiveLoginView = null;
       unsubscribeOwnOoga();
       ownAccount = ownCrew = ownOoga = null;
@@ -3405,7 +3567,7 @@
       } catch (_) { return false; }
     };
     saveActiveLoginView = saveLoginView;
-    return { orbit, hooks, controls, cursor: carryCursor, captureControl, capturePose, restorePose, focusAim, setExternalControl,
+    return { orbit, hooks, controls, cursor: carryCursor, cameraHandoff: handoff, captureControl, capturePose, restorePose, focusAim, setExternalControl,
       loginViewRestored: !!loginView, loginContext: loginView?.context || null, get poseHeld() { return !!restoredPose; }, get aiming() { return armed(); },
       // Scenery follows the displayed blend, not the entry's local clock:
       // carry/shoulder exits and mid-transition reversals retain this value.

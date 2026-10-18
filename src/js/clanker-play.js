@@ -7,7 +7,7 @@
   const PITCH_LIMIT = Math.PI / 2 - 0.0001, ZOOM_PAUSE = 220;
   const create = ({ canvas, camera, renderer, pilot, hud, clankers, input = null, constrainCamera = null,
     reticleTarget = null, sightClear = null, aimCeiling = null, groundAt = null, grabOoga = null, releaseOoga = null, mayPossess = null, birdsEyeMin = 5, maxDistance = 32 }) => {
-    const orbit = pilot.orbit, target = { x: 0, y: 0, z: 0 };
+    const orbit = pilot.orbit, cameraHandoff = pilot.cameraHandoff, target = { x: 0, y: 0, z: 0 };
     const smashMin = clankers.smashPower(0, true), smashBase = clankers.smashPower(0, false);
     const smashMax = clankers.smashPower(1, false), smashRate = (smashMax - smashBase) / POUND_CHARGE_TIME;
     const command = { x: 0, z: 0, climbAxis: 0, climbSide: 0, heading: NaN, jumpHeld: false, jumpPressed: false, run: false };
@@ -271,10 +271,11 @@
       out.height = camera.position.y - player.root.position.y;
       out.eyeX = camera.position.x; out.eyeY = camera.position.y; out.eyeZ = camera.position.z;
       out.fov = camera.fov; out.side = Math.sign(shoulderSide); out.focused = focused;
-      return out;
+      return cameraHandoff.capture(out, headHidden, savedHeadHidden, player.root);
     };
     const release = () => {
       if (!player) return false;
+      cameraHandoff.cancel();
       blurCombat();
       restoreHead(); resetReticle();
       clankers.release();
@@ -300,6 +301,7 @@
       if (!player) savedNear = camera.near;
       if (player) { blurCombat(); restoreHead(); }
       if (!clankers.possess(entry)) return false;
+      cameraHandoff.cancel();
       pilot.release(true);
       rebasePilot();
       player = entry;
@@ -325,7 +327,7 @@
       acquiredEye.x = incoming.eyeX; acquiredEye.y = incoming.eyeY; acquiredEye.z = incoming.eyeZ;
       if (acquisitionHold) {
         // Recenter from the exact detached eye, even outside normal zoom limits.
-        // No easing, pitch clamp or collision boom may turn selection into travel.
+        // The handoff turns the view; no pitch clamp or collision boom moves its eye.
         const dx = incoming.eyeX - target.x, dz = incoming.eyeZ - target.z;
         let dy = incoming.eyeY - target.y;
         if (Math.hypot(dx, dy, dz) < 1e-6) { target.y -= 1e-6; dy = incoming.eyeY - target.y; }
@@ -354,6 +356,7 @@
       camera.orthoMix = view === "birds-eye" ? 1 : 0;
       camera.orthoHeight = Math.max(0.1, orbit.dist * 2 * Math.tan(camera.fov / 2));
       holdingFollow = handoffBefore = climbHandoff();
+      if (!atBoot) cameraHandoff.begin(incoming);
       hud.setGorilla(player, view, isCombat());
       syncCursor();
       hud.tooltip.hide();
@@ -845,9 +848,36 @@
       clankers.control(command);
       jumpTap = false;
     };
+    const finishView = (dt) => {
+      cameraHandoff.apply(dt);
+      const first = view === "first-person";
+      if (first && orbit.dist < 0.65 && !headHidden) {
+        // The incoming head stays visible while a handoff approaches it.
+        const head = player.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
+        BL.scene.updateWorld(player.root, player.root.parent.world);
+        const m = head.world;
+        mat4.transformPoint(eye, m, bounds.center[0], bounds.center[1], bounds.center[2]);
+        const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
+        if (!cameraHandoff.active || Math.hypot(camera.position.x - eye[0], camera.position.y - eye[1], camera.position.z - eye[2]) <= bounds.radius * scale + camera.near) {
+          cameraHandoff.takeHead(head);
+          headHidden = head; savedHeadHidden = headHidden.cameraHidden; headHidden.cameraHidden = true;
+        }
+      } else if (!first && headHidden) {
+        // Keep the head out of the near plane until the exit dolly clears it.
+        BL.scene.updateWorld(player.root, player.root.parent.world);
+        const bounds = BL.scene.boundsOf(headHidden.geometry), m = headHidden.world;
+        mat4.transformPoint(eye, m, bounds.center[0], bounds.center[1], bounds.center[2]);
+        const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
+        if (Math.hypot(camera.position.x - eye[0], camera.position.y - eye[1], camera.position.z - eye[2]) > bounds.radius * scale + camera.near) restoreHead();
+      }
+      updateReticle(dt);
+      hud.setGorilla(player, view, isCombat());
+      showAct();
+    };
     const update = (dt) => {
       if (!player) return;
       if (clankers.player !== player || !player.active || !player.root.visible) { release(); return; }
+      cameraHandoff.restore();
       updateSmashGauge();
       const p = player.root.position;
       if (acquisitionHold && (viewChanged || moving || Math.hypot(p.x - acquiredAt.x, p.y - acquiredAt.y, p.z - acquiredAt.z) > 1e-5)) acquisitionHold = false;
@@ -864,7 +894,7 @@
         camera.position.x = acquiredEye.x; camera.position.y = acquiredEye.y; camera.position.z = acquiredEye.z;
         camera.target.x = target.x; camera.target.y = target.y; camera.target.z = target.z;
         if (Math.hypot(target.x - acquiredEye.x, target.y - acquiredEye.y, target.z - acquiredEye.z) < 1e-6) camera.target.y -= 1e-6;
-        updateReticle(dt); hud.setGorilla(player, view, isCombat()); showAct();
+        finishView(dt);
         return;
       }
       if (anchored) {
@@ -879,7 +909,7 @@
       const looking = viewChanged || Math.abs(orbit.tYaw - orbit.yaw) > 0.00001
         || Math.abs(orbit.tPitch - orbit.pitch) > 0.00001 || Math.abs(orbit.tDist - orbit.dist) > 0.00001;
       if (anchored && !looking && camera.orthoMix === 0) {
-        updateReticle(dt); hud.setGorilla(player, view, isCombat()); showAct();
+        finishView(dt);
         return;
       }
       if (!overhead) orbit.yaw = damp(orbit.yaw, orbit.tYaw, player.drive.climbTurnTimer > 0 && !player.climb.active ? 28 : 14, dt);
@@ -926,16 +956,6 @@
       // The scene can shorten an underground combat boom before restoring its roof.
       if (constrainCamera && !acquisitionHold) constrainCamera(player, camera, anchored, previousEye, first, overhead,
         shoulderPointActive && view === "shoulder" ? shoulderPoint : null);
-      if (first && orbit.dist < 0.65 && !headHidden) {
-        headHidden = player.gorilla.parts.head; savedHeadHidden = headHidden.cameraHidden; headHidden.cameraHidden = true;
-      } else if (!first && headHidden) {
-        // Keep the head out of the near plane until the exit dolly clears it.
-        BL.scene.updateWorld(player.root, player.root.parent.world);
-        const bounds = BL.scene.boundsOf(headHidden.geometry), m = headHidden.world;
-        mat4.transformPoint(eye, m, bounds.center[0], bounds.center[1], bounds.center[2]);
-        const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
-        if (Math.hypot(camera.position.x - eye[0], camera.position.y - eye[1], camera.position.z - eye[2]) > bounds.radius * scale + camera.near) restoreHead();
-      }
       if (anchored) {
         // A user-driven look can hit stone during the handoff. Retain the
         // resulting displayed boom instead of expanding it on the next frame.
@@ -943,11 +963,10 @@
         followOffset.x = orbit.tx - target.x; followOffset.y = orbit.ty - target.y; followOffset.z = orbit.tz - target.z;
       }
       viewChanged = false;
-      updateReticle(dt);
-      hud.setGorilla(player, view, isCombat());
-      showAct();
+      finishView(dt);
     };
     const respawn = (dx, dy, dz) => {
+      cameraHandoff.cancel();
       cancelInput();
       acquisitionHold = false;
       holdingFollow = pinnedFollow = handoffBefore = false;
@@ -968,6 +987,7 @@
       if (travelRefusal()) return false;
       const p = player.root.position, x = p.x, y = p.y, z = p.z;
       if (!clankers.travel(position)) return false;
+      cameraHandoff.cancel();
       cancelInput();
       const dx = p.x - x, dy = p.y - y, dz = p.z - z;
       // Translate the displayed view and every retained world-space anchor.
@@ -990,6 +1010,7 @@
     };
     const resetCamera = () => {
       if (!player || clankers.player !== player || !player.active || !player.root.visible) return false;
+      cameraHandoff.cancel();
       clearRight();
       shoulderPointActive = carryShoulderAim = false;
       const first = view === "first-person", overhead = view === "birds-eye";

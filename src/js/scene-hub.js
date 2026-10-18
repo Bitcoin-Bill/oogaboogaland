@@ -5136,13 +5136,13 @@
     cutawayPool = !player || !mempoolIsland.overAt(player.root.position.x, player.root.position.z, -1) ? 0
       : mempoolIsland.coveredAt(player.root.position.x, actorFeet + 0.5, player.root.position.z) ? 2 : 1;
     const subterranean = player && (cutawayPool ? cutawayPool === 2 : actorFeet < -STEP_MAX);
-    if (!combat) cutawayHandoffPlayer = null;
-    else if (cutawayHandoffPlayer) cutawayHandoffPlayer = player;
     if (overhead) cutawayHandoffPlayer = player;
-    else if (cutawayHandoffPlayer && (!subterranean || combatCameraReady(player, gorilla))) cutawayHandoffPlayer = null;
-    // Keep an overhead exit open until the displayed eye has reached clear
-    // air connected to the actor. A restored close view never reopens the
-    // island merely because furniture or a wall later blocks its camera.
+    else if (combat && subterranean && (cutawayHandoffPlayer || pilot.cameraHandoff.active)) {
+      cutawayHandoffPlayer = combatCameraReady(player, gorilla) ? null : player;
+    } else cutawayHandoffPlayer = null;
+    // Keep an overhead exit or actor handoff open until the displayed eye has
+    // reached clear air connected to the actor. After the handoff, an ordinary
+    // close view never reopens the island just because a wall blocks its camera.
     const active = combat && (overhead || (subterranean ? cutawayHandoffPlayer === player : cameraMix > 0));
     const mix = active ? cameraMix : 0;
     const showRampMarkers = active && cameraMix > 0.5;

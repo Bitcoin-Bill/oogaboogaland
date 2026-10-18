@@ -6802,6 +6802,34 @@ const carryRightProbe = (B, actor = null, gorilla = false) => {
     if (capture) Object.defineProperty(canvas, "setPointerCapture", capture); else delete canvas.setPointerCapture;
   }
 };
+const cameraSelectionProbe = (B, controller, select, reselect = null) => {
+  const C = B.camera, matrix = new Float64Array(16), up = { x: 0, y: 1, z: 0 };
+  const before = new Float64Array(13), previous = new Float64Array(13), current = new Float64Array(13);
+  const snapshot = out => {
+    BL.math.mat4.lookAt(matrix, C.position, C.target, C.up || up);
+    out.set([C.position.x, C.position.y, C.position.z, matrix[2], matrix[6], matrix[10], matrix[1], matrix[5], matrix[9],
+      C.fov, C.near, C.orthoMix || 0, (C.orthoMix || 0) * (C.orthoHeight || 0)]);
+  };
+  const distance = (a, b) => Math.hypot(...a.map((n, i) => n - b[i]));
+  snapshot(before); select(); snapshot(current);
+  const immediate = distance(before, current), began = B.pilot.cameraHandoff.active;
+  previous.set(current);
+  let total = 0, maxStep = 0, progress = 0, finite = true, repeated = true;
+  for (let i = 0; i < 9; i++) {
+    controller.update(0.05); snapshot(current);
+    const step = distance(previous, current); total += step; maxStep = Math.max(maxStep, step);
+    finite &&= current.every(Number.isFinite);
+    if (i === 1 && reselect) {
+      previous.set(current); reselect(); snapshot(current);
+      repeated &&= distance(previous, current) < 1e-6;
+    }
+    if (i === 2) progress = distance(before, current);
+    previous.set(current);
+  }
+  const finished = !B.pilot.cameraHandoff.active;
+  return { immediate, progress, total, maxStep, began, finite, finished, repeated,
+    smooth: immediate < 1e-6 && began && finite && finished && repeated && progress > 1e-6 && maxStep < total * 0.6 };
+};
 const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizontal aim rotates the view around a centerline reticle, zoom retains forward targets, and carry handoffs preserve valid cursors and camera distance", run: async (b) => {
   const focusPoint = await b.evaluate(`(() => {
     const B = __ooga, a = B.pilot.player, C = B.camera;
@@ -6823,6 +6851,12 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     const snapshot = () => [C.position.x, C.position.y, C.position.z, C.target.x, C.target.y, C.target.z];
     const error = (before, count = 6) => Math.max(...snapshot().slice(0, count).map((n, i) => Math.abs(n - before[i])));
     const double = () => P.hooks.onDoubleTap({ owner: { kind: "caveman", cave: a } });
+    const handoff = ${cameraSelectionProbe.toString()};
+    const centered = () => {
+      const p = a.root.position, dx = C.target.x - C.position.x, dy = C.target.y - C.position.y, dz = C.target.z - C.position.z;
+      const x = p.x - C.position.x, y = p.y - C.position.y, z = p.z - C.position.z;
+      return (x * dx + y * dy + z * dz) / Math.hypot(x, y, z) / Math.hypot(dx, dy, dz) > 1 - 1e-8;
+    };
     try {
       net.backend = true;
       for (const signedIn of [false, true]) {
@@ -6835,13 +6869,12 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           const p = a.root.position, headY = p.y - a.baseY + a.headOffset + a.viewLift;
           Object.assign(C.position, { x: p.x + 4, y: headY + clearance, z: p.z + 3 });
           Object.assign(C.target, { x: p.x + 1, y: headY, z: p.z - 2 }); C.up = null;
-          const before = snapshot(); double(); const immediate = error(before, 3);
-          B.advance(0.5, 1 / 60);
-          const acquired = { selected: P.player === a, mode: P.mode, combat: P.aiming, error: error(before, 3), hidden: portrait.hidden };
+          const before = snapshot(), blend = handoff(B, P, double, double), immediate = blend.immediate;
+          const acquired = { selected: P.player === a, mode: P.mode, combat: P.aiming, error: error(before, 3), centered: centered(), hidden: portrait.hidden };
           if (previousCombat) { P.modeAction("mode-toggle"); B.advance(1, 1 / 60); }
           const current = snapshot(), mode = P.mode, combat = P.aiming;
           double();
-          rows.push({ signedIn, floor, clearance, previousCombat, immediate, acquired,
+          rows.push({ signedIn, floor, clearance, previousCombat, immediate, blend, acquired,
             repeated: P.player === a && P.mode === mode && P.aiming === combat && error(current) < 0.001 });
         }
         P.release(true); B.advance(0.1, 1 / 60);
@@ -6849,14 +6882,15 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
         const shown = !portrait.hidden && H.retakeActor?.actor === a && !H.retakeActor.gorilla
           && portrait.dataset.gorilla === "false" && portrait.getAttribute("aria-label").includes(a.traits.display)
           && bar.getAttribute("aria-label").startsWith("Ooga health:") && Number(bar.getAttribute("aria-valuemax")) === a.health.max;
+        C.target.x += 3; C.target.z -= 2;
         const before = snapshot(), saved = BL.pilot.saveLoginView(), raw = sessionStorage.getItem(loginKey), view = raw && JSON.parse(raw);
         const savedView = saved && raw.length <= 8192 && view.route === location.pathname + location.search
           && view.eye.every((n, i) => n === before[i]) && view.target.every((n, i) => n === before[i + 3])
           && view.up.length === 3 && view.up.every(Number.isFinite) && view.fov === C.fov
           && Date.now() - view.at >= 0 && Date.now() - view.at < 1000;
-        portrait.click(); const immediate = error(before, 3); B.advance(0.5, 1 / 60);
+        const blend = handoff(B, P, () => portrait.click()), immediate = blend.immediate;
         const activeRefused = !BL.pilot.saveLoginView() && sessionStorage.getItem(loginKey) === null;
-        retakes.push({ signedIn, shown, nativeTab, detachedRight, selected: P.player === a, mode: P.mode, combat: P.aiming, immediate, error: error(before, 3), hidden: portrait.hidden, savedView, activeRefused });
+        retakes.push({ signedIn, shown, nativeTab, detachedRight, selected: P.player === a, mode: P.mode, combat: P.aiming, immediate, blend, error: error(before, 3), centered: centered(), hidden: portrait.hidden, savedView, activeRefused });
       }
       return { rows, retakes };
     } finally {
@@ -6864,12 +6898,12 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       if (oldLoginView === null) sessionStorage.removeItem(loginKey); else sessionStorage.setItem(loginKey, oldLoginView);
     }
   })()`);
-  record("possession: signed-in and signed-out acquisition from low or high detached views keeps the eye in carry orbit above or below ground, while double-clicking the current Ooga changes nothing",
+  record("possession: signed-in and signed-out acquisition from low or high detached views smoothly recenters carry orbit at the fixed eye above or below ground; same-Ooga double-clicks neither snap nor restart the handoff",
     selectionModes.rows.length === 8 && selectionModes.rows.every(row => row.immediate < 1e-6 && row.acquired.selected
-      && row.acquired.mode === "orbit" && !row.acquired.combat && row.acquired.error < 0.001 && row.acquired.hidden && row.repeated), JSON.stringify(selectionModes.rows));
-  record("detached portrait: signed-in and signed-out visitors return to the last Ooga in carry orbit without moving the view, and the active portrait replaces the return button",
+      && row.blend.smooth && row.acquired.mode === "orbit" && !row.acquired.combat && row.acquired.error < 0.001 && row.acquired.centered && row.acquired.hidden && row.repeated), JSON.stringify(selectionModes.rows));
+  record("detached portrait: signed-in and signed-out visitors smoothly return to the last Ooga in carry orbit at the fixed eye, and the active portrait replaces the return button",
     selectionModes.retakes.length === 2 && selectionModes.retakes.every(row => row.shown && row.selected && row.mode === "orbit"
-      && !row.combat && row.immediate < 1e-6 && row.error < 0.001 && row.hidden && row.nativeTab && row.detachedRight), JSON.stringify(selectionModes.retakes));
+      && !row.combat && row.blend.smooth && row.immediate < 1e-6 && row.error < 0.001 && row.centered && row.hidden && row.nativeTab && row.detachedRight), JSON.stringify(selectionModes.retakes));
   record("login handoff: only detached views write a bounded, route-scoped camera snapshot; an active Ooga refuses and clears it",
     selectionModes.retakes.every(row => row.savedView && row.activeRefused), JSON.stringify(selectionModes.retakes));
   const rightViews = await b.evaluate(`(() => {
@@ -11852,6 +11886,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
 } }, { name: "gorilla camera modes", why: "regression: controlled gorillas lacked shared camera/cursor controls and Escape, and selecting an unavailable Ooga dropped the current gorilla", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, P = B.clankerPlay, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl");
+    const handoff = ${cameraSelectionProbe.toString()};
     const canvas = document.getElementById("scene"), reticle = document.getElementById("weapon-reticle"), button = document.getElementById("mode-hud");
     P.release(); B.pilot.release(true); C.release(); C.cancelDebugMove(e);
     for (const prop of B.props) prop.node.visible = false;
@@ -11862,7 +11897,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     e.climb.active = e.jump.active = e.fire.burning = e.fire.rolling = false; e.root.visible = true;
     e.gorilla.poseManaged(2, 7, e.root.position.y, 0, e.heading, 0, false, false, "", e.motion);
     BL.scene.updateWorld(BL.scenes.hub.root); B.headquarters.solids.props.sync();
-    const originalHeadHidden = !!e.gorilla.parts.head.cameraHidden, near = B.camera.near;
+    const originalHeadHidden = !!e.gorilla.parts.head.cameraHidden, originalOogaHeadHidden = !!e.owner.parts.head.cameraHidden, near = B.camera.near;
     reticle.dataset.sight = reticle.dataset.close = reticle.dataset.occluded = "true";
     reticle.dataset.hit = "object"; reticle.style.left = "31px"; reticle.style.top = "47px"; reticle.style.setProperty("--reticle-hit", "1");
     const entryEye = { x: 19, y: e.root.position.y + 15, z: 18 };
@@ -12150,6 +12185,8 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         const samePositions = ["x", "y", "z"].every(k => e.owner.root.position[k] === ownerPosition[k] && e.root.position[k] === gorillaPosition[k]);
         const nativeCursor = () => document.pointerLockElement !== canvas
           && !document.body.classList.contains("carry-cursor-active") && !document.body.classList.contains("aim-cursor-focused");
+        B.pilot.update(1);
+        let reversed = false;
         for (const combat of [false, true]) for (const view of ["shoulder", "first-person", combat ? "birds-eye" : "orbit"]) {
           const gesture = "pair-" + combat + "-" + view;
           if (B.pilot.aiming !== combat) B.pilot.modeAction("mode-toggle");
@@ -12159,16 +12196,25 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           if (view !== "shoulder") { B.pilot.hooks.onZoom(view === "first-person" ? 0.5 : 2, gesture + "-view"); B.pilot.update(2); }
           const prepared = B.pilot.mode === view && B.pilot.aiming === combat;
           if (combat) B.pilot.focusAim();
-          canvas.focus(); tap("t"); P.update(2);
+          canvas.focus(); const gorillaBlend = handoff(B, P, () => tap("t"));
           const toGorilla = P.player === e && P.view === view && P.combat === combat;
+          let reversal = null;
+          if (!combat && view === "first-person") {
+            tap("t"); B.pilot.update(0.1);
+            const reversing = B.pilot.cameraHandoff.active;
+            reversal = handoff(B, P, () => tap("t"), () => P.possess(e));
+            reversed = reversing && reversal.smooth && P.player === e && P.view === view && !P.combat
+              && !!e.gorilla.parts.head.cameraHidden && !!e.owner.parts.head.cameraHidden === originalOogaHeadHidden;
+          }
           let cursorFreed = true, nativeToOoga = true, nativeToGorilla = true;
           if (combat) {
             const focused = P.focused;
             tap("Escape", "Escape");
             cursorFreed = focused && P.player === e && P.view === view && P.combat && !P.focused && nativeCursor();
           }
-          tap("t"); B.pilot.update(2);
+          const oogaBlend = handoff(B, B.pilot, () => tap("t"));
           const toOoga = B.pilot.player === e.owner && B.pilot.mode === view && B.pilot.aiming === combat;
+          if (reversal) reversed &&= !!e.gorilla.parts.head.cameraHidden === originalHeadHidden;
           if (combat) {
             nativeToOoga = nativeCursor();
             tap("t"); P.update(2);
@@ -12176,11 +12222,13 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             tap("t"); B.pilot.update(2);
             nativeToOoga &&= B.pilot.player === e.owner && B.pilot.mode === view && B.pilot.aiming && nativeCursor();
           }
-          transitions.push({ view, combat, prepared, toGorilla, toOoga, cursorFreed, nativeToOoga, nativeToGorilla });
+          transitions.push({ view, combat, prepared, toGorilla, toOoga, gorillaBlend, oogaBlend, reversal, cursorFreed, nativeToOoga, nativeToGorilla });
         }
         BL.net.state.me = null; tap("t");
         const signedOutKeepsBody = B.pilot.player === e.owner && !P.active;
-        pair = { retook, companion, grabKeepsBody, repeatKeepsBody, returned, samePositions, signedOutKeepsBody };
+        B.pilot.release(true);
+        const headsRestored = !!e.gorilla.parts.head.cameraHidden === originalHeadHidden && !!e.owner.parts.head.cameraHidden === originalOogaHeadHidden;
+        pair = { retook, companion, grabKeepsBody, repeatKeepsBody, returned, samePositions, reversed, headsRestored, signedOutKeepsBody };
       } finally { B.pilot.release(true); P.release(); BL.net.state.me = account; BL.net.state.backend = backend; }
       const retakes = [], accountAfter = BL.net.state.me, backendAfter = BL.net.state.backend;
       try {
@@ -12188,19 +12236,26 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         for (const signedIn of [false, true]) {
           BL.net.state.backend = true;
           BL.net.state.me = signedIn ? { id: 71, login: character.github || character.handle } : null;
-          B.pilot.release(true); P.possess(e, true); P.release();
+          B.pilot.release(true);
+          Object.assign(B.camera.position, { x: e.root.position.x + 12, y: e.root.position.y + 15, z: e.root.position.z + 9 });
+          Object.assign(B.camera.target, { x: e.root.position.x + 3, y: e.root.position.y + 2, z: e.root.position.z - 2 });
+          const acquisition = handoff(B, P, () => P.possess(e), () => P.possess(e)); P.release();
           const nativeTab = (${nativeTabProbe.toString()})(true), detachedRight = (${carryRightProbe.toString()})(B);
           const shown = !portrait.hidden && B.hud.retakeActor?.actor === e && B.hud.retakeActor.gorilla
             && portrait.getAttribute("aria-label").includes("gorilla");
+          B.camera.target.x += 3; B.camera.target.z -= 2;
           const eye = { ...B.camera.position }, active = e.active;
           e.active = false; toast.textContent = ""; portrait.click();
           const refused = !P.active && !B.pilot.player && toast.textContent.includes("not available")
             && ["x", "y", "z"].every(k => B.camera.position[k] === eye[k]);
-          e.active = active; portrait.click(); P.update(1);
+          e.active = active; const blend = handoff(B, P, () => portrait.click());
+          const camera = B.camera, dx = camera.target.x - eye.x, dy = camera.target.y - eye.y, dz = camera.target.z - eye.z;
+          const x = e.root.position.x - eye.x, y = e.root.position.y + 1.25 - eye.y, z = e.root.position.z - eye.z;
+          const centered = (x * dx + y * dy + z * dz) / Math.hypot(x, y, z) / Math.hypot(dx, dy, dz) > 1 - 1e-8;
           const returned = P.player === e && P.view === "orbit" && !P.combat && !P.focused && portrait.hidden
-            && Math.hypot(B.camera.position.x-eye.x, B.camera.position.y-eye.y, B.camera.position.z-eye.z) < 1e-6;
+            && centered && Math.hypot(B.camera.position.x-eye.x, B.camera.position.y-eye.y, B.camera.position.z-eye.z) < 1e-6;
           const repeated = P.possess(e) && P.player === e && P.view === "orbit" && !P.combat;
-          retakes.push({ signedIn, shown, nativeTab, detachedRight, refused, returned, repeated }); P.release();
+          retakes.push({ signedIn, shown, nativeTab, detachedRight, acquisition, blend, refused, returned, repeated }); P.release();
         }
       } finally { P.release(); BL.net.state.me = accountAfter; BL.net.state.backend = backendAfter; }
       const sleepRows = [], sleepAccount = BL.net.state.me, sleepBackend = BL.net.state.backend;
@@ -12302,10 +12357,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   record("gorilla map: signed in or out, one Map click travels to the next destination while retaining the gorilla, mode and view family and translating the camera", state.mapRows.length === 12
     && state.mapRows.every(row => row.prepared && row.arrived), JSON.stringify(state.mapRows));
   record("gorilla reset: 0 resets camera framing while retaining the actor's position, carry/combat and view family", state.mapRows.every(row => row.resetKept && row.resetChanged), JSON.stringify(state.mapRows));
-  record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
-  record("owned pair views: direct T switches preserve carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
+  record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; rapid reversal starts from the displayed view, same-actor selection does not restart it, G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
+  record("owned pair views: T smoothly moves the displayed camera to each actor while preserving carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.gorillaBlend.smooth && r.oogaBlend.smooth && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
   record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));
-  record("gorilla retake: signed in or out the detached portrait remembers the last gorilla; unavailability preserves the detached eye and successful retake keeps that eye in carry/orbit", state.retakes.length === 2 && state.retakes.every(r => r.shown && r.nativeTab && r.detachedRight && r.refused && r.returned && r.repeated), JSON.stringify(state.retakes));
+  record("gorilla selection and retake: signed in or out, selection and the last-actor portrait smoothly recenter carry/orbit at the fixed detached eye; unavailable actors leave the view alone and same-actor selection does not restart the handoff", state.retakes.length === 2 && state.retakes.every(r => r.shown && r.nativeTab && r.detachedRight && r.acquisition.smooth && r.blend.smooth && r.refused && r.returned && r.repeated), JSON.stringify(state.retakes));
   record("sleeping gorilla: signed in or out selection and right-click keep the bed, pose and detached eye; movement, combat and attacks wait for Space; release preserves sleep and waking consumes the jump press and restores incoming combat intent", state.sleepRows.length === 2 && state.sleepRows.every(r => r.fixture && r.selected && r.heldEye && r.rightIgnored && r.nativeTab && r.blocked && r.releasedAsleep && r.dormantCombat && r.woke && r.freedBed), JSON.stringify(state.sleepRows));
 } }, { name: "gorilla wall destination", why: "regression: commanding a roof gorilla to a lower point farther along the cave face stalled at the crest instead of reaching the clicked wall", run: async (b) => {
   const state = await b.evaluate(`(() => {
