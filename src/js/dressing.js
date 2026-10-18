@@ -2,7 +2,7 @@
 // writing through `box` and `put` into separate solid, hanging, decorative glow and lantern glow layers: general (`lanternPost`, `crate`, `coalCrate`,
 // `barrel`, `cart`, `banner`, `gauge`, `rubble`, `bracket`, `hanging`, `bulb`), lab (`die`,
 // `flaskBench`, `terminal`, `chalkboard`), the mirror (`monolith`, `runeStone`), lightning (`coil`,
-// `boards`), the arcade (`cabinet`), B.C.A. (`abacus`, `ledger`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem from `hubModels.SIGN_ICONS`.
+// `boards`), the arcade (`cabinet`), B.C.A. (`abacus`, `ledger`), plus `bench`, `vine` and `banner(v)` carrying each cave's emblem as pixel art.
 //
 // `set()` places pieces by quarter turns (`put`), strings sagging cables with lamps (`cable`) and `build`s
 // everything placed into one `solid`, one `hang`, decorative `glow` and lantern `lampGlow` mesh plus the `lights` its lanterns
@@ -66,6 +66,98 @@
   const KEY = (x, y, z) => ((x + 2048) * 4096 + (y + 2048)) * 4096 + (z + 2048);
   const BOLT = ["...##", "..##.", ".##..", "#####", "..##.", ".##..", "##..."];
   const INVADER = ["..#..#..", "...##...", "..####..", ".#.##.#.", "########", "#.####.#", "#.#..#.#", "...##..."];
+  // EntropyLab reference sampled at 48 x 72: quarter-size pixels preserve the leaf, liquid and die.
+  const LAB_BANNER = [
+    "................................................",
+    "................................................",
+    "....................................#...........",
+    ".................................####...........",
+    "..............................#######...........",
+    "............................#########...........",
+    "...........................#########............",
+    "..........................##########............",
+    ".........................###########............",
+    "........................####.######.............",
+    "........................###.######..............",
+    ".......................###..#####...............",
+    ".......................###.#####................",
+    ".......................###.####.................",
+    ".......................##..##...................",
+    ".......................##.......................",
+    ".......................##.......................",
+    ".......................##.......................",
+    ".................#.....##.......................",
+    "..#################....##....#################..",
+    "..##...................##...................##..",
+    ".##....................##....................##.",
+    ".##....................##....................##.",
+    "..##...................##...................##..",
+    "..###..................##..................###..",
+    "...##..................##..................##...",
+    "....##.................##.................##....",
+    "....##.................##.................##....",
+    "....##.................##.................##....",
+    "....##..####...........##.................##....",
+    "....##..######.........##.................##....",
+    "....##..########.......##.................##....",
+    "....##..#########......##.................##....",
+    "....##..###########....##.................##....",
+    "....##..############...##.................##....",
+    "....##..#############...#.................##....",
+    "....##..##############....................##....",
+    "....##..###############...............##..##....",
+    "....##..#################............###..##....",
+    "....##..#####################....#######..##....",
+    "....##..################################..##....",
+    "....##..################################..##....",
+    "....##..##############....##############..##....",
+    "....##..############.......#############..##....",
+    "....##..###########...####...###########..##....",
+    "....##..#########...########...#########..##....",
+    "....##..#######...#####..#####...#######..##....",
+    "....##..######...######..######...######..##....",
+    "....##..######.....##########.....######..##....",
+    "....##..######..##...######...##..######..##....",
+    "....##..######..####...##...####..######..##....",
+    "....##..######....####....######..######..##....",
+    "....##..######..#.#####..#######..######..##....",
+    "....##..######..####..#..#..####..######..##....",
+    "....##..######..####..#..#.#####..######..##....",
+    "....##..######..#######..#######..######..##....",
+    "....##..######....#####..####..#..######..##....",
+    "....##..######..#.#####..####..#..######..##....",
+    "....##..######..####..#..#######..######..##....",
+    "....##..#######...###.#..#####...#######..##....",
+    "....##..#########...###..###...#########..##....",
+    ".....#...##########...#..#...##########...#.....",
+    ".....##..###########.......############..##.....",
+    ".....##...############...#############...#......",
+    "......##...##########################...##......",
+    ".......##....######################....##.......",
+    "........##............................##........",
+    ".........###........................###.........",
+    "..........############################..........",
+    ".............######################.............",
+    "................................................",
+    "................................................"
+  ];
+  const labBannerPaint = BL.models.cached(() => {
+    const geo = { verts: [], faces: [], lines: [] }, pixel = U / 4;
+    // Row runs keep the finer paint small. Its off-grid plane leaves the cloth's block detail intact.
+    const x0 = -6 * U, y0 = 21 * U, z = 2 * U + 1 / 256;
+    for (let r = 0; r < LAB_BANNER.length; r++) {
+      const row = LAB_BANNER[r], y = y0 + (LAB_BANNER.length - 1 - r) * pixel;
+      for (let c = 0; c < row.length;) {
+        if (row[c] !== "#") { c++; continue; }
+        const start = c;
+        while (c < row.length && row[c] === "#") c++;
+        const a = x0 + start * pixel, b = x0 + c * pixel, i = geo.verts.length / 3;
+        geo.verts.push(a, y, z, b, y, z, b, y + pixel, z, a, y + pixel, z);
+        geo.faces.push({ i: [i, i + 1, i + 2, i + 3], color: RGB[33], emissive: 0 });
+      }
+    }
+    return geo;
+  });
   // A piece is three flat lists of x, y, z, colour per layer, built by its author through `put`.
   const author = (build) => {
     const layers = [[], [], [], []];
@@ -165,24 +257,28 @@
         if (d <= 3.2) put(SOLID, x, y, wz, d < 1.2 ? 6 : 5);
       }
     }),
-    // A cave's standard: 0 bolt, 1 die, 2 glyph, 3 banana, 4 abacus.
-    banner: (v) => author((put, box) => {
-      const CLOTH = [14, 41, 36, 42, 58][v], EDGE = [15, 33, 37, 18, 59][v];
-      const EMBLEM = [["bolt", 18], ["die", 33], ["glyph", 37], null, ["abacus", 49]][v];
-      box(SOLID, -3, 2, 0, 1, -3, 2, 2);
-      box(SOLID, -1, 0, 2, 45, -1, 0, 2);
-      box(SOLID, -1, 0, 46, 47, -1, 0, v === 2 ? 37 : 6);
-      box(HANG, -9, 8, 43, 44, -1, 0, 0);
-      for (let x = -8; x <= 7; x++) {
-        const bottom = 14 + ((x * 7) % 3 + 3) % 3 * 2;
-        for (let y = bottom; y <= 42; y++) put(HANG, x, y, 1, x === -8 || x === 7 ? EDGE : CLOTH);
-      }
-      if (EMBLEM) icon(put, v === 2 ? GLOW : HANG, ICONS[EMBLEM[0]], -5, 22, 2, 2, EMBLEM[1]);
-      if (v === 3) for (let row = 0; row < 15; row++) for (let col = 0; col < 15; col++) {
-        const ink = BANANA_ART.rows[Math.floor(row * 9 / 15)][Math.floor(col * 9 / 15)];
-        if (ink !== ".") put(HANG, col - 7, 36 - row, 2, ink === "D" ? 55 : ink === "Y" ? 56 : 57);
-      }
-    }),
+    // A cave's standard: 0 bolt, 1 sprouting beaker, 2 glyph, 3 banana, 4 abacus.
+    banner: (v) => {
+      const piece = author((put, box) => {
+        const CLOTH = [14, 14, 36, 42, 58][v], EDGE = [15, 15, 37, 18, 59][v];
+        const EMBLEM = [["bolt", 18], null, ["glyph", 37], null, ["abacus", 49]][v];
+        box(SOLID, -3, 2, 0, 1, -3, 2, 2);
+        box(SOLID, -1, 0, 2, 45, -1, 0, 2);
+        box(SOLID, -1, 0, 46, 47, -1, 0, v === 2 ? 37 : 6);
+        box(HANG, -9, 8, 43, 44, -1, 0, 0);
+        for (let x = -8; x <= 7; x++) {
+          const bottom = 14 + ((x * 7) % 3 + 3) % 3 * 2;
+          for (let y = bottom; y <= 42; y++) put(HANG, x, y, 1, x === -8 || x === 7 ? EDGE : CLOTH);
+        }
+        if (EMBLEM) icon(put, v === 2 ? GLOW : HANG, ICONS[EMBLEM[0]], -5, 22, 2, 2, EMBLEM[1]);
+        if (v === 3) for (let row = 0; row < 15; row++) for (let col = 0; col < 15; col++) {
+          const ink = BANANA_ART.rows[Math.floor(row * 9 / 15)][Math.floor(col * 9 / 15)];
+          if (ink !== ".") put(HANG, col - 7, 36 - row, 2, ink === "D" ? 55 : ink === "Y" ? 56 : 57);
+        }
+      });
+      if (v === 1) piece.paint = labBannerPaint();
+      return piece;
+    },
     // EntropyLab: a big die, a bench of glowing flasks, a terminal, a chalkboard of scribbles.
     die: () => author((put) => {
       for (let x = -4; x <= 3; x++) for (let y = 0; y <= 7; y++) for (let z = -4; z <= 3; z++) {
@@ -451,7 +547,7 @@
   };
   const set = () => {
     // Mesh pieces placed so far: kind, then the cell origin and quarter turns.
-    const meshes = [];
+    const meshes = [], paintParts = [];
     // Layers 3 and 4 hold what hangs from a cable (lantern bodies and other glow); 5 and 6 hold lantern glass.
     // The hanging layers swing without moving the cable or the posts.
     const layers = [new Map(), new Map(), new Map(), new Map(), new Map(), new Map(), new Map()], lights = [];
@@ -488,6 +584,12 @@
           (oz * U) + (q === 1 || q === 2 ? -z0 : z1)]);
       }
       if (mesh) meshes.push(kind, ox, oy, oz, q, variant);
+      if (piece.paint) {
+        const paint = { verts: piece.paint.verts.slice(), faces: piece.paint.faces, lines: piece.paint.lines };
+        BL.models.turnedY(paint, q * Math.PI / 2);
+        BL.models.moved(paint, ox * U, oy * U, oz * U);
+        paintParts.push(paint);
+      }
       for (let layer = 0; layer < 4; layer++) {
         const list = piece[layer];
         for (let i = 0; i < list.length; i += 4) {
@@ -586,7 +688,13 @@
           }
         }
       }
-      const out = { solid, hang: bake(HANG), glow: bake(GLOW), swing: bake(3), swingGlow: bake(4), lampGlow: bake(5), swingLampGlow: bake(6), lights: Float32Array.from(lights), picks: picks.splice(0) };
+      let hang = bake(HANG);
+      if (paintParts.length) {
+        if (hang) paintParts.unshift(hang);
+        hang = merge(...paintParts);
+        paintParts.length = 0;
+      }
+      const out = { solid, hang, glow: bake(GLOW), swing: bake(3), swingGlow: bake(4), lampGlow: bake(5), swingLampGlow: bake(6), lights: Float32Array.from(lights), picks: picks.splice(0) };
       for (const layer of layers) layer.clear();
       lights.length = steps.length = 0;
       return out;

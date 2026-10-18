@@ -650,7 +650,7 @@
   const PICK_GEOMETRY = { verts: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], faces: [], lines: [] };
   const addPieceTargets = (picks, toWorld) => {
     for (let i = 0; i < picks.length; i += 6) {
-      const at = toWorld(picks[i + 2], picks[i + 3], picks[i + 4]);
+      const at = toWorld(picks[i + 2], picks[i + 3], picks[i + 4], picks[i]);
       if (!at) continue;
       const node = createNode({ position: at, geometry: PICK_GEOMETRY });
       BL.scene.updateWorld(node);
@@ -1737,11 +1737,36 @@
   // Headquarters ramps that run down a cutting rather than into a cliff. Each mouth bakes to one solid, one hanging and one glowing mesh, memoised per island
   // so a revisit only places nodes. Pieces are [kind, x, z, quarter turns, variant, lift] in the mouth's frame.
   const THEMES = {
-    lab: { glass: 1, icon: "die", string: ["bulb", 1], pieces: [["flaskBench", -5.3, 1.1], ["die", -4.1, 2.8, 0, 1], ["die", -3.5, 3.6, 1, 3], ["die", -4.1, 2.8, 1, 4, 0.5], ["terminal", 5.2, 1.0], ["die", 4.3, 3.2, 1, 2], ["banner", -6.7, 0.7, 0, 1]] },
-    matrix: { glass: 2, icon: "glyph", string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1], ["banner", 6.5, 0.8, 0, 2], ["banner", -6.5, 0.8, 0, 2], ["rubble", -6.3, 2.6, 0, 1]] },
-    lightning: { glass: 0, icon: "bolt", string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["coalCrate", -5.1, 0.8, 0, 3], ["crate", -5.4, 2.1, 1, 0], ["crate", -5.4, 2.1, 0, 1, 0.75], ["barrel", -4.3, 2.9, 0, 1], ["rubble", -6.4, 0.9, 0, 1], ["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["banner", 6.6, 0.8, 0, 0], ["coil", 3.8, 3.4], ["coalCrate", 6.4, 3.4, 0, 1]] },
+    lab: { glass: 1, icon: "die", banners: [[-1, 1]], string: ["bulb", 1], pieces: [["flaskBench", -5.3, 1.1], ["die", -4.1, 2.8, 0, 1], ["die", -3.5, 3.6, 1, 3], ["die", -4.1, 2.8, 1, 4, 0.5], ["terminal", 5.2, 1.0], ["die", 4.3, 3.2, 1, 2]] },
+    matrix: { glass: 2, icon: "glyph", banners: [[1, 2], [-1, 2]], string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1], ["rubble", -6.3, 2.6, 0, 1]] },
+    lightning: { glass: 0, icon: "bolt", banners: [[1, 0]], string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["coalCrate", -5.1, 0.8, 0, 3], ["crate", -5.4, 2.1, 1, 0], ["crate", -5.4, 2.1, 0, 1, 0.75], ["barrel", -4.3, 2.9, 0, 1], ["rubble", -6.4, 0.9, 0, 1], ["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["coil", 3.8, 3.4], ["coalCrate", 6.4, 3.4, 0, 1]] },
     arcade: { glass: 0, icon: "banana", string: ["hanging", 0, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["cabinet", -3.6, 1.0, 0, 0], ["cabinet", -2.9, 2.2, 0, 1]] },
-    bca: { glass: 0, icon: "abacus", string: ["hanging", 0, [0.2, 0.5, 0.8]], ceiling: [[-1.6, 1.6, -2.2, -5.6, 3.1, [0.5]]], pieces: [["abacus", -5.0, 1.0], ["ledger", 5.0, 1.0, 2], ["banner", -6.6, 0.8, 0, 4], ["banner", 6.6, 0.8, 0, 4]] }
+    bca: { glass: 0, icon: "abacus", banners: [[-1, 4], [1, 4]], string: ["hanging", 0, [0.2, 0.5, 0.8]], ceiling: [[-1.6, 1.6, -2.2, -5.6, 3.1, [0.5]]], pieces: [["abacus", -5.0, 1.0], ["ledger", 5.0, 1.0, 2]] }
+  };
+  // Themes choose only [side, variant]. The whole standard stays behind and outside the lanterns,
+  // on its own cave's rock shoulder. These extents include the kit's crossbar and foot, not just its pole.
+  const CAVE_LANTERN_X = 4.4, CAVE_LANTERN_Z = 1.6;
+  const CAVE_BANNER_X = 5.25, CAVE_BANNER_Z = -2;
+  const BANNER_HALF_X = 9 / 16, BANNER_HALF_Z = 3 / 16, BANNER_GAP = 1 / 16;
+  const checkCaveBanner = (mouth, side) => {
+    const u = BL.dressing.U;
+    const lx = Math.round(side * CAVE_BANNER_X / u) * u, lz = Math.round(CAVE_BANNER_Z / u) * u;
+    const postX = Math.round(CAVE_LANTERN_X / u) * u, postZ = Math.round(CAVE_LANTERN_Z / u) * u;
+    if (Math.abs(side) !== 1 || Math.abs(lx) - BANNER_HALF_X < postX + 4 * u + BANNER_GAP
+      || lz + BANNER_HALF_Z > postZ - 4 * u - BANNER_GAP)
+      throw new Error(`${mouth.id}: banner must stay behind and outside the lanterns`);
+    const sr = Math.sin(mouth.ry), cr = Math.cos(mouth.ry);
+    // Squared-distance differences are affine: checking every corner covers the entire footprint.
+    // Closed mouths participate too; their future facade already owns its side of the gap.
+    for (const dx of [-BANNER_HALF_X, BANNER_HALF_X]) for (const dz of [-BANNER_HALF_Z, BANNER_HALF_Z]) {
+      const bx = lx + dx, bz = lz + dz, own = bx * bx + bz * bz;
+      const x = mouth.x + cr * bx + sr * bz, z = mouth.z - sr * bx + cr * bz;
+      for (const other of island.mouths) {
+        if (other === mouth) continue;
+        const ox = x - other.x, oz = z - other.z;
+        if (ox * ox + oz * oz <= own) throw new Error(`${mouth.id}: banner crosses into ${other.id}'s frontage`);
+      }
+    }
   };
   const THEME_ICON = (slot) => slot.id === "c1" ? "favicon" : THEMES[slot.theme]?.icon || null;
   const trackCaveSign = (node, slot, mouth) => {
@@ -1757,18 +1782,25 @@
     const theme = THEMES[slot.theme];
     const sr = Math.sin(m.ry), cr = Math.cos(m.ry);
     const set = BL.dressing.set(), ground = [];
-    // Ground pieces stand on the island itself; one whose spot is inside the cliff or over a drop is left out.
+    // Floor props stay on the apron; banners stand on the raised rock shoulders behind the lamps.
     const stand = (kind, lx, lz, turns = 0, variant = 0, lift = 0) => {
       const x = m.x + cr * lx + sr * lz, z = m.z - sr * lx + cr * lz;
       if ((kind === "barrel" || kind === "bench") && island.overlapsStairs(x, z, 1.7)) return;
       const y = island.surfaceAt(x, z) - m.floorY;
-      if (Math.abs(y) > 0.9) return;
+      if (Math.abs(y) > 0.9 && kind !== "banner") return;
       set.put(kind, lx, y + lift, lz, turns, variant);
       if (!lift) ground.push(lx, lz);
     };
-    stand("lanternPost", -4.4, 1.6, 0, theme.glass);
-    stand("lanternPost", 4.4, 1.6, 2, theme.glass);
-    for (const piece of theme.pieces) stand(...piece);
+    stand("lanternPost", -CAVE_LANTERN_X, CAVE_LANTERN_Z, 0, theme.glass);
+    stand("lanternPost", CAVE_LANTERN_X, CAVE_LANTERN_Z, 2, theme.glass);
+    for (const piece of theme.pieces) {
+      if (piece[0] === "banner") throw new Error(`${m.id}: use theme.banners for cave standards`);
+      stand(...piece);
+    }
+    for (const [side, variant] of theme.banners || []) {
+      checkCaveBanner(m, side);
+      stand("banner", side * CAVE_BANNER_X, CAVE_BANNER_Z, 0, variant);
+    }
     const [lamp, variant, at] = theme.string;
     set.cable(-3.05, 3.42, CAVE_LIGHT_Z, 3.05, 3.42, CAVE_LIGHT_Z, 0.3, at || [0.1, 0.24, 0.38, 0.5, 0.62, 0.76, 0.9], lamp, variant);
     set.cable(-3.65, 3.18, -0.22, -3.05, 3.42, CAVE_LIGHT_Z, 0.08);
@@ -1833,7 +1865,7 @@
     addDressing(baked, group, m.x, m.floorY + 2.4, m.z, `${slot.id}:dressing`, false);
     const sr = Math.sin(m.ry), cr = Math.cos(m.ry), g = baked.ground, lit = baked.lights;
     for (let i = 0; i < lit.length; i += 4) dressingLights.push(m.x + cr * lit[i] + sr * lit[i + 2], m.floorY + lit[i + 1], m.z - sr * lit[i] + cr * lit[i + 2], lit[i + 3]);
-    addPieceTargets(baked.picks, (lx, ly, lz) => lz < 0.3 ? null : { x: m.x + cr * lx + sr * lz, y: m.floorY + ly, z: m.z - sr * lx + cr * lz });
+    addPieceTargets(baked.picks, (lx, ly, lz, kind) => lz < 0.3 && kind !== "banner" ? null : { x: m.x + cr * lx + sr * lz, y: m.floorY + ly, z: m.z - sr * lx + cr * lz });
     if (slot.theme === "lab") placeChalkboard(m, group);
     // Headquarters and a sealed cave that is coming soon still hang their name over the door.
     if (slot.status !== "open" && slot.status !== "mirror" && slot.name) {
