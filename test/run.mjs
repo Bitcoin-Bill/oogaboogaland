@@ -6059,8 +6059,10 @@ const labWalking = { name: "lab walking", why: "regression: Shift+A left A held 
     // capture guard before its gameplay listener in the bubble phase.
     const key = (type, key, code, shiftKey = false, repeat = false, location = 0) => canvas.dispatchEvent(new KeyboardEvent(type,
       { key, code, shiftKey, repeat, location, bubbles: true, cancelable: true }));
-    for (const shift of [null, "ShiftLeft", "ShiftRight"]) {
+    for (const [shift, resumed] of [[null, null], ["ShiftLeft", "ShiftLeft"], ["ShiftRight", "ShiftRight"],
+      ["ShiftLeft", "ShiftRight"], ["ShiftRight", "ShiftLeft"]]) {
       const location = shift === "ShiftRight" ? 2 : 1;
+      const resumedLocation = resumed === "ShiftRight" ? 2 : 1;
       if (shift) key("keydown", "Shift", shift, true, false, location);
       key("keydown", "w", "KeyW", !!shift);
       const held = controls.read().y === 1;
@@ -6069,18 +6071,31 @@ const labWalking = { name: "lab walking", why: "regression: Shift+A left A held 
       key("keydown", "w", "KeyW", !!shift, true);
       const blocked = controls.read().y === 0 && controls.read().sprint === 0 && !controls.rightShift;
       // Keyup occurred in another app: the fresh keydown is the only release evidence.
-      if (shift) key("keydown", "Shift", shift, true, false, location);
-      key("keydown", "w", "KeyW", !!shift);
-      const fresh = controls.read().y === 1 && (shift !== "ShiftLeft" || controls.read().sprint === 1)
-        && (shift !== "ShiftRight" || controls.rightShift);
-      key("keyup", "w", "KeyW", !!shift);
-      if (shift) key("keyup", "Shift", shift, false, false, location);
-      controls.reset(); rows.push({ shift, held, blocked, fresh });
+      if (resumed) key("keydown", "Shift", resumed, true, false, resumedLocation);
+      key("keydown", "w", "KeyW", !!resumed);
+      const fresh = controls.read().y === 1 && (resumed !== "ShiftLeft" || controls.read().sprint === 1)
+        && (resumed !== "ShiftRight" || controls.rightShift);
+      key("keyup", "w", "KeyW", !!resumed);
+      if (resumed) key("keyup", "Shift", resumed, false, false, resumedLocation);
+      controls.reset();
+      let tabHeld = true;
+      if (shift && shift !== resumed) {
+        key("keydown", "Shift", shift, true, false, location);
+        key("keydown", "Tab", "Tab", true); key("keyup", "Tab", "Tab", true);
+        key("keydown", "Shift", resumed, true, false, resumedLocation);
+        key("keydown", "w", "KeyW", true);
+        tabHeld = controls.read().y === 0 && controls.read().sprint === 0 && !controls.rightShift;
+        key("keyup", "w", "KeyW", true);
+        key("keyup", "Shift", resumed, true, false, resumedLocation);
+        key("keyup", "Shift", shift, false, false, location);
+        controls.reset();
+      }
+      rows.push({ shift, resumed, held, blocked, fresh, tabHeld });
     }
     return rows;
   })()`);
   record("lab focus recovery: held repeats stay cancelled after blur, while the first fresh W or Shift+W press works without a keyup from another app",
-    refocus.every(row => row.held && row.blocked && row.fresh), JSON.stringify(refocus));
+    refocus.every(row => row.held && row.blocked && row.fresh && row.tabHeld), JSON.stringify(refocus));
   const ooga = await walkKeys(b, "portlandhodl", 5, 5, [0, 2.2], 0.3);
   const oogaJump = await b.evaluate(`(() => {
     const B = __ooga, a = B.crew.player;

@@ -7,6 +7,7 @@
     z: "up", " ": "up", x: "down", arrowup: "forward", arrowdown: "back", arrowleft: "left", arrowright: "right", shift: "sprint"
   };
   const KNOB = 18;
+  const SHIFT_KEYS = ["ShiftLeft", "ShiftRight", "Shift"];
   const keyName = (e) => e.key === "Shift" && (e.code === "ShiftRight" || e.location === 2) ? "peek" : KEYS[e.key.toLowerCase()];
   const uiKey = (e) => e.target && (e.target.isContentEditable || e.target.closest
     && (e.target.closest("input, textarea, select, [role='dialog'], dialog, #sheet")
@@ -88,7 +89,12 @@
       const key = e.code || e.key;
       // A fresh press proves release, including a keyup missed while unfocused.
       // Repeats from an interrupted hold remain blocked.
-      if (!e.repeat) blockedKeys.delete(key);
+      if (!e.repeat) {
+        // Blur forgets physical holds; Tab retains them. Either fresh Shift
+        // recovers stale blur blocks, but cannot release a Shift held through Tab.
+        if (e.key === "Shift") for (const shift of SHIFT_KEYS) if (!downKeys.has(shift)) blockedKeys.delete(shift);
+        blockedKeys.delete(key);
+      }
       if (blockedKeys.has(key)
         || e.shiftKey && (blockedKeys.has("ShiftLeft") || blockedKeys.has("ShiftRight") || blockedKeys.has("Shift"))) { consumeKey(e); return; }
       // A physical keyboard has a bounded set of simultaneous presses.

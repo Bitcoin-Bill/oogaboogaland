@@ -562,3 +562,13 @@ The review's intentional items remain as approved above: contributor-only sign-i
 The five failures and full suite remain paused by the maintainer. They are not reclassified as passing or marked `open` to bypass validation. The review also records unverified real-mouse Map activation, DSB's Escape/detached return, respawn/interior arrival support, actual OAuth navigation, two-client multiplayer, phone layout and Canvas 2D. These remain play-test gaps; this follow-up does not diagnose or change the paused arrival flows.
 
 Validation for these two fixes: build/site, syntax on all four changed JavaScript files and whitespace checks pass. The Worker suite passes 87/87 with the actual denied callback exercised across plain, encoded and nested dot segments and a valid destination with query/fragment. The focused lab walking run, including the global tier and the new focus-recovery regression, passes 251/251. It checks W and both Shift keys, interrupted repeats, and a fresh press without a preceding keyup through the focused canvas's keyboard event path. All five paused ledger entries remain unchanged; no full-suite run was made.
+
+## ACK scope and opposite-Shift recovery (18 October 2026)
+
+Opus [ACKed `540ce11`](https://github.com/OogaBoogaX/oogaboogaland/pull/230#issuecomment-6256635998) for its redirect and fresh-key fixes, explicitly excluding whole-PR merge approval. The comment identifies one remaining input edge: after a missed keyup during blur, a stale Left Shift block could suppress a fresh Right Shift, or vice versa.
+
+This edge is a defect, not an intentional restriction. A fresh Shift now clears blocks for Shift keys no longer tracked as physically held. Blur clears that tracking, so either Shift can recover after returning from another app. Tab keeps the tracking, so a fresh opposite Shift cannot release a Shift still held through Tab. The existing focus-recovery regression covers both directions and both interruption cases; the five paused checks are unchanged.
+
+Merge assessment: keep this PR draft. The ACK applies to one commit's fixes, the five known failures remain unresolved by explicit maintainer choice, and there is no full-suite result for the final branch. The observed pending `Character intake` status follows the coordinator's draft gate (`scripts/character-bundles.mjs`); it is not evidence of a new test failure. No gate is bypassed, and no paused failure is marked `open` or passing to enable a merge.
+
+Validation: build/site, both changed JavaScript syntax checks and whitespace checks pass. Focused lab walking plus the global tier passes 251/251, including the extended recovery cases. All five paused ledger entries match their pre-run values exactly. The full suite remains paused.
