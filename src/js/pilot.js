@@ -227,11 +227,15 @@
     const cursorItem = { x: 0, y: 0, z: 0 };
     const cursorPoint = { x: 0, y: 0, z: 0 }, cursorRay = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
     const cursorView = mat4.create(), cursorUp = { x: 0, y: 1, z: 0 };
-    let cursorAim = false, cursorOccluded = false, shoulderSide = SHOULDER_SIDE, shoulderSideTarget = SHOULDER_SIDE;
+    let cursorAim = false, cursorOccluded = false, cursorDirection = false, shoulderSide = SHOULDER_SIDE, shoulderSideTarget = SHOULDER_SIDE;
+    const carryPick = { kind: "direction", x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
+    const carryPickHit = { node: null, owner: null, x: 0, y: 0, z: 0, distance: Infinity, type: "none" };
+    let carryPickActor = null;
     let peekTarget = 0, peekMix = 0;
     let aimCave = null, aimMix = 0, aimVelocity = 0, adsMix = 0, ads = false, disposed = false;
     let aimLeftAccepted = false, aimLeftFocused = false, aimReleaseEvent = null;
     let rightDownAt = -Infinity, rightTapAt = -Infinity, rightTravel = 0, rightExitHeld = false;
+    let rightCarry = false, rightCarryPointer = -1, rightCarryX = 0, rightCarryY = 0;
     let primaryButtonCave = null;
     const buttonTarget = { x: 0, y: 0, z: 0 };
     let reticleRadius = -1;
@@ -348,6 +352,8 @@
       rightDownAt = rightTapAt = -Infinity;
       rightTravel = 0;
       rightExitHeld = false;
+      rightCarry = false;
+      rightCarryPointer = -1;
     };
     const unlockAim = (preserveZoom = false) => {
       if (externalControl && !disposed) return;
@@ -542,6 +548,12 @@
         // exit must retain the displayed viewing angle instead of sinking to its head angle.
         orbit.pitch = orbit.tPitch = overheadExit
           ? clamp(Math.atan2(-dy, Math.hypot(dx, dz)), TRAILING_PITCH[0], TRAILING_PITCH[1]) : aimBodyPitch;
+      } else if (cursorDirection) {
+        // Empty sky supplies an orientation, not an arbitrary finite point
+        // whose parallax would turn the actor during the shoulder handoff.
+        const horizontal = Math.hypot(cursorRay.dx, cursorRay.dz);
+        orbit.yaw = orbit.tYaw = horizontal > 1e-6 ? Math.atan2(-cursorRay.dx, -cursorRay.dz) : aimBodyYaw + aimBodyHeadYaw + Math.PI;
+        orbit.pitch = orbit.tPitch = clamp(Math.atan2(-cursorRay.dy, horizontal), TRAILING_PITCH[0], TRAILING_PITCH[1]);
       } else if (aimAtCursor) {
         const h = cave.traits.height, p = cave.root.position;
         const x = cursorPoint.x - p.x, z = cursorPoint.z - p.z, horizontal = Math.hypot(x, z);
@@ -567,7 +579,7 @@
         aimScreenX = (cursorView[0] * rx + cursorView[4] * ry + cursorView[8] * rz) / depth / tangent / (renderer.size.width / renderer.size.height);
         aimScreenY = (cursorView[1] * rx + cursorView[5] * ry + cursorView[9] * rz) / depth / tangent;
       }
-      cursorAim = cursorOccluded = false;
+      cursorAim = cursorOccluded = cursorDirection = false;
       aimMix = aimVelocity = adsMix = zoomPitchVelocity = 0;
       zoomTilt = false;
       // Carry an ongoing inward dolly into shoulder view instead of braking
@@ -608,6 +620,51 @@
       } else hi = 60;
       out.x = x + dx * hi; out.y = y + dy * hi; out.z = z + dz * hi;
       if (aimSurface) aimSurface(out, x, y, z);
+    };
+    const acceptCarryTarget = (owner, node) => {
+      if (owner.cave === carryPickActor || owner.entry === carryPickActor || !node.geometry.faces.length) return false;
+      for (let at = node; at; at = at.parent) if (at === carryPickActor.root) return false;
+      return true;
+    };
+    // Shared carry navigation picker. Coordinates are renderer-local and
+    // headY is a world height; callers own the result and their shoulder pose.
+    const pickCarryTarget = (out, px, py, actor, headY, minRadius) => {
+      mat4.lookAt(cursorView, camera.position, camera.target, camera.up || cursorUp);
+      mat4.rayFromView(cursorRay, cursorView, renderer.size.width, renderer.size.height, camera.fov, camera.position, px, py, camera.orthoMix, camera.orthoHeight);
+      const ray = cursorRay, p = actor.root.position;
+      out.kind = "direction";
+      out.x = out.y = out.z = 0;
+      out.dx = ray.dx; out.dy = ray.dy; out.dz = ray.dz;
+      const reach = Math.max(60, camera.far || 0, Math.hypot(ray.ox - p.x, ray.oy - p.y, ray.oz - p.z) + DIST_MAX);
+      const clear = cursorClear || sightClear;
+      let depth = Infinity;
+      if (clear && !clear(ray.ox, ray.oy, ray.oz, ray.ox + ray.dx * reach, ray.oy + ray.dy * reach, ray.oz + ray.dz * reach)) {
+        let lo = 0, hi = reach;
+        for (let i = 0; i < 18; i++) {
+          const mid = (lo + hi) * 0.5;
+          if (clear(ray.ox, ray.oy, ray.oz, ray.ox + ray.dx * mid, ray.oy + ray.dy * mid, ray.oz + ray.dz * mid)) lo = mid;
+          else hi = mid;
+        }
+        depth = lo;
+      }
+      const distance = Number.isFinite(depth) ? depth : reach;
+      out.x = ray.ox + ray.dx * distance; out.y = ray.oy + ray.dy * distance; out.z = ray.oz + ray.dz * distance;
+      if (aimSurface && aimSurface(out, ray.ox, ray.oy, ray.oz)) depth = Math.hypot(out.x - ray.ox, out.y - ray.oy, out.z - ray.oz);
+      // Weapon ray geometry is precise, but weapon ownership rules are not
+      // navigation rules: exclude only this actor, including its child mesh.
+      carryPickActor = actor;
+      if (input?.weaponTargets.ray(carryPickHit, ray.ox, ray.oy, ray.oz, ray.dx, ray.dy, ray.dz,
+        Math.min(reach, depth + 0.025), null, acceptCarryTarget, true)) {
+        depth = carryPickHit.distance;
+        out.x = carryPickHit.x; out.y = carryPickHit.y; out.z = carryPickHit.z;
+      }
+      carryPickActor = null;
+      if (!Number.isFinite(depth)) { out.x = out.y = out.z = 0; return out; }
+      const actorDepth = (p.x - ray.ox) * ray.dx + (headY - ray.oy) * ray.dy + (p.z - ray.oz) * ray.dz;
+      out.kind = depth < 0.1 || Math.hypot(out.x - p.x, out.z - p.z) < minRadius
+        || depth < actorDepth - minRadius * 0.25 && clear && !clear(ray.ox, ray.oy, ray.oz, p.x, headY, p.z)
+        ? "facing" : "point";
+      return out;
     };
     const spreadRadius = () => renderer.size.height * (SHOT_SPREAD + (ADS_SPREAD - SHOT_SPREAD) * adsMix) / (2 * Math.tan(camera.fov / 2));
     const targetAlongAim = (out, x, y, z, dx, dy, dz) => {
@@ -1172,14 +1229,21 @@
         && now - rightDownAt <= RIGHT_DOUBLE_TIME && rightTravel <= RIGHT_TAP_TRAVEL ? now : -Infinity;
       rightDownAt = -Infinity;
       rightExitHeld = false;
+      rightCarry = false;
+      rightCarryPointer = -1;
     };
     // Observe interruptions before canvas/UI handlers consume them. Tap and
     // ADS classification stays in aimPointer, including virtual cursor events.
     const interruptRightGesture = (e) => {
       if (externalControl || e.pointerType !== "mouse") return;
+      if (rightCarry && (e.pointerId !== rightCarryPointer || e.type === "pointermove" && !(e.buttons & 2))) clearRightGesture();
       if (e.type === "pointercancel") { clearRightGesture(); ads = false; }
       else if (e.buttons & ~2 || e.button >= 0 && e.button !== 2
         || e.target !== canvas && e.button === 2 && (e.type === "pointerdown" || e.type === "pointermove" && (e.buttons & 2))) clearRightGesture();
+      if (rightCarry && (e.type === "pointermove" || e.type === "pointerup")) {
+        rightTravel += Math.hypot(e.clientX - rightCarryX, e.clientY - rightCarryY);
+        rightCarryX = e.clientX; rightCarryY = e.clientY;
+      }
     };
     const aimPointer = (e) => {
       if (!active || externalControl || e.pointerType !== "mouse") return;
@@ -1202,7 +1266,22 @@
         rightExitHeld = true;
         e.preventDefault(); e.stopImmediatePropagation(); return;
       }
-      if (e.type === "pointermove" && Number.isFinite(rightDownAt)) rightTravel += Math.hypot(e.movementX || 0, e.movementY || 0);
+      if (!rightCarry && e.type === "pointermove" && Number.isFinite(rightDownAt)) rightTravel += Math.hypot(e.movementX || 0, e.movementY || 0);
+      if (rightCarry && e.button === 2 && e.type === "pointerup") {
+        const enter = !e.buttons && !armed() && weaponViewReady(player()) && !closeWanted && !shoulderView
+          && performance.now() - rightDownAt <= RIGHT_DOUBLE_TIME && rightTravel <= RIGHT_TAP_TRAVEL;
+        clearRightGesture();
+        if (enter) {
+          const rect = canvas.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0 && e.clientX >= rect.left && e.clientX < rect.right
+            && e.clientY >= rect.top && e.clientY < rect.bottom) {
+            shooterView(true, (e.clientX - rect.left) * renderer.size.width / rect.width,
+              (e.clientY - rect.top) * renderer.size.height / rect.height);
+            e.preventDefault(); e.stopImmediatePropagation();
+          }
+        }
+        return;
+      }
       if (e.button === 2 && e.type === "pointerup") releaseRightTap();
       // The carry cursor can absorb the release that follows a view switch.
       // A fresh press is a new gesture even if that release never reached us.
@@ -1223,12 +1302,18 @@
         rightTapAt = -Infinity;
       }
       if (!armed()) {
+        if (weaponViewReady(player()) && !closeWanted && !shoulderView) {
+          // Wait for an exclusive short click: either chord press order must
+          // remain available to the shared two-button walking gesture.
+          if (e.type === "pointerdown" && e.button === 2 && !(e.buttons & ~2)) {
+            rightCarry = true; rightCarryPointer = e.pointerId; rightDownAt = performance.now(); rightTravel = 0;
+            rightCarryX = e.clientX; rightCarryY = e.clientY;
+            e.preventDefault(); e.stopImmediatePropagation();
+          }
+          return;
+        }
         if (!weaponViewReady(player()) || e.button !== 2 || !(e.type === "pointerdown" || e.type === "pointermove" && (e.buttons & 2))) return;
         e.preventDefault(); e.stopImmediatePropagation();
-        if (!closeWanted && !shoulderView) {
-          const rect = canvas.getBoundingClientRect();
-          shooterView(true, e.clientX - rect.left, e.clientY - rect.top);
-        }
         return;
       }
       if (birdsEye() && rightPress) {
@@ -1748,6 +1833,13 @@
         cursorPoint.x = overheadAim.x; cursorPoint.y = overheadAim.y; cursorPoint.z = overheadAim.z;
         cursorOccluded = false;
         cursorAim = true;
+      } else if (active && px !== null && py !== null && !closeWanted && !armed() && !scroll) {
+        pickCarryTarget(carryPick, px, py, cave, cave.root.position.y - cave.baseY + cave.headOffset * 0.95 + cave.viewLift,
+          SHOULDER_SIDE * cave.traits.height * 2);
+        cursorPoint.x = carryPick.x; cursorPoint.y = carryPick.y; cursorPoint.z = carryPick.z;
+        cursorAim = carryPick.kind === "point";
+        cursorOccluded = carryPick.kind === "facing";
+        cursorDirection = carryPick.kind === "direction";
       } else if (active && px !== null && py !== null && !closeWanted) {
         mat4.lookAt(cursorView, camera.position, camera.target, camera.up || cursorUp);
         mat4.rayFromView(cursorRay, cursorView, renderer.size.width, renderer.size.height, camera.fov, camera.position, px, py, camera.orthoMix, camera.orthoHeight);
@@ -2211,7 +2303,7 @@
       zoomTilt = trailingViewInput = trailingZoomInput = false;
       trailingPitchChosen = true;
       overheadToShoulder = false;
-      cursorAim = cursorOccluded = aimAtCursor = aimPreserveFacing = false;
+      cursorAim = cursorOccluded = cursorDirection = aimAtCursor = aimPreserveFacing = false;
       clearFeedback(); resetAssist();
       quat.fromEuler(entryRoll, 0, 0, 0);
       camera.up = null;
@@ -3322,7 +3414,7 @@
       get birdsEye() { return birdsEye(); }, get birdsEyeMix() { return camera.orthoMix || 0; }, get birdsEyeHeight() { return overheadHeight; }, get birdsEyeNorthUp() { return overheadNorthUp; },
       get birdsEyeCeiling() { return overheadCeiling; },
       get shoulderEntryMix() { return aimMix; },
-      bind, setActive, readInput, update, goPreset, resetCamera, freeCursor, navigate, travelRefusal, travel, transformView, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
+      bind, setActive, readInput, update, goPreset, resetCamera, freeCursor, navigate, travelRefusal, travel, transformView, pickCarryTarget, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
       return player();
     }, get assistedTarget() {
       if (birdsEye() && assistedTargetActive) return assistedTargetHit;

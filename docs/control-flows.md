@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration, right-click return to shoulder, right-click recapture/sleep/gesture parity and shared Tab release/navigation are implemented. Carry-orbit right-click targeting and remaining touch details are still open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration, right-click return to shoulder, right-click recapture/sleep/gesture parity, shared Tab release/navigation and carry-orbit right-click targeting are implemented. Remaining touch and exceptional-controller details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -395,7 +395,7 @@ Evidence: [Ooga gesture state and routing](https://github.com/OogaBoogaX/oogaboo
 
 The same handlers run signed in and out. Existing Ooga/gorilla scenarios are extended for recapture without view changes or attacks, preserved Ooga precision aim, sleeping actors, interrupted taps and native mouse chords. These are authored regressions, not runtime results.
 
-Carry-orbit target selection (clicked point versus retained direction) and native right-drag look can be discussed separately.
+Carry-orbit target selection (clicked point versus retained direction) was left for the subsequent audit and agreement below. Native look remains a left-drag gesture.
 
 ## Tab review at `3860229` and agreed flow
 
@@ -423,6 +423,30 @@ Evidence: [Ooga Tab and UI guard](https://github.com/OogaBoogaX/oogaboogaland/bl
 
 README describes the shared flow. Existing actor/auth scenarios now cover soft and pending capture, held Tab, interrupted movement and attacks, both Shift keys, native UI navigation, carry/detached mouse chords and sleeping actors. The new keyboard gate is enabled by the shared walking pilot; the separate game controllers do not opt into it. These are authored regressions, not runtime results.
 
+## Carry/orbit right-click review after `f1b248d`
+
+Source inspection found identical behavior signed in and out once an actor was controlled, but different target selection between actors:
+
+| Starting state | Behavior before this checkpoint |
+|---|---|
+| Ooga carry/orbit | Right press entered shoulder toward the clicked world point, turning the actor. Empty unobstructed rays used a point 60m from the camera. Near-body targets and foreground cover hiding the head preserved actor facing. |
+| Gorilla carry/orbit | Right press entered shoulder using orbit yaw/pitch, ignoring the clicked location. A stationary gorilla did not have to turn. |
+| Carry shoulder/first person | Single right-click left the view alone; double-right-click returned to orbit. |
+| Detached | Right-click and right-drag had no view or selection effect. |
+| Two-button movement | Adding right to a held left button could enter Ooga shoulder view; gorilla carry retained its movement chord. |
+
+Both actors retained carry/native cursor, used left-drag for camera look and ignored view-changing right-clicks while sleeping. These are source findings, not runtime observations.
+
+**Agreed and implemented:**
+
+- Both actors use the same visible-world target picker in carry/orbit. A short right-click enters shoulder facing the chosen location, smoothly turning the actor and camera while keeping carry and the native cursor. It does not attack, move the actor to the target or select a different actor.
+- Empty sky uses the clicked viewing direction rather than a finite camera-relative target. A target too close to the actor or a foreground obstruction hiding them preserves their facing. The controlled actor is excluded from picking.
+- Entry waits for the right-button release (at most 350ms held and 8px travel). Dragging, another mouse button in either press order, cancellation or interrupted input discards the candidate. Two-button walking/turning therefore never also changes the carry view. The entry click does not seed the close-view double-click return.
+- Detached right-click remains inactive. Left-drag remains camera look. Carry shoulder/first-person single and double-right-click behavior and sleeping suppression remain unchanged, with the same behavior signed in and out.
+- Combat targeting remains separate: Ooga bird's-eye retains its aimed point, gorilla bird's-eye retains ground 10m ahead, and close-view recapture and Ooga precision aiming keep their agreed flow.
+
+Existing actor/auth camera scenarios are extended for target selection, empty sky, release classification and cancelled/chord gestures. Execution remains pending under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -441,6 +465,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 8. Map open/cancel, all destinations, arrival refusal followed by another choice, controlled Ooga/gorilla and detached travel, and Reset camera / 0 in each walking scene. Include close/overhead views, underground arrivals, occupied destinations, sleepers, seated/climbing/airborne actors, both sign-in states and a second multiplayer page.
 9. HQ, basement and Mempool cutaways with each actor signed in/out: combat bird's-eye reveals the floor; X to carry and detachment restore it immediately; close-view exits retain the cut while obstructed, restore only once clear and settle with an intact island; detached retake keeps intact carry/orbit. Include steep Ooga aim, gorilla 10m ground aim with a blocked shoulder target, low roofs, both shoulders, pinned climbing handoffs and direct first-person zoom during the descent.
 10. Tab/Shift+Tab with successful, pending and denied capture; first release, held repeats, keyup and a fresh navigation press. Include held W, sprint/jump, a charged action and Right Shift peek/tap, plus carry, detached, sleeping actors and focused UI controls. Actor/mode/view stay unchanged; gameplay input does not resume from the cancelled hold. Check both actors and sign-in states, and leave Ctrl/Meta/Alt browser shortcuts alone.
+11. Carry/orbit right-click with each actor signed in/out: click visible ground/props at different elevations and sides, empty sky, near-body points and foreground cover. Check smooth shoulder entry, actor facing, native cursor and retained carry. Include both mouse-button press/release orders, right-drag, long holds, blur/cancel/Tab, and release outside the canvas. Detached right-click stays inactive; combat Ooga aim and gorilla 10m ground targeting retain their prior behavior.
 
 ## Review checkpoints
 
@@ -472,4 +497,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Consistent right-click recapture, sleep suppression and interrupted-gesture cleanup: implemented for both actors and sign-in states, retaining Ooga precision aiming. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Existing regressions now cover denied-lock recapture, later precision holds, sleeping actors, interrupted taps and native mouse chords, including distant shoulder entry and gorilla charge release. Runtime checks remain unrun under **wait**.
 - `3860229`: right-click recapture, sleep suppression and gesture cleanup committed; source baseline for the Tab review.
 - Shared Tab release/navigation: implemented for Oogas, gorillas and detached mode, signed in or out, with held-key/mouse cancellation, Shift protection and UI priority. `npm run build`, `node --check` on all five changed JavaScript files and `git diff --check` passed. Existing regressions cover the agreed flows; runtime checks remain unrun under **wait**.
-- Remaining decisions: carry-orbit right-click targeting, touch and exceptional-controller details.
+- `f1b248d`: shared Tab release/navigation and held-input cancellation committed and pushed.
+- Carry/orbit right-click targeting: approved for both actors and sign-in states; shared visible-world picking, sky direction, facing fallback and release-classified gestures implemented. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Existing actor/auth scenarios cover surface/sky/near targets, clean click history, gorilla facing commands, chords, drag/cancel and detached inactivity. Runtime checks remain unrun under **wait**.
+- Remaining decisions: touch and exceptional-controller details.
