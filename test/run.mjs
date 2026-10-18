@@ -6678,9 +6678,9 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     selectionModes.retakes.every(row => row.savedView && row.activeRefused), JSON.stringify(selectionModes.retakes));
   const rightViews = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, C = B.camera, a = P.player, canvas = document.getElementById("scene"), rows = [];
-    const pointer = type => canvas.dispatchEvent(new PointerEvent(type, {
-        bubbles: true, cancelable: true, pointerType: "mouse", pointerId: 92, isPrimary: true, button: 2,
-        buttons: type === "pointerdown" ? 2 : 0, clientX: B.renderer.size.width / 2, clientY: B.renderer.size.height / 2
+    const pointer = (type, button = 2, buttons = type === "pointerdown" ? 2 : 0) => canvas.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerType: "mouse", pointerId: 92, isPrimary: true, button,
+        buttons, clientX: B.renderer.size.width / 2, clientY: B.renderer.size.height / 2
       }));
     const click = (release = true) => { pointer("pointerdown"); if (release) pointer("pointerup"); };
     const sample = () => ({ mode: P.mode, combat: P.aiming, distance: P.orbit.dist, wanted: P.orbit.tDist,
@@ -6740,7 +6740,55 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           for (const factor of [1.2, 0.001]) { P.hooks.onZoom(factor, {}); B.advance(2, 1 / 60); steps.push(sample()); }
           P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60); const rightFirst = sample();
           click(); click(false); B.advance(1, 1 / 60); const rightFar = sample();
-          click(); B.advance(1, 1 / 60); const rightBack = sample();
+          let rightChord = true;
+          if (combat) {
+            pointer("pointerup");
+            const shots = a.weapon.shotsFired;
+            pointer("pointerdown", 1, 4); pointer("pointermove", 2, 6);
+            rightChord = P.mode === "shoulder" && P.aiming && P.captureControl({}).focused
+              && a.weapon.shotsFired === shots && !a.weapon.triggerHeld && !a.weapon.meleeHeld;
+            pointer("pointermove", 2, 4); pointer("pointerup", 1, 0);
+          } else click();
+          B.advance(1, 1 / 60); const rightBack = sample();
+          const recapture = [], interrupted = [], reticle = document.getElementById("weapon-reticle");
+          if (combat) {
+            const requestLock = Object.getOwnPropertyDescriptor(canvas, "requestPointerLock");
+            let denied = 0;
+            Object.defineProperty(canvas, "requestPointerLock", { configurable: true, value: () => { denied++; throw new DOMException("Fixture denial", "NotAllowedError"); } });
+            try {
+              for (const view of ["shoulder", "first-person"]) {
+                if (view === "first-person") { P.hooks.onZoom(0.5, {}); P.update(2); }
+                P.freeCursor(); document.dispatchEvent(new Event("pointerlockerror")); P.update(0);
+                const eye = { ...C.position }, target = { ...C.target }, shots = a.weapon.shotsFired, attempts = denied;
+                pointer("pointerdown"); P.update(0);
+                const captured = P.captureControl({}).focused && P.mode === view && P.aiming && reticle.dataset.ads === "false"
+                  && !a.weapon.triggerHeld && !a.weapon.meleeHeld && a.weapon.shotsFired === shots
+                  && ["x", "y", "z"].every(k => C.position[k] === eye[k] && C.target[k] === target[k]);
+                pointer("pointerup"); pointer("pointerdown"); P.update(0);
+                const held = P.mode === view && P.aiming && reticle.dataset.ads === "true";
+                pointer("pointerup"); P.update(0);
+                recapture.push({ view, captured, held, released: reticle.dataset.ads === "false", denied: denied > attempts,
+                  fallback: !document.pointerLockElement && P.captureControl({}).focused });
+                pointer("pointercancel");
+              }
+            } finally { if (requestLock) Object.defineProperty(canvas, "requestPointerLock", requestLock); else delete canvas.requestPointerLock; }
+            P.hooks.onZoom(1.2, {}); P.update(2);
+          }
+          for (const reason of ["blur", "cancel", "other-button", "mode", "view", "actor"]) {
+            P.freeCursor(); if (combat) P.focusAim();
+            pointer("pointerdown"); if (reason !== "cancel") pointer("pointerup");
+            if (reason === "blur") window.dispatchEvent(new Event("blur"));
+            else if (reason === "cancel") pointer("pointercancel");
+            else if (reason === "other-button") { pointer("pointerdown", 1, 4); pointer("pointerup", 1, 0); }
+            else if (reason === "mode") { toggle(); toggle(); }
+            else if (reason === "view") { P.hooks.onZoom(0.5, {}); P.hooks.onZoom(1.2, {}); P.update(2); }
+            else { P.release(true); P.possess(a); if (P.aiming !== combat) toggle(); P.hooks.onZoom(0.001, {}); P.update(2); }
+            if (combat) P.focusAim();
+            pointer("pointerdown"); P.update(0);
+            interrupted.push({ reason, selected: P.player === a, mode: P.mode, combat: P.aiming,
+              ads: reticle.dataset.ads === "true" });
+            pointer("pointercancel");
+          }
           // Time-stamped events exercise the shared wheel path, including a
           // burst longer than the old 350 ms shoulder hold and a fresh pause.
           P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
@@ -6756,10 +6804,34 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           P.hooks.onZoom(0.001, pinch); B.advance(2, 1 / 60);
           P.hooks.onZoom(2, pinch); B.advance(1, 1 / 60); const heldPinch = sample();
           authIntent.push({ signedIn, combat, selected: P.player === a, steps,
-            rightFirst, rightFar, rightBack, inward, freshInward, outward, freshOutward, heldPinch });
+            rightFirst, rightFar, rightBack, rightChord, recapture, interrupted, inward, freshInward, outward, freshOutward, heldPinch });
         }
       }
     } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
+    const sleepRows = [], override = a.override;
+    try {
+      BL.net.state.backend = true;
+      for (const signedIn of [false, true]) {
+        BL.net.state.me = signedIn ? { id: 72, login: character.github || character.handle } : null;
+        const bed = B.headquarters.mattresses.find(bed => !bed.sleeper);
+        if (!bed) { sleepRows.push({ signedIn, prepared: false }); continue; }
+        P.navigate({ position: bed.walkAt, yaw: 0, pitch: 0.3, dist: 4 }); B.advance(0.1, 1 / 60);
+        const prepared = B.crew.sleepPlayer(bed); B.advance(1, 1 / 60);
+        const view = P.mode, pose = a.bedTravel.pose, eye = { ...C.position }, target = { ...C.target }, body = { ...a.root.position };
+        click(); click();
+        const ignored = B.crew.sleeping && a.bedroll === bed && a.bedTravel.pose === pose && P.mode === view
+          && !P.captureControl({}).focused && !P.aiming
+          && ["x", "y", "z"].every(k => C.position[k] === eye[k] && C.target[k] === target[k] && a.root.position[k] === body[k]);
+        sleepRows.push({ signedIn, prepared, ignored, woke: B.crew.wakePlayer() });
+      }
+    } finally {
+      B.crew.wakePlayer(); a.override = override;
+      BL.net.state.me = account; BL.net.state.backend = backend;
+      P.navigate({ position: { x: -8, y: 0, z: 8 }, yaw: 0, pitch: 0.3, dist: 4 });
+      if (!P.aiming) toggle();
+      if (P.mode === "first-person") P.hooks.onZoom(1.2, {}); else if (P.mode !== "shoulder") P.hooks.onZoom(0.001, {});
+      B.advance(1, 1 / 60);
+    }
     const capture = Object.getOwnPropertyDescriptor(canvas, "setPointerCapture");
     const rect = canvas.getBoundingClientRect(), left = rect.left + rect.width * 0.15, span = Math.min(200, rect.width * 0.25);
     const touchPointer = (type, id, x, pointerType = "touch") => canvas.dispatchEvent(new PointerEvent(type, {
@@ -6796,7 +6868,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     }
     P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60);
     return { rows, carryFirst, carryScrollBack, carryFirstOut, carryFirstBack, combatOut, combatBack,
-      combatFirst, combatFirstOut, combatFirstBack, authIntent, touch };
+      combatFirst, combatFirstOut, combatFirstBack, authIntent, sleepRows, touch };
   })()`);
   record("view gestures: right-click enters shoulder from orbit or bird's-eye even after a double right-click left first person, and first-person scroll exits to shoulder",
     rightViews.rows.every(r => r.single.mode === "shoulder" && !r.single.combat && Math.abs(r.immediate.y - r.before.y) < 1e-6
@@ -6815,17 +6887,25 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     && rightViews.combatFirst.mode === "first-person" && rightViews.combatFirst.combat
     && rightViews.combatFirstOut.mode === "birds-eye" && rightViews.combatFirstOut.combat
     && rightViews.combatFirstBack.mode === "shoulder" && rightViews.combatFirstBack.combat, JSON.stringify(rightViews));
-  record("view intent: signed-in and signed-out Oogas keep the carry/combat mode chosen by X through scroll, right-click and both distant-to-shoulder paths",
+  record("view intent: signed-in and signed-out Oogas keep the carry/combat mode chosen by X through scroll, right-click and native chorded RMB from birds-eye to shoulder",
     rightViews.authIntent.length === 4 && rightViews.authIntent.every(row => {
       const far = row.combat ? "birds-eye" : "orbit", modes = ["shoulder", "first-person", "shoulder", far, "shoulder", far, "shoulder"];
       return row.selected && row.steps.length === modes.length && row.steps.every((step, i) => step.mode === modes[i] && step.combat === row.combat)
         && [row.rightFirst, row.rightFar, row.rightBack].every(step => step.combat === row.combat)
-        && row.rightFirst.mode === "first-person" && row.rightFar.mode === far && row.rightBack.mode === "shoulder";
+        && row.rightFirst.mode === "first-person" && row.rightFar.mode === far && row.rightBack.mode === "shoulder" && row.rightChord;
     }), JSON.stringify(rightViews.authIntent));
   record("Ooga zoom stops: signed in or out, long wheel bursts stop at shoulder in both directions, a pause starts the next step, and reversing one pinch cannot cross the stop",
     rightViews.authIntent.every(row => [row.inward, row.outward, row.heldPinch].every(s => s.mode === "shoulder" && s.combat === row.combat)
       && row.freshInward.mode === "first-person" && row.freshInward.combat === row.combat
       && row.freshOutward.mode === (row.combat ? "birds-eye" : "orbit") && row.freshOutward.combat === row.combat), JSON.stringify(rightViews.authIntent));
+  record("Ooga right-click: signed in or out, a freed combat cursor recaptures without ADS, attack, view change or double-click history even when pointer lock is denied; the next focused hold aims until release",
+    rightViews.authIntent.filter(row => row.combat).every(row => row.recapture.length === 2
+      && row.recapture.every(r => r.captured && r.held && r.released && r.denied && r.fallback)), JSON.stringify(rightViews.authIntent.map(({ signedIn, combat, recapture }) => ({ signedIn, combat, recapture }))));
+  record("Ooga right-click history: blur, cancellation, another button, mode/view changes and actor release interrupt a tap in carry and combat",
+    rightViews.authIntent.every(row => row.interrupted.length === 6 && row.interrupted.every(r => r.selected && r.mode === "shoulder"
+      && r.combat === row.combat && r.ads === row.combat)), JSON.stringify(rightViews.authIntent.map(({ signedIn, combat, interrupted }) => ({ signedIn, combat, interrupted }))));
+  record("sleeping Ooga: signed in or out, right-click leaves the real bed, pose, view and cursor unchanged until waking",
+    rightViews.sleepRows.length === 2 && rightViews.sleepRows.every(r => r.prepared && r.ignored && r.woke), JSON.stringify(rightViews.sleepRows));
   record("touch zoom: a two-finger pinch survives shoulder view changes and mouse-ID collisions, stops at shoulder, and continues to first person only after lifting and restarting",
     rightViews.touch.length === 2 && rightViews.touch.every(row => row.fine
       && [row.outward, row.continued].every(s => s.mode === (row.combat ? "birds-eye" : "orbit") && s.combat === row.combat)
@@ -10164,17 +10244,26 @@ scene("hub", { label: "gorilla carry jump", query: "status=chillin", steps: [{ n
     for (let i = 0; i < 12; i++) B.advance(1 / 60, 1 / 60);
     const charged = c.grabbedBy === e && e.drive.airborne
       && Number(document.getElementById("gorilla-strength").getAttribute("aria-valuenow")) > 33;
-    button.dispatchEvent(new PointerEvent("pointerup", { pointerId: 31, pointerType: "mouse", button: 0, buttons: 0, bubbles: true }));
+    const strength = Number(document.getElementById("gorilla-strength").getAttribute("aria-valuenow"));
+    button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 3, bubbles: true }));
+    button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 1, bubbles: true }));
+    B.clankerPlay.readInput(0.1);
+    const rightReleaseHeld = c.grabbedBy === e && !e.capture.throwing
+      && Number(document.getElementById("gorilla-strength").getAttribute("aria-valuenow")) > strength;
+    button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 3, bubbles: true }));
+    button.dispatchEvent(new PointerEvent("pointermove", { pointerId: 31, pointerType: "mouse", button: 0, buttons: 2, bubbles: true }));
+    const chordReleased = e.capture.throwing;
     const heldThroughRelease = c.grabbedBy === e;
+    button.dispatchEvent(new PointerEvent("pointerup", { pointerId: 31, pointerType: "mouse", button: 2, buttons: 0, bubbles: true }));
     for (let i = 0; i < 17; i++) B.advance(1 / 60, 1 / 60);
     const thrownInAir = !c.grabbedBy && e.drive.airborne && c.hop > 0 && Math.hypot(c.leap.vx, c.leap.vz) > 1;
     key("keyup", "g", "KeyG");
-    return { grabbed, pendingRecovery, tookOff, grip, secondJump, charged, heldThroughRelease, thrownInAir,
+    return { grabbed, pendingRecovery, tookOff, grip, secondJump, charged, rightReleaseHeld, chordReleased, heldThroughRelease, thrownInAir,
       smashUnchanged: e.smashSerial === serial };
   })()`);
   record("gorilla carry jump: parked recovery cannot swallow takeoff; both jumps hold the Ooga's right foot and a charged click releases them in midair without smashing",
     state.grabbed && state.pendingRecovery && state.tookOff && state.grip < 0.04 && state.secondJump && state.charged
-      && state.heldThroughRelease && state.thrownInAir && state.smashUnchanged, JSON.stringify(state));
+      && state.rightReleaseHeld && state.chordReleased && state.heldThroughRelease && state.thrownInAir && state.smashUnchanged, JSON.stringify(state));
 } }] });
 scene("hub", { label: "gorilla lab carry jump", exclusive: true, query: "character=gorilla-portlandhodl&status=clankin&gorillarage=1", steps: [{ name: "gorilla lab carry jump", why: "regression: EntropyLab rejected running carry jumps and reapplied its worker pose and coat during autonomous rage capture", run: async (b) => {
   const state = await b.evaluate(`(() => {
@@ -11624,10 +11713,9 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       tap("x"); sample("carry orbit");
       tap("x"); sample("combat birds-eye again");
       const gestures = [], accountBefore = BL.net.state.me, backendBefore = BL.net.state.backend;
-      const rightClick = () => {
-        for (const type of ["pointerdown", "pointerup"]) canvas.dispatchEvent(new PointerEvent(type,
-          { pointerId: 91, pointerType: "mouse", button: 2, buttons: type === "pointerdown" ? 2 : 0, bubbles: true, cancelable: true }));
-      };
+      const pointer = (type, button = 2, buttons = type === "pointerdown" ? 2 : 0) => canvas.dispatchEvent(new PointerEvent(type,
+        { pointerId: 91, pointerType: "mouse", button, buttons, bubbles: true, cancelable: true }));
+      const rightClick = () => { pointer("pointerdown"); pointer("pointerup"); };
       try {
         const character = BL.characters.get(e.owner.traits.name);
         for (const signedIn of [false, true]) {
@@ -11668,7 +11756,54 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             rightClick(); rightClick(); P.update(2);
             if (!side) { tap("Shift", "ShiftRight", 2); P.readInput(1 / 60); }
           }
-          rightClick(); P.update(2); fromFirst(true);
+          const chordSerial = e.smashSerial;
+          pointer("pointerdown", 1, 4); pointer("pointermove", 2, 6);
+          const rightChord = P.view === "shoulder" && P.combat && P.focused && e.smashSerial === chordSerial && !e.motion.poundCharge;
+          pointer("pointermove", 2, 4); pointer("pointerup", 1, 0);
+          P.update(2); fromFirst(true);
+          const recapture = [], interrupted = [], requestLock = Object.getOwnPropertyDescriptor(canvas, "requestPointerLock");
+          let denied = 0;
+          Object.defineProperty(canvas, "requestPointerLock", { configurable: true, value: () => { denied++; throw new DOMException("Fixture denial", "NotAllowedError"); } });
+          try {
+            for (const view of ["shoulder", "first-person"]) {
+              if (view === "first-person") { P.zoom(0.5, {}); P.update(2); }
+              P.freeCursor(); document.dispatchEvent(new Event("pointerlockerror"));
+              const eye = { ...B.camera.position }, target = { ...B.camera.target }, serial = e.smashSerial, attempts = denied;
+              pointer("pointerdown");
+              const captured = P.focused && P.view === view && P.combat && e.smashSerial === serial && !e.motion.poundCharge
+                && ["x", "y", "z"].every(k => B.camera.position[k] === eye[k] && B.camera.target[k] === target[k]);
+              pointer("pointerup"); pointer("pointerdown");
+              recapture.push({ view, captured, next: P.view === view && P.focused && P.combat,
+                denied: denied > attempts, fallback: !document.pointerLockElement && P.focused });
+              pointer("pointercancel");
+            }
+          } finally { if (requestLock) Object.defineProperty(canvas, "requestPointerLock", requestLock); else delete canvas.requestPointerLock; }
+          P.zoom(2, {}); P.update(2);
+          for (const combat of [false, true]) {
+            if (P.combat !== combat) tap("x");
+            for (const reason of ["blur", "cancel", "other-button", "mode", "view", "actor"]) {
+              P.freeCursor(); if (combat) rightClick();
+              pointer("pointerdown"); if (reason !== "cancel") pointer("pointerup");
+              if (reason === "blur") window.dispatchEvent(new Event("blur"));
+              else if (reason === "cancel") pointer("pointercancel");
+              else if (reason === "other-button") { pointer("pointerdown", 1, 4); pointer("pointerup", 1, 0); }
+              else if (reason === "mode") { tap("x"); tap("x"); }
+              else if (reason === "view") { P.zoom(0.5, {}); P.zoom(2, {}); P.update(2); }
+              else { P.release(); P.possess(e); if (P.combat !== combat) tap("x"); P.zoom(0.001, {}); P.update(2); }
+              if (combat && !P.focused) rightClick();
+              pointer("pointerdown");
+              interrupted.push({ reason, combat, selected: P.player === e, view: P.view, keptMode: P.combat === combat });
+              pointer("pointercancel");
+            }
+          }
+          P.freeCursor(); rightClick();
+          const serial = e.smashSerial;
+          pointer("pointerdown", 0, 1); P.readInput(0.2); const charged = e.motion.poundCharge;
+          pointer("pointermove", 2, 3); pointer("pointermove", 2, 1); P.readInput(0.1);
+          const rightReleaseHeld = e.motion.poundCharge > charged && e.smashSerial === serial && P.view === "shoulder";
+          pointer("pointermove", 2, 3); pointer("pointermove", 0, 2);
+          const chord = { charged: charged > 0, rightReleaseHeld, leftReleased: e.motion.poundCharge === 0 && e.smashSerial === serial + 1 };
+          pointer("pointerup", 2, 0); B.advance(1.2, 1 / 60);
           rightClick(); rightClick(); P.update(2);
           const returned = P.view === "birds-eye" && P.combat, stops = [];
           const read = () => ({ view: P.view, combat: P.combat, distance: B.pilot.orbit.tDist });
@@ -11706,7 +11841,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             stops.push({ combat, inward, freshInward, outward, freshOutward, heldPinch, immediate, firstStep, targetStep, maxStep, trackingError, finite });
             P.zoom(2, {}); P.update(2);
           }
-          gestures.push({ signedIn, carry, rightCarry, doubleCarry, firstReturns, aimed, returned, stops });
+          gestures.push({ signedIn, carry, rightCarry, doubleCarry, firstReturns, aimed, rightChord, recapture, interrupted, chord, returned, stops });
         }
       } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
       const mapRows = [], map = document.getElementById("destination-hud"), picker = document.getElementById("destination-picker");
@@ -11883,6 +12018,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           const heldEye = ["x", "y", "z"].every(k => B.camera.position[k] === eye[k]);
           const resting = () => e.sleep.stage === "asleep" && e.sleep.slot === slot && e.lounge === pose
             && ["x", "y", "z"].every(k => e.root.position[k] === bed[k]);
+          const sleepView = P.view, sleepCamera = [B.camera.position.x, B.camera.position.y, B.camera.position.z, B.camera.target.x, B.camera.target.y, B.camera.target.z];
+          rightClick(); rightClick();
+          const rightIgnored = resting() && P.view === sleepView && !P.focused && !P.combat
+            && [B.camera.position.x, B.camera.position.y, B.camera.position.z, B.camera.target.x, B.camera.target.y, B.camera.target.z].every((n, i) => n === sleepCamera[i]);
           canvas.focus(); key("keydown", "w"); tap("x"); tap("g"); tap("1", "Digit1"); tap("c");
           P.readInput(1 / 60); C.update(1 / 60); P.update(1 / 60); key("keyup", "w");
           const blocked = resting() && !P.combat && !P.focused && reticle.hidden
@@ -11895,14 +12034,15 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           const incoming = B.pilot.captureControl({});
           Object.assign(incoming, { active: true, combat: true, view: "shoulder", focused: true });
           P.possess(e, false, incoming); tap("x"); P.update(1 / 60);
+          rightClick(); rightClick();
           const dormantCombat = resting() && !P.combat && !P.focused && reticle.hidden
-            && P.captureControl({}).combat && button.dataset.combat === "false";
+            && P.view === "shoulder" && P.captureControl({}).combat && button.dataset.combat === "false";
           key("keydown", " ", "Space"); P.readInput(1 / 60); C.update(1 / 60); P.update(1 / 60);
           const woke = !C.sleeping(e) && !e.lounge && P.combat && !reticle.hidden
             && e.sleep.slot === slot && !e.drive.airborne && !e.drive.jumpPressed && e.drive.jumps === 0;
           key("keyup", " ", "Space");
           e.owner.override = e.owner.state = "chilling"; P.release();
-          sleepRows.push({ signedIn, fixture, selected, heldEye, blocked, releasedAsleep, dormantCombat, woke, freedBed: e.sleep.slot === -1 });
+          sleepRows.push({ signedIn, fixture, selected, heldEye, rightIgnored, blocked, releasedAsleep, dormantCombat, woke, freedBed: e.sleep.slot === -1 });
         }
       } finally {
         key("keyup", "w"); key("keyup", " ", "Space");
@@ -11929,7 +12069,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     && released.eyeDelta < 1e-6 && released.targetDelta < 1e-6, JSON.stringify(state));
   record("gorilla Escape: close the sheet, ignore key repeat, free mouse-look, detach, and remain in the detached hub on the next press", Object.values(state.escape).every(Boolean), JSON.stringify(state.escape));
   record("gorilla camera gestures: signed in or out, wheel and right-click preserve carry/combat; combat overhead right-click aims at ground 10m ahead on either shoulder",
-    state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.returned
+    state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.rightChord && row.returned
       && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
       && row.firstReturns.length === 2 && row.firstReturns.every(view => view.first === "first-person" && view.far === (view.combat ? "birds-eye" : "orbit") && view.back === "shoulder" && view.keptMode)
       && row.aimed.length === 2 && row.aimed.every(view => view.view === "shoulder" && view.combat && view.focused && view.error < 0.01)), JSON.stringify(state.gestures));
@@ -11940,6 +12080,11 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       && stop.freshOutward.view === (stop.combat ? "birds-eye" : "orbit") && stop.freshOutward.combat === stop.combat
       && Math.abs(stop.freshOutward.distance - stop.outward.distance * Math.exp(8 * 0.0025)) < 0.001
       && stop.immediate < 1e-6 && stop.firstStep < 0.01 && stop.targetStep < 0.01 && stop.maxStep < 1 && stop.trackingError < 0.001 && stop.finite)), JSON.stringify(state.gestures));
+  record("gorilla right-click: signed in or out, close combat recapture survives denied pointer lock without attacking or seeding a double-click; interrupted carry/combat taps never change view",
+    state.gestures.every(row => row.recapture.length === 2 && row.recapture.every(r => r.captured && r.next && r.denied && r.fallback)
+      && row.interrupted.length === 12 && row.interrupted.every(r => r.selected && r.keptMode && r.view === "shoulder")), JSON.stringify(state.gestures.map(({ signedIn, recapture, interrupted }) => ({ signedIn, recapture, interrupted }))));
+  record("gorilla mouse chords: releasing RMB while LMB remains down preserves the charged smash; the native pointermove LMB release while RMB remains down completes exactly one smash",
+    state.gestures.every(row => Object.values(row.chord).every(Boolean)), JSON.stringify(state.gestures.map(({ signedIn, chord }) => ({ signedIn, chord }))));
   record("gorilla map: signed in or out, picker open/cancel keeps the current view still and travel retains the gorilla, mode and view family while translating the camera", state.mapRows.length === 12
     && state.mapRows.every(row => row.prepared && row.opened && row.cancelled && row.arrived), JSON.stringify(state.mapRows));
   record("gorilla reset: button and 0 reset camera framing while retaining the actor's position, carry/combat and view family", state.mapRows.every(row => row.resetKept && row.resetChanged), JSON.stringify(state.mapRows));
@@ -11947,7 +12092,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   record("owned pair views: direct T switches preserve carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
   record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));
   record("gorilla retake: signed in or out the detached portrait remembers the last gorilla; unavailability preserves the detached eye and successful retake keeps that eye in carry/orbit", state.retakes.length === 2 && state.retakes.every(r => r.shown && r.refused && r.returned && r.repeated), JSON.stringify(state.retakes));
-  record("sleeping gorilla: signed in or out selection keeps the bed, pose and detached eye; movement, combat and attacks wait for Space; release preserves sleep and waking consumes the jump press and restores incoming combat intent", state.sleepRows.length === 2 && state.sleepRows.every(r => r.fixture && r.selected && r.heldEye && r.blocked && r.releasedAsleep && r.dormantCombat && r.woke && r.freedBed), JSON.stringify(state.sleepRows));
+  record("sleeping gorilla: signed in or out selection and right-click keep the bed, pose and detached eye; movement, combat and attacks wait for Space; release preserves sleep and waking consumes the jump press and restores incoming combat intent", state.sleepRows.length === 2 && state.sleepRows.every(r => r.fixture && r.selected && r.heldEye && r.rightIgnored && r.blocked && r.releasedAsleep && r.dormantCombat && r.woke && r.freedBed), JSON.stringify(state.sleepRows));
 } }, { name: "gorilla wall destination", why: "regression: commanding a roof gorilla to a lower point farther along the cave face stalled at the crest instead of reaching the clicked wall", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl"), root = BL.scenes.hub.root;

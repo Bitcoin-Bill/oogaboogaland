@@ -38,6 +38,7 @@
     let targetWait = 0, rightAt = -Infinity, rightDownAt = -Infinity, rightTravel = 0;
     let combatTooltipEntry = null, combatTooltipText = "";
     let zoomAt = -Infinity, zoomDirection = 0, zoomStopped = false, zoomGesture = null;
+    const clearRight = () => { rightAt = rightDownAt = -Infinity; rightTravel = 0; };
     // Keep the selected mode as intent while asleep; it becomes usable on wake.
     const isCombat = () => !!player && combat && !clankers.sleeping(player);
     const restoreHead = () => {
@@ -66,6 +67,7 @@
     };
     const setView = (next, zoomDistance = null) => {
       if (next === view) return;
+      clearRight();
       shoulderPointActive = false;
       if (view !== "birds-eye") orbitPitch = orbit.tPitch;
       view = next; viewChanged = true;
@@ -175,6 +177,7 @@
       camera.up = null;
     };
     const cancelInput = () => {
+      clearRight();
       jumpKey = jumpTap = run = grabHeld = grabSpent = false;
       mouseButtons = 0;
       blockedButtons = 0;
@@ -506,17 +509,24 @@
       }
     };
     const rightPress = () => {
+      if (clankers.sleeping(player)) { clearRight(); return; }
+      const recapture = isCombat() && !focused;
+      // Restoring combat focus consumes this press, including its release;
+      // it cannot become the first half of a double-click.
+      if (recapture) { clearRight(); blockedButtons |= mouseButtons; }
+      if (mouseButtons & ~2) clearRight();
       const now = performance.now();
       if (view === "birds-eye" || view === "orbit") {
         const overhead = view === "birds-eye";
         setView("shoulder");
         if (overhead) shoulderAhead();
         focusCombat();
-        rightAt = rightDownAt = -Infinity;
-      } else {
+        clearRight();
+      } else if (recapture) focusCombat();
+      else if (!(mouseButtons & ~2)) {
         if (now - rightAt <= 350) {
           setView(combat ? "birds-eye" : "orbit");
-          rightAt = rightDownAt = -Infinity;
+          clearRight();
         } else { rightDownAt = now; rightTravel = 0; }
       }
     };
@@ -541,6 +551,10 @@
     };
     const onDown = (event) => {
       if (!player) return;
+      if (event.pointerType !== "touch") {
+        mouseButtons = event.buttons;
+        if (event.button !== 2 || event.target !== canvas || event.buttons & ~2) clearRight();
+      }
       if (event.target === hud.el.act) {
         if (event.button !== 0 || actPointer >= 0) return;
         consume(event);
@@ -552,11 +566,10 @@
         consume(event);
         beginSmash(event, true);
       } else if (event.target === canvas && event.button === 2 && event.pointerType !== "touch") {
-        consume(event); mouseButtons = event.buttons;
+        consume(event);
         rightPress();
       } else if (event.target === canvas && (isCombat() || grabHeld) && event.pointerType !== "touch") {
         consume(event);
-        mouseButtons = event.buttons;
         if (event.button === 0 && grabHeld) { beginSmash(event, false); return; }
         if (!focused) { blockedButtons |= event.buttons; focusCombat(); return; }
         if (event.button === 0 && !(blockedButtons & 1)) beginSmash(event, false);
@@ -586,6 +599,7 @@
       zoomGesture = gesture; zoomAt = now; zoomDirection = direction;
       if (fresh) zoomStopped = false;
       if (zoomStopped) return true;
+      clearRight();
       shoulderPointActive = false;
       viewChanged = true;
       let next = view, nextDistance = null;
@@ -610,20 +624,36 @@
       return true;
     };
     const onMove = (event) => {
-      if (!player || !isCombat() || !focused || event.target !== canvas || event.pointerType === "touch") return;
-      consume(event);
+      if (!player || event.pointerType === "touch") return;
       const pressed = event.buttons & ~mouseButtons & ~blockedButtons;
-      if (pressed & 1) beginSmash(event, false);
-      if (pressed & 2) rightPress();
+      const released = mouseButtons & ~event.buttons;
       mouseButtons = event.buttons;
       blockedButtons &= event.buttons;
-    };
-    const onUp = (event) => {
-      if (!player) return;
-      if (event.button === 2 && event.target === canvas) {
-        rightAt = performance.now() - rightDownAt <= 350 && rightTravel <= 8 ? performance.now() : -Infinity;
-        rightDownAt = -Infinity;
+      if (event.buttons & ~2) clearRight();
+      // A mouse chord reports intermediate button releases as pointermove;
+      // pointerup arrives only when its last held button is released.
+      if (released & 2) releaseRight(event.target === canvas);
+      if (released & 1) releasePrimary(event);
+      if (event.target !== canvas) return;
+      if (pressed & 2 && (isCombat() || clankers.sleeping(player))) { consume(event); rightPress(); }
+      if (!isCombat() && !grabHeld) return;
+      if (!focused) {
+        if (pressed & 1) {
+          consume(event);
+          if (grabHeld) beginSmash(event, false);
+          else { blockedButtons |= event.buttons; focusCombat(); }
+        }
+        return;
       }
+      consume(event);
+      if (pressed & 1 && !(blockedButtons & 1)) beginSmash(event, false);
+    };
+    const releaseRight = (onCanvas) => {
+      const now = performance.now();
+      rightAt = onCanvas && !clankers.sleeping(player) && now - rightDownAt <= 350 && rightTravel <= 8 ? now : -Infinity;
+      rightDownAt = -Infinity;
+    };
+    const releasePrimary = (event) => {
       if (event.pointerId === actPointer) {
         consume(event);
         actPointer = -1;
@@ -658,11 +688,18 @@
         if (!grabHeld && clankers.smash(charge, combo, power)) smashMeter = smashMin;
         else smashMeter = Math.min(smashMeter, smashBase);
         updateSmashGauge();
-      } else if (event.target === canvas && isCombat() && event.pointerType !== "touch") {
-        consume(event);
+      }
+    };
+    const onUp = (event) => {
+      if (!player) return;
+      if (event.pointerType !== "touch") {
         mouseButtons = event.buttons;
         blockedButtons &= event.buttons;
+        if (event.buttons & ~2) clearRight();
+        if (event.button === 2) releaseRight(event.target === canvas);
       }
+      if (event.button === 0) releasePrimary(event);
+      if (event.target === canvas && isCombat() && event.pointerType !== "touch") consume(event);
     };
     on(window, "pointerdown", onDown, true);
     on(window, "pointermove", onMove, true);
@@ -675,6 +712,7 @@
       }
     }, true);
     const cancelPointer = (event) => {
+      if (player && event.pointerType !== "touch") clearRight();
       if (player && (event.pointerId === actPointer || event.pointerId === smashPointer || event.pointerId === throwPointer
         || event.type === "pointercancel" && isCombat() && event.target === canvas)) {
         consume(event);
@@ -888,6 +926,7 @@
     };
     const resetCamera = () => {
       if (!player || clankers.player !== player || !player.active || !player.root.visible) return false;
+      clearRight();
       shoulderPointActive = false;
       const first = view === "first-person", overhead = view === "birds-eye";
       acquisitionHold = pinnedFollow = handoffBefore = overheadEntry = false;

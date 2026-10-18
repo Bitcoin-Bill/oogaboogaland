@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration and right-click return to shoulder are implemented. Right-click focus/sleep/gesture parity, combat Tab navigation and remaining touch details are still open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration, right-click return to shoulder and right-click recapture/sleep/gesture parity are implemented. Combat Tab navigation, carry-orbit right-click targeting and remaining touch details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -385,12 +385,15 @@ Evidence: [Ooga gesture state and routing](https://github.com/OogaBoogaX/oogaboo
 
 **Agreed and implemented:** right-click from bird's-eye always enters third-person shoulder for either actor, never directly first person. The Ooga's hidden first-person memory is removed, including its carry-orbit return path. Carry/combat and existing target selection are preserved. First person remains a fresh inward scroll from shoulder. Existing actor/auth camera scenarios now include first-person → double-right-click distant → right-click shoulder.
 
-**Recommended next; not yet implemented:**
+**Subsequently agreed and implemented:**
 
 - Keep single right-click in a close view there, and double-right-click returning to the distant view for its current mode.
-- Make a right-click with freed combat cursor recapture mouse look consistently for both actors without attacking or seeding a double-click. Keep Ooga held precision aim as a weapon ability; no corresponding gorilla attack is implied.
+- In shoulder/first-person combat, a right-click with a freed cursor only recaptures mouse look, for both actors. Its hold and release neither attack nor seed a double-click. Native pointer-lock failure retains the existing soft mouse-look fallback. A subsequent focused Ooga right hold keeps its precision aiming; gorillas gain no new attack or aim ability.
+- From bird's-eye or carry orbit, right-click still enters shoulder. Combat resumes capture as part of that deliberate view change; carry retains the native cursor. The selected Ooga world point and gorilla 10m ground point remain unchanged.
 - Ignore view-changing right-clicks while asleep; Space remains the explicit wake action.
-- Clear gesture timing on blur, cancellation, other-button input and actor/mode changes. Match button as well as pointer ID when finishing gorilla attacks, so releasing right cannot finish a left-button charge.
+- Clear gesture timing on blur, cancellation, other-button input and actor/mode/view changes. Native mouse chords report intermediate button changes as pointer moves: releasing right cannot finish a gorilla's left-button charge, and releasing left completes it even when right stays held. Cancelled holds do not resume when a stale release arrives.
+
+The same handlers run signed in and out. Existing Ooga/gorilla scenarios are extended for recapture without view changes or attacks, preserved Ooga precision aim, sleeping actors, interrupted taps and native mouse chords. These are authored regressions, not runtime results.
 
 Carry-orbit target selection (clicked point versus retained direction) and native right-drag look can be discussed separately.
 
@@ -404,7 +407,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 
 1. No backend, Worker signed out, signed-in own Ooga (bundled/temporary), and refused noncontributor sign-in/old guest sessions. Include canonical login aliases and contributor-feed failure. Use manual and automatic arrival separately; `nosim` disables accounts and cannot validate the signed-in rows.
 2. Ooga/gorilla/detached; carry/combat; shoulder/first-person/orbit/overhead; native cursor, successful lock, denied/lost lock, and blur/resume.
-3. World selection, portrait tap/hold, X, wheel/pinch, right-click/double-right-click, Tab/Escape, map/reset, and each walking scene boundary.
+3. World selection, portrait tap/hold, X, wheel/pinch, right-click/double-right-click, Tab/Escape, map/reset, and each walking scene boundary. For right-click, include recapture with denied lock, a later Ooga precision hold, sleeping actors, blur/cancel/other-button interruptions, and both release orders of a left/right chord during gorilla smash or throw.
 4. Keyboard-focused sheet buttons, Chat, native form controls and modal dialogs; mouse and coarse/touch devices; clean console throughout.
 5. Detached selection/retake/T/sign-in from close, distant, overhead and underground viewpoints; eye position stays fixed until actor movement or deliberate view input. Include a real GitHub round trip on hub and interior routes, plus expired/denied session storage.
 6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
@@ -438,4 +441,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Combat-only island cutaway: shared mode gate and geometric handoff rule implemented for Oogas/clankers; carry and detached restore all cover. `npm run build`, `node --check` on both changed JavaScript files and `git diff --check` passed. Existing floor/cutaway regressions cover both actors and sign-in states; runtime checks remain unrun under **wait**.
 - `a7b806f`: combat-only lower-level cutaways committed and pushed.
 - Right-click source review: remaining focus, weapon-aim, sleep and gesture differences logged. Always returning to shoulder is approved and implemented; other recommendations remain proposals. Clear-camera restoration of lower-floor combat cutaways is also approved and implemented. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing camera regressions cover first-person departures returning to shoulder and lower-floor restoration for both actors/sign-in states. Runtime checks remain unrun under **wait**.
-- Remaining decisions: right-click focus/sleep/gesture parity, combat Tab navigation, touch and exceptional-controller details.
+- `c0f48ae`: shoulder return and clear-camera island restoration committed and pushed, with the remaining right-click audit.
+- Consistent right-click recapture, sleep suppression and interrupted-gesture cleanup: implemented for both actors and sign-in states, retaining Ooga precision aiming. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Existing regressions now cover denied-lock recapture, later precision holds, sleeping actors, interrupted taps and native mouse chords, including distant shoulder entry and gorilla charge release. Runtime checks remain unrun under **wait**.
+- Remaining decisions: combat Tab navigation, carry-orbit right-click targeting, touch and exceptional-controller details.

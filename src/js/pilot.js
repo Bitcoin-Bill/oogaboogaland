@@ -344,13 +344,17 @@
       if (input) input.reset(preserveZoom === true);
       controls.clearPointer();
     };
+    const clearRightGesture = () => {
+      rightDownAt = rightTapAt = -Infinity;
+      rightTravel = 0;
+      rightExitHeld = false;
+    };
     const unlockAim = (preserveZoom = false) => {
       if (externalControl && !disposed) return;
       lockCancelled = true;
       aimLocked = false;
       unlockedAt = -Infinity;
-      rightDownAt = rightTapAt = -Infinity;
-      rightExitHeld = false;
+      clearRightGesture();
       setSoftAimFocus(false);
       ads = false;
       primaryButtonCave = null;
@@ -377,6 +381,7 @@
     // Another playable actor shares the canvas and controls, but owns its own
     // aim events and pointer lock until it hands the pilot control back.
     const setExternalControl = (active, combat = null) => {
+      clearRightGesture();
       externalControl = !!active;
       externalCombat = active ? combat : null;
       aimLocked = false;
@@ -407,7 +412,9 @@
       lockCancelled = false;
       if (lockPending || document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
       lockPending = true;
-      const request = canvas.requestPointerLock();
+      let request;
+      try { request = canvas.requestPointerLock(); }
+      catch (_) { aimLockFailed(); return; }
       if (request && request.then) request.then(() => {
         lockPending = false;
         if (externalControl && !disposed) return;
@@ -472,6 +479,7 @@
       if (!combat && (carryCursor.active || softAimFocused || document.pointerLockElement === canvas)) unlockAim(preserveZoom);
       const cave = aimView() ? controlled : null;
       if (cave === aimCave) return;
+      clearRightGesture();
       if (carryCursor.active) {
         ads = false;
         if (controlled) crew.stopBurst(controlled);
@@ -1165,11 +1173,34 @@
       rightDownAt = -Infinity;
       rightExitHeld = false;
     };
+    // Observe interruptions before canvas/UI handlers consume them. Tap and
+    // ADS classification stays in aimPointer, including virtual cursor events.
+    const interruptRightGesture = (e) => {
+      if (externalControl || e.pointerType !== "mouse") return;
+      if (e.type === "pointercancel") { clearRightGesture(); ads = false; }
+      else if (e.buttons & ~2 || e.button >= 0 && e.button !== 2
+        || e.target !== canvas && e.button === 2 && (e.type === "pointerdown" || e.type === "pointermove" && (e.buttons & 2))) clearRightGesture();
+    };
     const aimPointer = (e) => {
       if (!active || externalControl || e.pointerType !== "mouse") return;
-      if (e.type === "pointercancel") {
-        rightDownAt = rightTapAt = -Infinity;
-        rightExitHeld = false;
+      if (crew && crew.sleeping) {
+        clearRightGesture();
+        if (e.button === 2 || e.buttons & 2) {
+          ads = false;
+          e.preventDefault(); e.stopImmediatePropagation(); return;
+        }
+      }
+      const rightPress = e.button === 2 && (e.type === "pointerdown" || e.type === "pointermove" && (e.buttons & 2));
+      if (rightPress && armed() && aimView() && !softAimFocused && document.pointerLockElement !== canvas) {
+        clearRightGesture();
+        ads = false;
+        aimLeftAccepted = aimLeftFocused = false;
+        // Keep mouse-look usable when native pointer lock is denied. Set the
+        // hold guard after capture, whose callbacks can cancel input inline.
+        setSoftAimFocus(true);
+        lockAim();
+        rightExitHeld = true;
+        e.preventDefault(); e.stopImmediatePropagation(); return;
       }
       if (e.type === "pointermove" && Number.isFinite(rightDownAt)) rightTravel += Math.hypot(e.movementX || 0, e.movementY || 0);
       if (e.button === 2 && e.type === "pointerup") releaseRightTap();
@@ -1178,8 +1209,7 @@
       if (rightExitHeld && e.type === "pointerdown") rightExitHeld = false;
       if (rightExitHeld) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (e.type === "pointerdown") {
-        if (e.button !== 2) rightDownAt = -Infinity;
-        if (e.button === 2 && aimView()) {
+        if (e.button === 2 && !(e.buttons & ~2) && aimView()) {
           const now = performance.now();
           if (now - rightTapAt <= RIGHT_DOUBLE_TIME) {
             e.preventDefault(); e.stopImmediatePropagation();
@@ -1201,7 +1231,7 @@
         }
         return;
       }
-      if (birdsEye() && e.button === 2 && e.type === "pointerdown") {
+      if (birdsEye() && rightPress) {
         e.preventDefault(); e.stopImmediatePropagation();
         shooterView(true, renderer.size.width / 2, renderer.size.height / 2);
         return;
@@ -1297,10 +1327,15 @@
     };
     const aimMouseUp = (e) => {
       if (externalControl) return;
+      if (e.button === 2) {
+        ads = false;
+        if (e.target === canvas) releaseRightTap();
+        else clearRightGesture();
+      }
       if (e.target.closest && e.target.closest(".equipment-hud")) return;
       if (e.button === 0 && crew) { releaseAimAttack(e); releasePrimary(player(), ads); }
-      if (e.button === 2) { ads = false; releaseRightTap(); }
     };
+    const aimVisibility = () => { if (document.hidden) unlockAim(); };
     const aimLockChanged = () => {
       lockPending = false;
       if (externalControl && !disposed) return;
@@ -1310,6 +1345,7 @@
       if (aimLocked && !locked) unlockedAt = performance.now();
       aimLocked = locked;
       if (!locked) {
+        clearRightGesture();
         ads = false;
         aimLeftAccepted = aimLeftFocused = false;
         carryCursor.endAim();
@@ -1327,10 +1363,15 @@
     };
     window.addEventListener("mousemove", aimMouseMove);
     window.addEventListener("pointerup", aimMouseUp);
+    window.addEventListener("pointerdown", interruptRightGesture, true);
+    window.addEventListener("pointermove", interruptRightGesture, true);
+    window.addEventListener("pointerup", interruptRightGesture, true);
+    window.addEventListener("pointercancel", interruptRightGesture, true);
     window.addEventListener("keydown", aimKey, true);
     window.addEventListener("blur", unlockAim);
     document.addEventListener("pointerlockchange", aimLockChanged);
     document.addEventListener("pointerlockerror", aimLockFailed);
+    document.addEventListener("visibilitychange", aimVisibility);
     canvas.addEventListener("pointerdown", aimPointer, true);
     canvas.addEventListener("pointermove", aimPointer, true);
     canvas.addEventListener("pointerup", aimPointer, true);
@@ -1473,6 +1514,7 @@
     };
     const enterClose = (combat = false, preserveZoom = false) => {
       if (!close || closeWanted) return;
+      clearRightGesture();
       closeWanted = true;
       shoulderView = false;
       closeExitScale = 1;
@@ -1506,6 +1548,7 @@
     };
     const exitClose = () => {
       if (!closeWanted) return;
+      clearRightGesture();
       const cave = player();
       shoulderView = !!cave;
       if (aimView()) {
@@ -1691,7 +1734,7 @@
       resumePose();
       const cave = player();
       if (!weaponViewReady(cave)) return;
-      rightDownAt = rightTapAt = -Infinity;
+      clearRightGesture();
       if (active && birdsEye() && !closeWanted) {
         anchorOverheadPointer(cave);
         // The assisted hit may be centred on an object and refreshed on a
@@ -1791,7 +1834,7 @@
       }
       resumePose();
       const leavingOverhead = birdsEye();
-      rightDownAt = rightTapAt = -Infinity;
+      clearRightGesture();
       cave.weapon.aiming = !cave.weapon.aiming;
       if (!cave.weapon.aiming) {
         crew.stopBurst(cave);
@@ -1834,6 +1877,7 @@
       // Every acquisition snapshots the outgoing controller before releasing it.
       // Detached selection keeps its eye; active selection carries mode and view.
       const incoming = transition && typeof transition === "object" ? transition : captureControl(controlTransition);
+      clearRightGesture();
       release(true);
       if (!crew.control(cave)) return false;
       restoredPose = null;
@@ -2047,6 +2091,7 @@
         zoomGesture = gesture; zoomAt = now; zoomDirection = direction;
         if (fresh) zoomStopped = false;
         if (zoomStopped) return;
+        clearRightGesture();
         resumePose();
         if (hud.fadeDetachedName) hud.fadeDetachedName();
         const cave = player();
@@ -2148,6 +2193,7 @@
     // never releases, relocates or wakes the actor, nor changes cursor focus.
     const resetCamera = () => {
       if (!follow || !active || externalControl || disposed) return false;
+      clearRightGesture();
       const cave = player(), overhead = birdsEye(), yaw = overhead ? overheadYaw : cave ? cave.root.rotation.y + Math.PI : orbit.yaw;
       restoredPose = null;
       carrySelection = centeredCarry = false;
@@ -2937,6 +2983,7 @@
     // Translation preserves the view family, framing, heading and focus.
     const travel = (position) => {
       if (travelRefusal() || !position || !Number.isFinite(position.x) || !Number.isFinite(position.y) || !Number.isFinite(position.z)) return false;
+      clearRightGesture();
       const cave = player(), p = cave.root.position, lift = cave.viewLift;
       travelMatrix[12] = position.x - p.x;
       travelMatrix[13] = position.y + cave.baseY - p.y;
@@ -2956,6 +3003,7 @@
     // The scene supplies a safe arrival and resets its collision history first.
     // navigate changes location only, never the visitor's mode or chosen Ooga.
     const navigate = (destination) => {
+      clearRightGesture();
       restoredPose = null;
       centeredCarry = false;
       carryExitMode = carryFocusRemaining = 0;
@@ -3084,6 +3132,7 @@
       camera.orthoHeight = pose.orthoHeight ?? 2 * Math.tan(camera.fov / 2) * pose.orbit[2];
     };
     const restorePose = (pose, exactCamera = true) => {
+      clearRightGesture();
       const cave = player();
       restoredPose = null;
       centeredCarry = false;
@@ -3196,8 +3245,13 @@
       camera.orthoMix = camera.orthoHeight = 0;
       window.removeEventListener("mousemove", aimMouseMove);
       window.removeEventListener("pointerup", aimMouseUp);
+      window.removeEventListener("pointerdown", interruptRightGesture, true);
+      window.removeEventListener("pointermove", interruptRightGesture, true);
+      window.removeEventListener("pointerup", interruptRightGesture, true);
+      window.removeEventListener("pointercancel", interruptRightGesture, true);
       window.removeEventListener("keydown", aimKey, true);
       window.removeEventListener("blur", unlockAim);
+      document.removeEventListener("visibilitychange", aimVisibility);
       if (!lockPending) retireAimLock();
       canvas.removeEventListener("pointerdown", aimPointer, true);
       canvas.removeEventListener("pointermove", aimPointer, true);
