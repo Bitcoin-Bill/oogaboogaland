@@ -151,8 +151,7 @@
       listeners.push(() => node.removeEventListener(type, callback, options));
     };
     const consume = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
-    const typing = (event) => event.target && (event.target.isContentEditable
-      || event.target.closest && event.target.closest("input, textarea, select, dialog, #sheet"));
+    const typing = BL.controls.uiKey;
     const updateSmashGauge = () => {
       const percent = grabHeld ? Math.round(throwMeter * 100) : Math.round(smashMeter * 40);
       if (percent === shownPower && shownThrow === grabHeld) return;
@@ -400,17 +399,24 @@
       return release();
     };
     const onKeyDown = (event) => {
-      if (!player || event.metaKey || event.ctrlKey || event.altKey || typing(event)) return;
+      if (!player || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "Tab") {
+        if (!event.repeat) {
+          const captured = isCombat() && (focused || lockPending);
+          const blocked = blockedButtons | mouseButtons;
+          blurCombat();
+          blockedButtons = blocked;
+          if (captured && !typing(event)) pilot.controls.consumeTab(event);
+        }
+        return;
+      }
+      if (typing(event)) return;
       const space = event.code === "Space" || event.key === " " || event.key === "Spacebar";
       const key = event.key.toLowerCase();
       if (space) {
         consume(event);
         if (!jumpKey && !event.repeat) { jumpKey = true; beginJump(); }
-      } else if (key === "tab" && isCombat()) {
-        consume(event);
-        if (!event.repeat) blurCombat();
-      }
-      else if (key === "shift" && event.code !== "ShiftRight" && event.location !== 2) { run = true; consume(event); }
+      } else if (key === "shift" && event.code !== "ShiftRight" && event.location !== 2) { run = true; consume(event); }
       else if (key === "g") {
         consume(event);
         if (clankers.sleeping(player)) return;

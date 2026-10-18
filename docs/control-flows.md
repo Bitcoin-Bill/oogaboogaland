@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration, right-click return to shoulder and right-click recapture/sleep/gesture parity are implemented. Combat Tab navigation, carry-orbit right-click targeting and remaining touch details are still open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset, combat-only island cutaways with clear-camera restoration, right-click return to shoulder, right-click recapture/sleep/gesture parity and shared Tab release/navigation are implemented. Carry-orbit right-click targeting and remaining touch details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -143,7 +143,7 @@ The legacy scene Agent is a third controller, not the hub companion. It has came
 | ID | Finding | Evidence status | Decision |
 |---|---|---|---|
 | C01 | Native cursor in Ooga carry versus locked virtual cursor in gorilla carry. | Source-confirmed | Native cursor agreed and implemented below |
-| C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Escape order implemented; combat Tab navigation still pending |
+| C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Escape order and shared Tab release/navigation implemented below |
 | C03 | Gorilla right-click and inward zoom can change carry to combat; Ooga preserves intent. | Source-confirmed | Mode preservation agreed and implemented below |
 | C04 | Ooga remembers mode/preserves high selection; gorilla resets combat shoulder. | Source-confirmed | Replaced by the agreed shared selection/retake flow |
 | C05 | Ooga bird's-eye has vertical aim; gorilla has fixed center aim. | Source-confirmed | Distinct aim models retained; gorilla right-click to shoulder aims at ground 10m ahead |
@@ -155,7 +155,7 @@ The legacy scene Agent is a third controller, not the hub companion. It has came
 | C11 | Close-view look may apply twice: carry Q/E and R/F, and look-stick yaw/pitch in carry or combat, except lying. Combat keyboard Q/E applies once. | Suspected sensitivity defect, unmeasured: [first application](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2059), [tail](https://github.com/OogaBoogaX/oogaboogaland/blob/4113d59b69cbcd0f85207902ce4e36bbec8dfca4/src/js/pilot.js#L2150) | Measure if runtime checks requested |
 | C12 | Forced Arcade carry can become the Ooga's remembered mode on return. | Source-confirmed state path; intent undecided | Pending |
 
-Help also lags behavior: README omits Tab, capture-only first click, detached eye-level, portrait hold and double-right-click. “Escape lets go” misses capture/scene layers. Some weapon hints say scroll out for navigation although combat zoom stays in combat overhead. AGENTS asks shared scenes to route 0 to pilot, but several walking scenes have no 0 handler. Update help after agreeing behavior, not before.
+At the upstream baseline, help also lagged behavior: README omitted Tab, capture-only first click, detached eye-level, portrait hold and double-right-click. “Escape lets go” missed capture/scene layers. Some weapon hints said scroll out for navigation although combat zoom stayed in combat overhead. AGENTS asked shared scenes to route 0 to pilot, but several walking scenes had no 0 handler. Help changes are recorded with each agreed flow below.
 
 ## Proposed agreement order
 
@@ -164,7 +164,7 @@ Native/captured cursor choice, Escape order, multiplayer companions, T switching
 | Order | Scenario | Proposed rule | Open choice |
 |---|---|---|---|
 | 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed; sheet key guard now aligned. |
-| 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order and detached interior exit agreed; Tab behavior remains proposed. |
+| 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order, detached interior exit and Tab release/navigation implemented below. |
 | 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Agreed below: detached acquisition keeps the eye and enters carry/orbit; active switches keep mode/view; same-actor selection does nothing. |
 | 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed, including whole-gesture shoulder stops, nearby scroll entry and right-click always returning to shoulder. |
 | 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
@@ -177,7 +177,7 @@ Touch should provide equivalent actions using sticks/buttons and native touch UI
 On 2026-10-18 the maintainer chose **native cursor in detached/carry** for Oogas and gorillas, with drag-to-look and wheel-to-zoom, and captured mouse look in combat.
 
 - Gorilla combat-to-carry now releases capture and focus. It no longer constructs a virtual cursor or keeps its pointer-position/resize bookkeeping.
-- Native left-drag and wheel retain the existing interaction hooks. Tab in carry reaches native keyboard navigation, as it does for Oogas; combat Tab behavior is unchanged pending scenario 2.
+- Native left-drag and wheel retain the existing interaction hooks. Tab in carry reaches native keyboard navigation, as it does for Oogas; combat Tab behavior remained unchanged at this checkpoint and is addressed by the later Tab agreement below.
 - Returning to combat requests capture. At this checkpoint the carry-orbit zoom boundary still changed to combat shoulder and requested focus; the later camera-gesture agreement below removes that mode change.
 - Grab/throw retains its existing reticle and button handling in carry without acquiring pointer lock. Other abilities, ownership, map behavior, view defaults and scene Escape policies are unchanged.
 - The existing `gorilla camera modes` check now requires native cursor state, no focus/lock and unconsumed Tab in its carry shoulder/first-person/orbit samples. This regression coverage is authored, not run under the current **wait** policy.
@@ -397,6 +397,32 @@ The same handlers run signed in and out. Existing Ooga/gorilla scenarios are ext
 
 Carry-orbit target selection (clicked point versus retained direction) and native right-drag look can be discussed separately.
 
+## Tab review at `3860229` and agreed flow
+
+This source audit records the state after right-click parity, before the Tab change. No runtime behavior was observed. Neither controller's Tab handler branches on sign-in.
+
+| Starting state | Behavior at `3860229` |
+|---|---|
+| Awake combat, any view, captured or soft-focused | Both actors consume Tab/Shift+Tab and free mouse look, preserving actor, carry/combat and view. Pending or denied native lock uses the same release path. |
+| Awake combat, cursor already free | Both still consume Tab, preventing ordinary keyboard focus traversal outside their UI exclusions. Tab does not recapture. |
+| Held Tab | Both consume repeats. Ooga repeats its release cleanup; gorilla runs cleanup only on the initial press. |
+| Carry, detached or asleep | Tab uses normal browser focus navigation immediately. |
+| Focused UI | Both exclude inputs, textareas, dialogs and the sheet. Gorilla additionally excludes selects and contenteditable. Ordinary HUD buttons/links remain subject to combat Tab interception. |
+| Held gameplay input during release | Pointer actions are cancelled, but shared keyboard state survives. Held W can continue movement with a free cursor; a quick Right Shift+Tab can later swap shoulders when Shift is released. |
+
+Evidence: [Ooga Tab and UI guard](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/pilot.js#L1283), [Ooga release cleanup](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/pilot.js#L352), [gorilla Tab](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/clanker-play.js#L402), [gorilla release cleanup](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/clanker-play.js#L179), [shared Shift release](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/controls.js#L82), [pointer-only reset](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/controls.js#L173), [gorilla movement and shoulder swap](https://github.com/OogaBoogaX/oogaboogaland/blob/3860229/src/js/clanker-play.js#L751).
+
+**Agreed and implemented:**
+
+- In combat with captured, soft-focused or pending mouse look, the first Tab or Shift+Tab frees the cursor and cancels held movement, sprint/jump, aiming and pending actions. It keeps the controlled actor, mode and view. The held-W continuation and delayed Right Shift shoulder swap are explicitly removed by this cleanup.
+- Consume that Tab hold through its key release, including repeats, so one hold cannot both release mouse look and start navigating UI. A subsequent Tab/Shift+Tab uses native forward/backward focus navigation. There is no promise of a particular first focus target.
+- Interrupted keys and mouse chords stay inactive until release. An ordinary mouse move with a button still held cannot restart walking, charging or combat capture; a cancelled Shift cannot modify a new gameplay shortcut before it is released.
+- With the cursor already free, Tab navigates immediately. Carry, detached view and sleeping actors also use native Tab navigation immediately; Tab does not wake, acquire or switch an actor.
+- Focused UI controls own Tab, including buttons, links, selects, text fields, contenteditable, the sheet and dialogs. Ctrl/Meta/Alt browser shortcuts remain untouched.
+- The same policy applies to Oogas and gorillas, all their view families and either sign-in state. T remains the signed-in owned-pair switch. An explicit world click resumes combat mouse look under the existing capture-only rules.
+
+README describes the shared flow. Existing actor/auth scenarios now cover soft and pending capture, held Tab, interrupted movement and attacks, both Shift keys, native UI navigation, carry/detached mouse chords and sleeping actors. The new keyboard gate is enabled by the shared walking pilot; the separate game controllers do not opt into it. These are authored regressions, not runtime results.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -414,6 +440,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 7. Long wheel swipes with momentum, fresh scrolls and new pinches in both directions through shoulder, for both actors and sign-in states. Check small outward increments, low ceilings, floors at different heights, both carry/combat modes and right-click after nearby bird's-eye zoom.
 8. Map open/cancel, all destinations, arrival refusal followed by another choice, controlled Ooga/gorilla and detached travel, and Reset camera / 0 in each walking scene. Include close/overhead views, underground arrivals, occupied destinations, sleepers, seated/climbing/airborne actors, both sign-in states and a second multiplayer page.
 9. HQ, basement and Mempool cutaways with each actor signed in/out: combat bird's-eye reveals the floor; X to carry and detachment restore it immediately; close-view exits retain the cut while obstructed, restore only once clear and settle with an intact island; detached retake keeps intact carry/orbit. Include steep Ooga aim, gorilla 10m ground aim with a blocked shoulder target, low roofs, both shoulders, pinned climbing handoffs and direct first-person zoom during the descent.
+10. Tab/Shift+Tab with successful, pending and denied capture; first release, held repeats, keyup and a fresh navigation press. Include held W, sprint/jump, a charged action and Right Shift peek/tap, plus carry, detached, sleeping actors and focused UI controls. Actor/mode/view stay unchanged; gameplay input does not resume from the cancelled hold. Check both actors and sign-in states, and leave Ctrl/Meta/Alt browser shortcuts alone.
 
 ## Review checkpoints
 
@@ -443,4 +470,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Right-click source review: remaining focus, weapon-aim, sleep and gesture differences logged. Always returning to shoulder is approved and implemented; other recommendations remain proposals. Clear-camera restoration of lower-floor combat cutaways is also approved and implemented. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing camera regressions cover first-person departures returning to shoulder and lower-floor restoration for both actors/sign-in states. Runtime checks remain unrun under **wait**.
 - `c0f48ae`: shoulder return and clear-camera island restoration committed and pushed, with the remaining right-click audit.
 - Consistent right-click recapture, sleep suppression and interrupted-gesture cleanup: implemented for both actors and sign-in states, retaining Ooga precision aiming. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Existing regressions now cover denied-lock recapture, later precision holds, sleeping actors, interrupted taps and native mouse chords, including distant shoulder entry and gorilla charge release. Runtime checks remain unrun under **wait**.
-- Remaining decisions: combat Tab navigation, carry-orbit right-click targeting, touch and exceptional-controller details.
+- `3860229`: right-click recapture, sleep suppression and gesture cleanup committed; source baseline for the Tab review.
+- Shared Tab release/navigation: implemented for Oogas, gorillas and detached mode, signed in or out, with held-key/mouse cancellation, Shift protection and UI priority. `npm run build`, `node --check` on all five changed JavaScript files and `git diff --check` passed. Existing regressions cover the agreed flows; runtime checks remain unrun under **wait**.
+- Remaining decisions: carry-orbit right-click targeting, touch and exceptional-controller details.

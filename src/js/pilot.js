@@ -1281,7 +1281,17 @@
       }
     };
     const aimKey = (e) => {
-      if (externalControl || e.metaKey || e.ctrlKey || e.altKey || e.target.closest && e.target.closest("input, textarea, dialog, #sheet")) return;
+      if (externalControl || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Tab") {
+        if (!e.repeat) {
+          const captured = armed() && (softAimFocused || !lockCancelled && (lockPending || document.pointerLockElement === canvas));
+          freeCursor();
+          freeStrafe = freeForward = freeClimb = 0;
+          if (captured && !BL.controls.uiKey(e)) controls.consumeTab(e);
+        }
+        return;
+      }
+      if (BL.controls.uiKey(e)) return;
       // R swaps magazines whenever the AK is drawn, aimed or not: V fires it unaimed, so it empties unaimed.
       // Otherwise R stays the free camera's pitch.
       const cave = player();
@@ -1306,10 +1316,6 @@
         e.preventDefault(); e.stopImmediatePropagation();
         if (!e.repeat) weaponAction(ctx.reloadAnywhere ? "weapon-reload" : "magazine-swap");
         return;
-      }
-      if (!armed()) return;
-      if (e.key === "Tab") {
-        e.preventDefault(); e.stopImmediatePropagation(); unlockAim();
       }
     };
     const releaseAimAttack = (e) => {
@@ -1367,7 +1373,6 @@
     window.addEventListener("pointermove", interruptRightGesture, true);
     window.addEventListener("pointerup", interruptRightGesture, true);
     window.addEventListener("pointercancel", interruptRightGesture, true);
-    window.addEventListener("keydown", aimKey, true);
     window.addEventListener("blur", unlockAim);
     document.addEventListener("pointerlockchange", aimLockChanged);
     document.addEventListener("pointerlockerror", aimLockFailed);
@@ -2032,7 +2037,8 @@
       return cave ? crew.playerAction() : !!ctx.onFreeAction && ctx.onFreeAction();
     };
     // Held it climbs, clicked it acts; both mouse buttons on the canvas walk
-    const controls = createControls({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, chord: canvas, onAction: action, pressActions: true, shooter: () => externalCombat ? externalCombat() : armed(), canDescend: () => !player() });
+    const controls = createControls({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, chord: canvas, onAction: action, pressActions: true, tabNavigation: true, shooter: () => externalCombat ? externalCombat() : armed(), canDescend: () => !player() });
+    window.addEventListener("keydown", aimKey, true);
     // Shoulder is a stop for the whole gesture, including momentum. Input's
     // wheel/pinch id is authoritative; callers without one use a quiet gap or reversal.
     const ZOOM_PAUSE = 220;
