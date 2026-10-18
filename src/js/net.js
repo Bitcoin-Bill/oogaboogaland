@@ -522,11 +522,10 @@
   const mayDrive = (name, working) => {
     if (!state.backend) return null;
     const owner = BL.characters.get(name);
+    if (state.me) return owner && ownCharacter() === owner ? null : "Drive your own Ooga";
     if (!owner || owner.handle.toLowerCase() !== String(name).toLowerCase()) return null;
     const who = owner.display || owner.handle;
-    if (owner.temporary && (!state.me || state.me.login.toLowerCase() !== owner.handle)) return "Sign in to drive your Ooga";
-    const mine = ownCharacter();
-    if (mine) return mine === owner ? null : "Contributors drive only their own Ooga";
+    if (owner.temporary) return "Sign in to drive your Ooga";
     const ownerLogin = loginOf(owner), wanted = owner.handle.toLowerCase();
     for (const rec of remotes.values()) {
       if (rec.login.toLowerCase() === ownerLogin) return `${who} is here and drives this Ooga`;

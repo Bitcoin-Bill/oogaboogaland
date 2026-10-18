@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat and signed-in-only local green markers are implemented. Remaining selection/map/touch flows await agreement.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in and selection guards are implemented. Remaining selection/map/touch flows await agreement.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -225,7 +225,7 @@ The maintainer approved **zoom and right-click preserve carry/combat; X switches
 
 ## Selection and retake review after `9d38a28`
 
-This is the current PR behavior, distinct from the upstream tables above. Source inspection only; the selection proposals below await agreement.
+This records the PR behavior at `9d38a28`, distinct from the upstream tables above. Source inspection only. The contributor-only sign-in and selection guards below supersede the signed-in guest and unavailable-target rows; the other selection proposals still await agreement.
 
 | Account situation | Ooga selection | Gorilla selection | Retake |
 |---|---|---|---|
@@ -248,7 +248,7 @@ Signed-out pages have no room socket or roster of remote players. Their local se
 
 Evidence: [Ooga retake/selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/pilot.js#L1726), [gorilla selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/clanker-play.js#L255), [hub account/T handling](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L8288), [world/HUD routing](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L11084).
 
-Recommended flow, **not yet implemented**:
+Recommended flow at that checkpoint; only the ownership/availability guard in item 1 is now implemented:
 
 1. Use the same selection path for world double-click, a retake button and T. Check ownership and availability before releasing the current actor; explain refusals and keep the current view/control intact.
 2. While detached, offer **Return to [last actor]** for both Oogas and gorillas, signed in or out. Retake at the actor's current position, without teleporting it. Disable with a reason if it is unavailable in the current scene. Keep T's already agreed own-pair meaning, including own Ooga from detached.
@@ -259,6 +259,22 @@ Recommended flow, **not yet implemented**:
 
 The maintainer's indicator requirement is separate from these proposals and is implemented: **local control alone must not produce a green signed-in marker**. The HUD gates local tooltip and roster presence on the current signed-in account, with remote presence tracked separately. Login/logout repaints cached rows. Signed-out/static control retains selection and activity presentation; authenticated remote players keep their online markers. Existing walking/integration checks cover static play, signed-out play, login/logout, both actor kinds and remote presence; they remain unrun under **wait**.
 
+## Agreed change: contributor-only sign-in and owner selection
+
+Only a GitHub account with its own Ooga may sign in. The Worker checks this before writing a player or session: a bundled character's owning login qualifies directly; a new contributor must be verified by the existing Oogatron policy (`counts.commits >= 1`) for a temporary Ooga. A character's display/handle alias never grants another GitHub account ownership. Bundled owners do not depend on the live feed. An unbundled login is refused when the bounded cached lookup cannot verify it.
+
+The same rule applies when reading existing sessions for account, room, voice and signed-in donation attribution. Historical guest cookies no longer identify an eligible player. Valid historical sessions can still sign out or delete their account. The room also refuses guests before socket acceptance and evicts historical guest attachments on wake, message or its existing sweep, without new timers or upstream polling. Accepted temporary contributors retain their verified room attachment until reconnect.
+
+| Account | Selection and retake after this change |
+|---|---|
+| Signed-in contributor, bundled or verified temporary | Own Ooga and own gorilla only. Automatic hub arrival takes the Ooga once; its portrait retakes it; T switches the pair or retakes the Ooga from detached. No signed-in borrowing fallback. |
+| Worker, signed out | Resting/sleeping bundled Oogas and active visible bundled companions remain local choices. Double-click/tap selects; no personal portrait or T shortcut, room presence or local green online marker. |
+| Static/no backend | Existing unrestricted local selection remains available, without an account or multiplayer presence. |
+
+Hub world Ooga selection, the own-Ooga portrait and T now validate ownership, local availability and remote control before releasing a controlled gorilla. Refusal shows a reason and retains the current actor, camera and carry/combat mode. Gorilla possession already validates its target before handing off. A missing own-character mapping refuses selection rather than permitting signed-in borrowing.
+
+This checkpoint does not change successful selection's camera/mode defaults or add a last-actor retake button. Items 2–6 above remain proposals. Auth, room, permission and existing hub regressions were extended; these changes remain in the draft PR and have not been deployed or runtime-tested.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -267,7 +283,7 @@ Existing checks to extend if implementation and runtime testing are requested: `
 
 For the maintainer's play-test, exercise each agreed flow with:
 
-1. No backend, Worker signed out, signed-in own Ooga (bundled/temporary), and a borrowing account where available. Use manual and automatic arrival separately; `nosim` disables accounts and cannot validate the signed-in rows.
+1. No backend, Worker signed out, signed-in own Ooga (bundled/temporary), and refused noncontributor sign-in/old guest sessions. Include canonical login aliases and contributor-feed failure. Use manual and automatic arrival separately; `nosim` disables accounts and cannot validate the signed-in rows.
 2. Ooga/gorilla/detached; carry/combat; shoulder/first-person/orbit/overhead; native cursor, successful lock, denied/lost lock, and blur/resume.
 3. World selection, portrait tap/hold, X, wheel/pinch, right-click/double-right-click, Tab/Escape, map/reset, and each walking scene boundary.
 4. Keyboard-focused sheet buttons, Chat, native form controls and modal dialogs; mouse and coarse/touch devices; clean console throughout.
@@ -283,4 +299,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Camera gesture checkpoint: wheel/right-click preserve carry/combat; X/portrait routing completed in walking interiors; gorilla combat bird's-eye right-click aims at ground 10m ahead. `npm run build`, `node --check` on all seven changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
 - `9d38a28`: camera gestures and gorilla 10m shoulder aim committed and pushed.
 - Selection review: current authentication, selection, camera and retake differences logged; recommended shared selection flow remains proposed. Green local presence now requires sign-in; signed-out availability documentation corrected. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
+- `3571c69`: signed-in-only local green markers and selection review committed and pushed.
+- `e4ada46`: contributor-only OAuth/session access, room admission and historical guest eviction committed and pushed.
+- Contributor-only sign-in and selection guards: approved; server admission/session/room rules and client ownership/selection paths updated. `npm run build`, `node --check` on all 17 changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
 - Remaining decisions: selection/default view, first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.

@@ -8285,6 +8285,25 @@
   // Whether this visitor may take an Ooga: the rules live in `net.mayDrive`; working means the Ooga's
   // real activity, not a scene override (a return from DSB marks its Ooga working to wake it).
   const mayDriveOoga = (cave) => cave.contributor ? BL.net.mayDrive(cave.traits.name, contributors.stateFor(cave.contributor) === "working") : null;
+  // Validate a new Ooga before giving up the current actor or its camera.
+  const selectOoga = (cave, direct = false) => {
+    if (!cave || crew.cavemen.get(cave.traits.name) !== cave) { hud.toast("That Ooga is not available here"); return false; }
+    if (cave !== pilot.player) {
+      const refusal = mayDriveOoga(cave);
+      if (refusal) { hud.toast(refusal); return false; }
+      if (cave.remoteControlled) { hud.toast(`Someone is already driving ${cave.traits.display}`); return false; }
+      if (crew.stateOf(cave) === "away" || cave.state !== "working" && cave.state !== "chilling" && cave.state !== "sleeping") {
+        hud.toast(`${cave.traits.display} is in another place`);
+        return false;
+      }
+    }
+    if (clankerPlay.active) clankerPlay.release();
+    if (direct) {
+      pilot.possess(cave);
+      if (pilot.player === cave) pilot.focusAim(true);
+    } else pilot.hooks.onDoubleTap({ owner: { kind: "caveman", cave } });
+    return pilot.player === cave;
+  };
   const RELEASE_WORDS = { "owner-here": "Its owner arrived and took their Ooga back", taken: "Someone else is already driving that Ooga", "not-yours": "Contributors drive only their own Ooga" };
   // Where accounts exist, this visitor's driving counts as online (the roster's green dot) only signed in.
   const localOnline = () => !BL.net.state.backend || !!BL.net.state.me;
@@ -8339,13 +8358,7 @@
       const gorilla = clankers.list.find(entry => entry.owner === cave);
       if (!gorilla || !gorilla.active || !gorilla.root.visible) { hud.toast("Your gorilla is not available here yet"); return; }
       clankerPlay.possess(gorilla);
-    } else {
-      const refusal = mayDriveOoga(cave);
-      if (refusal || crew.stateOf(cave) === "away") { hud.toast(refusal || "Your Ooga is in another place"); return; }
-      if (clankerPlay.active) clankerPlay.release();
-      pilot.possess(cave);
-      if (pilot.player === cave) pilot.focusAim(true);
-    }
+    } else selectOoga(cave, true);
   };
   // Where the driven Ooga is, as the room names it for voice and for who is shown (docs/auth-and-presence.md):
   // a cave by its mouth (EntropyLab, the Factory's tunnel and the Arcade's mouth share their halls' groups, HQ
@@ -11091,6 +11104,7 @@
         }
         if (debugMovementTap(hit, p)) return;
         if (hit && (hit.owner.prop === "timechainchair" || hit.owner.cave?.traits.name === "SaniExp" && timechainIsland?.seat.active)) { spinTimechainChair(); return; }
+        if (hit && hit.owner.kind === "caveman") { selectOoga(hit.owner.cave); return; }
         if (clankerPlay.active) clankerPlay.release();
         pilot.hooks.onDoubleTap(hit, p);
       }
@@ -11102,7 +11116,11 @@
     hud.setDetachedView("pile");
     hud.onAction((action, value) => {
       if (factoryDeparting || bifrostDeparting) return;
-      if (action === "mode-retake" && clankerPlay.active) clankerPlay.release();
+      if (action === "mode-retake") {
+        const character = BL.net.ownCharacter(), cave = character && crew.cavemen.get(character.handle);
+        if (!cave || cave !== pilot.player) selectOoga(cave);
+        return;
+      }
       if (clankerPlay.active && clankerPlay.action(action)) return;
       if (action === "tip") demoTip(1200);
       else if (action === "tip-legendary") demoTip(120000);

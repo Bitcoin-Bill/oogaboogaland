@@ -11317,7 +11317,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   })()`);
   record("gorilla rage contacts: a physical banana counts once while replay and generic damage do not; a clear ground grab preserves visitor ownership, suppresses conflicting controls, rejects duplicate captors and restores controls on drop and signed-in throw cancellation",
     Object.values(state).every(Boolean), JSON.stringify(state));
-} }, { name: "gorilla camera modes", why: "regression: controlled gorillas lacked first-person and birds-eye cameras, carry/combat camera controls, a combat crosshair and the shared Escape sequence", run: async (b) => {
+} }, { name: "gorilla camera modes", why: "regression: controlled gorillas lacked shared camera/cursor controls and Escape, and selecting an unavailable Ooga dropped the current gorilla", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, P = B.clankerPlay, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl");
     const canvas = document.getElementById("scene"), reticle = document.getElementById("weapon-reticle"), button = document.getElementById("mode-hud");
@@ -11435,6 +11435,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       const account = BL.net.state.me, backend = BL.net.state.backend;
       const gorillaPosition = { ...e.root.position };
       let pair;
+      const selection = {};
       try {
         const character = BL.characters.get(e.owner.traits.name);
         BL.net.state.backend = true;
@@ -11448,6 +11449,28 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         const grabKeepsBody = P.player === e;
         canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "t", code: "KeyT", bubbles: true, cancelable: true, repeat: true }));
         const repeatKeepsBody = P.player === e;
+        const selectionEye = { ...B.camera.position }, selectionTarget = { ...B.camera.target };
+        const selectionView = P.view, selectionCombat = P.combat, selectionFocus = P.focused;
+        const preserved = () => P.player === e && e.controlled && !B.pilot.player
+          && P.view === selectionView && P.combat === selectionCombat && P.focused === selectionFocus
+          && ["x", "y", "z"].every(k => B.camera.position[k] === selectionEye[k] && B.camera.target[k] === selectionTarget[k]);
+        const ownerState = e.owner.state, ownerRemote = e.owner.remoteControlled, pairAccount = BL.net.state.me;
+        const portrait = document.getElementById("own-ooga-hud"), toast = document.getElementById("toast");
+        try {
+          e.owner.state = "away";
+          portrait.click();
+          selection.unavailablePortrait = preserved() && toast.textContent.includes("another place");
+          toast.textContent = "";
+          canvas.focus(); tap("t");
+          selection.unavailableSwitch = preserved() && toast.textContent.includes("another place");
+          e.owner.state = ownerState; e.owner.remoteControlled = true;
+          portrait.click();
+          selection.remotePortrait = preserved() && toast.textContent.includes("already driving");
+          e.owner.remoteControlled = ownerRemote;
+          BL.net.state.me = { id: 73, login: "fixture-no-owner" };
+          portrait.click();
+          selection.missingOwner = preserved() && toast.textContent.includes("not available");
+        } finally { e.owner.state = ownerState; e.owner.remoteControlled = ownerRemote; BL.net.state.me = pairAccount; }
         tap("t");
         const returned = B.pilot.player === e.owner && !P.active;
         const samePositions = ["x", "y", "z"].every(k => e.owner.root.position[k] === ownerPosition[k] && e.root.position[k] === gorillaPosition[k]);
@@ -11455,7 +11478,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         const signedOutKeepsBody = B.pilot.player === e.owner && !P.active;
         pair = { retook, companion, grabKeepsBody, repeatKeepsBody, returned, samePositions, signedOutKeepsBody };
       } finally { B.pilot.release(true); P.release(); BL.net.state.me = account; BL.net.state.backend = backend; }
-      return { possessed, reset, rows, gestures, pair, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
+      return { possessed, reset, rows, gestures, pair, selection, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
         turn: Math.abs(turned.yaw - overhead.yaw), north: Math.atan2(Math.sin(north.yaw), Math.cos(north.yaw)), originalHeadHidden, near, released };
     } finally { key("keyup", "q"); key("keyup", "Shift", "ShiftRight", 2); P.release(); }
   })()`);
@@ -11479,6 +11502,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
       && row.aimed.length === 2 && row.aimed.every(view => view.view === "shoulder" && view.combat && view.focused && view.error < 0.01)), JSON.stringify(state.gestures));
   record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
+  record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses portrait/T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));
 } }, { name: "gorilla wall destination", why: "regression: commanding a roof gorilla to a lower point farther along the cave face stalled at the crest instead of reaching the clicked wall", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl"), root = BL.scenes.hub.root;
@@ -13799,10 +13823,20 @@ const integrationChecks = async BL => {
   await g.net.start();let gw=g.sockets[0];const gm=v=>gw.onmessage({data:JSON.stringify(v)});
   gm({t:"welcome",you:{id:71},players:[],now:Date.now()});
   const gorilla=g.net.gorillaBody("nickdagreek1"),account=g.net.state.me;
-  let permission=gorilla==="gorilla:NickDaGreek"&&g.net.mayDriveGorilla("NickDaGreek")===null&&g.net.mayDriveGorilla("YellowBrokeIt")!==null;
-  g.net.state.me={id:73,login:temporary.handle};permission&&=g.net.mayDriveGorilla(temporary.handle)===null&&g.net.mayDriveGorilla("NickDaGreek")!==null;
-  g.net.state.me=null;permission&&=g.net.mayDriveGorilla(temporary.handle)!==null&&g.net.mayDriveGorilla("NickDaGreek")===null;g.net.state.me=account;
-  record("integration gorilla identity: login aliases resolve to the canonical own companion; signed-in players cannot borrow another, temporary companions require their owner, and signed-out bundled play stays local",permission);
+  let permission=gorilla==="gorilla:NickDaGreek"&&g.net.mayDriveGorilla("NickDaGreek")===null&&g.net.mayDriveGorilla("YellowBrokeIt")!==null
+    &&g.net.mayDrive("NickDaGreek",true)===null&&g.net.mayDrive("YellowBrokeIt",false)!==null;
+  g.net.state.me={id:73,login:temporary.handle};permission&&=g.net.mayDriveGorilla(temporary.handle)===null&&g.net.mayDriveGorilla("NickDaGreek")!==null
+    &&g.net.mayDrive(temporary.handle,true)===null&&g.net.mayDrive("NickDaGreek",false)!==null;
+  g.net.state.me={id:74,login:"fixture-no-owner"};
+  const noOwner=!g.net.ownCharacter()&&g.net.mayDrive("NickDaGreek",false)!==null&&g.net.mayDrive("NickDaGreek",true)!==null
+    &&g.net.mayDrive("fixture-missing",false)!==null&&g.net.mayDriveGorilla("NickDaGreek")!==null&&g.net.mayDriveGorilla("fixture-missing")!==null;
+  g.net.state.backend=false;
+  const local=g.net.mayDrive("NickDaGreek",true)===null&&g.net.mayDriveGorilla("NickDaGreek")===null;
+  g.net.state.backend=true;g.net.state.me=null;
+  permission&&=g.net.mayDriveGorilla(temporary.handle)!==null&&g.net.mayDriveGorilla("NickDaGreek")===null
+    &&g.net.mayDrive(temporary.handle,false)!==null&&g.net.mayDrive("NickDaGreek",false)===null&&g.net.mayDrive("NickDaGreek",true)!==null;
+  g.net.state.me=account;
+  record("integration actor identity: signed-in accounts can drive only their own pair, including login aliases and temporary owners; accounts without an own character cannot borrow, while signed-out and local rules stay unchanged",permission&&noOwner&&local,JSON.stringify({permission,noOwner,local}));
   const motion=new Float64Array([4,1.5,2,.5,-.25,0]),poses=()=>g.sent.filter(m=>m.t==="pose");
   g.net.setBody("NickDaGreek");g.net.sendPose(2,3,4,.5);
   g.net.setBody(gorilla);g.net.sendPose(2,3,4,.5,motion);
