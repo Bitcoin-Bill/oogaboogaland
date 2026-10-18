@@ -6,7 +6,7 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const $ = (id) => document.getElementById(id);
-  const { suffixOf } = BL.racers;
+  const SUFFIX = ["st", "nd", "rd", "th", "th", "th", "th", "th"];
   const MAP_SIZE = 132, MAP_PAD = 10;
   const MAP_POINT = { x: 0, y: 0 };
   const SPEED_LINES = 26;
@@ -30,7 +30,7 @@
       item: $("race-item"), itemName: $("race-item-name"), boost: $("race-boost-fill"), pips: $("race-pips"), speed: $("race-speed"), mirror: $("garage-mirror"),
       center: $("race-center"), notice: $("race-notice"), itemBtn: $("item-btn"), results: $("race-results"), podium: $("race-podium"), summary: $("race-summary"), pause: $("race-pause"), garageBtn: $("race-garage-btn"), mute: $("race-mute"),
       cupNote: $("race-cup-note"), standingsHead: $("race-standings-head"), standings: $("race-standings"), next: $("race-next"), garageCup: $("garage-cup"),
-      hudLeft: document.querySelector(".race-hud-left"), joyLook: $("joy-look")
+      hudLeft: document.querySelector(".race-hud-left"), pickOoga: $("garage-pick-ooga"), joyLook: $("joy-look")
     };
     const listeners = [];
     const on = (target, type, fn) => {
@@ -51,11 +51,16 @@
     };
     // A signed-in visitor with an Ooga races it, as they drive only it on the island: their row stands alone
     // in the Ooga column (moved last, so it keeps no divider) and the help stops offering a pick. `null`
-    // brings every row back.
-    const help = el.garage.querySelector(".garage-head .help"), PICK_HELP = help.textContent;
+    // brings every row back in roster order. Only a change of name touches the list.
+    let lockedTo;
     const lockRacer = (name) => {
-      for (const [key, b] of buttons.racer) b.parentElement.hidden = !!name && key !== name;
-      help.textContent = name ? PICK_HELP.replace("an Ooga, ", "") : PICK_HELP;
+      if (name === lockedTo) return;
+      lockedTo = name;
+      for (const [key, b] of buttons.racer) {
+        b.parentElement.hidden = !!name && key !== name;
+        el.racers.append(b.parentElement);
+      }
+      el.pickOoga.hidden = !!name;
       if (!name) return;
       el.racers.append(buttons.racer.get(name).parentElement);
       selection.racer = name;
@@ -161,7 +166,7 @@
       if (rank === lastRank) return;
       lastRank = rank;
       el.rank.firstChild.data = String(rank);
-      el.rankSuffix.textContent = suffixOf(rank);
+      el.rankSuffix.textContent = SUFFIX[rank - 1] || "th";
       el.field.textContent = `/${field}`;
     };
     const setLap = (lap, laps) => {

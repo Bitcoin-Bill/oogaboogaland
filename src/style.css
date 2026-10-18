@@ -3637,9 +3637,9 @@ body[data-active-scene="arcade"] .magazine-hud {
   color: #f5c542;
 }
 
-/* The whole roster races, so the board outgrows the window: the card holds to it and its tables give up
-   their height, each scrolling on its own (the HUD opens them at the visitor's row). A window too short
-   for that scrolls the card instead. */
+/* A race's table and, in a cup, the standings under it can outgrow the window: the card holds to it and
+   its tables give up their height, each scrolling on its own (the HUD opens them at the visitor's row). A
+   window too short for that scrolls the card instead. */
 #race-results:not([hidden]) {
   display: flex;
   flex-direction: column;

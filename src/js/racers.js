@@ -27,7 +27,8 @@
   const mountById = (id) => MOUNTS.find((m) => m.id === id) || MOUNTS[1];
   // The AI field: two karts and two dinos to every runner, so the back of the pack is not all on foot.
   const AI_MOUNTS = [MOUNTS[1], MOUNTS[2], MOUNTS[1], MOUNTS[2], MOUNTS[0]];
-  // The whole roster on one grid buries the visitor; a race is them and fourteen drawn rivals.
+  // The whole roster on one grid buries the visitor; a race is them and fourteen drawn rivals. Places are
+  // named from short tables (`NAMES`, the HUD's suffixes), right while the field stays under 21.
   const FIELD = 15;
   const BOOST_MUL = 1.32, BOOST_TIERS = [0, 0.55, 0.95, 1.5], DRIFT_ANGLE = 0.5;
   // The start: a throttle held from inside the last count boosts off the line, held from earlier it spins the wheels.
@@ -36,9 +37,7 @@
   const SPIN_TIME = 1.1, RESPAWN_TIME = 1.2, INVULN = 1.6, WRONG_WAY_AFTER = 0.9;
   const CHECK_WINDOW = 4;
   const RANK_EVERY = 0.2;
-  // The whole roster races, so places run past 20: 11th to 13th, but 21st, 22nd, 23rd.
-  const SUFFIX = ["th", "st", "nd", "rd"];
-  const suffixOf = (n) => n % 100 - n % 10 === 10 ? "th" : SUFFIX[n % 10] || "th";
+  const NAMES = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
   const P = { lateral: 0, along: 0, index: 0, next: 0 };
   // Effects only for racers near the camera (EFFECT_RANGE is a squared distance), from the shared particle pool.
   const EFFECT_RANGE = 48 * 48;
@@ -54,7 +53,7 @@
     return v;
   };
   const create = (ctx) => {
-    const { root, input, fx } = ctx;
+    const { root, input, fx, shuffle = true } = ctx;
     let track = ctx.track;
     // `all` is every built Ooga; `racers` (in grid order) and `order` (by rank) are this race's field.
     const all = [];
@@ -89,10 +88,12 @@
       all.push(racer);
       for (const key of ["torso", "head"]) input.add(cave.parts[key], { kind: "racer", racer, priority: 1 });
     });
-    // Shuffles the rivals with the crypto dice; the field holds until the next draw.
+    // Shuffles the rivals with the crypto dice; the field holds until the next draw. Without `shuffle` (the
+    // scene's draw=0) the deck keeps roster order.
     const draw = () => {
       deck.length = 0;
       for (const r of all) deck.push(r);
+      if (!shuffle) return;
       for (let i = deck.length - 1; i > 0; i--) {
         const j = randomInt(i + 1), r = deck[i];
         deck[i] = deck[j];
@@ -647,7 +648,7 @@
     const control = (racer) => {
       player = racer;
     };
-    const rankLabel = (rank) => `${rank}${suffixOf(rank)}`;
+    const rankLabel = (rank) => NAMES[rank - 1] || `${rank}th`;
     const dispose = () => {
       player = null;
       for (const r of all) {
@@ -687,5 +688,5 @@
       }
     };
   };
-  BL.racers = { create, MOUNTS, mountById, suffixOf, FIELD, BOOST_MUL, BOOST_TIERS, START_BOOST, START_SPIN };
+  BL.racers = { create, MOUNTS, mountById, FIELD, BOOST_MUL, BOOST_TIERS, START_BOOST, START_SPIN };
 })();

@@ -5008,10 +5008,27 @@ const racePause = { name: "race pause", why: "rule: Escape pauses the race and n
   const going = await b.evaluate(`(() => { const B = window.__ooga, p = B.racers.player, x = p.x, z = p.z, phase = B.race.phase; B.advance(0.5, 1 / 60); window.dispatchEvent(new KeyboardEvent("keyup", { key: "w" })); return { phase, moved: Math.hypot(p.x - x, p.z - z) }; })()`);
   record("race pause: Escape pauses with the pause panel up and no racer or clock moving, and Escape again drives on", held.phase === "paused" && held.panel && held.moved === 0 && held.clock === 0 && going.phase === "racing" && going.moved > 1, JSON.stringify({ held, going }));
 } };
+// A signed-in contributor drives only their own Ooga on the island, so the garage holds them to it. The account
+// is set on the page's own `BL.net.state`, as /api/me leaves it before a garage opens; signing out clears it.
+const raceOwn = { name: "race own ooga", why: "rule: a signed-in visitor with an Ooga races only it, and signing out brings the picker back", run: async (b) => {
+  const r = await b.evaluate(`(() => { const B = window.__ooga, R = B.race, P = B.racers, net = window.BL.net;
+    const rows = () => [...document.querySelectorAll("#garage-racers li")].filter((li) => !li.hidden).map((li) => li.querySelector("button").dataset.racer);
+    const before = R.selection.racer, c = window.BL.characters.all().find((c) => c.handle !== before && P.all.some((r) => r.name === c.handle));
+    net.state.me = { id: 1, login: c.github || c.handle, display: c.handle };
+    R.toGarage();
+    const signedIn = { rows: rows(), picked: R.selection.racer, player: P.player.name, last: P.racers[P.racers.length - 1] === P.player, help: document.getElementById("garage-pick-ooga").hidden };
+    net.state.me = null;
+    R.toGarage();
+    const signedOut = { rows: rows().length, help: !document.getElementById("garage-pick-ooga").hidden };
+    document.querySelector('#garage-racers [data-racer="' + before + '"]').click();
+    return { own: c.handle, signedIn, signedOut, restored: P.player.name === before };
+  })()`);
+  record("race own ooga: a signed-in visitor's garage offers only their own Ooga and races it, and signing out offers every Ooga again", r.signedIn.rows.length === 1 && r.signedIn.rows[0] === r.own && r.signedIn.picked === r.own && r.signedIn.player === r.own && r.signedIn.last && r.signedIn.help && r.signedOut.rows === CAST && r.signedOut.help && r.restored, JSON.stringify(r));
+} };
 const raceMirror = { name: "race mirror", why: "rule: a gold cup opens the mirror tracks, and steering stays true on them", run: async (b) => {
   // The autopilot's cup before this can win gold against a field of fifteen, so the save starts without a
-  // cup, as a fresh visitor's does, and a race lets the garage read it.
-  const r = await b.evaluate(`(() => { const B = window.__ooga, R = B.race, btn = document.getElementById("garage-mirror"); B.game.state.race.cup = null; R.startRace(); R.finishRace(); R.toGarage(); const locked = btn.hidden; document.querySelector('[data-action="race-mirror"]').click(); const stayed = !R.selection.mirror; B.game.recordCup(1, 70); R.startRace(); R.finishRace(); const shown = !btn.hidden; btn.click(); return { locked, stayed, shown, mirror: R.selection.mirror && B.track.mirror }; })()`);
+  // cup, as a fresh visitor's does (in memory and in storage alike), and a race lets the garage read it.
+  const r = await b.evaluate(`(() => { const B = window.__ooga, R = B.race, btn = document.getElementById("garage-mirror"); B.game.state.race.cup = null; localStorage.setItem("oogaboogaland.v1", JSON.stringify(B.game.state)); R.startRace(); R.finishRace(); R.toGarage(); const locked = btn.hidden; document.querySelector('[data-action="race-mirror"]').click(); const stayed = !R.selection.mirror; B.game.recordCup(1, 70); R.startRace(); R.finishRace(); const shown = !btn.hidden; btn.click(); return { locked, stayed, shown, mirror: R.selection.mirror && B.track.mirror }; })()`);
   const px = await b.evaluate(raceSteer(["a", "d"]));
   record("race mirror: the mirror button stays shut until a gold cup, then opens the mirrored track, where A and D still steer left and right on screen", r.locked && r.stayed && r.shown && r.mirror && px.a < -50 && px.d > 50, JSON.stringify({ ...r, px }));
 } };
@@ -11133,7 +11150,7 @@ scene("race", { label:"optional rig link fallback",url:hubPage(src),steps:[{name
     record("race optional rig: forced link failure keeps WebGL rendering the full original cast",ready&&r.kind==="webgl2"&&!r.failure&&r.rigFailed&&r.ready&&r.drawn>0&&r.racers===CAST&&r.original&&r.faults>0,JSON.stringify(r));
   } finally {await b.evaluate('(()=>{const f=__rigFault;f.gl.createProgram=f.create;f.gl.getProgramParameter=f.parameter;delete window.__rigFault;})()');}
 }}]});
-scene("race", { query: "rain=0", steps: [raceStart, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of fifteen runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
+scene("race", { query: "rain=0&draw=0", steps: [raceStart, raceOwn, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of fifteen runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
 scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on the target, scores its own medal and is saved as the best", dropRun), dropCrash, trip("drop")] });
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit")] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls] });
@@ -11256,7 +11273,7 @@ scene("hub", { label: "clock and block height", query: "pos=0&time=0900", steps:
 scene("hub", { label: "canvas2d", query: "canvas2d=1", steps: [canvasTour] });
 scene("hub", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("hub", { required: ["#joy-move", "#joy-look", "#sheet-toggle", "#sheet-bananas"], sheet: true })] });
 scene("lab", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("lab", { required: ["#joy-move", "#joy-look", ".leave"] })] });
-scene("race", { query: "pos=0&rain=0", opts: PHONE_SIZE, steps: [phone("race", { card: '[data-intro="race"]', play: "window.__ooga.race.startRace()", required: ["#joy-move", "#act", "#item-btn", "#race-garage-btn", ".leave"] })] });
+scene("race", { query: "pos=0&rain=0&draw=0", opts: PHONE_SIZE, steps: [phone("race", { card: '[data-intro="race"]', play: "window.__ooga.race.startRace()", required: ["#joy-move", "#act", "#item-btn", "#race-garage-btn", ".leave"] })] });
 scene("drop", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("drop", { card: '[data-intro="drop"]', play: "window.__ooga.drop.start()", required: ["#joy-move", "#joy-look", "#act", ".leave"] })] });
 scene("orbit", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("orbit", { card: '[data-intro="orbit"]', play: "window.__ooga.orbit.launch()", required: ["#joy-move", "#act", ".leave"] })] });
 scene("mine", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("mine", { card: "#mine-intro", required: ["#joy-move", "#joy-look", "#act", "#mine-view-btn", "#mine-pause-btn", "#mine-mute", ".leave"] })] });

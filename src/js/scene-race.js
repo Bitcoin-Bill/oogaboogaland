@@ -27,6 +27,8 @@
   const DEBUG = new URLSearchParams(location.search).has("debug");
   const rainParam = DEBUG ? new URLSearchParams(location.search).get("rain") : null;
   const hourParam = DEBUG ? parseFloat(new URLSearchParams(location.search).get("hour")) : NaN;
+  // draw=0 lines the field up in roster order instead of drawing it, so checks race the same rivals every run.
+  const drawParam = DEBUG ? new URLSearchParams(location.search).get("draw") : null;
   // Crowd swells for CROWD_SWELL seconds on a lap or a finish; the drift tiers are first taught with a notice.
   const CROWD_SWELL = 3;
   const SPARK = models.particleGeometry("#ffb13b", 0.08, 1);
@@ -55,9 +57,10 @@
   // selection persists for the page's life: the garage remembers the last pick across visits.
   const selection = { racer: contributors.activeRoster[0]?.name || null, mount: "kart", track: "bay", mirror: false };
   // A signed-in visitor with an Ooga races it, as they drive only it on the island; the picker is for the rest.
+  // Their Ooga must be in the cast this visit built, which the garage rows and the field are made from.
   const ownRacer = () => {
     const own = BL.net.ownCharacter();
-    return own && contributors.activeRoster.some((c) => c.name === own.handle) ? own.handle : null;
+    return own && racers.all.some((r) => r.name === own.handle) ? own.handle : null;
   };
   // Bests are kept per track, the mirrored ones under their own key.
   const bestKey = () => selection.mirror ? `${selection.track}-m` : selection.track;
@@ -72,7 +75,9 @@
   let revAt = -1, crowdSwell = 0, driftTaught = 0;
   const cam = { yaw: 0, offset: 0, dist: CHASE.dist, shake: 0, lookBack: false, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0, warm: false, garageYaw: 0, garageLift: 0 };
   const targets = [];
-  const cup = { active: false, round: 0, done: false, points: new Float32Array(contributors.activeRoster.length) };
+  // points is indexed by racer and sized to each visit's cast: a signed-in visitor's temporary Ooga joins the
+  // roster after this file loads.
+  const cup = { active: false, round: 0, done: false, points: null };
   const nearestTorches = new Float32Array(LIGHT_CAPACITY * 2);
   const raceScene = {
     id: "race", renderOpts: null, root: null, camera: null, input: null, debug: null, agent: null, agentControls: null,
@@ -794,7 +799,8 @@
     agent = raceScene.agent = BL.agent.create({ groundAt: agentGround, form: "code" });
     addChild(root, agent.root);
     placeAgent();
-    racers = racersMod.create({ root, input, fx, game, track, renderer });
+    racers = racersMod.create({ root, input, fx, game, track, renderer, shuffle: drawParam !== "0" });
+    cup.points = new Float32Array(racers.all.length);
     mark("racers");
     items = raceItems.create({ root, racers, fx, track });
     items.setTrack(track);
@@ -831,8 +837,10 @@
       onHoverMove: (hit, p) => hud.tooltip.show(tooltipFor(hit), p.x, p.y, hit.owner.kind === "racer" ? hit.owner.racer.cave : null),
       onTap: (hit) => {
         if (hit && hit.owner.kind === "racer") {
-          if (phase === "garage" && !ownRacer()) rhud.el.racers.querySelector(`[data-racer="${hit.owner.racer.name}"]`).click();
-          else fx.say(hit.owner.racer.cave, "Ooga busy!", 1.2);
+          const refused = phase === "garage" && ownRacer() ? BL.net.mayDrive(hit.owner.racer.name) : null;
+          if (phase !== "garage") fx.say(hit.owner.racer.cave, "Ooga busy!", 1.2);
+          else if (refused) fx.say(hit.owner.racer.cave, refused, 1.6);
+          else rhud.el.racers.querySelector(`[data-racer="${hit.owner.racer.name}"]`).click();
         }
       },
       onOrbit: (dx, dy) => {
