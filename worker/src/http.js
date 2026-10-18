@@ -31,6 +31,9 @@ export const safeNext = (value) => {
   if (typeof value !== "string" || value.length > 512) return "/";
   if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/";
   if (/[\u0000-\u001f\u007f\\]/.test(value)) return "/";
+  // A normalized pathname may later be serialized as a relative Location.
+  // Dot segments must not turn a same-site path into a network-path reference.
+  if (new URL(value, "https://same-site.invalid").pathname.startsWith("//")) return "/";
   return value;
 };
 

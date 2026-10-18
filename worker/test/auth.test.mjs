@@ -7,6 +7,8 @@ import { isExpired, needsTouch, publicPlayer, sanitizeDisplay, TOUCH_SECONDS } f
 import { routeFixture } from "./routes.mjs";
 
 const { fromSite, safeNext, handleApi } = routeFixture();
+const DOT_NEXT = ["/.//evil.example", "/%2e//evil.example", "/a/..//evil.example", "/a/%2E%2e//evil.example",
+  "/a/b/../..//evil.example", "/.//evil.example?next=/lightning#room"];
 
 test("tokens are 32 random bytes in base64url and never repeat", () => {
   const a = randomToken(), b = randomToken();
@@ -28,7 +30,8 @@ test("state comparison needs an exact string", () => {
 test("next accepts only same-site paths", () => {
   assert.equal(safeNext("/"), "/");
   assert.equal(safeNext("/?scene=lab&debug=1"), "/?scene=lab&debug=1");
-  for (const bad of ["//evil.com", "/\\evil.com", "https://evil.com", "javascript:alert(1)", "evil", "/a\nb", "/a\\b", null, "/" + "x".repeat(600)]) {
+  assert.equal(safeNext("/a/../lightning?view=hall#room"), "/a/../lightning?view=hall#room");
+  for (const bad of ["//evil.com", "/\\evil.com", "https://evil.com", "javascript:alert(1)", "evil", "/a\nb", "/a\\b", null, "/" + "x".repeat(600), ...DOT_NEXT]) {
     assert.equal(safeNext(bad), "/", String(bad));
   }
 });
@@ -95,8 +98,8 @@ const database = (login) => {
 const requestFor = (path, method = "GET", extra = {}) => new Request(SITE + path, {
   method, headers: { origin: SITE, cookie: "__Host-obl_session=held", ...extra },
 });
-const callbackFor = () => new Request(`${SITE}/auth/callback?code=code&state=held`, {
-  headers: { cookie: `__Host-obl_oauth=held.${btoa(encodeURIComponent("/"))}` },
+const callbackFor = (next = "/") => new Request(`${SITE}/auth/callback?code=code&state=held`, {
+  headers: { cookie: `__Host-obl_oauth=held.${btoa(encodeURIComponent(next))}` },
 });
 const github = (login) => async (url) => {
   if (url === "https://github.com/login/oauth/access_token") return Response.json({ access_token: "token" });
@@ -104,17 +107,19 @@ const github = (login) => async (url) => {
   return Response.json({ id: 123, login, type: "User" });
 };
 
-test("OAuth rejects nonowners and a forged curated-alias login before any account or session writes", async () => {
-  for (const login of ["visitor", "cave-name"]) {
+test("OAuth rejects nonowners without account writes and returns only to same-site destinations after URL normalization", async () => {
+  for (const login of ["visitor", "cave-name"]) for (const next of ["/", ...DOT_NEXT, "/a/../lightning?view=hall&signin=old#room"]) {
     let lookups = 0, dbCalls = 0;
     const routes = routeFixture({ cast: CAST, fetcher: github(login), lookup: async (name) => {
       lookups++;
       return name === "cave-name" ? { handle: name, joined: 1, lastCommit: 2 } : null;
     } });
-    const request = callbackFor(), response = await routes.handleAuth(request, { SITE_ORIGIN: SITE,
+    const request = callbackFor(next), response = await routes.handleAuth(request, { SITE_ORIGIN: SITE,
       DB: { prepare: () => { dbCalls++; throw new Error("Rejected sign-in reached D1"); } } }, new URL(request.url));
     assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/?signin=contributor-required");
+    const location = response.headers.get("location");
+    assert.equal(location, next.startsWith("/a/../lightning") ? "/lightning?view=hall&signin=contributor-required#room" : "/?signin=contributor-required");
+    assert.equal(new URL(location, SITE).origin, SITE, next);
     assert.match(response.headers.get("set-cookie"), /__Host-obl_oauth=;.*Max-Age=0/);
     assert.ok(!response.headers.get("set-cookie").includes("__Host-obl_session="));
     assert.equal(dbCalls, 0);

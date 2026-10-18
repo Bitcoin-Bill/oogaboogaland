@@ -86,6 +86,9 @@
       }
       if (uiKey(e)) return;
       const key = e.code || e.key;
+      // A fresh press proves release, including a keyup missed while unfocused.
+      // Repeats from an interrupted hold remain blocked.
+      if (!e.repeat) blockedKeys.delete(key);
       if (blockedKeys.has(key)
         || e.shiftKey && (blockedKeys.has("ShiftLeft") || blockedKeys.has("ShiftRight") || blockedKeys.has("Shift"))) { consumeKey(e); return; }
       // A physical keyboard has a bounded set of simultaneous presses.
