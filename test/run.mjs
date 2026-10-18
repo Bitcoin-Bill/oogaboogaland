@@ -5809,6 +5809,35 @@ const hubWalking = { name: "hub walking", why: "regression: steering keys came o
   await b.key("Escape");
   record("hub walking: W A S D walk an Ooga away, left, back and right on screen from two camera angles, and Right Shift+A does not restore the removed hub Agent", allWalk(ooga) && !agent, JSON.stringify({ ooga, agent }));
 } };
+// Tess on the island: a fresh, unmoved landing with an Ooga gets her offer, and the tour takes the controls cleanly.
+const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only its first speech bubble, and an Ooga walking as her tour began walked on through it", run: async (b) => {
+  const guide = await b.evaluate(`(() => {
+    const B = __ooga, P = B.pilot, a = B.cavemen.get("portlandhodl"), s = BL.scenes.hub.debug.tess.state;
+    const key = (type, key, code) => window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }));
+    const at = () => ({ x: a.root.position.x, z: a.root.position.z }), from = (p) => Math.hypot(a.root.position.x - p.x, a.root.position.z - p.z);
+    for (let t = 0; t < 12 && s.phase !== "offer"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+    const offered = s.phase === "offer", bubbles = offered ? s.beats.length : 0;
+    let reached = 0;
+    for (let t = 0; t < 10 && offered && s.phase === "offer" && reached < bubbles - 1; t += 1 / 30) { B.advance(1 / 30, 1 / 30); reached = Math.max(reached, s.utterance); }
+    // W held as Enter starts the tour, then let go.
+    const start = at();
+    key("keydown", "w", "KeyW"); B.advance(0.4, 1 / 60);
+    const walked = from(start);
+    key("keydown", "Enter", "Enter"); key("keyup", "Enter", "Enter");
+    const touring = s.phase === "tour";
+    key("keyup", "w", "KeyW");
+    const held = at(); B.advance(3, 1 / 30);
+    const drift = from(held);
+    // End tour: the view comes home, and W walks again.
+    document.querySelector(".greeter-menu .greeter-row button:last-child").click();
+    for (let t = 0; t < 8 && s.holding; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+    const returned = !s.holding, after = at();
+    key("keydown", "w", "KeyW"); B.advance(0.4, 1 / 60); key("keyup", "w", "KeyW");
+    return { offered, bubbles, reached, walked, touring, drift, returned, again: from(after), driving: P.player === a };
+  })()`);
+  record("hub guide: Tess's offer to an Ooga standing on landing says every speech bubble of its line", guide.offered && guide.bubbles > 1 && guide.reached === guide.bubbles - 1, JSON.stringify(guide));
+  record("hub guide: an Ooga walking as the tour starts stands through it once W is let go, and walks again when the tour ends", guide.walked > 0.3 && guide.touring && guide.drift < 0.05 && guide.returned && guide.again > 0.3 && guide.driving, JSON.stringify(guide));
+} };
 const hubMapNavigation = { name: "hub map navigation", why: "regression: choosing a destination or resetting the camera must preserve the controlled actor and view family", run: async (b) => {
   const r = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, H = B.hud, a = B.cavemen.get("portlandhodl");
@@ -13048,6 +13077,8 @@ scene("poker", { opts: PHONE_SIZE, steps: [phone("poker", { card: '[data-intro="
   if (process.env.POKER_SHOTS) await b.screenshot(join(process.env.POKER_SHOTS, "poker-phone.png"));
 } }] });
 scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubAk, hubMelee, hubJetpack] });
+// Her greeting comes once a page, to a fresh landing nothing has moved, so the guide has its own page.
+scene("hub", { label: "guide", query: "character=portlandhodl", steps: [hubGuide] });
 // Native pointer-lock assertions need sole focus; another browser lane can
 // steal capture and spend this long scenario's deadline waiting for it back.
 scene("hub", { label: "birds-eye combat", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", exclusive: true, steps: [hubBirdsEye] });

@@ -137,7 +137,7 @@
   };
   // A tour is a list of legs, each a stop (-1: where the visitor is) with its title and lines.
   const ISLAND = STOPS.map((stop, i) => ({ stop: i, title: stop.title, lines: stop.lines }));
-  // What is new after `seen`, the newest entry she last offered (its `line` and `date`; null for none yet, which gets the
+  // What is new after `seen`, the newest entry last answered (its `line` and `date`; null for none yet, which gets the
   // newest few): every entry listed above it, so one added later the same day still counts. If that entry has left the
   // list, every entry dated after it.
   const freshAfter = (seen) => {
@@ -166,8 +166,8 @@
     } catch { /* Unreadable: no visits. */ }
     return {};
   };
-  // The newest entry a login was offered, or null for none. News counts as seen once she has offered it, so news a
-  // visitor was too busy to be offered waits for the next visit.
+  // The newest entry a login has answered her about, or null for none. News counts as seen once the visitor answers her
+  // offer (Show me or Not now), so news they ignored, or were too busy to be offered, waits for the next visit.
   const lastSeen = (login) => {
     const seen = visits()[login];
     return seen && typeof seen.line === "string" && typeof seen.date === "string" && DAY.test(seen.date) ? seen : null;
@@ -287,7 +287,6 @@
     const notice = () => { rig.flare(); show("notice"); state.timer = 1.1; };
     const approach = () => { placeBy(); flyTo(spot.x, spot.y, spot.z, 6, true); show("approach"); };
     const offer = (beats) => {
-      if (state.kind === "news" && state.login) { markSeen(state.login, state.newest); state.login = null; }
       state.timer = OFFER_TIME;
       rig.clearPath(3, 1); rig.push(spot.x, spot.y, spot.z); rig.track();
       rig.nod(); show("offer"); speak(beats);
@@ -337,13 +336,24 @@
       show("tour");
       if (state.arrived) say(leg.lines[0]);
     };
-    // The tour takes the view: it holds the pilot (no walking or flying the view meanwhile) and keeps where it was, to
-    // give it back.
+    // The tour takes the view and the pilot as the island's chalkboard does: inactive, the pilot lets go of held keys
+    // and stops the driven Ooga's steering, fire and swing, so nothing walks on through the tour. Both come back, with
+    // fresh controls, once the view is home.
+    const hold = () => {
+      pilot.setActive(false); pilot.controls.reset(); input.reset();
+      pilot.setExternalControl(true);
+      state.holding = true;
+    };
+    const release = () => {
+      pilot.setExternalControl(false);
+      pilot.setActive(true); pilot.controls.reset(); input.reset();
+      state.holding = false;
+    };
+    // The tour keeps where the view was, to give it back.
     const startTour = () => {
       laySpots(camera);
       readPose(home);
-      pilot.setExternalControl(true);
-      state.holding = true;
+      hold();
       if (document.pointerLockElement) document.exitPointerLock();
       visit(0);
     };
@@ -354,16 +364,21 @@
       placeBy(); flyTo(spot.x, spot.y, spot.z, 10, true);
       show("returning");
     };
+    // An answer to her offer, Show me or Not now, counts its news as seen; news she offered but got no answer to waits
+    // for the next visit.
+    const answered = () => {
+      if (state.kind === "news" && state.login) { markSeen(state.login, state.newest); state.login = null; }
+    };
     // The panel's two buttons and their keys: on, and back out.
     const forward = () => {
-      if (state.phase === "offer") startTour();
+      if (state.phase === "offer") { answered(); startTour(); }
       else if (state.phase === "tour") {
         if (state.stop === state.legs.length - 1) endTour(state.kind === "news" ? "newsDone" : "done");
         else visit(state.stop + 1);
       }
     };
     const back = () => {
-      if (state.phase === "offer") { say("declined"); toWork(); }
+      if (state.phase === "offer") { answered(); say("declined"); toWork(); }
       else if (state.phase === "tour") endTour("cancelled");
     };
     // Escape waves her off while she comes over or offers, and ends a tour, before the island's own Escape.
@@ -422,6 +437,7 @@
           break;
         case "offer":
           placeBy(); rig.setLast(spot.x, spot.y, spot.z); rig.steer(dt);
+          nextBeat(dt);
           if ((state.timer -= dt) <= 0) { say("declined"); toWork(); }
           break;
         case "tour": {
@@ -453,10 +469,7 @@
       if (state.holding) {
         state.glide = Math.min(1, state.glide + dt / state.glideTime);
         putPose(from, to, state.glide);
-        if (state.phase === "returning" && state.glide >= 1) {
-          pilot.setExternalControl(false);
-          state.holding = false;
-        }
+        if (state.phase === "returning" && state.glide >= 1) release();
       }
       // What she shows: her working beam on the machine she works, her pointing beam on a stop's landmark once she is
       // there, otherwise she watches the visitor: their Ooga, or the view.
@@ -473,7 +486,7 @@
     };
     const dispose = () => {
       window.removeEventListener("keydown", captureKey, true);
-      if (state.holding) pilot.setExternalControl(false);
+      if (state.holding) release();
       rig.dispose();
       panel.remove();
     };
