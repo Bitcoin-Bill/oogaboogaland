@@ -3019,7 +3019,7 @@ body[data-active-scene="arcade"] .magazine-hud {
   transform: translateX(-50%);
 }
 
-/* Tess's island offer and tour: the two choices share a row, and on tour the panel sits low, clear of the landmarks. */
+/* Tess's island offer and tour: the two choices share a row, and on tour the panel sits low, clear of the landmarks but above the toasts and the drawer's pull tabs. */
 .greeter-row {
   display: flex;
   gap: 6px;
@@ -3027,10 +3027,16 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .greeter-row .greeter-choice {
   flex: 1;
+  white-space: nowrap;
+}
+
+/* On tour the heading is two lines on purpose: where in the tour, then the stop's name. */
+.greeter-menu.greeter-tour .greeter-menu-title {
+  white-space: pre-line;
 }
 
 .greeter-menu.greeter-tour {
-  bottom: calc(14px + var(--safe-bottom));
+  bottom: calc(60px + var(--safe-bottom));
 }
 
 .race {

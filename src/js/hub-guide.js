@@ -22,6 +22,9 @@
     timechainWalls: "Its six inner walls light up with live Timechain Index data.",
     timechainBoards: "Bitcoin's distribution, address balances, UTXO sizes, ETF and exchange holdings, and the top ten holders.",
     timechainSani: "Sani's inside in his recliner. Walk in over the bridge, and tap him to spin his chair!",
+    bca: "B.C.A., Banana Certified Accounting: the island's own accounting office.",
+    bcaInside: "Gorillas walk in through its veil, put on suits and count the bananas at two walnut desks.",
+    bcaMotto: "Abacuses, ledger screens, filing cabinets. Their motto: count bananas, keep receipts, build in public.",
     lab: "EntropyLab, the crew's lab. Donated bananas feed the Oogas who work there.",
     labInside: "Inside: dice to roll, cards to flip, flasks to stir and an air-gapped node.",
     labCrew: "Oogas who contributed lately are at work; the quiet ones chill or sleep.",
@@ -38,11 +41,14 @@
     done: "That's the island! Off you go, and come find me any time.",
     newsDone: "That's what's new! Have fun out there.",
     cancelled: "All good. Back to work!",
+    newsBca: "New at 10 o'clock: B.C.A., Banana Certified Accounting. Suited gorillas count the bananas!",
+    newsMainland: "You can tip from right here now, no trip to the Factory. Your bananas fly out of its roof tube onto the pile!",
+    newsPanels: "The Bananas, Oogas and Chat panels have one new look, and the Bananas panel ranks the top donors.",
     newsOnchain: "The kiosk takes tips on-chain now, as well as over Lightning, and tells you when yours confirms.",
     newsDonations: "New in the Factory: a donation kiosk. Your sats come out as bananas!",
     newsArcadeFront: "Ooga Arcade has a brand-new front.",
     newsTotems: "The totems now light up for a day after Bitcoin Core, BTCPay, LND or CLN merge a PR.",
-    newsChat: "Ooga Chat is open: it's the last tab in the side sheet.",
+    newsChat: "Ooga Chat is open: it's the last pull tab on the island's drawer.",
     newsTess: "And me! I fly round the Factory now, and give tours there.",
     newsVoice: "Voice now follows you into every cave, with health bars and online dots.",
     newsDsb: "Through ₿IFRÖST, DSB Land has jetpacks and open exploring now.",
@@ -61,6 +67,7 @@
     { id: "pile", title: "The pile", eye: [6, 8, 11], look: [0, 1.2, 0], lines: ["pile", "crew"] },
     { id: "totems", title: "Jumbotron and totems", eye: [7, 8, 7], look: [0, 5, 26], lines: ["jumbotron", "totems"] },
     { id: "timechain", title: "Timechain Sphere", eye: [-15, 16, 4], look: [-42, 5, 17], lines: ["timechain", "timechainWalls", "timechainBoards", "timechainSani"] },
+    { id: "bca", title: "B.C.A.", eye: [-11, 9.5, -6.5], look: [-19, 4.5, -11], lines: ["bca", "bcaInside", "bcaMotto"] },
     { id: "lab", title: "EntropyLab", eye: [-6.5, 9.5, -11], look: [-11, 4.5, -19], lines: ["lab", "labInside", "labCrew"] },
     { id: "bifrost", title: "₿IFRÖST", eye: [3, 11, -8], look: [0, 9, -34], lines: ["bifrost"] },
     { id: "factory", title: "Lightning Factory", eye: [11, 9.5, -6.5], look: [19, 4.5, -11], lines: ["factory", "factoryLines", "factoryForge"] },
@@ -71,6 +78,9 @@
   // and her line. A new feature worth showing a returning visitor is one entry here, added at the top: a visitor's news
   // is everything listed above the newest entry they were last offered.
   const NEWS = [
+    { date: "2026-10-18", at: "bca", line: "newsBca" },
+    { date: "2026-10-17", at: "pile", line: "newsMainland" },
+    { date: "2026-10-17", at: null, line: "newsPanels" },
     { date: "2026-10-16", at: "factory", line: "newsOnchain" },
     { date: "2026-10-15", at: "factory", line: "newsDonations" },
     { date: "2026-10-13", at: "arcade", line: "newsArcadeFront" },
@@ -111,11 +121,20 @@
     return out;
   };
   const VIEWS = STOPS.map((stop) => viewOf(stop, pose()));
-  // Where she hovers at a stop: half way from the view to the landmark, two metres to the view's right, a little up.
-  const SPOTS = STOPS.map((stop) => {
-    const dx = stop.look[0] - stop.eye[0], dz = stop.look[2] - stop.eye[2], d = Math.hypot(dx, dz);
-    return [stop.eye[0] + dx * 0.5 - dz / d * 2.2, stop.eye[1] + (stop.look[1] - stop.eye[1]) * 0.5 + 0.4, stop.eye[2] + dz * 0.5 + dx / d * 2.2];
-  });
+  // How far to the view's side she can hover `ahead` metres out and still be in it: 65% of the way to the screen's edge,
+  // so a narrow (portrait) screen keeps her in view. The camera's field of view is vertical.
+  const sideRoom = (camera, ahead) => 0.65 * ahead * Math.tan(camera.fov / 2) * innerWidth / innerHeight;
+  // Where she hovers at a stop: half way from the view to the landmark, up to 2.2 m to the view's right (less on a
+  // narrow screen), a little up. Laid for the screen's shape as a tour starts.
+  const SPOTS = STOPS.map(() => [0, 0, 0]);
+  const laySpots = (camera) => {
+    STOPS.forEach((stop, i) => {
+      const dx = stop.look[0] - stop.eye[0], dz = stop.look[2] - stop.eye[2], d = Math.hypot(dx, dz), side = Math.min(2.2, sideRoom(camera, d * 0.5));
+      SPOTS[i][0] = stop.eye[0] + dx * 0.5 - dz / d * side;
+      SPOTS[i][1] = stop.eye[1] + (stop.look[1] - stop.eye[1]) * 0.5 + 0.4;
+      SPOTS[i][2] = stop.eye[2] + dz * 0.5 + dx / d * side;
+    });
+  };
   // A tour is a list of legs, each a stop (-1: where the visitor is) with its title and lines.
   const ISLAND = STOPS.map((stop, i) => ({ stop: i, title: stop.title, lines: stop.lines }));
   // What is new after `seen`, the newest entry she last offered (its `line` and `date`; null for none yet, which gets the
@@ -199,7 +218,7 @@
         go.textContent = "Show me"; skip.textContent = "Not now";
         help.textContent = coarse ? "Tap to choose" : "Enter starts · Esc closes";
       } else if (phase === "tour") {
-        heading.textContent = `${news ? "What's new" : "Island tour"} · ${state.stop + 1} / ${state.legs.length} · ${state.legs[state.stop].title}`;
+        heading.textContent = `${news ? "What's new" : "Island tour"} · ${state.stop + 1} / ${state.legs.length}\n${state.legs[state.stop].title}`;
         go.textContent = state.stop === state.legs.length - 1 ? "Finish" : "Next"; skip.textContent = "End tour";
         help.textContent = coarse ? "Tap to go on" : "Enter or → goes on · Esc ends";
       }
@@ -247,8 +266,8 @@
         return;
       }
       const e = camera.position, t = camera.target, fx0 = t.x - e.x, fy0 = t.y - e.y, fz0 = t.z - e.z, f = Math.hypot(fx0, fy0, fz0) || 1;
-      const rx = -fz0, rz = fx0, r = Math.hypot(rx, rz) || 1;
-      spot.x = e.x + fx0 / f * 4.2 + rx / r * 1.5; spot.y = e.y + fy0 / f * 4.2 - 0.35; spot.z = e.z + fz0 / f * 4.2 + rz / r * 1.5;
+      const rx = -fz0, rz = fx0, r = Math.hypot(rx, rz) || 1, side = Math.min(1.5, sideRoom(camera, 4.2));
+      spot.x = e.x + fx0 / f * 4.2 + rx / r * side; spot.y = e.y + fy0 / f * 4.2 - 0.35; spot.z = e.z + fz0 / f * 4.2 + rz / r * side;
     };
     // Who the visitor is, once the page knows: the signed-in account, or none.
     const account = () => DEBUG_NEWS ? { login: "you", display: "you" } : BL.net.state.me;
@@ -321,6 +340,7 @@
     // The tour takes the view: it holds the pilot (no walking or flying the view meanwhile) and keeps where it was, to
     // give it back.
     const startTour = () => {
+      laySpots(camera);
       readPose(home);
       pilot.setExternalControl(true);
       state.holding = true;
