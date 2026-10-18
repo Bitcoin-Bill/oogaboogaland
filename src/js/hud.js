@@ -9,10 +9,12 @@
   // Signed-in players online lead the roster, ahead of every activity.
   const ONLINE_RANK = -1;
   const stampOf = (contributor) => contributor.lastContributionAt || contributor.lastCommitAt;
-  // Tooltip dots retain their human-presence color without changing NPC activity.
+  // Local control is online only while signed in; remote presence remains independent.
   const statusFor = (cave) => {
     const actor = cave.tooltipOwner || cave;
-    return actor.humanControlled ? "online" : actor.state === "away" ? "chilling" : actor.state;
+    const online = cave.remoteControlled || actor.remoteControlled
+      || !!BL.net.state.me && (cave.controlled || actor.humanControlled);
+    return online ? "online" : actor.state === "away" ? "chilling" : actor.state;
   };
   const $ = (id) => document.getElementById(id);
   const TIER_RANK = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -413,7 +415,7 @@
       }
       li.append(presence, name, marks, age, state);
       el.roster.append(li);
-      rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
+      rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, remoteOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
     }
     if (!awayRow.parentElement) el.roster.append(awayRow);
     updateAwayButton();
@@ -455,10 +457,10 @@
         if (row.li.nextElementSibling !== before) el.roster.insertBefore(row.li, before);
       } else if (el.roster.lastElementChild !== row.li) el.roster.append(row.li);
     };
-    // Online is the scene's word (its driven and remote Oogas) or the room's (any signed-in player's own Ooga or
-    // the one they drive); a change repaints the dot and moves the row.
+    // A scene's local driver needs a signed-in account; remote drivers and the room's
+    // signed-in identities remain online independently. A change repaints the dot and moves the row.
     const showOnline = (row) => {
-      const online = row.sceneOnline || row.netOnline;
+      const online = row.sceneOnline && !!BL.net.state.me || row.remoteOnline || row.netOnline;
       if (row.online === online) return false;
       row.online = online;
       row.presence.dataset.online = online ? "true" : "false";
@@ -468,7 +470,7 @@
       countAway();
       return true;
     };
-    const setRosterRow = (name, _stateKey, _ageText, online = false) => {
+    const setRosterRow = (name, _stateKey, _ageText, online = false, remoteOnline = false) => {
       const row = rosterRows.get(name);
       if (!row) return;
       // Gameplay can put an Ooga to work or sleep; this board follows the
@@ -485,6 +487,7 @@
       }
       if (row.age.firstChild.data !== ageText) row.age.firstChild.data = ageText;
       row.sceneOnline = online;
+      row.remoteOnline = remoteOnline;
       if (showOnline(row)) moved = true;
       const stamp = stampOf(row.contributor);
       if (row.placedStamp !== stamp) {
@@ -2196,7 +2199,7 @@
   // The roster's marks are page-level too: whichever scene's roster is up, each signed-in player's row
   // (their own Ooga, else the one they drive) shows the host dot and their voice. The director hands every
   // room and voice change here; only marks that changed are touched, and rows never move for them.
-  let liveRows = null, liveOnline = null;
+  let liveRows = null, liveOnline = null, liveSignedIn = false;
   const VOICE_WORDS = { on: "In voice", speaking: "Speaking", muted: "Muted their microphone" };
   const voiceRowOf = (login, body) => {
     const character = BL.net.characterOf(login);
@@ -2239,6 +2242,8 @@
       row.nextHost = row.nextOnline = row.nextSelf = false;
     }
     const net = BL.net.state, voice = BL.voice.stats;
+    const signedIn = !!net.me, accountChanged = signedIn !== liveSignedIn;
+    liveSignedIn = signedIn;
     if (net.room === "live" && net.me) {
       markOnline(net.me.login, net.body);
       for (const rec of BL.net.remotes.values()) markOnline(rec.login, rec.body);
@@ -2262,7 +2267,7 @@
     }
     for (const row of liveRows.values()) {
       paintMarks(row);
-      if (row.netOnline === row.nextOnline) continue;
+      if (row.netOnline === row.nextOnline && !accountChanged) continue;
       row.netOnline = row.nextOnline;
       liveOnline(row);
     }

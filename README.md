@@ -44,7 +44,8 @@ Signed-in players also share the crew: one player's page runs the Oogas for ever
 Who drives which Ooga:
 
 - **Contributors drive their own.** If your GitHub login is a contributor's in `src/characters/`, signing in hands you your own Ooga, and while you are signed in nobody else can drive it. Your Ooga's face stays beside the location button; click it while detached to retake control. Contributors drive only their own Ooga.
-- **Everyone else** (signed in or not) may drive an Ooga only when its contributor is not signed in, nobody else is driving it, and it is not working (yellow in the roster). Resting and sleeping Oogas are free to borrow.
+- **Signed-in visitors without a personal Ooga** may borrow an Ooga when its contributor is not signed in, nobody else is driving it, and it is not working (yellow in the roster).
+- **Signed-out visitors** may play resting or sleeping bundled Oogas locally. Their page does not join the room, so it cannot check who is online elsewhere and does not publish that control. Local control alone does not show a green signed-in marker.
 - **Owners come first.** When a contributor signs in, their Ooga is handed back to them, and whoever was driving it lets go.
 - **Companions belong to the same owner.** Signed-in contributors can drive their own gorilla, including a server-verified temporary contributor's companion. Other companions cannot be borrowed while signed in. Signed-out companion play stays local.
 

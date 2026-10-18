@@ -836,12 +836,10 @@
       cave.parts.gun.visible = false;
       cave.yawn = 0;
     };
-    // Online (the green dot) is a player driving this Ooga: a signed-in player elsewhere (`remoteControlled`,
-    // set by the hub's remote-player pool while it shows them), or this visitor, when the scene's
-    // `localOnline` says this page counts (signed in, on a page with accounts); without it, any driver does.
+    // Keep local control separate from remote presence; the HUD applies the current account
+    // to local drivers so sign-in and sign-out repaint every scene's green dot immediately.
     const refreshRosterRow = (cave) => {
-      const local = cave.humanControlled && (!ctx.localOnline || ctx.localOnline());
-      hud.setRosterRow(cave.traits.name, cave.state, contributors.ageLabel(cave.contributor), local || !!cave.remoteControlled);
+      hud.setRosterRow(cave.traits.name, cave.state, contributors.ageLabel(cave.contributor), cave.humanControlled, !!cave.remoteControlled);
     };
     let player = null;
     const magazineCount = (cave = player) => cave ? cave.weapon.spareAmmo.length : 0;

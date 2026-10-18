@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching and camera gestures that preserve carry/combat are agreed and implemented. Remaining selection/map/touch flows await agreement.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat and signed-in-only local green markers are implemented. Remaining selection/map/touch flows await agreement.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -223,6 +223,42 @@ The maintainer approved **zoom and right-click preserve carry/combat; X switches
 - Existing double-right-click and distance thresholds remain unchanged. The gorilla always returns to shoulder; the Ooga remembers whether its previous close view was shoulder or first person. This distinction remains recorded for a later decision.
 - Existing Ooga/gorilla camera scenarios now cover both sign-in states and carry/combat preservation. The gorilla scenario projects the resulting camera ray onto the actual ground plane to check the 10m point on both shoulders. Existing Bifrost, DSB and poker scenarios cover X/portrait routing and UI priority. These checks are authored, not executed under **wait**.
 
+## Selection and retake review after `9d38a28`
+
+This is the current PR behavior, distinct from the upstream tables above. Source inspection only; the selection proposals below await agreement.
+
+| Account situation | Ooga selection | Gorilla selection | Retake |
+|---|---|---|---|
+| Static/no backend | Any locally controllable Ooga | Any active, visible local companion | No personal portrait or T shortcut |
+| Worker, signed out | Resting/sleeping bundled Oogas; fresh working claims refused | Any active, visible bundled companion | Find and double-click the actor again |
+| Signed in with a bundled or server-vouched personal character | Own Ooga only | Own gorilla only | Own-Ooga portrait; T cycles the pair, or takes the Ooga from detached |
+| Signed in without a personal character | Available nonworking Oogas, subject to room ownership | No companion borrowing | No personal portrait or T shortcut |
+
+Signed-out pages have no room socket or roster of remote players. Their local selection cannot establish whether an owner is online elsewhere, and it is not published to multiplayer. A temporary personal Ooga is provided only for a server-vouched contributor, not automatically for every GitHub account. [Permission rules](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/net.js#L519), [connection gate](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/net.js#L305).
+
+| Selection detail | Current difference |
+|---|---|
+| World gesture | Both use double-click/tap to select and double-click the selected actor to detach. Single clicks react. Roster names are not selection buttons. Captured combat owns canvas presses; a freed combat cursor's next canvas press resumes capture, so world selection is normally from carry/detached. |
+| Mode | Oogas remember carry/combat per character for the page session, initially combat. Gorillas always reset to combat. Sleeping Oogas stay noncombat until woken. |
+| Camera | High detached Ooga selection keeps altitude (21m above the head threshold) and uses orbit/bird's-eye; gorilla selection always enters shoulder. T also goes through the ordinary close Ooga path rather than the high-view double-click path. |
+| Capture | Manual combat selection/retake asks for capture. Automatic signed-in hub arrival selects the own Ooga without requesting capture. Explicit detachment remains detached for that visit. |
+| Retake target | The secondary portrait means **your Ooga**, not the last actor. There is no last-gorilla or signed-out retake. It appears only where the scene has the owned Ooga. |
+| Unavailable target | T checks an away Ooga before releasing the gorilla. World Ooga selection and the own-Ooga portrait release the gorilla first; refusal or an away body can leave the visitor detached. An unavailable portrait can also silently do nothing. |
+| Logout | Bundled actors can remain controlled locally; temporary actors are released. The retained Ooga's recheck skips the working restriction, so logout can keep an actor that a new signed-out selection would refuse. |
+
+Evidence: [Ooga retake/selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/pilot.js#L1726), [gorilla selection](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/clanker-play.js#L255), [hub account/T handling](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L8288), [world/HUD routing](https://github.com/OogaBoogaX/oogaboogaland/blob/9d38a28d041fd0e4781b0fd79efed95864ee59fc/src/js/scene-hub.js#L11084).
+
+Recommended flow, **not yet implemented**:
+
+1. Use the same selection path for world double-click, a retake button and T. Check ownership and availability before releasing the current actor; explain refusals and keep the current view/control intact.
+2. While detached, offer **Return to [last actor]** for both Oogas and gorillas, signed in or out. Retake at the actor's current position, without teleporting it. Disable with a reason if it is unavailable in the current scene. Keep T's already agreed own-pair meaning, including own Ooga from detached.
+3. Treat carry/combat as the visitor's current choice: selection and retake preserve it across actor switches. Start a fresh visit in carry, with native cursor; X or the portrait chooses combat. This would replace per-Ooga memory and the gorilla reset with one rule.
+4. Preserve a high detached view for either actor; use the same close-view rule for world, button and T selection. Automatic arrival should still wait for a deliberate gesture before capture. Sleeping/seated limitations remain explicit.
+5. Make selecting an already controlled actor a no-op. Use the agreed Escape flow or portrait hold to detach, avoiding accidental release during repeated selection.
+6. Recheck logout against the same eligibility used for a new selection. Keep control when still allowed; otherwise detach with a reason. Clear local signed-in markers immediately in either case.
+
+The maintainer's indicator requirement is separate from these proposals and is implemented: **local control alone must not produce a green signed-in marker**. The HUD gates local tooltip and roster presence on the current signed-in account, with remote presence tracked separately. Login/logout repaints cached rows. Signed-out/static control retains selection and activity presentation; authenticated remote players keep their online markers. Existing walking/integration checks cover static play, signed-out play, login/logout, both actor kinds and remote presence; they remain unrun under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -245,4 +281,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Escape, multiplayer companion integration and T switching: approved; implementation and existing regression coverage updated in this checkpoint. `npm run build`, syntax checks on all 19 changed JavaScript files and `git diff --check` passed. Added network/remote checks participate in the existing unit/full path. Browser, unit and worker runtime tests remain unrun under **wait**.
 - `18b0ef6`: Escape order, companion integration and T switching committed and pushed to the draft PR.
 - Camera gesture checkpoint: wheel/right-click preserve carry/combat; X/portrait routing completed in walking interiors; gorilla combat bird's-eye right-click aims at ground 10m ahead. `npm run build`, `node --check` on all seven changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
+- `9d38a28`: camera gestures and gorilla 10m shoulder aim committed and pushed.
+- Selection review: current authentication, selection, camera and retake differences logged; recommended shared selection flow remains proposed. Green local presence now requires sign-in; signed-out availability documentation corrected. `npm run build`, `node --check` on all three changed JavaScript files and `git diff --check` passed. Runtime checks remain unrun under **wait**.
 - Remaining decisions: selection/default view, first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.

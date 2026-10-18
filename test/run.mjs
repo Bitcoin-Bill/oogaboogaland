@@ -5686,6 +5686,31 @@ const hubWalking = { name: "hub walking", why: "regression: steering keys came o
   record("hub running: Left Shift speeds up forward and sideways movement in carry and shoulder views, keeps possession, releases cleanly and survives a Right Shift keyup",
     running.independent && running.rows.every(row => row.walk.distance > 0.5 && row.run.distance > row.walk.distance * 1.4 && row.run.distance < row.walk.distance * 1.6
       && row.run.keptControl && row.run.sprintReleased), JSON.stringify(running));
+  const presence = await b.evaluate(`(() => {
+    const B = __ooga, cave = B.pilot.player, net = BL.net.state, account = net.me, backend = net.backend, room = net.room;
+    const remote = cave.remoteControlled, row = document.querySelector('#roster [data-name="' + cave.traits.name + '"]');
+    const dot = row.querySelector(".roster-presence"), activity = row.querySelector(".roster-state").dataset.state;
+    try {
+      net.me = null; net.backend = false; net.room = "off";
+      B.crew.refreshRosterRow(cave); BL.hud.showVoices();
+      const staticOffline = dot.dataset.online === "false" && BL.hud.statusFor(cave) !== "online";
+      net.backend = true; BL.hud.showVoices();
+      const signedOut = dot.dataset.online === "false";
+      net.me = { id: 71, login: cave.traits.name, display: cave.traits.display }; BL.hud.showVoices();
+      const signedIn = dot.dataset.online === "true" && BL.hud.statusFor(cave) === "online";
+      net.me = null; BL.hud.showVoices();
+      const signedOutAgain = dot.dataset.online === "false" && BL.hud.statusFor(cave) !== "online";
+      cave.remoteControlled = true; B.crew.refreshRosterRow(cave); BL.hud.showVoices();
+      const remoteOnline = dot.dataset.online === "true" && BL.hud.statusFor(cave) === "online";
+      return { staticOffline, signedOut, signedIn, signedOutAgain, remoteOnline,
+        selection: B.pilot.player === cave && document.getElementById("mode-hud").dataset.selected === "true",
+        activity: row.querySelector(".roster-state").dataset.state === activity };
+    } finally {
+      net.me = account; net.backend = backend; net.room = room; cave.remoteControlled = remote;
+      B.crew.refreshRosterRow(cave); BL.hud.showVoices();
+    }
+  })()`);
+  record("presence markers: local selection stays offline on static and signed-out pages, login and logout repaint cached rows, and remote presence keeps its green dot without changing selection or activity", Object.values(presence).every(Boolean), JSON.stringify(presence));
   await b.evaluate(`window.__ooga.pilot.release(true)`);
   await agentShortcut(b);
   const agent = await b.evaluate(`window.__ooga.agent`);
@@ -13733,6 +13758,19 @@ const chatNetChecks = async BL => {
   f.net.dispose();
 };
 const integrationChecks = async BL => {
+  const savedAccount = BL.net.state.me;
+  try {
+    const owner = { humanControlled: false, state: "working" }, gorilla = { controlled: true, tooltipOwner: owner };
+    BL.net.state.me = null;
+    const signedOut = BL.hud.statusFor(gorilla) === "working";
+    BL.net.state.me = { id: 71, login: "fixture" };
+    const signedIn = BL.hud.statusFor(gorilla) === "online";
+    BL.net.state.me = null; gorilla.remoteControlled = true;
+    const remote = BL.hud.statusFor(gorilla) === "online";
+    gorilla.remoteControlled = gorilla.controlled = false;
+    const activity = BL.hud.statusFor(gorilla) === "working";
+    record("integration presence: a controlled gorilla needs local sign-in for online status, remote control remains online and NPC activity is preserved", signedOut && signedIn && remote && activity);
+  } finally { BL.net.state.me = savedAccount; }
   const fixture=(response)=>netFixture(BL,response);
   for(const kind of ["html","404","failure"]){
     const f=fixture(()=>{if(kind==="failure")throw Error("offline");return {ok:kind!=="404",status:kind==="404"?404:200,headers:{get:()=>"text/html"}};});
