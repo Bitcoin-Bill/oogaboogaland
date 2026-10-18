@@ -17,7 +17,32 @@
   const $ = (id) => document.getElementById(id);
   const TIER_RANK = { legendary: 0, epic: 1, rare: 2, common: 3 };
   const BANANA_COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+  const DONATED_COUNT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const DONOR_BANANAS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let donorUnit = "bananas";
+  let donationStats = null, liveDonors = null;
+  const setDonationStats = (stats) => {
+    donationStats = stats;
+    if (liveDonors) liveDonors(true);
+  };
   const MESSAGE_FADE_MS = 300;
+  // The page's one toast, which every scene's HUD and the director share: a new one replaces the last.
+  let toastTimer = 0, toastHideTimer = 0;
+  const toast = (text) => {
+    const box = $("toast");
+    window.clearTimeout(toastTimer);
+    window.clearTimeout(toastHideTimer);
+    box.textContent = text;
+    box.hidden = false;
+    $("message-stack").append(box);
+    box.classList.add("show");
+    toastTimer = window.setTimeout(() => {
+      box.classList.remove("show");
+      toastHideTimer = window.setTimeout(() => {
+        if (!box.classList.contains("show")) box.hidden = true;
+      }, MESSAGE_FADE_MS);
+    }, 2800);
+  };
   const SHEET_STATE_KEY = "oogaboogaland.sheet.v1";
   const BOARD_STATE_KEY = "oogaboogaland.oogatron.windows.v1";
   const MAX_FLOATING_BOARDS = 12;
@@ -48,7 +73,8 @@
             .filter((value) => typeof value === "string" && value.length <= 256
               && (kind !== "types" || ["commit", "pr", "review", "merge", "issue", "comment"].includes(value))))] : null;
         }
-        windows.push({ x: entry.x, y: entry.y, width: entry.width, paused: entry.paused, screen: { name: screen.name, params }, filters, rollup: entry.rollup === true });
+        windows.push({ x: entry.x, y: entry.y, width: entry.width, paused: entry.paused, screen: { name: screen.name, params }, filters, rollup: entry.rollup === true,
+          controlsHidden: entry.controlsHidden === true });
       }
       return { windows, lastUsed: Number.isInteger(state.lastUsed) ? state.lastUsed : -1,
         lastWidth: Number.isFinite(state.lastWidth) && state.lastWidth > 0 ? state.lastWidth : 440 };
@@ -60,8 +86,8 @@
       return state && typeof state.open === "boolean" && ["bananas", "roster", "loot", "chat"].includes(state.tab) ? state : null;
     } catch { return null; }
   };
-  const writeSheetState = (open, tab) => {
-    try { localStorage.setItem(SHEET_STATE_KEY, JSON.stringify({ open, tab })); } catch { /* Storage may be unavailable. */ }
+  const writeSheetState = (open, tab, height) => {
+    try { localStorage.setItem(SHEET_STATE_KEY, JSON.stringify({ open, tab, height })); } catch { /* Storage may be unavailable. */ }
   };
   // Sign headings: one pixel path per element, scaled by that element's CSS height.
   const SIGN_NS = "http://www.w3.org/2000/svg";
@@ -193,23 +219,18 @@
   };
   const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false }) => {
     const el = {
-      meterFill: $("meter-fill"),
-      meterCount: $("meter-count"),
-      meterForecast: $("meter-forecast"),
-      roster: $("roster"),
+      roster: $("roster"), rosterCount: $("roster-count"),
       statDonations: $("stat-donations"),
       statSats: $("stat-sats"),
+      bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
+      bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
+      bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
+      bananaPanel: $("bananas-panel"), bananaRateLabel: $("banana-rate-label"),
+      bananaBtcPrice: $("banana-btc-price"), bananaExchange: $("banana-exchange"),
+      donorUnits: [...document.querySelectorAll("[data-donor-unit]")],
       lootTab: $("loot-tab"),
       lootCount: $("loot-count"),
       crateHelp: $("crate-help"),
-      feedKiosk: $("feed-kiosk"),
-      feedAccount: $("feed-account"),
-      feedTest: $("feed-test"),
-      feedTips: $("feed-tips"),
-      feedGo: $("feed-go"),
-      feedHelp: $("feed-help"),
-      feedSimulated: $("feed-simulated"),
-      handleField: $("handle-field"),
       worldLootHint: $("world-loot-hint"),
       subtitle: $("subtitle"),
       actions: [...document.querySelectorAll("[data-action]")],
@@ -227,9 +248,7 @@
       ownOogaFace: $("own-ooga-face-icon"),
       ownOogaHealth: $("own-ooga-health"),
       ownOogaHealthFill: $("own-ooga-health-fill"),
-      modeDestinations: $("detached-destinations"),
       modeDestinationName: $("detached-destination-name"),
-      modeDestinationDots: [...document.querySelectorAll("[data-detached-preset]")],
       primary: $("primary-hud"),
       primaryIcon: $("primary-icon"),
       primaryStrength: $("primary-strength"),
@@ -269,6 +288,8 @@
       sheet: $("sheet"),
       sheetToggle: $("sheet-toggle"),
       sheetBananas: $("sheet-bananas"),
+      sheetResize: $("sheet-resize"),
+      sheetPanels: document.querySelector(".sheet-panels"),
       tabs: [...document.querySelectorAll("[data-tab]")],
       panels: [...document.querySelectorAll("[data-panel]")],
       presets: [...document.querySelectorAll("[data-preset]")],
@@ -304,9 +325,15 @@
     el.crateHelp.hidden = !lootEnabled;
     el.worldLootHint.hidden = !lootEnabled;
     const savedSheet = readSheetState();
+    let sheetHeight = Number.isFinite(savedSheet?.height) && savedSheet.height >= 1 && savedSheet.height <= 10000 ? savedSheet.height : null;
+    if (sheetHeight === null) el.sheet.style.removeProperty("--sheet-height");
+    else el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
     // Ooga Chat has a tab only where a backend answered (chat.js), which the director learns before any scene.
     const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) && (savedSheet.tab !== "chat" || BL.net.state.backend) ? savedSheet.tab : "roster";
-    for (const tab of el.tabs) tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
+    for (const tab of el.tabs) {
+      tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
+      tab.tabIndex = tab.dataset.tab === sheetTab ? 0 : -1;
+    }
     for (const panel of el.panels) panel.hidden = panel.dataset.panel !== sheetTab;
     el.sheet.dataset.open = String(!!savedSheet?.open);
     el.primary.hidden = true;
@@ -321,16 +348,22 @@
       target.addEventListener(type, fn, opts);
       listeners.push(() => target.removeEventListener(type, fn, opts));
     };
-    let toastTimer = 0, toastHideTimer = 0, hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
+    let hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
-    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null;
+    let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null, onlineCount = 0, onlineShown = -1;
     const awayRow = document.createElement("li"), awayButton = document.createElement("button");
     awayRow.className = "roster-away";
     awayButton.type = "button";
     awayButton.setAttribute("aria-expanded", "false");
     awayRow.append(awayButton);
     // countAway rescans on every roster state flip and online toggle; skip the writes until they change.
+    // The title's chip counts the players online, or the cast while nobody is.
     const updateAwayButton = () => {
+      if (onlineCount !== onlineShown) {
+        onlineShown = onlineCount;
+        el.rosterCount.textContent = onlineCount ? `${onlineCount} online` : `${roster.length} Oogas`;
+        el.rosterCount.dataset.tone = onlineCount ? "live" : "idle";
+      }
       if (awayCount === awayShownCount && showAway === awayShownShow) return;
       awayShownCount = awayCount;
       awayShownShow = showAway;
@@ -366,7 +399,6 @@
       voice.hidden = true;
       voice.append(voiceIcon.cloneNode(true));
       marks.append(host, voice);
-      name.append(marks);
       const age = document.createElement("span");
       age.className = "roster-age";
       age.append(BL.contributors.contributionAgeLabel(contributor));
@@ -379,7 +411,7 @@
         if (!awayRow.parentElement) el.roster.append(awayRow);
         li.hidden = true; awayCount++;
       }
-      li.append(presence, name, age, state);
+      li.append(presence, name, marks, age, state);
       el.roster.append(li);
       rosterRows.set(contributor.name, { li, presence, state, age, contributor, rosterIndex, online: false, sceneOnline: false, netOnline: false, nextOnline: false, placedStamp: stampOf(contributor), host, voice, look: "", login: "", hostOn: false, blocked: false, self: false, nextLook: "", nextLogin: "", nextHost: false, nextSelf: false });
     }
@@ -402,8 +434,11 @@
     // Online players lead the roster, by their activity's stamp; an away player who is online is never folded away.
     const rankOf = (row) => row.online ? ONLINE_RANK : ROSTER_ORDER[row.state.dataset.state];
     const countAway = () => {
-      awayCount = 0;
-      for (const row of rosterRows.values()) if (row.state.dataset.state === "away" && !row.online) awayCount++;
+      awayCount = onlineCount = 0;
+      for (const row of rosterRows.values()) {
+        if (row.online) onlineCount++;
+        else if (row.state.dataset.state === "away") awayCount++;
+      }
       updateAwayButton();
     };
     const placeRosterRow = (row) => {
@@ -464,30 +499,93 @@
       if (showOnline(row)) placeRosterRow(row);
     };
     showVoices();
-    // Seed empty text nodes so later updates only mutate text, never the DOM.
-    for (const node of [el.meterCount, el.meterForecast]) if (!node.firstChild) node.append("");
-    let shownBananas = -1, shownWidth = "", shownBand = "", shownForecast = null;
-    const setMeter = (level, capacity, forecastText) => {
-      const percent = Math.min(100, Math.max(0, level / capacity * 100));
-      const width = `${percent}%`;
-      if (width !== shownWidth) {
-        shownWidth = width;
-        el.meterFill.style.width = width;
-        el.meterFill.parentElement.setAttribute("aria-valuenow", String(Math.round(percent)));
-      }
-      const band = level < capacity * 0.15 ? "low" : level < capacity * 0.4 ? "mid" : "ok";
-      if (band !== shownBand) el.meterFill.dataset.level = shownBand = band;
-      const bananas = Math.floor(level);
-      if (bananas !== shownBananas) {
-        shownBananas = bananas;
-        const count = BANANA_COUNT.format(bananas);
-        el.meterCount.firstChild.data = count;
-      }
-      if (forecastText !== shownForecast) el.meterForecast.firstChild.data = shownForecast = forecastText;
+    // Value the donated sats at the current price; donor rankings retain their receipt prices.
+    const showBananaRate = () => {
+      if (document.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
+      const live = BL.donationRate.current, saved = BL.donations.state.tally?.rate;
+      const rate = live && (!saved || live.at >= saved.at) ? live : saved;
+      const tally = BL.donations.real ? BL.donations.state.tally : donationStats;
+      const totalSats = tally ? BL.donations.real ? tally.sats : tally.totalSats : null;
+      const total = totalSats === 0 ? DONATED_COUNT.format(0) : totalSats !== null && rate
+        ? DONATED_COUNT.format(totalSats / 1e8 * rate.usdPerBtc) : "—";
+      const tone = !rate ? "wait" : rate.stale ? "stale" : rate.live ? "live" : "idle";
+      const label = tone === "live" ? "LIVE BTCUSD" : tone === "stale" ? "STALE BTCUSD" : "BTCUSD";
+      const price = rate ? `$${DONOR_BANANAS.format(rate.usdPerBtc)}` : "—";
+      const exchange = rate ? `≈ ${DONOR_BANANAS.format(1e8 / rate.usdPerBtc)} sats` : "— sats";
+      if (el.bananaRateLabel.dataset.tone !== tone) el.bananaRateLabel.dataset.tone = tone;
+      if (el.bananaRateLabel.textContent !== label) el.bananaRateLabel.textContent = label;
+      if (el.bananaBtcPrice.textContent !== price) el.bananaBtcPrice.textContent = price;
+      if (el.bananaExchange.textContent !== exchange) el.bananaExchange.textContent = exchange;
+      if (el.bananaTotal.textContent !== total) el.bananaTotal.textContent = total;
     };
-    const setStats = ({ totalSats, donations }) => {
-      el.statDonations.textContent = String(donations);
-      el.statSats.textContent = formatLarge(totalSats);
+    let stopBananaRate = null;
+    const watchBananaRate = () => {
+      const visible = !document.hidden && !el.bananaPanel.hidden && el.sheet.dataset.open === "true";
+      if (visible && !stopBananaRate) stopBananaRate = BL.donationRate.watch(showBananaRate);
+      else if (!visible && stopBananaRate) { stopBananaRate(); stopBananaRate = null; }
+      if (visible) showBananaRate();
+    };
+    const bananaRateObserver = new MutationObserver(watchBananaRate);
+    bananaRateObserver.observe(el.bananaPanel, { attributes: true, attributeFilter: ["hidden"] });
+    bananaRateObserver.observe(el.sheet, { attributes: true, attributeFilter: ["data-open"] });
+    on(document, "visibilitychange", watchBananaRate);
+    listeners.push(() => {
+      bananaRateObserver.disconnect();
+      if (stopBananaRate) stopBananaRate();
+    });
+    watchBananaRate();
+    let shownTally, shownBoard, shownReal, shownNetwork, shownOpen;
+    const refreshDonors = (force = false) => {
+      const { real, state, testNetwork } = BL.donations;
+      showBananaRate();
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
+      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
+      const tally = real ? state.tally : donationStats;
+      // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
+      // donations closed, or the island's live feed.
+      const tone = !real ? "idle" : testNetwork ? "test" : !tally ? "wait" : state.open === false ? "closed" : "live";
+      el.bananaSource.dataset.tone = tone;
+      el.bananaSource.textContent = tone === "idle" ? "Demo" : tone === "test" ? `Test · ${testNetwork}` : tone === "wait" ? "Loading" : tone === "closed" ? "Closed" : "Live";
+      el.bananaSource.title = tone === "idle" ? "Demo donations saved in this browser" : tone === "test" ? `Test donations on ${testNetwork}, not real bitcoin`
+        : tone === "wait" ? "Waiting for the island’s donation feed" : tone === "closed" ? "Donations are closed for now" : "The island’s donation feed";
+      el.statDonations.textContent = tally ? BANANA_COUNT.format(real ? tally.count : tally.donations) : "—";
+      el.statSats.textContent = tally ? BANANA_COUNT.format(real ? tally.sats : tally.totalSats) : "—";
+      const entries = real ? donorUnit === "sats" ? state.boardSats : state.board : donationStats?.donors;
+      const missingSats = donorUnit === "sats" && (real && state.board !== null && entries === null || entries?.some((entry) => entry.sats === null));
+      // The API ranks before rounding bananas, with stable account-id ties. Keep that order.
+      const ranked = missingSats ? [] : real ? entries || [] : (entries || []).slice().sort((a, b) =>
+        b[donorUnit] - a[donorUnit] || b[donorUnit === "bananas" ? "sats" : "bananas"] - a[donorUnit === "bananas" ? "sats" : "bananas"]
+        || a.handle.localeCompare(b.handle));
+      el.bananaLeaders.replaceChildren();
+      for (let i = 0; i < Math.min(10, ranked.length); i++) {
+        const entry = ranked[i], row = document.createElement("li");
+        const rank = document.createElement("span"), name = document.createElement("span"), amount = document.createElement("strong");
+        rank.className = "banana-rank"; rank.textContent = String(i + 1).padStart(2, "0");
+        name.className = "banana-donor"; name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous";
+        if (!entry.handle) name.dataset.anon = "true";
+        amount.className = "banana-amount"; amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
+        row.append(rank, name, amount); el.bananaLeaders.append(row);
+      }
+      el.bananaEmpty.hidden = ranked.length > 0;
+      el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
+        : real && !entries ? "Loading the donor leaderboard…"
+        : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
+      el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
+        : testNetwork ? `Test donations on ${testNetwork}. Leaderboard values are recorded when paid.`
+        : "Leaderboard totals use each donation's recorded value.";
+      el.bananaBoardUnit.textContent = donorUnit === "sats" ? "Sats" : "Bananas";
+      el.bananaLeaders.setAttribute("aria-label", `Top donors by ${donorUnit}`);
+      for (const button of el.donorUnits) button.setAttribute("aria-pressed", String(button.dataset.donorUnit === donorUnit));
+    };
+    for (const button of el.donorUnits) on(button, "click", () => {
+      donorUnit = button.dataset.donorUnit;
+      refreshDonors(true);
+    });
+    listeners.push(BL.donations.subscribeState(refreshDonors));
+    liveDonors = refreshDonors;
+    refreshDonors(true);
+    const setStats = (stats) => {
+      setDonationStats(stats);
     };
     let actLabel = el.act.textContent;
     const setAct = (label) => {
@@ -513,7 +611,6 @@
       detachedNameShown = false;
       detachedSelectionShown = false;
       showAreaLabel();
-      for (const dot of el.modeDestinationDots) dot.dataset.current = "false";
     };
     const setAreaLabel = (name, position = null) => {
       areaLabel = name;
@@ -527,7 +624,6 @@
       destinationAnchored = !!position;
       if (position) { destinationX = position.x; destinationY = position.y; destinationZ = position.z; }
       detachedSelectionShown = true;
-      for (const dot of el.modeDestinationDots) dot.dataset.current = String(dot.dataset.detachedPreset === name);
       if (!announce) return;
       el.modeDestinationName.textContent = DETACHED_NAMES[name];
       detachedNameShown = true;
@@ -871,16 +967,10 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // Real donations are paid at the Lightning Factory's kiosk, so in real mode the dialog sends the visitor there, and
-    // the simulated link, the typed handle (the API names a donor from their sign-in) and the demo tips step aside.
+    // Real payments use the same invoice flow as the Factory without leaving the current scene.
     const openFeed = () => {
+      if (BL.donations.real) return BL.donationPopup.open();
       if (el.feed.open) return;
-      const real = BL.donations.real;
-      el.qr.hidden = el.qrUrl.hidden = el.handleField.hidden = el.feedTips.hidden = el.feedSimulated.hidden = real;
-      el.feedKiosk.hidden = el.feedGo.hidden = !real;
-      el.feedAccount.hidden = !BL.net.state.backend;
-      el.feedTest.hidden = !BL.donations.testNetwork;
-      el.feedHelp.hidden = real && el.crateHelp.hidden;
       el.feed.showModal();
     };
     const closeFeed = () => {
@@ -926,6 +1016,9 @@
         node.id += `-${floatingId}`;
         for (const child of node.querySelectorAll("[id]")) child.id += `-${floatingId}`;
         node.setAttribute("aria-labelledby", el.boardTitle.id);
+        el.boardScreen.tabIndex = 0;
+        el.boardScreen.setAttribute("role", "button");
+        el.boardScreen.setAttribute("aria-label", "Toggle Oogatron header and footer");
       }
       el.boardFilter.setAttribute("aria-controls", el.boardFilterMenu.id);
       el.boardFilterRepos.setAttribute("aria-controls", el.boardFilterList.id);
@@ -943,6 +1036,7 @@
       // `updateBoard` repaints whenever the open board's version moves.
       // A `floating` board also supplies `paused` and `setPaused`, and keeps island input available.
       let board = null, boardShown = -1, boardDots = -1;
+      let controlsHidden = saved?.controlsHidden === true;
       let filterTab = "repos", filterShown = -1;
       const filterTabs = [el.boardFilterRepos, el.boardFilterUsers, el.boardFilterTypes];
       const typeLabels = { commit: "Commits", pr: "Pull requests", review: "Reviews", merge: "Merges", issue: "Issues", comment: "Comments" };
@@ -998,6 +1092,13 @@
       const boardRatio = 550 / 368;
       const width = saved?.width ?? lastBoard?.width ?? lastBoardWidth;
       const boardWindow = { x: saved?.x ?? 0, y: saved?.y ?? 0, width, height: width / boardRatio, placed: !!saved };
+      const boardBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+      const overlapsBoard = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const readBoardBounds = () => {
+        const r = el.boardScreen.getBoundingClientRect();
+        boardBounds.left = r.left; boardBounds.top = r.top;
+        boardBounds.right = r.right; boardBounds.bottom = r.bottom;
+      };
       const interactBoard = () => {
         if (!floatingId) return;
         lastBoard = controller;
@@ -1011,6 +1112,29 @@
         stackBoards();
         scheduleBoardSave();
       };
+      const paintBoardControls = () => {
+        el.board.classList.toggle("board-controls-hidden", controlsHidden);
+        el.boardScreen.setAttribute("aria-expanded", String(!controlsHidden));
+        el.boardScreen.title = controlsHidden ? "Show header and footer" : "Hide header and footer";
+      };
+      const toggleBoardControls = () => {
+        if (!board?.floating) return;
+        interactBoard();
+        controlsHidden = !controlsHidden;
+        showFilters(false);
+        paintBoardControls();
+        scheduleBoardSave();
+      };
+      on(el.boardScreen, "click", () => {
+        if (!board?.floating) return;
+        toggleBoardControls();
+        el.boardScreen.blur();
+      });
+      on(el.boardScreen, "keydown", (e) => {
+        if (!board?.floating || e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault(); e.stopPropagation();
+        if (!e.repeat) toggleBoardControls();
+      });
       let boardPointer = -1, boardHandle = null, boardResizing = false;
       let boardStartX = 0, boardStartY = 0, boardStartLeft = 0, boardStartTop = 0, boardStartWidth = 0;
       const layoutBoard = () => {
@@ -1019,17 +1143,92 @@
         b.width = Math.min(maxWidth, Math.max(Math.min(260, maxWidth), b.width));
         b.height = b.width / boardRatio;
         b.x = Math.max(0, Math.min(w - b.width, b.x));
-        b.y = Math.max(0, Math.min(h - b.height, b.y));
         el.board.style.width = `${b.width}px`;
         el.board.style.height = `${b.height}px`;
         el.board.style.left = `${b.x}px`;
-        el.board.style.top = `${b.y}px`;
         el.board.style.setProperty("--board-scale", String(Math.min(b.width, 550) / 440));
+        // The footer may sit below the viewport; keep the black display itself in view.
+        const screenBottom = el.boardScreen.getBoundingClientRect().bottom - el.board.getBoundingClientRect().top;
+        b.y = Math.max(0, Math.min(h - screenBottom, b.y));
+        el.board.style.top = `${b.y}px`;
+        readBoardBounds();
         if (!el.boardFilterMenu.hidden) positionFilters();
       };
+      const moveBoard = (x, y) => {
+        const b = boardWindow, left = b.x, top = b.y;
+        const r = { ...boardBounds };
+        b.x = x; b.y = y;
+        layoutBoard();
+        let dx = b.x - left, dy = b.y - top, movedX = 0, movedY = 0;
+        // Sweep the black display, then slide along contact. A fast pointer must
+        // not jump through a neighbour, and transparent controls are not walls.
+        for (let pass = 0; pass < 3 && (dx || dy); pass++) {
+          let time = 1, stopX = false, stopY = false;
+          for (const popup of floatingBoards) {
+            if (popup === controller) continue;
+            const other = popup.bounds;
+            // Old or overcrowded layouts must still allow an overlap to separate.
+            if (overlapsBoard(r, other)) continue;
+            const l = r.left + movedX, t = r.top + movedY, right = r.right + movedX, bottom = r.bottom + movedY;
+            if (!dx && (right <= other.left || l >= other.right) || !dy && (bottom <= other.top || t >= other.bottom)) continue;
+            const enterX = dx > 0 ? (other.left - right) / dx : dx < 0 ? (other.right - l) / dx : -Infinity;
+            const leaveX = dx > 0 ? (other.right - l) / dx : dx < 0 ? (other.left - right) / dx : Infinity;
+            const enterY = dy > 0 ? (other.top - bottom) / dy : dy < 0 ? (other.bottom - t) / dy : -Infinity;
+            const leaveY = dy > 0 ? (other.bottom - t) / dy : dy < 0 ? (other.top - bottom) / dy : Infinity;
+            const enter = Math.max(enterX, enterY), leave = Math.min(leaveX, leaveY);
+            if (enter < 0 || enter > time || enter >= leave) continue;
+            if (enter < time) { stopX = false; stopY = false; }
+            time = enter;
+            stopX ||= enterX >= enterY;
+            stopY ||= enterY >= enterX;
+          }
+          // Leave a subpixel clearance so layout rounding cannot turn contact
+          // into an existing overlap on the next pointer event.
+          const travelX = dx * time, travelY = dy * time;
+          movedX += travelX - (stopX ? Math.sign(travelX) * Math.min(0.02, Math.abs(travelX)) : 0);
+          movedY += travelY - (stopY ? Math.sign(travelY) * Math.min(0.02, Math.abs(travelY)) : 0);
+          dx = stopX ? 0 : dx * (1 - time);
+          dy = stopY ? 0 : dy * (1 - time);
+        }
+        b.x = left + movedX; b.y = top + movedY;
+        el.board.style.left = `${b.x}px`; el.board.style.top = `${b.y}px`;
+        readBoardBounds();
+      };
       const resizeBoard = (width) => {
-        const maxWidth = Math.min(window.innerWidth - boardWindow.x, (window.innerHeight - boardWindow.y) * boardRatio);
+        const before = { ...boardWindow }, bounds = { ...boardBounds };
+        const maxWidth = window.innerWidth - boardWindow.x;
         boardWindow.width = Math.min(maxWidth, Math.max(Math.min(260, maxWidth), width));
+        layoutBoard();
+        for (const popup of floatingBoards) {
+          if (popup === controller || overlapsBoard(bounds, popup.bounds) || !overlapsBoard(boardBounds, popup.bounds)) continue;
+          boardWindow.x = before.x; boardWindow.y = before.y; boardWindow.width = before.width;
+          layoutBoard();
+          break;
+        }
+      };
+      const placeBoard = () => {
+        if (!floatingBoards.some(popup => popup !== controller && overlapsBoard(boardBounds, popup.bounds))) return;
+        const b = boardWindow, width = boardBounds.right - boardBounds.left, height = boardBounds.bottom - boardBounds.top;
+        const offsetX = boardBounds.left - b.x, offsetY = boardBounds.top - b.y;
+        const maxX = window.innerWidth - b.width, maxY = window.innerHeight - offsetY - height;
+        const xs = [b.x, 0, maxX], ys = [b.y, 0, maxY];
+        for (const popup of floatingBoards) {
+          if (popup === controller) continue;
+          xs.push(popup.bounds.left - width - offsetX - 0.02, popup.bounds.right - offsetX + 0.02);
+          ys.push(popup.bounds.top - height - offsetY - 0.02, popup.bounds.bottom - offsetY + 0.02);
+        }
+        const candidate = { left: 0, top: 0, right: 0, bottom: 0 };
+        let best = Infinity, bestX = b.x, bestY = b.y;
+        for (const x of xs) for (const y of ys) {
+          if (x < 0 || x > maxX || y < 0 || y > maxY) continue;
+          const distance = (x - b.x) ** 2 + (y - b.y) ** 2;
+          if (distance >= best) continue;
+          candidate.left = x + offsetX; candidate.top = y + offsetY;
+          candidate.right = candidate.left + width; candidate.bottom = candidate.top + height;
+          if (floatingBoards.some(popup => popup !== controller && overlapsBoard(candidate, popup.bounds))) continue;
+          best = distance; bestX = x; bestY = y;
+        }
+        b.x = bestX; b.y = bestY;
         layoutBoard();
       };
       const finishBoardPointer = () => {
@@ -1071,9 +1270,7 @@
           const dx = e.clientX - boardStartX, dy = e.clientY - boardStartY;
           resizeBoard(boardStartWidth + (dx + dy / boardRatio) / (1 + 1 / (boardRatio * boardRatio)));
         } else {
-          boardWindow.x = boardStartLeft + e.clientX - boardStartX;
-          boardWindow.y = boardStartTop + e.clientY - boardStartY;
-          layoutBoard();
+          moveBoard(boardStartLeft + e.clientX - boardStartX, boardStartTop + e.clientY - boardStartY);
         }
       });
       const endBoardPointer = (e) => {
@@ -1086,7 +1283,7 @@
       on(el.board, "lostpointercapture", endBoardPointer);
       on(window, "blur", finishBoardPointer);
       on(window, "resize", () => {
-        if (board?.floating) { layoutBoard(); scheduleBoardSave(); }
+        if (board?.floating) { layoutBoard(); placeBoard(); scheduleBoardSave(); }
       });
       on(el.boardResize, "keydown", (e) => {
         let step;
@@ -1150,6 +1347,7 @@
         el.board.classList.toggle("board-caption-above", !!board.captionAbove);
         el.board.classList.toggle("board-carousel", !!board.carousel);
         if (board.floating) {
+          paintBoardControls();
           boardCenter.prepend(el.boardCaption);
           el.boardHead.insertBefore(el.boardDots, el.boardHead.lastElementChild);
         } else if (board.carousel) {
@@ -1177,7 +1375,6 @@
             boardWindow.y = (window.innerHeight - boardWindow.height) / 2 + offset;
             boardWindow.placed = true;
           }
-          layoutBoard();
         } else {
           el.board.removeAttribute("style");
         }
@@ -1189,6 +1386,7 @@
             document.activeElement?.blur();
           } else el.board.showModal();
         }
+        if (board.floating) { layoutBoard(); placeBoard(); }
       };
       const closeBoard = () => {
         finishBoardPointer();
@@ -1299,9 +1497,10 @@
       });
       const controller = {
         open: openBoard, close: closeBoard, update: updateBoard,
+        bounds: boardBounds,
         setLayer(layer) { el.board.style.zIndex = String(layer); },
         get width() { return boardWindow.width; },
-        snapshot() { return { x: boardWindow.x, y: boardWindow.y, width: boardWindow.width, screen: board.view, paused: board.paused, filters: board.filters, rollup: board.rollup }; },
+        snapshot() { return { x: boardWindow.x, y: boardWindow.y, width: boardWindow.width, screen: board.view, paused: board.paused, filters: board.filters, rollup: board.rollup, controlsHidden }; },
         dispose() {
           closeBoard();
           for (const off of boardListeners) off();
@@ -1484,19 +1683,11 @@
       b.blur();
       if (b.dataset.action === "feed") openFeed();
       else if (b.dataset.action === "feed-close") closeFeed();
-      else if (b.dataset.action === "kiosk") {
-        closeFeed();
-        actionHandler && actionHandler("kiosk");
-      }
       else if (b.dataset.action === "recipe-close") closeRecipe();
       else if (b.dataset.action === "recipe-copy") copyRecipe(b);
       else if (b.dataset.action === "intro-go") b.closest("[data-intro]").hidden = true;
       else if (b === el.modeDestination) {
-        // The locked virtual cursor dispatches to the enclosing button.
-        // Resolve the dot at its screen coordinates as well as native targets.
-        const dot = e.target.closest("[data-detached-preset]")
-          || (e.detail > 0 ? document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-detached-preset]") : null);
-        actionHandler && actionHandler("mode-preset", dot ? dot.dataset.detachedPreset : nextDetachedView());
+        actionHandler && actionHandler("mode-preset", nextDetachedView());
       }
       else if (b.dataset.action === "account-login") BL.net.login();
       else if (b.dataset.action === "account-logout") BL.net.logout();
@@ -1511,20 +1702,6 @@
       const panel = document.getElementById(b.dataset.fold);
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
-    const toast = (text) => {
-      window.clearTimeout(toastTimer);
-      window.clearTimeout(toastHideTimer);
-      el.toast.textContent = text;
-      el.toast.hidden = false;
-      el.messageStack.append(el.toast);
-      el.toast.classList.add("show");
-      toastTimer = window.setTimeout(() => {
-        el.toast.classList.remove("show");
-        toastHideTimer = window.setTimeout(() => {
-          if (!el.toast.classList.contains("show")) el.toast.hidden = true;
-        }, MESSAGE_FADE_MS);
-      }, 2800);
-    };
     let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
     let tipVisibility = null, tipSpeechTop = Infinity;
     const tipScreen = { x: 0, y: 0, depth: 0 };
@@ -1659,28 +1836,106 @@
     const selectedSheetTab = () => el.tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.dataset.tab || "roster";
     const setSheetOpen = (open) => {
       el.sheet.dataset.open = String(open);
-      writeSheetState(open, selectedSheetTab());
+      writeSheetState(open, selectedSheetTab(), sheetHeight);
     };
     const selectTab = (name) => {
-      for (const t of el.tabs) t.setAttribute("aria-selected", String(t.dataset.tab === name));
+      for (const t of el.tabs) {
+        t.setAttribute("aria-selected", String(t.dataset.tab === name));
+        t.tabIndex = t.dataset.tab === name ? 0 : -1;
+      }
       for (const p of el.panels) p.hidden = p.dataset.panel !== name;
       setSheetOpen(true);
     };
-    for (const t of el.tabs) {
-      on(t, "click", () => {
-        const already = t.getAttribute("aria-selected") === "true" && el.sheet.dataset.open === "true";
-        if (already && window.matchMedia("(max-width: 720px)").matches) setSheetOpen(false);
-        else selectTab(t.dataset.tab);
-      });
-    }
     // A pull tab opens its own panel, and folds the sheet when that panel is already showing.
     const pull = (name) => {
       const showing = el.sheet.dataset.open === "true" && el.tabs.some((t) => t.dataset.tab === name && t.getAttribute("aria-selected") === "true");
       if (showing) setSheetOpen(false);
       else selectTab(name);
     };
-    on(el.sheetToggle, "click", () => pull("roster"));
-    on(el.sheetBananas, "click", () => pull("bananas"));
+    for (const tab of el.tabs) on(tab, "click", () => pull(tab.dataset.tab));
+    on(el.sheetPanels, "keydown", (e) => {
+      let step = 0;
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") step = 1;
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") step = -1;
+      else if (e.key !== "Home" && e.key !== "End") return;
+      e.preventDefault(); e.stopPropagation();
+      const tabs = el.tabs.filter((tab) => !tab.hidden), index = tabs.indexOf(document.activeElement);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (index + step + tabs.length) % tabs.length;
+      selectTab(tabs[next].dataset.tab);
+      tabs[next].focus({ preventScroll: true });
+    });
+    const bottomSheet = window.matchMedia("(max-width: 720px), (max-height: 500px) and (orientation: landscape)");
+    let sheetPointer = -1, sheetStartY = 0, sheetStartHeight = 0, sheetDirection = 1;
+    const sheetLimits = () => {
+      const safe = getComputedStyle(document.documentElement);
+      const safeTop = parseFloat(safe.getPropertyValue("--safe-top")) || 0;
+      const safeBottom = parseFloat(safe.getPropertyValue("--safe-bottom")) || 0;
+      const viewport = parseFloat(el.sheet.style.getPropertyValue("--chat-viewport")) || window.innerHeight;
+      const max = Math.max(1, bottomSheet.matches ? viewport - 74 - safeTop : window.innerHeight - 90 - safeTop - safeBottom);
+      return { min: Math.min(240, max), max };
+    };
+    const showSheetHeight = () => {
+      const limits = sheetLimits();
+      const height = el.sheet.getBoundingClientRect().height;
+      el.sheetPanels.setAttribute("aria-orientation", bottomSheet.matches ? "horizontal" : "vertical");
+      el.sheetResize.setAttribute("aria-valuemin", String(Math.round(limits.min)));
+      el.sheetResize.setAttribute("aria-valuemax", String(Math.round(limits.max)));
+      if (height > 0) el.sheetResize.setAttribute("aria-valuenow", String(Math.round(height)));
+    };
+    const resizeSheet = (height) => {
+      const limits = sheetLimits();
+      sheetHeight = Math.round(Math.min(limits.max, Math.max(limits.min, height)));
+      el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
+      showSheetHeight();
+    };
+    const finishSheetResize = () => {
+      const pointer = sheetPointer;
+      sheetPointer = -1;
+      if (pointer >= 0 && el.sheetResize.hasPointerCapture(pointer)) el.sheetResize.releasePointerCapture(pointer);
+      if (pointer >= 0) writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+    };
+    on(el.sheetResize, "pointerdown", (e) => {
+      if (sheetPointer >= 0 || e.button !== 0 || !e.isPrimary) return;
+      e.preventDefault(); e.stopPropagation();
+      sheetPointer = e.pointerId; sheetStartY = e.clientY;
+      sheetStartHeight = el.sheet.getBoundingClientRect().height;
+      sheetDirection = bottomSheet.matches ? -1 : 1;
+      el.sheetResize.focus({ preventScroll: true });
+      if (e.isTrusted) el.sheetResize.setPointerCapture(e.pointerId);
+    });
+    on(el.sheetResize, "pointermove", (e) => {
+      if (e.pointerId !== sheetPointer) return;
+      e.preventDefault(); e.stopPropagation();
+      resizeSheet(sheetStartHeight + (e.clientY - sheetStartY) * sheetDirection);
+    });
+    const endSheetResize = (e) => {
+      if (e.pointerId !== sheetPointer) return;
+      e.preventDefault(); e.stopPropagation();
+      finishSheetResize();
+    };
+    on(el.sheetResize, "pointerup", endSheetResize);
+    on(el.sheetResize, "pointercancel", endSheetResize);
+    on(el.sheetResize, "lostpointercapture", endSheetResize);
+    on(window, "blur", finishSheetResize);
+    on(window, "resize", () => { finishSheetResize(); showSheetHeight(); });
+    on(el.sheetResize, "keydown", (e) => {
+      if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+      e.preventDefault(); e.stopPropagation();
+      const limits = sheetLimits();
+      resizeSheet(e.key === "Home" ? limits.min : e.key === "End" ? limits.max
+        : el.sheet.getBoundingClientRect().height + (e.key === "ArrowUp" ? 32 : -32));
+      writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+    });
+    on(el.sheetResize, "dblclick", () => {
+      sheetHeight = null;
+      el.sheet.style.removeProperty("--sheet-height");
+      writeSheetState(el.sheet.dataset.open === "true", selectedSheetTab(), sheetHeight);
+      showSheetHeight();
+    });
+    const sheetObserver = new ResizeObserver(showSheetHeight);
+    sheetObserver.observe(el.sheet);
+    listeners.push(() => sheetObserver.disconnect());
+    showSheetHeight();
     let presetHandler = null;
     for (const b of el.presets) on(b, "click", () => {
       b.blur();
@@ -1814,6 +2069,7 @@
     };
     // dispose removes only the rows and timers this instance added.
     const dispose = () => {
+      finishSheetResize();
       finishPrimary(true);
       window.clearTimeout(toastTimer);
       window.clearTimeout(toastHideTimer);
@@ -1822,7 +2078,9 @@
       window.clearTimeout(copyTimer);
       for (const off of listeners) off();
       if (liveRows === rosterRows) liveRows = liveOnline = null;
+      if (liveDonors === refreshDonors) liveDonors = null;
       el.roster.replaceChildren();
+      el.bananaLeaders.replaceChildren();
       el.inventory.replaceChildren();
       el.toast.classList.remove("show");
       el.toast.hidden = true;
@@ -1847,7 +2105,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setMeter, setStats, setAct, setMode, setOwnOoga, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setOwnOoga, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
@@ -1855,7 +2113,7 @@
   // Net and voice emits re-run this several times a second with the same outcome; last-written
   // records keep an unchanged textContent from re-invalidating the line.
   let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
-  let accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
+  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
   const showAccount = ({ backend, me, room, online }) => {
     const hasMe = !!me;
     if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
@@ -1867,6 +2125,9 @@
       $("account-login").hidden = !!me;
       $("account-logout").hidden = !me;
     }
+    // The foot's green dot shows only while the room is live.
+    const live = String(!!me && room === "live");
+    if (live !== accountLive) { accountLive = live; $("account").dataset.live = live; }
     const words = room === "live" ? `${online} online` : ROOM_WORDS[room] || "";
     if (words !== accountWords) { accountWords = words; $("account-room").textContent = words; }
     const wordsHidden = !me || !words;
@@ -1976,5 +2237,5 @@
       liveOnline(row);
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, STATE_LABELS, statusFor };
+  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, toast, STATE_LABELS, statusFor };
 })();
