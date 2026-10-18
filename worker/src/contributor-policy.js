@@ -60,22 +60,25 @@ export const readContributorSnapshot = async (fetcher = fetch) => {
 };
 
 // One bounded cache per Worker isolate; refresh only on a signed-in request.
-// A failed refresh grants no dynamic identity; bundled owners never need this lookup.
+// Failed refreshes retain verified rows only until their snapshot is 24 hours old.
+// Unknown logins still fail closed; bundled owners never need this lookup.
 export const createContributorLookup = (fetcher = fetch, clock = Date.now) => {
-  let rows = new Map(), until = 0, pending = null;
+  let rows = new Map(), until = 0, expires = 0, pending = null;
   return async (login) => {
     if (typeof login !== "string" || !LOGIN.test(login)) return null;
     if (clock() >= until && !pending) pending = (async () => {
       try {
-        rows = new Map(contributorRows(await readContributorSnapshot(fetcher), clock()).map((row) => [row.handle, row]));
+        const snapshot = await readContributorSnapshot(fetcher);
+        rows = new Map(contributorRows(snapshot, clock()).map((row) => [row.handle, row]));
+        expires = time(snapshot.meta.generated_at) + 86400000;
         until = clock() + 60000;
       } catch {
-        rows.clear();
+        if (clock() >= expires) rows.clear();
         until = clock() + 15000;
       } finally { pending = null; }
     })();
     if (pending) await pending;
-    return rows.get(login.toLowerCase()) || null;
+    return clock() < expires ? rows.get(login.toLowerCase()) || null : null;
   };
 };
 

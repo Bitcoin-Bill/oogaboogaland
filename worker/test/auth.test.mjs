@@ -113,8 +113,8 @@ test("OAuth rejects nonowners and a forged curated-alias login before any accoun
     } });
     const request = callbackFor(), response = await routes.handleAuth(request, { SITE_ORIGIN: SITE,
       DB: { prepare: () => { dbCalls++; throw new Error("Rejected sign-in reached D1"); } } }, new URL(request.url));
-    assert.equal(response.status, 403);
-    assert.match(await response.text(), /contributors with their own Ooga/);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "/?signin=contributor-required");
     assert.match(response.headers.get("set-cookie"), /__Host-obl_oauth=;.*Max-Age=0/);
     assert.ok(!response.headers.get("set-cookie").includes("__Host-obl_session="));
     assert.equal(dbCalls, 0);

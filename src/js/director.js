@@ -376,6 +376,12 @@
       firstDraw = true;
       mark("drawn");
       openCurtain();
+      if (params.get("signin") === "contributor-required") {
+        window.BL.hud.toast("Sign-in is for contributors with their own Ooga. Keep exploring signed out.");
+        params.delete("signin");
+        const back = new URL(location.href); back.searchParams.delete("signin");
+        history.replaceState(history.state, "", back.pathname + back.search + back.hash);
+      }
     }
     if (!drawn && renderer.failure && !params.has("canvas2d")) {
       console.warn("WebGL2 programs failed, reloading with the Canvas 2D fallback", renderer.failure);

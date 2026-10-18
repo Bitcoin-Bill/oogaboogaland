@@ -80,7 +80,9 @@ const callback = async (request, env, url) => {
     return text("GitHub sent an unexpected profile.", 502, { "set-cookie": clearState });
   }
   if (!(await contributorFor(profile.login))) {
-    return text("Sign-in is available to contributors with their own Ooga. You can keep exploring signed out.", 403, { "set-cookie": clearState });
+    const destination = new URL(next, env.SITE_ORIGIN);
+    destination.searchParams.set("signin", "contributor-required");
+    return redirect(destination.pathname + destination.search + destination.hash, [clearState]);
   }
 
   const player = await upsertPlayerFromGitHub(env.DB, { id: profile.id, login: profile.login, avatar_url: profile.avatar_url });
