@@ -27,17 +27,10 @@
     let actMode = -1;
     let handoffBefore = false, holdingFollow = false, pinnedFollow = false, viewChanged = false, moving = false;
     let shoulderSide = SHOULDER_SIDE, peek = 0, orbitPitch = 0.42, overheadHeight = 14, headHidden = null, savedHeadHidden = false;
-    let pointerX = 0.5, pointerY = 0.5, targetWait = 0, rightAt = -Infinity, rightDownAt = -Infinity, rightTravel = 0;
+    let targetWait = 0, rightAt = -Infinity, rightDownAt = -Infinity, rightTravel = 0;
     let combatTooltipEntry = null, combatTooltipText = "";
     let zoomAt = -Infinity, zoomDirection = 0, zoomStopped = false, stoppedGesture = null;
-    let canvasLeft = 0, canvasTop = 0, canvasWidth = 1, canvasHeight = 1;
-    const measureCanvas = () => {
-      const r = canvas.getBoundingClientRect();
-      canvasLeft = r.left; canvasTop = r.top; canvasWidth = Math.max(1, r.width); canvasHeight = Math.max(1, r.height);
-    };
-    measureCanvas();
     const isCombat = () => combat;
-    const cursor = BL.cursor.create({ canvas, requestLock: () => focusCombat(), unlock: () => blurCombat() });
     const restoreHead = () => {
       if (headHidden) headHidden.cameraHidden = savedHeadHidden;
       headHidden = null;
@@ -59,14 +52,6 @@
       targetWait = 0;
     };
     const syncCursor = () => {
-      if (focused && !combat && !grabHeld) {
-        measureCanvas();
-        if (cursor.active) {
-          pointerX = clamp((cursor.x - canvasLeft) / canvasWidth, 0, 1);
-          pointerY = clamp((cursor.y - canvasTop) / canvasHeight, 0, 1);
-        }
-        cursor.start(canvasLeft + pointerX * canvasWidth, canvasTop + pointerY * canvasHeight, true);
-      } else cursor.stop();
       document.body.classList.toggle("aim-cursor-focused", focused && combat);
       reticle.hidden = !player || !(combat || grabHeld);
     };
@@ -144,7 +129,6 @@
       node.addEventListener(type, callback, options);
       listeners.push(() => node.removeEventListener(type, callback, options));
     };
-    on(window, "resize", measureCanvas);
     const consume = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
     const typing = (event) => event.target && (event.target.isContentEditable
       || event.target.closest && event.target.closest("input, textarea, select, dialog"));
@@ -198,13 +182,12 @@
     const blurCombat = () => {
       focused = false; lockPending = false; focusVersion++;
       unlockedAt = performance.now();
-      cursor.stop();
       document.body.classList.remove("aim-cursor-focused");
       if (document.pointerLockElement === canvas) document.exitPointerLock();
       cancelInput();
     };
     const focusCombat = () => {
-      if (!player || disposed) return;
+      if (!player || !combat || disposed) return;
       focused = true;
       document.body.classList.toggle("aim-cursor-focused", combat);
       canvas.focus({ preventScroll: true });
@@ -279,10 +262,9 @@
       pilot.setExternalControl(true, isCombat);
       combat = true; focused = wasLocked = false;
       view = "shoulder"; shoulder = 0; shoulderSide = SHOULDER_SIDE; peek = 0; actMode = -1;
-      pointerX = pointerY = 0.5; rightAt = rightDownAt = zoomAt = -Infinity; zoomStopped = false; stoppedGesture = null;
+      rightAt = rightDownAt = zoomAt = -Infinity; zoomStopped = false; stoppedGesture = null;
       resetReticle(); camera.near = savedNear;
       cameraUp.x = cameraUp.z = 0; cameraUp.y = 1;
-      measureCanvas();
       holdingFollow = handoffBefore = pinnedFollow = viewChanged = false;
       followOffset.x = followOffset.y = followOffset.z = 0;
       cancelInput();
@@ -324,7 +306,10 @@
           orbitPitch = orbit.pitch;
           setView("orbit");
         }
-        focusCombat(); syncCursor();
+        // Carry shares the Ooga's native cursor; only combat captures mouse look.
+        if (combat) focusCombat();
+        else blurCombat();
+        syncCursor();
         hud.setGorilla(player, view, combat);
       } else if (name === "act") beginJump();
       else return false;
@@ -337,7 +322,7 @@
       if (space) {
         consume(event);
         if (!jumpKey && !event.repeat) { jumpKey = true; beginJump(); }
-      } else if (key === "escape" || key === "tab") {
+      } else if (key === "escape" || key === "tab" && combat) {
         consume(event);
         if (focused || document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) blurCombat();
         else if (key === "escape") release();
@@ -470,7 +455,7 @@
         if (direction < 0 && overheadHeight <= birdsEyeMin) next = "shoulder";
       } else if (view === "orbit") {
         orbit.tDist = clamp(orbit.tDist * factor, SHOULDER_DISTANCE, maxDistance);
-        if (direction < 0 && orbit.tDist <= SHOULDER_DISTANCE) { combat = true; next = "shoulder"; }
+        if (direction < 0 && orbit.tDist <= SHOULDER_DISTANCE) { combat = true; next = "shoulder"; focusCombat(); }
       }
       if (next !== view) {
         zoomStopped = true; stoppedGesture = gesture;
@@ -733,7 +718,7 @@
     };
     const dispose = () => {
       if (disposed) return;
-      release(); disposed = true; cursor.dispose();
+      release(); disposed = true;
       for (const off of listeners) off();
     };
     return { possess, release, respawn, readInput, update, action, orbit: moveView, zoom, cancelInput, dispose,

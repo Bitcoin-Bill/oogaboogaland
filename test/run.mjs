@@ -11253,7 +11253,11 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     const sample = name => {
       B.advance(1, 1 / 60);
       const camera = B.camera, p = e.root.position, orbit = B.pilot.orbit;
+      const tab = new KeyboardEvent("keydown", { key: "Tab", code: "Tab", bubbles: true, cancelable: true });
+      if (!P.combat) canvas.dispatchEvent(tab);
       const row = { name, view: P.view, combat: P.combat, hidden: reticle.hidden,
+        focused: P.focused, locked: document.pointerLockElement === canvas, tabConsumed: tab.defaultPrevented,
+        nativeCursor: !document.body.classList.contains("carry-cursor-active") && !document.body.classList.contains("aim-cursor-focused"),
         visible: getComputedStyle(reticle).visibility, stroke: getComputedStyle(reticle.querySelector("svg")).stroke,
         headHidden: !!e.gorilla.parts.head.cameraHidden, mix: camera.orthoMix, cutaway: B.renderOpts.birdsEyeCutaway,
         hudView: button.dataset.view, hudCombat: button.dataset.combat,
@@ -11295,11 +11299,12 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
   const modes = [true, true, false, false, true, true, true, true, true, false, true, true, true];
   const cameras = state.rows.length === views.length && state.rows.every((row, i) => row.finite && row.view === views[i] && row.combat === modes[i]
     && row.hudView === row.view && row.hudCombat === String(row.combat) && row.hidden === !row.combat
+    && (row.combat || !row.focused && !row.locked && !row.tabConsumed && row.nativeCursor)
     && (!row.combat || row.visible === "visible" && row.stroke === "rgb(255, 255, 255)")
     && row.headHidden === (row.view === "first-person") && row.mix === (row.view === "birds-eye" ? 1 : 0)
     && row.cutaway === (row.view === "birds-eye"));
   const released = state.released;
-  record("gorilla camera: carry and combat share first-person, shoulder and distant views; Right Shift swaps shoulder, Q rotates birds-eye and N faces north; combat has a white-ring crosshair and release restores the head without moving the camera",
+  record("gorilla camera: carry keeps the native cursor and Tab navigation in every view; carry and combat share first-person, shoulder and distant views; Right Shift swaps shoulder, Q rotates birds-eye and N faces north; combat has a white-ring crosshair and release restores the head without moving the camera",
     state.possessed && state.reset && cameras && state.swap && state.turn > 0.2 && Math.abs(state.north) < 0.001
     && !released.active && !released.controlled && released.headHidden === state.originalHeadHidden && released.hidden
     && released.target === "none" && released.hit === "none" && released.positionCleared && released.near === state.near
