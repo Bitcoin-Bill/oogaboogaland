@@ -165,8 +165,8 @@ Native/captured cursor choice, Escape order, multiplayer companions, T switching
 |---|---|---|---|
 | 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. | Native cursor choice agreed; sheet key guard now aligned. |
 | 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Escape order and detached interior exit agreed; Tab behavior remains proposed. |
-| 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Initial default: carry or combat? Memory per actor or per visitor? Preserve altitude on high selection? |
-| 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed. Existing distance stops and double-right-click behavior retained; review first-person return parity separately. |
+| 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Agreed below: detached acquisition keeps the eye and enters carry/orbit; active switches keep mode/view; same-actor selection does nothing. |
+| 4 | Camera modes | Wheel and right-click preserve carry/combat; X switches it. Gorilla combat bird's-eye right-click aims shoulder view at ground 10m ahead; Ooga keeps its selected point. | Agreed, including whole-gesture shoulder stops and nearby scroll entry below. Review right-click first-person return parity separately. |
 | 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
 | 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Gorilla multiplayer identity is now in scope and implemented below; exceptional controllers still need review. |
 
@@ -320,6 +320,18 @@ Recommended flow, awaiting agreement:
 4. **Validate before changing anything.** Check the actual actor's dimensions, support and camera at the arrival. Refuse sleeping/seated travel with a wake/stand-first explanation, preserving the explicit-wake agreement. Unsafe/unavailable destinations leave actor, camera and mode intact and the picker allows another choice. Keep respawn recovery separate from map/reset.
 5. **Use accurate scene controls.** Supply real local destinations or hide unsupported travel. Label camera-only tours as Viewpoints/Overview with explicit detach semantics. Use the existing last-actor portrait for Return; DSB Walk should not be a second conflicting retake flow. Remove references to nonexistent map dots.
 
+## Agreed change: independent scroll steps and nearby bird's-eye entry
+
+The maintainer requested a fresh scroll to cross shoulder view in either direction, and a continuous transition from shoulder to bird's-eye instead of lifting immediately to its old minimum height.
+
+- First person → shoulder consumes the remaining gesture; orbit/bird's-eye → shoulder does the same. Starting a fresh gesture from shoulder enters first person or the wider view. Outward scrolling can continue changing distance after leaving shoulder.
+- Both controllers use the shared wheel/pinch gesture identity. A wheel pause longer than 220 ms or a reversal starts a new gesture; momentum remains part of the existing gesture. A pinch keeps its identity until a new touch gesture. The shoulder stop no longer expires while that gesture continues.
+- Gorilla wheel input now follows the same route and scaling as Ooga input. The separate gorilla capture listener previously bypassed the shared gesture identity and used a shorter 180 ms gap; the Ooga stop previously expired after 350 ms.
+- View handoffs preserve an active two-finger pinch, including on fine-pointer touchscreen devices. Virtual mouse events cannot overwrite or cancel a touch with the same pointer ID. Ordinary input resets still end gestures.
+- Combat scroll entry starts near the shoulder camera's radius and eases outward/upward. Scroll can return to that nearby range before entering shoulder, rather than switching at the old 21 m Ooga / 8 m hub gorilla overhead minimum. Gorilla entry also eases its target from head height toward its forward ground anchor. Existing right-click/X framing and the gorilla's 10 m right-click aim remain separate.
+- Carry/combat and signed-in/out behavior stay the same. Detached zoom and special seated/sleeping Ooga camera paths retain their existing view families; no shoulder camera is added where one is unavailable.
+- Regression coverage is extended in the existing camera scenarios; execution remains pending under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -334,6 +346,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 4. Keyboard-focused sheet buttons, Chat, native form controls and modal dialogs; mouse and coarse/touch devices; clean console throughout.
 5. Detached selection/retake/T/sign-in from close, distant, overhead and underground viewpoints; eye position stays fixed until actor movement or deliberate view input. Include a real GitHub round trip on hub and interior routes, plus expired/denied session storage.
 6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
+7. Long wheel swipes with momentum, fresh scrolls and new pinches in both directions through shoulder, for both actors and sign-in states. Check small outward increments, low ceilings, floors at different heights, both carry/combat modes and right-click after nearby bird's-eye zoom.
 
 ## Review checkpoints
 
@@ -353,4 +366,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Shared selection and retake: approved with fixed-eye carry/orbit acquisition from detached, active mode/view preservation, last-actor portrait for both sign-in states, locally available working Oogas and explicit sleeper wake. GitHub returns retain the camera across hub/interior startup, including the registered DSB venue. `npm run build`, `node --check` on all 15 changed JavaScript files and `git diff --check` passed. Existing regression coverage was extended; runtime tests and actual OAuth navigation remain unrun under **wait**.
 - `94aa144`: shared selection/retake and detached camera preservation committed and pushed.
 - Map/reset review: current actor/auth/scene behavior, missing map dots, blocked-cycle trap, inert interior destination controls and reset naming differences recorded. Recommendations await agreement; no map/reset runtime behavior changed.
-- Remaining decisions: first-person return and distance-stop parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.
+- `de88eb7`: map/reset source audit committed and pushed for review.
+- Independent scroll steps: approved; both actors stop at shoulder for the whole gesture and scroll into bird's-eye from nearby. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing regressions cover long native wheel bursts and actual two-finger pinch handoffs; runtime checks remain unrun under **wait**.
+- Remaining decisions: right-click first-person return parity, map/reset handoffs, combat Tab navigation, touch and exceptional-controller details.

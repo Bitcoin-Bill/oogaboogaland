@@ -6637,31 +6637,42 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     for (const floor of [0, B.island.headquarters.basement.floor]) {
       P.navigate({ position: { x: -8, y: floor, z: 8 }, yaw: 0, pitch: 0.3, dist: 4 });
       if (P.aiming) P.modeAction("mode-toggle");
-      if (P.mode !== "shoulder") P.hooks.onZoom(0.001);
+      if (P.mode !== "shoulder") P.hooks.onZoom(0.001, {});
       B.advance(1, 1 / 60);
       const before = sample(); click(); const single = sample(); click(false); const immediate = sample();
       B.advance(2, 1 / 60); const out = sample();
       click(); B.advance(1, 1 / 60); const back = sample();
-      P.hooks.onZoom(1.2); B.advance(2, 1 / 60); const wheelOut = sample();
-      P.hooks.onZoom(0.99); B.advance(1, 1 / 60); const wheelBack = sample();
-      rows.push({ floor, before, single, immediate, out, back, wheelOut, wheelBack });
+      P.hooks.onZoom(1.2, {}); const wheelStart = P.orbit.dist; B.advance(2, 1 / 60); const wheelOut = sample();
+      P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60); const wheelBack = sample();
+      rows.push({ floor, before, single, immediate, out, back, wheelStart, wheelOut, wheelBack });
     }
-    P.hooks.onZoom(0.8); B.advance(1, 1 / 60); const carryFirst = sample();
-    P.hooks.onZoom(1.2); B.advance(1, 1 / 60); const carryScrollBack = sample();
-    P.hooks.onZoom(0.8); B.advance(1, 1 / 60);
+    P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60); const carryFirst = sample();
+    P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60); const carryScrollBack = sample();
+    P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60);
     click(); click(false); B.advance(1, 1 / 60); const carryFirstOut = sample();
     click(); B.advance(1, 1 / 60); const carryFirstBack = sample();
-    P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+    P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
     P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
     click(); click(false); B.advance(1, 1 / 60); const combatOut = sample();
     click(); B.advance(1, 1 / 60); const combatBack = sample();
-    P.hooks.onZoom(0.8); B.advance(1, 1 / 60); const combatFirst = sample();
+    P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60); const combatFirst = sample();
     click(); click(false); B.advance(1, 1 / 60); const combatFirstOut = sample();
     click(); B.advance(1, 1 / 60); const combatFirstBack = sample();
     const authIntent = [], account = BL.net.state.me, backend = BL.net.state.backend;
     const character = BL.characters.get(a.traits.name);
     const toggle = () => {
       for (const type of ["keydown", "keyup"]) canvas.dispatchEvent(new KeyboardEvent(type, { key: "x", code: "KeyX", bubbles: true, cancelable: true }));
+    };
+    let wheelAt = performance.now();
+    const wheel = (deltaY, gap = 100) => {
+      wheelAt += gap;
+      const event = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true,
+        clientX: B.renderer.size.width / 2, clientY: B.renderer.size.height / 2 });
+      Object.defineProperty(event, "timeStamp", { value: wheelAt });
+      const clock = Object.getOwnPropertyDescriptor(performance, "now");
+      Object.defineProperty(performance, "now", { configurable: true, value: () => wheelAt });
+      try { canvas.dispatchEvent(event); }
+      finally { if (clock) Object.defineProperty(performance, "now", clock); else delete performance.now; }
     };
     try {
       BL.net.state.backend = true;
@@ -6673,20 +6684,71 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
           if (P.aiming !== combat) toggle();
           B.advance(1, 1 / 60);
           const steps = [sample()];
-          for (const factor of [0.8, 1.2, 1.2]) { P.hooks.onZoom(factor); B.advance(2, 1 / 60); steps.push(sample()); }
+          for (const factor of [0.8, 1.2, 1.2]) { P.hooks.onZoom(factor, {}); B.advance(2, 1 / 60); steps.push(sample()); }
           click(); B.advance(1, 1 / 60); steps.push(sample());
-          for (const factor of [1.2, 0.001]) { P.hooks.onZoom(factor); B.advance(2, 1 / 60); steps.push(sample()); }
-          authIntent.push({ signedIn, combat, selected: P.player === a, steps });
+          for (const factor of [1.2, 0.001]) { P.hooks.onZoom(factor, {}); B.advance(2, 1 / 60); steps.push(sample()); }
+          // Time-stamped events exercise the shared wheel path, including a
+          // burst longer than the old 350 ms shoulder hold and a fresh pause.
+          P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
+          wheel(-1200, 300); B.advance(2, 1 / 60);
+          for (let i = 0; i < 6; i++) { wheel(-1200); B.advance(0.1, 1 / 60); }
+          const inward = sample();
+          wheel(-1200, 300); B.advance(1, 1 / 60); const freshInward = sample();
+          wheel(1200); B.advance(1, 1 / 60);
+          for (let i = 0; i < 6; i++) { wheel(1200); B.advance(0.1, 1 / 60); }
+          const outward = sample();
+          wheel(40, 300); B.advance(1, 1 / 60); const freshOutward = sample();
+          const pinch = {};
+          P.hooks.onZoom(0.001, pinch); B.advance(2, 1 / 60);
+          P.hooks.onZoom(2, pinch); B.advance(1, 1 / 60); const heldPinch = sample();
+          authIntent.push({ signedIn, combat, selected: P.player === a, steps,
+            inward, freshInward, outward, freshOutward, heldPinch });
         }
       }
     } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
-    P.hooks.onZoom(0.8); B.advance(1, 1 / 60);
+    const capture = Object.getOwnPropertyDescriptor(canvas, "setPointerCapture");
+    const rect = canvas.getBoundingClientRect(), left = rect.left + rect.width * 0.15, span = Math.min(200, rect.width * 0.25);
+    const touchPointer = (type, id, x, pointerType = "touch") => canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerType, pointerId: id, isPrimary: id === 1,
+      button: type === "pointerdown" || type === "pointerup" ? 0 : -1, buttons: pointerType === "mouse" || type === "pointerup" || type === "pointercancel" ? 0 : 1,
+      clientX: left + x * span, clientY: rect.top + rect.height * 0.5
+    }));
+    const beginPinch = () => { touchPointer("pointerdown", 1, 0); touchPointer("pointerdown", 2, 1); };
+    const endPinch = () => { touchPointer("pointerup", 2, 2); touchPointer("pointerup", 1, 0); };
+    const touch = [];
+    // Synthetic touch points exercise the real listeners on this fine-pointer
+    // page; only native pointer capture needs a stand-in for these test IDs.
+    Object.defineProperty(canvas, "setPointerCapture", { configurable: true, value: () => {} });
+    try {
+      const fine = !matchMedia("(pointer: coarse)").matches;
+      for (const combat of [false, true]) {
+        if (P.mode === "first-person") P.hooks.onZoom(1.2, {});
+        if (P.aiming !== combat) toggle(); B.advance(1, 1 / 60);
+        beginPinch(); touchPointer("pointermove", 2, 0.8); B.advance(1, 1 / 60);
+        const outward = sample();
+        // The virtual mouse uses ID1 too. Its move/cancel must not replace or
+        // remove the first finger while a view change resets mouse controls.
+        touchPointer("pointermove", 1, 4, "mouse"); touchPointer("pointercancel", 1, 4, "mouse");
+        touchPointer("pointermove", 2, 0.6); B.advance(1, 1 / 60); const continued = sample();
+        touchPointer("pointermove", 2, 20); B.advance(2, 1 / 60);
+        touchPointer("pointermove", 2, 22); touchPointer("pointermove", 2, 20); B.advance(1, 1 / 60);
+        const stopped = sample(); endPinch();
+        beginPinch(); touchPointer("pointermove", 2, 2); B.advance(1, 1 / 60);
+        touch.push({ fine, combat, outward, continued, stopped, restarted: sample() }); endPinch();
+      }
+    } finally {
+      B.input.reset();
+      if (capture) Object.defineProperty(canvas, "setPointerCapture", capture); else delete canvas.setPointerCapture;
+    }
+    P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60);
     return { rows, carryFirst, carryScrollBack, carryFirstOut, carryFirstBack, combatOut, combatBack,
-      combatFirst, combatFirstOut, combatFirstBack, authIntent };
+      combatFirst, combatFirstOut, combatFirstBack, authIntent, touch };
   })()`);
   record("view gestures: right-click returns from orbit to the prior shoulder or first-person view, and first-person scroll exits to shoulder",
     rightViews.rows.every(r => r.single.mode === "shoulder" && !r.single.combat && Math.abs(r.immediate.y - r.before.y) < 1e-6
-      && [r.out, r.wheelOut].every(s => s.mode === "orbit" && !s.combat && Math.abs(s.distance - 6) < 0.01 && s.wanted === 6)
+      && r.out.mode === "orbit" && !r.out.combat && Math.abs(r.out.distance - 6) < 0.01 && r.out.wanted === 6
+      && r.wheelOut.mode === "orbit" && !r.wheelOut.combat && Math.abs(r.wheelOut.wanted - r.wheelStart * 1.2) < 0.01
+      && Math.abs(r.wheelOut.distance - r.wheelOut.wanted) < 0.01
       && [r.back, r.wheelBack].every(s => s.mode === "shoulder" && !s.combat))
     && rightViews.rows[0].out.horizontal < 0.01
     && Math.abs(rightViews.rows[1].out.y - rightViews.rows[1].before.y) < 0.01
@@ -6704,11 +6766,21 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       const far = row.combat ? "birds-eye" : "orbit", modes = ["shoulder", "first-person", "shoulder", far, "shoulder", far, "shoulder"];
       return row.selected && row.steps.length === modes.length && row.steps.every((step, i) => step.mode === modes[i] && step.combat === row.combat);
     }), JSON.stringify(rightViews.authIntent));
+  record("Ooga zoom stops: signed in or out, long wheel bursts stop at shoulder in both directions, a pause starts the next step, and reversing one pinch cannot cross the stop",
+    rightViews.authIntent.every(row => [row.inward, row.outward, row.heldPinch].every(s => s.mode === "shoulder" && s.combat === row.combat)
+      && row.freshInward.mode === "first-person" && row.freshInward.combat === row.combat
+      && row.freshOutward.mode === (row.combat ? "birds-eye" : "orbit") && row.freshOutward.combat === row.combat), JSON.stringify(rightViews.authIntent));
+  record("touch zoom: a two-finger pinch survives shoulder view changes and mouse-ID collisions, stops at shoulder, and continues to first person only after lifting and restarting",
+    rightViews.touch.length === 2 && rightViews.touch.every(row => row.fine
+      && [row.outward, row.continued].every(s => s.mode === (row.combat ? "birds-eye" : "orbit") && s.combat === row.combat)
+      && (row.combat ? row.continued.height > row.outward.height * 1.2 : row.continued.distance > row.outward.distance * 1.2)
+      && row.stopped.mode === "shoulder" && row.stopped.combat === row.combat
+      && row.restarted.mode === "first-person" && row.restarted.combat === row.combat), JSON.stringify(rightViews.touch));
   const shoulderFraming = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = P.player, rows = [];
     // The preceding gesture check intentionally ends in first-person.
     // Return through the real zoom control before measuring shoulder framing.
-    P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+    P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
     const sample = () => {
       const C = B.camera, p = a.root.position, dx = C.position.x - C.target.x, dz = C.position.z - C.target.z, length = Math.hypot(dx, dz);
       const side = ((C.position.x - p.x) * dz - (C.position.z - p.z) * dx) / length / a.traits.height;
@@ -6719,10 +6791,10 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       P.navigate({ position: location, yaw: 0, pitch: 0.3, dist: 4 }); B.advance(1, 1 / 60);
       const baseline = sample();
       for (const offset of [0, 0.4]) {
-        P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+        P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
         const point = B.project(a.root.position.x + B.camera.up.x * offset, location.y + 0.01, a.root.position.z + B.camera.up.z * offset, {});
         P.hooks.onOrbit(0, point.y - parseFloat(document.getElementById("weapon-reticle").style.top)); B.advance(0.2, 1 / 60);
-        P.hooks.onZoom(0.001); B.advance(2, 1 / 60); const settled = sample();
+        P.hooks.onZoom(0.001, {}); B.advance(2, 1 / 60); const settled = sample();
         P.hooks.onOrbit(12, 0); B.advance(0.7, 1 / 60);
         rows.push({ floor: location.y, offset, baseline, settled, looking: sample() });
       }
@@ -6746,16 +6818,17 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       forward: [-view[2], -view[6], -view[10]], screenUp: [view[1], view[5], view[9]], orthoMix: C.orthoMix || 0, fov: C.fov,
       up: C.up ? [C.up.x, C.up.y, C.up.z] : [0, 1, 0], cutoff: B.renderOpts.cutawayMaxY }; };
     const weaponDirection = () => { BL.scene.updateWorld(a.root); const w = a.parts.gun.world, length = Math.hypot(w[8], w[9], w[10]); return [w[8] / length, w[9] / length, w[10] / length]; };
-    const weaponBefore = weaponDirection(), before = __birdsSnapshot(); P.hooks.onZoom(1.2); P.update(0);
+    const weaponBefore = weaponDirection(), before = __birdsSnapshot(); P.hooks.onZoom(1.02, {}); P.update(0);
     const weaponAfter = weaponDirection(), weaponSnap = Math.hypot(...weaponAfter.map((value, i) => value - weaponBefore[i]));
     const immediate = Math.hypot(C.position.x - before.x, C.position.y - before.y, C.position.z - before.z);
-    let maxStep = 0, finite = true, last = [C.position.x, C.position.y, C.position.z];
+    let maxStep = 0, finite = true, radiusError = 0, last = [C.position.x, C.position.y, C.position.z];
     for (let i = 0; i < 90; i++) { B.advance(1 / 60, 1 / 60); const p = C.position;
       maxStep = Math.max(maxStep, Math.hypot(p.x - last[0], p.y - last[1], p.z - last[2]));
+      radiusError = Math.max(radiusError, Math.abs(Math.hypot(p.x - a.root.position.x, p.y - a.root.position.y, p.z - a.root.position.z) - before.distance));
       finite = finite && [p.x, p.y, p.z, C.target.x, C.target.y, C.target.z].every(Number.isFinite); last = [p.x, p.y, p.z]; }
-    return { before, immediate, weaponSnap, maxStep, finite, after: __birdsSnapshot() };
+    return { before, immediate, weaponSnap, maxStep, radiusError, finite, after: __birdsSnapshot() };
   })()`);
-  record("birds-eye combat: shoulder zoom enters directly overhead with a continuous finite camera path", entry.before.mode === "shoulder" && entry.after.mode === "birds-eye" && entry.after.overhead && entry.after.combat && entry.after.mix === 1 && entry.after.horizontal < 1e-6 && entry.after.down > 0.999999 && entry.immediate < 1e-6 && entry.weaponSnap < 1e-5 && entry.maxStep < 3 && entry.finite, JSON.stringify(entry));
+  record("birds-eye combat: a small shoulder zoom smoothly tilts overhead at the displayed radius instead of jumping to the default height", entry.before.mode === "shoulder" && entry.after.mode === "birds-eye" && entry.after.overhead && entry.after.combat && entry.after.mix === 1 && entry.after.horizontal < 1e-6 && entry.after.down > 0.999999 && entry.immediate < 1e-6 && entry.weaponSnap < 1e-5 && entry.maxStep < 3 && entry.radiusError < 0.5 && entry.after.distance > entry.before.distance && entry.finite, JSON.stringify(entry));
   const outlines = await b.evaluate(`(() => { const B = __ooga, H = B.headquarters; B.advance(0.1, 1 / 60); return {
     mode: B.pilot.mode, combat: B.pilot.aiming, wallLines: H.sightGuides.structureCount, objectLines: H.sightGuides.objectCount,
     wall: !!H.sightGuides.structure || !!H.sightGuides.structures, bananaWall: !!H.bananaGuides.structure || !!H.bananaGuides.structures,
@@ -6846,21 +6919,21 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
   const north = rotation.north;
   record("birds-eye combat: N eases back to north along the shortest path after rotating past a full turn", Math.abs(rotation.around.total) > Math.PI * 2 && Math.abs(north.before) > 0.2 && north.immediate < 1e-6 && Math.abs(north.first) > 0.01 && Math.abs(north.first) < Math.abs(north.before) && Math.abs(north.after) < 0.001 && north.path <= Math.abs(north.before) + 0.001 && north.maxStep < 0.25 && north.monotonic, JSON.stringify(north));
   const zoom = await b.evaluate(`(() => {
-    const B = __ooga, P = B.pilot; P.hooks.onZoom(100); B.advance(1.5, 1 / 60); const max = __birdsSnapshot();
-    P.hooks.onZoom(100); B.advance(0.5, 1 / 60); const clamped = __birdsSnapshot();
-    P.hooks.onZoom(0.75); B.advance(1, 1 / 60); const lowered = __birdsSnapshot();
-    P.hooks.onZoom(100); B.advance(1, 1 / 60); const fromMax = __birdsSnapshot();
-    const C = B.camera, before = [C.position.x, C.position.y, C.position.z]; P.hooks.onZoom(0.001);
+    const B = __ooga, P = B.pilot; P.hooks.onZoom(100, {}); B.advance(1.5, 1 / 60); const max = __birdsSnapshot();
+    P.hooks.onZoom(100, {}); B.advance(0.5, 1 / 60); const clamped = __birdsSnapshot();
+    P.hooks.onZoom(0.75, {}); B.advance(1, 1 / 60); const lowered = __birdsSnapshot();
+    P.hooks.onZoom(100, {}); B.advance(1, 1 / 60); const fromMax = __birdsSnapshot();
+    const C = B.camera, before = [C.position.x, C.position.y, C.position.z]; P.hooks.onZoom(0.001, {});
     const immediate = Math.hypot(C.position.x - before[0], C.position.y - before[1], C.position.z - before[2]);
     let last = before, maxStep = 0, switchFrame = -1;
     for (let i = 0; i < 90; i++) { B.advance(1 / 60, 1 / 60); const p = C.position;
       maxStep = Math.max(maxStep, Math.hypot(p.x - last[0], p.y - last[1], p.z - last[2])); last = [p.x, p.y, p.z];
       if (switchFrame < 0 && P.mode === "shoulder") switchFrame = i + 1; }
-    const shoulder = __birdsSnapshot(); P.hooks.onZoom(0.8); B.advance(1.5, 1 / 60); const first = __birdsSnapshot();
-    P.hooks.onZoom(1.2); B.advance(1.5, 1 / 60); const back = __birdsSnapshot();
-    P.hooks.onZoom(1.2); B.advance(1, 1 / 60); return { max, clamped, lowered, fromMax, immediate, maxStep, switchFrame, shoulder, first, back };
+    const shoulder = __birdsSnapshot(); P.hooks.onZoom(0.8, {}); B.advance(1.5, 1 / 60); const first = __birdsSnapshot();
+    P.hooks.onZoom(1.2, {}); B.advance(1.5, 1 / 60); const back = __birdsSnapshot();
+    P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60); return { max, clamped, lowered, fromMax, immediate, maxStep, switchFrame, shoulder, first, back };
   })()`);
-  record("birds-eye combat: a full-height inward zoom retains combat through the relative-height-21 shoulder handoff and first person along a continuous path", [zoom.max, zoom.clamped, zoom.lowered, zoom.fromMax, zoom.shoulder, zoom.first, zoom.back].every(view => view.combat) && Math.abs(entry.after.height - 21) < 0.01 && Math.abs(zoom.max.height - zoom.clamped.height) < 0.01 && zoom.lowered.height < zoom.max.height && zoom.lowered.mode === "birds-eye" && zoom.fromMax.height > 60 && zoom.immediate < 1e-6 && zoom.maxStep < 5 && zoom.switchFrame > 0 && zoom.switchFrame < 45 && zoom.shoulder.mode === "shoulder" && zoom.first.mode === "first-person" && zoom.back.mode === "shoulder", JSON.stringify(zoom));
+  record("birds-eye combat: a full-height inward zoom retains combat through shoulder and first person along a continuous path", [zoom.max, zoom.clamped, zoom.lowered, zoom.fromMax, zoom.shoulder, zoom.first, zoom.back].every(view => view.combat) && Math.abs(zoom.max.height - zoom.clamped.height) < 0.01 && zoom.lowered.height < zoom.max.height && zoom.lowered.mode === "birds-eye" && zoom.fromMax.height > 60 && zoom.immediate < 1e-6 && zoom.maxStep < 5 && zoom.switchFrame > 0 && zoom.switchFrame < 45 && zoom.shoulder.mode === "shoulder" && zoom.first.mode === "first-person" && zoom.back.mode === "shoulder", JSON.stringify(zoom));
   await b.evaluate(`(() => { const B = __ooga, reticle = document.getElementById("weapon-reticle"); B.pilot.hooks.onOrbit(0, B.renderer.size.height * 0.25 - parseFloat(reticle.style.top)); B.advance(0.5, 1 / 60); })()`);
   const handoffs = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, difference = (a, b) => Math.hypot(...a.map((n, i) => n - b[i]));
@@ -7213,11 +7286,11 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
       if (q.name !== "cave") {
         const read = () => { const feet = a.root.position.y - a.baseY, relative = B.camera.position.y - feet;
           return { mode: P.mode, relative, headClearance: relative - a.headOffset * 0.95 - a.viewLift }; };
-        P.hooks.onZoom(21.5 / P.birdsEyeHeight); B.advance(1.5, 1 / 60); const above = read(); P.hooks.onZoom(0.95);
+        P.hooks.onZoom(21.5 / P.birdsEyeHeight, {}); B.advance(1.5, 1 / 60); const above = read(); P.hooks.onZoom(0.001, {});
         let frames = 0; while (P.mode === "birds-eye" && frames++ < 150) B.advance(1 / 60, 1 / 60);
         const switched = read(); thresholds.push({ name: q.name, floor: q.floor, above, switched, frames });
-        B.advance(1, 1 / 60); P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
-        P.hooks.onZoom(before.height / P.birdsEyeHeight); B.advance(1.5, 1 / 60);
+        B.advance(1, 1 / 60); P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
+        P.hooks.onZoom(before.height / P.birdsEyeHeight, {}); B.advance(1.5, 1 / 60);
       }
     }
     const landingCoverage = [];
@@ -7413,19 +7486,19 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     transitions.push(transition("basement partial entry", toggle, 12));
     transitions.push(transition("basement entry reversal", toggle));
     transitions.push(transition("basement carry entry", toggle));
-    transitions.push(transition("basement shoulder exit", () => P.hooks.onZoom(0.001), 150));
-    transitions.push(transition("basement shoulder entry", () => P.hooks.onZoom(1.2)));
+    transitions.push(transition("basement shoulder exit", () => P.hooks.onZoom(0.001, {}), 150));
+    transitions.push(transition("basement shoulder entry", () => P.hooks.onZoom(1.2, {})));
     toggle(); B.advance(1, 1 / 60);
-    P.hooks.onZoom(0.001); B.advance(1, 1 / 60);
+    P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60);
     const carryRoofs = { out: true, in: true, settled: false, hiddenMarkers: true };
-    P.hooks.onZoom(1.2);
+    P.hooks.onZoom(1.2, {});
     for (let i = 0; i < 60; i++) {
       B.advance(1 / 60, 1 / 60);
       carryRoofs.out = carryRoofs.out && P.mode === "orbit" && B.renderOpts.cutawayFade === 1
         && B.renderOpts.cutawayMaxY < H.ceiling - 0.5;
       carryRoofs.hiddenMarkers = carryRoofs.hiddenMarkers && D.headquarters.rampMarkers.every(marker => !marker.node.visible);
     }
-    P.hooks.onZoom(0.99);
+    P.hooks.onZoom(0.001, {});
     let carryEntryFrames = 0;
     for (let i = 0; i < 120 && P.shoulderEntryMix < 1; i++) {
       B.advance(1 / 60, 1 / 60);
@@ -7439,7 +7512,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     carryRoofs.in = carryRoofs.in && carryEntryFrames >= 10;
     B.advance(1, 1 / 60);
     carryRoofs.settled = P.mode === "shoulder" && P.shoulderEntryMix === 1 && B.renderOpts.cutawayFade === 0;
-    toggle(); P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+    toggle(); P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
     const cave = places.find(q => q.name === "cave");
     P.navigate({ position: { x: cave.x, y: cave.floor, z: cave.z }, yaw: 0, pitch: 0.3, dist: 8 }); B.advance(2, 1 / 60);
     transitions.push(transition("cave roof exit", toggle));
@@ -7536,8 +7609,8 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     !r.slicedVisible && r.visibleFrames > 0 && r.wholeHidden > 0 && r.wholeBarrels > 0 && r.wholeGorillas > 0 && r.wholeComplete && !r.structureHidden), JSON.stringify(state.rampTravel));
   record("birds-eye combat: jetting above the surface restores ramp cover and the following fall keeps the actor centered with head clearance", state.flight.peak > 4 && state.flight.highFrames > 10
     && state.flight.fallFrames > 10 && state.flight.clearance >= 0.075 && state.flight.preserved && state.flight.centered && state.flight.landed, JSON.stringify(state.flight));
-  record("birds-eye combat: inward zoom switches at relative height 21 with the same head clearance on the surface, hills, HQ and basement", state.thresholds.length === 4
-    && state.thresholds.every(r => r.above.mode === "birds-eye" && r.above.relative > 21.2 && r.switched.mode === "shoulder" && r.switched.relative >= 20.99 && r.switched.relative <= 21.09 && r.frames < 150)
+  record("birds-eye combat: inward zoom reaches shoulder with the same near-body head clearance on the surface, hills, HQ and basement", state.thresholds.length === 4
+    && state.thresholds.every(r => r.above.mode === "birds-eye" && r.above.relative > 21.2 && r.switched.mode === "shoulder" && r.switched.headClearance >= 0.075 && r.switched.relative < 10 && r.frames < 150)
     && Math.max(...state.thresholds.map(r => r.switched.headClearance)) - Math.min(...state.thresholds.map(r => r.switched.headClearance)) < 0.05, JSON.stringify(state.thresholds));
   record("birds-eye combat: zoom leaves section meshes cached, translated islands share the exact world cut height, and terrain and centered landmarks stay unchanged", state.immutable && state.regionStorage && state.sections >= 2 && state.caves > 0 && state.caves <= 8
     && rows.every(r => r.zoomStable && r.zoomMoved && r.caps.every(c => !c.visible || Math.abs(c.y + 0.002 - r.cutoff) < 1e-5))
@@ -7882,7 +7955,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
         const length = Math.hypot(dx, dy, dz), hit = {};
         const found = B.input.weaponTargets.ray(hit, C.position.x, C.position.y, C.position.z, dx / length, dy / length, dz / length, 60, a);
         const point = fresh ? hit : anchor;
-        P.hooks.onZoom(0.8);
+        P.hooks.onZoom(0.8, {});
         let error = 0;
         for (let frame = 0; frame < 90; frame++) {
           B.advance(1 / 60, 1 / 60);
@@ -7895,7 +7968,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
         const rayLength = Math.hypot(vx, vy, vz), exitHit = {};
         const exitFound = B.input.weaponTargets.ray(exitHit, eye.position.x, eye.position.y, eye.position.z, vx / rayLength, vy / rayLength, vz / rayLength, 60, a);
         const exitPoint = exitFound ? { x: exitHit.x, y: exitHit.y, z: exitHit.z } : null;
-        P.hooks.onZoom(1.2);
+        P.hooks.onZoom(1.2, {});
         let exitError = 0;
         for (let frame = 0; frame < 90; frame++) {
           B.advance(1 / 60, 1 / 60);
@@ -7904,7 +7977,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
         }
         closeAim.push({ fresh, found, mode, error, exitFound, exitMode: P.mode, exitError });
       }
-      P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+      P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
       return { far, farBefore, farAfter, near, firearm, jump, handoff, closeAim, floor: H.basement.floor, beforeMelee, afterMelee, afterShot,
         upperHealth: upper.breakable.health, shots, mode };
     } finally {
@@ -8443,13 +8516,13 @@ const factoryWeapons = { name: "factory weapon selection", why: "regression: the
     press(); const combatButton = P.aiming && !reticle.hidden;
     for (const slot of [1, 2]) {
       P.weaponMode(slot); const ammo = a.weapon.ammo;
-      P.hooks.onZoom(1.2); B.advance(1.5, 1 / 60);
+      P.hooks.onZoom(1.2, {}); B.advance(1.5, 1 / 60);
       const overhead = P.mode === "birds-eye" && !reticle.hidden;
-      P.hooks.onZoom(0.001); B.advance(2, 1 / 60);
+      P.hooks.onZoom(0.001, {}); B.advance(2, 1 / 60);
       const shoulder = P.mode === "shoulder" && !reticle.hidden && !reticle.style.left && !reticle.style.top;
-      P.hooks.onZoom(0.8); B.advance(1, 1 / 60);
+      P.hooks.onZoom(0.8, {}); B.advance(1, 1 / 60);
       const first = P.mode === "first-person" && !reticle.style.left && !reticle.style.top;
-      P.hooks.onZoom(1.2); B.advance(1, 1 / 60);
+      P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
       rows.push({ slot, overhead, shoulder, first, returned: P.mode === "shoulder",
         held: a.weapon.selectedSlot === slot && a.weapon.equipped === (slot === 2) && a.weapon.primaryEquipped === (slot === 1),
         ammo: a.weapon.ammo === ammo });
@@ -11377,7 +11450,16 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     const key = (type, value, code = "Key" + value.toUpperCase(), location = 0) => canvas.dispatchEvent(new KeyboardEvent(type,
       { key: value, code, location, bubbles: true, cancelable: true }));
     const tap = (value, code, location) => { key("keydown", value, code, location); key("keyup", value, code, location); };
-    const wheel = deltaY => canvas.dispatchEvent(new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }));
+    let wheelAt = performance.now();
+    const wheel = (deltaY, gap = 100) => {
+      wheelAt += gap;
+      const event = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true });
+      Object.defineProperty(event, "timeStamp", { value: wheelAt });
+      const clock = Object.getOwnPropertyDescriptor(performance, "now");
+      Object.defineProperty(performance, "now", { configurable: true, value: () => wheelAt });
+      try { canvas.dispatchEvent(event); }
+      finally { if (clock) Object.defineProperty(performance, "now", clock); else delete performance.now; }
+    };
     const sample = name => {
       B.advance(1, 1 / 60);
       const camera = B.camera, p = e.root.position, orbit = B.pilot.orbit;
@@ -11447,7 +11529,43 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             rightClick(); rightClick(); P.update(2);
             if (!side) { tap("Shift", "ShiftRight", 2); P.readInput(1 / 60); }
           }
-          gestures.push({ signedIn, carry, rightCarry, doubleCarry, aimed, returned: P.view === "birds-eye" && P.combat });
+          const returned = P.view === "birds-eye" && P.combat, stops = [];
+          const read = () => ({ view: P.view, combat: P.combat, distance: B.pilot.orbit.tDist });
+          for (const combat of [false, true]) {
+            if (P.combat !== combat) tap("x");
+            wheel(-1200, 300); P.update(2);
+            for (let i = 0; i < 6; i++) { wheel(-1200); P.update(0.1); }
+            const inward = read();
+            wheel(-1200, 300); P.update(1); const freshInward = read();
+            wheel(1200); P.update(1);
+            for (let i = 0; i < 6; i++) { wheel(1200); P.update(0.1); }
+            const outward = read(), camera = B.camera, before = { ...camera.position }, target = { ...camera.target };
+            wheel(8, 300);
+            const immediate = Math.hypot(camera.position.x - before.x, camera.position.y - before.y, camera.position.z - before.z);
+            P.update(0.0001);
+            const firstStep = Math.hypot(camera.position.x - before.x, camera.position.y - before.y, camera.position.z - before.z);
+            const targetStep = Math.hypot(camera.target.x - target.x, camera.target.y - target.y, camera.target.z - target.z);
+            let last = { ...camera.position }, maxStep = 0, finite = true;
+            for (let frame = 0; frame < 90; frame++) {
+              if (combat) e.root.position.x += 0.002;
+              P.update(1 / 60); const p = camera.position;
+              maxStep = Math.max(maxStep, Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z));
+              finite = finite && [p.x, p.y, p.z, camera.target.x, camera.target.y, camera.target.z].every(Number.isFinite);
+              Object.assign(last, p);
+            }
+            let trackingError = 0;
+            if (combat) {
+              const x = B.pilot.orbit.tx, z = B.pilot.orbit.tz;
+              e.root.position.x += 0.1; e.root.position.z += 0.05; P.update(1 / 60);
+              trackingError = Math.hypot(B.pilot.orbit.tx - x - 0.1, B.pilot.orbit.tz - z - 0.05);
+            }
+            const freshOutward = read(), pinch = {};
+            P.zoom(0.001, pinch); P.update(2); P.zoom(2, pinch); P.update(1);
+            const heldPinch = read();
+            stops.push({ combat, inward, freshInward, outward, freshOutward, heldPinch, immediate, firstStep, targetStep, maxStep, trackingError, finite });
+            P.zoom(2, {}); P.update(2);
+          }
+          gestures.push({ signedIn, carry, rightCarry, doubleCarry, aimed, returned, stops });
         }
       } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
       P.zoom(0.01, "inward"); sample("combat shoulder from overhead");
@@ -11634,6 +11752,13 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.returned
       && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
       && row.aimed.length === 2 && row.aimed.every(view => view.view === "shoulder" && view.combat && view.focused && view.error < 0.01)), JSON.stringify(state.gestures));
+  record("gorilla zoom stops: the shared wheel path stops long bursts at shoulder in both directions and continues only after a pause; one pinch stays stopped after reversal, and a small outward scroll starts a smooth view change",
+    state.gestures.every(row => row.stops.length === 2 && row.stops.every(stop =>
+      [stop.inward, stop.outward, stop.heldPinch].every(s => s.view === "shoulder" && s.combat === stop.combat)
+      && stop.freshInward.view === "first-person" && stop.freshInward.combat === stop.combat
+      && stop.freshOutward.view === (stop.combat ? "birds-eye" : "orbit") && stop.freshOutward.combat === stop.combat
+      && Math.abs(stop.freshOutward.distance - stop.outward.distance * Math.exp(8 * 0.0025)) < 0.001
+      && stop.immediate < 1e-6 && stop.firstStep < 0.01 && stop.targetStep < 0.01 && stop.maxStep < 1 && stop.trackingError < 0.001 && stop.finite)), JSON.stringify(state.gestures));
   record("owned pair: T retakes the Ooga then cycles its gorilla at their existing positions; G still grabs, held T does not repeat and signed-out T does not switch", Object.values(state.pair).every(Boolean), JSON.stringify(state.pair));
   record("owned pair views: direct T switches preserve carry/combat and first-person, shoulder or distant view in both directions; after Escape frees combat's cursor, both switches keep it native", state.transitions.length === 6 && state.transitions.every(r => r.prepared && r.toGorilla && r.toOoga && r.cursorFreed && r.nativeToOoga && r.nativeToGorilla), JSON.stringify(state.transitions));
   record("Ooga selection: an unavailable, remote-controlled or missing owned Ooga refuses T selection with a reason and preserves the current gorilla, camera and control mode", Object.values(state.selection).every(Boolean), JSON.stringify(state.selection));

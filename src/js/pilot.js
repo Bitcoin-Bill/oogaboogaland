@@ -153,6 +153,7 @@
     // Carry still owns an orbit. Combat's overhead pointer stays on the upper
     // centreline: vertical input sets its reach, horizontal input turns the view.
     const overheadMin = ctx.birdsEyeMin ?? OVERHEAD_MIN;
+    const overheadScrollMin = cave => Math.min(overheadMin, SHOULDER_DISTANCE * cave.traits.height + cave.baseY);
     // A scene with no follow (the mine) never carries an Ooga, so it never reads this.
     const carryOrbitMin = follow ? Math.max(DIST_MIN, clamp(close ? close.trailingDist : follow.min, follow.min, follow.max)) : DIST_MIN;
     const overheadDefault = ctx.birdsEyeMin ?? Math.max(OVERHEAD_MIN + 1, DIST_MAX * 0.5);
@@ -339,11 +340,11 @@
         canvas.focus({ preventScroll: true });
       } else if (document.activeElement === canvas) canvas.blur();
     };
-    const resetPointer = () => {
-      if (input) input.reset();
+    const resetPointer = (preserveZoom = false) => {
+      if (input) input.reset(preserveZoom === true);
       controls.clearPointer();
     };
-    const unlockAim = () => {
+    const unlockAim = (preserveZoom = false) => {
       if (externalControl && !disposed) return;
       lockCancelled = true;
       aimLocked = false;
@@ -363,7 +364,7 @@
       if (carryCursor.active) {
         carryCursor.stop();
       }
-      resetPointer();
+      resetPointer(preserveZoom);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
     // Another playable actor shares the canvas and controls, but owns its own
@@ -444,7 +445,7 @@
       carryCursor.rebaseAim();
       aimMix = aimVelocity = 0;
     };
-    const syncAim = () => {
+    const syncAim = (preserveZoom = false) => {
       if (externalControl) return;
       const controlled = player(), combat = armed();
       const overhead = birdsEye();
@@ -460,15 +461,15 @@
         const rect = canvas.getBoundingClientRect();
         carryCursor.start(rect.left + overheadX * rect.width / renderer.size.width,
           rect.top + overheadY * rect.height / renderer.size.height, false, false);
-      } else if (combat && !overhead && carryCursor.active) { carryCursor.stop(); resetPointer(); }
-      if (!combat && (carryCursor.active || softAimFocused || document.pointerLockElement === canvas)) unlockAim();
+      } else if (combat && !overhead && carryCursor.active) { carryCursor.stop(); resetPointer(preserveZoom); }
+      if (!combat && (carryCursor.active || softAimFocused || document.pointerLockElement === canvas)) unlockAim(preserveZoom);
       const cave = aimView() ? controlled : null;
       if (cave === aimCave) return;
       if (carryCursor.active) {
         ads = false;
         if (controlled) crew.stopBurst(controlled);
         crew.releaseSwing(controlled, true);
-      } else if (!combat) unlockAim();
+      } else if (!combat) unlockAim(preserveZoom);
       if (aimCave) {
         camera.near = savedNear;
         const p = aimCave.root.position;
@@ -1041,7 +1042,7 @@
         // Calibrate at floor zero, then compare relative to this head. The
         // same clearance follows floors, props, hills and a falling body.
         const headHeight = cave.headOffset * close.eyeRatio + cave.viewLift;
-        if (camera.position.y - aimPoint.y <= overheadMin - headHeight + 0.08) shooterView(true);
+        if (camera.position.y - aimPoint.y <= overheadScrollMin(cave) - headHeight + 0.08) shooterView(true, null, null, true);
       }
     };
     const beginCenteredCarry = (cave) => {
@@ -1464,7 +1465,7 @@
       aimAtCursor = true; aimPreserveFacing = false;
       aimScreenX = aimScreenY = 0;
     };
-    const enterClose = (combat = false) => {
+    const enterClose = (combat = false, preserveZoom = false) => {
       if (!close || closeWanted) return;
       closeWanted = true;
       shoulderView = false;
@@ -1474,7 +1475,7 @@
         if (!cave.weapon.equipped && !cave.weapon.primaryEquipped) crew.selectWeapon(cave.weapon.selectedSlot, cave);
         cave.weapon.aiming = true;
       }
-      syncAim();
+      syncAim(preserveZoom);
       if (aimView()) {
         if (cave.camp.rolling) releaseCursorAim();
         else if (!aimAtCursor) lockCurrentAimPoint();
@@ -1680,7 +1681,7 @@
       return true;
     };
     // Wheel and right-click choose a camera while X owns carry/combat intent.
-    const shooterView = (active, px = null, py = null) => {
+    const shooterView = (active, px = null, py = null, scroll = false) => {
       resumePose();
       const cave = player();
       if (!weaponViewReady(cave)) return;
@@ -1735,12 +1736,12 @@
         crew.releaseSwing(cave, true);
         crew.stopBurst(cave);
         if (!coarse) {
-          resetPointer();
+          resetPointer(scroll);
           if (armed()) carryCursor.stop();
-          else unlockAim();
+          else unlockAim(scroll);
         }
       }
-      syncAim();
+      syncAim(scroll);
       if (active) {
         if (armed() && !coarse && px !== null && py !== null && !closeWanted && !overheadExit) {
           const rect = canvas.getBoundingClientRect();
@@ -1751,11 +1752,14 @@
         if (armed()) { focusAim(); lockAim(); }
         zoomTilt = false;
         zoomPitchVelocity = 0;
-        if (birdsEye()) overheadHeight = overheadWanted = overheadMin;
-        else {
+        if (birdsEye()) {
+          // Scroll starts at the displayed shoulder radius; the configured
+          // overhead framing still belongs to deliberate right-click entry.
+          overheadHeight = overheadWanted = scroll ? overheadEntryRadius + cave.baseY : overheadMin;
+        } else {
           // Carry leaves shoulder through syncAim's swooping orbit handoff.
           // Only combat enters the overhead camera; do not force carry to its pole.
-          orbit.tDist = carryOrbitMin;
+          orbit.tDist = scroll ? orbit.dist : carryOrbitMin;
         }
         restoreHead();
       }
@@ -1985,11 +1989,10 @@
     };
     // Held it climbs, clicked it acts; both mouse buttons on the canvas walk
     const controls = createControls({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, chord: canvas, onAction: action, pressActions: true, shooter: () => externalCombat ? externalCombat() : armed(), canDescend: () => !player() });
-    // A wheel gesture that crosses a mode boundary is held there so its momentum cannot carry on into the next
-    // mode; the hold lasts ZOOM_HOLD seconds. A mouse or trackpad that keeps scrolling extends one gesture for as
-    // long as it scrolls, so an unbounded hold left the view stuck in shoulder or first person.
-    const ZOOM_HOLD = 0.35;
-    let trailingViewInput = false, trailingZoomInput = false, stoppedZoomGesture = null, stoppedZoomAt = 0;
+    // Shoulder is a stop for the whole gesture, including momentum. Input's
+    // wheel/pinch id is authoritative; callers without one use a quiet gap or reversal.
+    const ZOOM_PAUSE = 220;
+    let trailingViewInput = false, trailingZoomInput = false, zoomGesture = null, zoomAt = -Infinity, zoomDirection = 0, zoomStopped = false;
     const zoomPitch = (cave, fromDistance) => {
       if (!weaponViewReady(cave)) return;
       if (carryExitMode === 1) return;
@@ -2038,38 +2041,45 @@
       },
       onZoom: (factor, gesture = null, px = null, py = null) => {
         if (factor === 1) return;
+        const now = performance.now(), direction = Math.sign(factor - 1);
+        const fresh = gesture !== null ? gesture !== zoomGesture
+          : zoomGesture !== null || direction !== zoomDirection || now - zoomAt > ZOOM_PAUSE;
+        zoomGesture = gesture; zoomAt = now; zoomDirection = direction;
+        if (fresh) zoomStopped = false;
+        if (zoomStopped) return;
         resumePose();
-        if (gesture !== null && gesture === stoppedZoomGesture && performance.now() - stoppedZoomAt < ZOOM_HOLD * 1000) return;
         if (hud.fadeDetachedName) hud.fadeDetachedName();
         const cave = player();
         if (birdsEye()) {
           // X may preserve a radius below the scroll boundary. Scrolling in
           // there enters shoulder from this pose, never first lifting out.
-          const wanted = clamp(overheadWanted * factor, Math.min(overheadWanted, overheadMin), DIST_MAX);
+          const minimum = overheadScrollMin(cave);
+          const wanted = clamp(overheadWanted * factor, Math.min(overheadWanted, minimum), Math.max(overheadWanted, DIST_MAX));
           if (wanted !== overheadWanted) {
             anchorOverheadPointer(cave);
             overheadWanted = wanted;
           }
-          overheadToShoulder = factor < 1 && wanted <= overheadMin;
-          if (overheadToShoulder) stoppedZoomGesture = gesture;
+          overheadToShoulder = factor < 1 && wanted <= minimum;
+          if (overheadToShoulder) zoomStopped = true;
           return;
         }
         if (aimView()) {
-          // Stop the entire gesture at shoulder view, including its momentum.
-          // A fresh scroll is needed to cross the next mode boundary.
-          if (factor < 1 && shoulderView) enterClose();
-          else if (factor > 1) {
-            if (closeWanted) {
-              exitClose();
-              stoppedZoomGesture = gesture;
-              stoppedZoomAt = performance.now();
-            }
-            else {
-              shooterView(false);
-              stoppedZoomGesture = gesture;
-            }
+          // Entering shoulder consumes this gesture. A fresh outward
+          // gesture can keep zooming through orbit or overhead distance.
+          if (factor < 1) {
+            if (shoulderView) enterClose(false, true);
+            return;
           }
-          return;
+          if (closeWanted) {
+            exitClose();
+            zoomStopped = true;
+            return;
+          }
+          shooterView(false, null, null, true);
+          if (birdsEye()) {
+            overheadWanted = clamp(overheadWanted * factor, Math.min(overheadWanted, overheadScrollMin(cave)), Math.max(overheadWanted, DIST_MAX));
+            return;
+          }
         }
         if (!close) {
           orbit.tDist = clamp(orbit.tDist * factor, DIST_MIN, DIST_MAX);
@@ -2080,7 +2090,7 @@
             closeExitScale *= factor;
             if (closeExitScale >= CLOSE_PINCH_EXIT) {
               exitClose();
-              if (player()) trailingZoomInput = true;
+              if (player()) { trailingZoomInput = true; zoomStopped = true; }
             }
           } else closeExitScale = 1;
           return;
@@ -2096,11 +2106,10 @@
         }
         if (factor < 1 && orbit.tDist <= minimum + 0.001) {
           if (weaponViewReady(cave)) {
-            shooterView(true, px, py);
-            stoppedZoomGesture = gesture;
-              stoppedZoomAt = performance.now();
+            shooterView(true, px, py, true);
+            zoomStopped = true;
           }
-          else enterClose();
+          else enterClose(false, true);
         }
       },
       onDoubleTap: (hit) => {
