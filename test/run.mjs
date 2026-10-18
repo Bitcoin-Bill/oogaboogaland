@@ -7504,16 +7504,24 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     }
     // Restore the basement before exercising the existing camera handoffs.
     P.navigate({ position: { x: lower.x, y: H.basement.floor, z: lower.z }, yaw: 0, pitch: 0.3, dist: 8 }); B.advance(2, 1 / 60);
-    const cutState = () => ({ mode: P.mode, player: !!P.player, mix: P.birdsEyeMix, fade: B.renderOpts.cutawayFade, rock: B.renderOpts.cutawayRockMix,
+    const cutClear = () => !B.renderOpts.birdsEyeCutaway && B.renderOpts.cutawayMaxY >= 1e5 && !B.renderOpts.cutawayRegionCount
+      && B.renderOpts.cutawayFade === 0 && B.renderOpts.cutawayRockMix === 0 && B.renderOpts.cutawayCloudMix === 0
+      && pathState.active === 0 && pathState.mix.every(mix => mix === 0) && pathState.windowMix.every(mix => mix === 0)
+      && entries.every(entry => !entry.cap.node.visible) && D.headquarters.rampMarkers.every(marker => !marker.node.visible && !marker.arrow.visible)
+      && B.crew.list.every(cave => !cave.root.cutawayWholeHidden) && B.clankers.list.every(entry => !entry.root.cutawayWholeHidden)
+      && D.props.every(prop => !prop.node.cutawayWholeHidden);
+    const cutState = () => ({ mode: P.mode, player: !!P.player, combat: P.aiming, clear: cutClear(), mix: P.birdsEyeMix, fade: B.renderOpts.cutawayFade, rock: B.renderOpts.cutawayRockMix,
       eyeY: B.camera.position.y, ceiling: H.basement.ceiling,
       markers: D.headquarters.rampMarkers.reduce((count, marker) => count + (marker.node.visible ? 1 : 0), 0),
       cuts: B.renderOpts.cutawayMaxY < 1e5 ? [B.renderOpts.cutawayMaxY] : regions.slice(0, B.renderOpts.cutawayRegionCount).map(r => r.y) });
     const transition = (name, action, frames = 60) => {
       const before = cutState(); action(); const immediate = Math.abs(P.birdsEyeMix - before.mix), immediateFade = Math.abs(B.renderOpts.cutawayFade - before.fade);
       let last = before, mixStep = 0, fadeStep = 0, cutStep = 0, fadeError = 0, capError = 0, minCut = Infinity, maxCut = -Infinity, changed = 0, direction = true, blended = 0, withoutPlayer = 0;
-      let rockError = Math.abs(before.rock - before.fade), maxRegions = 0;
+      let rockError = Math.abs(before.rock - before.fade), maxRegions = 0, carryClear = true, firstClear = false;
       for (let i = 0; i < frames; i++) {
         B.advance(1 / 60, 1 / 60); const s = cutState(); mixStep = Math.max(mixStep, Math.abs(s.mix - last.mix)); fadeError = Math.max(fadeError, Math.abs(s.fade - s.mix));
+        if (!i) firstClear = s.clear;
+        if (!s.player || !s.combat) carryClear = carryClear && s.clear;
         fadeStep = Math.max(fadeStep, Math.abs(s.fade - last.fade));
         rockError = Math.max(rockError, Math.abs(s.rock - s.fade));
         maxRegions = Math.max(maxRegions, B.renderOpts.cutawayRegionCount);
@@ -7530,7 +7538,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
         if (B.renderOpts.cutawayMaxY < 1e5) for (const e of D.terrainSections) if (e.cap.node.visible) capError = Math.max(capError, Math.abs(e.cap.node.world[13] + 0.002 - B.renderOpts.cutawayMaxY));
         last = s;
       }
-      return { name, before, after: last, immediate, immediateFade, mixStep, fadeStep, cutStep, fadeError, rockError, capError, span: maxCut - minCut, changed, direction, blended, withoutPlayer, maxRegions };
+      return { name, before, after: last, immediate, immediateFade, mixStep, fadeStep, cutStep, fadeError, rockError, capError, span: maxCut - minCut, changed, direction, blended, withoutPlayer, maxRegions, carryClear, firstClear };
     };
     const toggle = () => P.modeAction("mode-toggle"), transitions = [];
     transitions.push(transition("basement carry exit", toggle));
@@ -7539,30 +7547,45 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     transitions.push(transition("basement carry entry", toggle));
     transitions.push(transition("basement shoulder exit", () => P.hooks.onZoom(0.001, {}), 150));
     transitions.push(transition("basement shoulder entry", () => P.hooks.onZoom(1.2, {})));
-    toggle(); B.advance(1, 1 / 60);
-    P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60);
-    const carryRoofs = { out: true, in: true, settled: false, hiddenMarkers: true };
-    P.hooks.onZoom(1.2, {});
-    for (let i = 0; i < 60; i++) {
-      B.advance(1 / 60, 1 / 60);
-      carryRoofs.out = carryRoofs.out && P.mode === "orbit" && B.renderOpts.cutawayFade === 1
-        && B.renderOpts.cutawayMaxY < H.ceiling - 0.5;
-      carryRoofs.hiddenMarkers = carryRoofs.hiddenMarkers && D.headquarters.rampMarkers.every(marker => !marker.node.visible);
-    }
-    P.hooks.onZoom(0.001, {});
-    let carryEntryFrames = 0;
-    for (let i = 0; i < 120 && P.shoulderEntryMix < 1; i++) {
-      B.advance(1 / 60, 1 / 60);
-      // The terminal frame is settled shoulder, where the next check requires
-      // restoration. Measure the handoff only while it is still in progress.
-      if (P.shoulderEntryMix === 1) break;
-      carryEntryFrames++;
-      carryRoofs.in = carryRoofs.in && P.mode === "shoulder" && B.renderOpts.cutawayFade === 1
-        && B.renderOpts.cutawayMaxY < H.ceiling - 0.5;
-    }
-    carryRoofs.in = carryRoofs.in && carryEntryFrames >= 10;
-    B.advance(1, 1 / 60);
-    carryRoofs.settled = P.mode === "shoulder" && P.shoulderEntryMix === 1 && B.renderOpts.cutawayFade === 0;
+    const carryRoofs = [], G = B.clankerPlay, C = B.clankers, e = C.list.find(entry => entry.owner === a);
+    const account = BL.net.state.me, backend = BL.net.state.backend, character = BL.characters.get(a.traits.name);
+    const pressX = () => { key("keydown", "x", "KeyX"); key("keyup", "x", "KeyX"); };
+    try {
+      BL.net.state.backend = true;
+      for (const signedIn of [false, true]) for (const gorilla of [false, true]) for (const q of places.filter(place => place.name === "HQ" || place.name === "basement")) {
+        BL.net.state.me = signedIn ? { id: 75, login: character.github || character.handle, display: "Cutaway fixture" } : null;
+        G.release(); P.release(true);
+        P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+        P.navigate({ position: gorilla ? { x: -5, y: I.surfaceAt(-5, 5), z: 5 } : { x: q.x, y: q.floor, z: q.z }, yaw: 0, pitch: 0.3, dist: 8 }); P.release(true);
+        if (gorilla) {
+          e.active = e.root.visible = true; G.possess(e); if (C.sleeping(e)) C.wake();
+          C.respawn(e, q.x, q.floor, q.z); e.root.visible = true; G.release();
+        }
+        P.goPreset("pile");
+        Object.assign(B.camera.position, { x: q.x + 3, y: q.floor + 25, z: q.z + 5 });
+        Object.assign(B.camera.target, { x: q.x, y: q.floor + 1, z: q.z }); B.camera.up = { x: 0, y: 1, z: 0 };
+        const controller = gorilla ? G : P, actor = gorilla ? e : a;
+        const read = () => ({ view: gorilla ? G.view : P.mode, combat: gorilla ? G.combat : P.aiming, controlled: controller.player === actor,
+          clear: cutClear(), cut: B.renderOpts.birdsEyeCutaway, mix: B.camera.orthoMix || 0, eye: B.camera.position.y });
+        const advance = (frames, requireClear = false) => {
+          let clear = true;
+          for (let i = 0; i < frames; i++) { B.advance(1 / 60, 1 / 60); if (requireClear) clear = clear && cutClear(); }
+          return { ...read(), clearThroughout: clear };
+        };
+        controller.possess(actor); const acquired = advance(1, true);
+        pressX(); const overhead = advance(90);
+        pressX(); const carryExit = advance(1, true);
+        const carrySettling = advance(12, true);
+        pressX(); const overheadAgain = advance(90);
+        controller.release(true); const detached = advance(1, true);
+        document.getElementById("own-ooga-hud").click(); const retaken = advance(1, true);
+        carryRoofs.push({ signedIn, gorilla, floor: q.name, ceiling: q.floor === H.floor ? H.ceiling : H.basement.ceiling,
+          acquired, overhead, carryExit, carrySettling, overheadAgain, detached, retaken });
+      }
+    } finally { G.release(); P.release(true); BL.net.state.me = account; BL.net.state.backend = backend; }
+    P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+    P.navigate({ position: { x: lower.x, y: H.basement.floor, z: lower.z }, yaw: 0, pitch: 0.3, dist: 8 });
+    if (P.aiming) toggle(); P.hooks.onZoom(0.001, {}); B.advance(1, 1 / 60);
     toggle(); P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
     const cave = places.find(q => q.name === "cave");
     P.navigate({ position: { x: cave.x, y: cave.floor, z: cave.z }, yaw: 0, pitch: 0.3, dist: 8 }); B.advance(2, 1 / 60);
@@ -7669,24 +7692,26 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     && state.cache.every(c => c.cacheEntries <= 16) && state.cache.some(c => c.cacheEntries === 16)
     && state.landmarks.length === 3 && state.landmarks.every(p => p[0] === 0 && p[1] === 0) && state.clouds > 0 && state.weather > 0, JSON.stringify({ ...state, rows: rows.map(r => ({ name: r.name, zoomStable: r.zoomStable, zoomMoved: r.zoomMoved, caps: r.caps })) }));
   record("birds-eye combat: the pile, HQ hearth and basement center align on screen at every selected floor despite their different elevations", rows.every(r => r.orthoMix === 1 && r.centerError < 0.001), JSON.stringify(rows.map(({ name, centerError, orthoMix }) => ({ name, centerError, orthoMix }))));
-  record("birds-eye combat: cave roofs, underground cuts and weather follow the full camera blend through carry and shoulder handoffs, including reversal without a reset", state.transitions.length === 8
-    && state.transitions.every(r => r.immediate < 1e-6 && r.mixStep < 0.08 && r.cutStep < 5 && r.rockError < 1e-6 && r.capError < 1e-5 && r.maxRegions <= 8)
-    // Both basement handoffs retain the chosen above-ceiling eye and its stable cut.
-    && state.transitions.slice(0, 6).every(r => r.after.fade === 1 && r.after.cuts.length > 0 && r.fadeStep === 0 && r.span === 0)
+  record("birds-eye combat: carry clears every cut immediately while combat retains a stable underground slice through high-eye shoulder handoffs and projection reversal", state.transitions.length === 8
+    && state.transitions.every(r => r.immediate < 1e-6 && r.mixStep < 0.08 && r.cutStep < 5 && r.rockError < 1e-6 && r.capError < 1e-5 && r.maxRegions <= 8 && r.carryClear)
+    && [4, 5].every(i => state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0 && state.transitions[i].fadeStep === 0 && state.transitions[i].span === 0)
     && state.transitions[4].after.eyeY > state.transitions[4].after.ceiling
-    && state.transitions.slice(6).every(r => r.fadeError < 1e-6 && r.span > 1 && r.changed >= 10 && r.direction && r.blended >= 10)
+    && state.transitions[7].fadeError < 1e-6 && state.transitions[7].span > 1 && state.transitions[7].changed >= 10 && state.transitions[7].direction && state.transitions[7].blended >= 10
     && state.transitions[1].after.mix > 0 && state.transitions[1].after.mix < 1
     && state.transitions[2].before.mix === state.transitions[1].after.mix
-    && [0, 2, 4].every(i => state.transitions[i].after.mix === 0 && state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0)
-    && [6].every(i => state.transitions[i].after.mix === 0 && state.transitions[i].after.fade === 0 && !state.transitions[i].after.cuts.length)
+    && [0, 2, 6].every(i => state.transitions[i].firstClear && state.transitions[i].after.mix === 0 && state.transitions[i].after.clear)
     && [3, 5, 7].every(i => state.transitions[i].after.mix === 1 && state.transitions[i].after.fade === 1 && state.transitions[i].after.cuts.length > 0)
     && state.transitions[4].after.mode === "shoulder" && state.transitions[5].after.mode === "birds-eye", JSON.stringify(state.transitions));
-  record("carry orbit: upper floors stay hidden in both lower-level camera handoffs and return after shoulder settles", Object.values(state.carryRoofs).every(Boolean), JSON.stringify(state.carryRoofs));
+  record("lower floors: signed in or out, Ooga and gorilla carry never slice HQ or basement during high detached acquisition, residual projection after X or last-actor retake; X combat restores slicing", state.carryRoofs.length === 8
+    && state.carryRoofs.every(r => Number.isFinite(r.acquired.eye) && r.acquired.eye > r.ceiling
+      && [r.acquired, r.carryExit, r.carrySettling, r.retaken].every(s => s.controlled && s.view === "orbit" && !s.combat && s.clear && s.clearThroughout)
+      && r.carryExit.mix > 0
+      && [r.overhead, r.overheadAgain].every(s => s.controlled && s.combat && s.view === "birds-eye" && s.cut && s.mix === 1)
+      && !r.detached.controlled && !r.detached.combat && r.detached.clear && r.detached.clearThroughout && r.retaken.view === "orbit"), JSON.stringify(state.carryRoofs));
   const released = state.released;
-  record("birds-eye combat: releasing the actor completes a bounded weather fade and upward rock scan after the camera stops following", released.before.mix === 1 && released.before.fade === 1 && released.immediateFade < 1e-6
-    && released.fadeStep < 0.08 && released.cutStep < 5 && released.capError < 1e-5 && released.span > 1 && released.changed >= 10 && released.direction && released.blended >= 10 && released.withoutPlayer >= 10
-    && released.rockError < 1e-6
-    && !released.after.player && released.after.mix === 0 && released.after.fade === 0 && !released.after.cuts.length && state.restored, JSON.stringify({ released, restored: state.restored }));
+  record("birds-eye combat: releasing the actor restores terrain, weather, caps, paths, markers and whole hidden actors on the first detached update", released.before.mix === 1 && released.before.fade === 1
+    && released.immediateFade < 1e-6 && released.firstClear && released.carryClear && released.withoutPlayer === 0
+    && !released.after.player && released.after.mix === 0 && released.after.clear && state.restored, JSON.stringify({ released, restored: state.restored }));
   const rendering = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, root = S.createNode(), floor = BL.models.box({ w: 40, h: 0.2, d: 40, color: "#00ff00" });
     // One greedy-meshed roof face crosses all four cut edges. Whole-face culling

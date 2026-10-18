@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel and camera-only reset are implemented. Right-click first-person return parity, combat Tab navigation and remaining touch details are still open.
+Status: source audit complete; native carry cursor, Escape order, gorilla multiplayer presence, T switching, camera gestures that preserve carry/combat, signed-in-only local green markers, contributor-only sign-in, shared selection and last-actor retake, independent scroll stops, destination travel, camera-only reset and combat-only island cutaways are implemented. Right-click first-person return parity, combat Tab navigation and remaining touch details are still open.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -350,6 +350,18 @@ The maintainer approved destination travel plus a separate camera-only reset, sh
 - DSB no longer uses a Walk/reset action to acquire an actor or overwrite detached acquisition framing. Its last-actor portrait supplies retake, and its ordinary scene arrival remains unchanged.
 - Existing map, camera, accessibility, remote-actor and DSB regressions are extended for the new flow. These are authored coverage, not runtime results; play-testing remains pending under **wait**.
 
+## Agreed change: combat-only lower-level cutaways
+
+The maintainer requested consistent island slicing for Oogas and clankers: reveal lower levels in combat bird's-eye, and retain the intact island in carry/orbit.
+
+Source inspection found that cutaway activation used the remaining projection blend without checking combat intent. Below ground, it also retained slicing whenever the camera was high enough, with an extra Ooga-only exception for orbit or an unfinished shoulder entry. Thus carry could continue slicing even after its projection settled. Detached view retained the previous cut during a short restoration scan.
+
+- One shared combat requirement now applies to both actors, regardless of sign-in. Combat bird's-eye reveals the current floor and ramps using the existing height and head-clearance rules.
+- Switching to carry or detaching clears the cut, local regions, ramp openings, section caps and ramp markers on the next scene update, even while the camera's projection continues blending. Props and actors hidden as whole units by slicing are restored too. Detached acquisition/retake stays in intact carry/orbit.
+- Within combat, bird's-eye/shoulder transitions retain slicing while their projection blends or the eye is still above the lower-level ceiling. Both actors use that same geometric rule; the Ooga-only orbit/entry exception is removed. The Mempool chamber retains its existing intact roof when a close camera is inside it.
+- The gorilla overlay now checks combat intent as the Ooga overlay already did, so a sleeping gorilla with a retained bird's-eye view does not bypass ordinary rock visibility.
+- Existing floor/cutaway regressions are updated for carry restoration, detached release/retake and both actors/sign-in states. Runtime results remain pending under **wait**.
+
 ## Validation and play-test queue
 
 Testing level remains **wait**. No scenes, browser sessions, probes, screenshots, simulations or automated tests were run. The initial audit build passed. Final build and syntax-check results for the agreed implementation are recorded at the review checkpoint.
@@ -366,6 +378,7 @@ For the maintainer's play-test, exercise each agreed flow with:
 6. Last Ooga/gorilla portrait after detachment, same-actor repeated selection, unavailable/remote-controlled/forbidden retakes, direct switches through all view families, settled sleep and explicit wake. Confirm the sleeping gorilla and its wake on another signed-in page.
 7. Long wheel swipes with momentum, fresh scrolls and new pinches in both directions through shoulder, for both actors and sign-in states. Check small outward increments, low ceilings, floors at different heights, both carry/combat modes and right-click after nearby bird's-eye zoom.
 8. Map open/cancel, all destinations, arrival refusal followed by another choice, controlled Ooga/gorilla and detached travel, and Reset camera / 0 in each walking scene. Include close/overhead views, underground arrivals, occupied destinations, sleepers, seated/climbing/airborne actors, both sign-in states and a second multiplayer page.
+9. HQ, basement and Mempool cutaways with each actor signed in/out: combat bird's-eye reveals the floor; X to carry and detachment restore it immediately; combat close-view handoffs retain safe clearance; detached retake keeps intact carry/orbit.
 
 ## Review checkpoints
 
@@ -389,4 +402,6 @@ For the maintainer's play-test, exercise each agreed flow with:
 - Independent scroll steps: approved; both actors stop at shoulder for the whole gesture and scroll into bird's-eye from nearby. `npm run build`, `node --check` on all four changed JavaScript files and `git diff --check` passed. Existing regressions cover long native wheel bursts and actual two-finger pinch handoffs; runtime checks remain unrun under **wait**.
 - `6ba9434`: independent scroll steps and nearby bird's-eye entry committed and pushed.
 - Destination travel and camera reset: approved; picker, guarded actor travel, separate Reset camera / 0, interior visibility and DSB retake distinction implemented. `npm run build`, `node --check` on all 13 changed JavaScript files and `git diff --check` passed. Existing regressions were extended; runtime checks remain unrun under **wait**.
+- `f7db4a4`: destination travel and camera reset committed and pushed.
+- Combat-only island cutaway: shared mode gate and geometric handoff rule implemented for Oogas/clankers; carry and detached restore all cover. `npm run build`, `node --check` on both changed JavaScript files and `git diff --check` passed. Existing floor/cutaway regressions cover both actors and sign-in states; runtime checks remain unrun under **wait**.
 - Remaining decisions: right-click first-person return parity, combat Tab navigation, touch and exceptional-controller details.

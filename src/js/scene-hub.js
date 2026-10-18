@@ -5125,11 +5125,11 @@
   const updateBirdsEyeCutaway = (dt) => {
     clearCutawayHidden();
     const gorilla = clankerPlay && clankerPlay.active, player = gorilla ? clankerPlay.player : pilot.player;
-    // Release stops following immediately, but the last floor must scan back
-    // into view rather than restoring all rock and weather in one frame.
-    const cameraMix = player ? gorilla ? clankerPlay.birdsEyeMix : pilot.birdsEyeMix
-      : Math.max(0, RENDER_OPTS.cutawayFade - dt / 0.3);
-    const overhead = player && (gorilla ? clankerPlay.birdsEye : pilot.birdsEye);
+    // Projection can still blend after X or release. Only combat owns the
+    // island slice; carry and detached views restore all cover immediately.
+    const combat = !!player && (gorilla ? clankerPlay.combat : pilot.aiming);
+    const cameraMix = combat ? gorilla ? clankerPlay.birdsEyeMix : pilot.birdsEyeMix : 0;
+    const overhead = combat && (gorilla ? clankerPlay.birdsEye : pilot.birdsEye);
     // Under the Mempool island's ground counts by its own rock, not by height: its upper tunnels stand above
     // the home island's surface and its forest floor is never "under" anything. 0 elsewhere, 1 on it, 2 under it.
     const actorFeet = player ? player.root.position.y - (gorilla ? 0 : player.baseY) : 0;
@@ -5153,13 +5153,11 @@
     // when a shoulder/orbit transition lifts it above the actor's cut height.
     const poolInteriorView = cutawayPool === 2 && !overhead
       && mempoolIsland.coveredAt(camera.position.x, camera.position.y, camera.position.z);
-    // Carry can finish its projection blend before the camera handoff ends.
     const mix = poolInteriorView ? 0 : cameraMix;
-    const active = !poolInteriorView && (mix > 0 || !!player && (overhead
-      || subterranean && (camera.position.y > birdsEyeCeiling(player, gorilla)
-        || !gorilla && (pilot.mode === "orbit" || pilot.shoulderEntryMix < 1))));
-    // Below ground, camera interpolation must never restore upstairs rock or
-    // props. Floor/ramp progress still moves the cut as the character travels.
+    const active = combat && !poolInteriorView && (mix > 0 || overhead
+      || subterranean && camera.position.y > birdsEyeCeiling(player, gorilla));
+    // Combat handoffs retain the cut while the eye is above the ceiling, for
+    // either actor. Floor/ramp progress still follows the character's height.
     const rockMix = active && subterranean ? 1 : mix;
     RENDER_OPTS.birdsEyeCutaway = active;
     RENDER_OPTS.cutawayFade = rockMix;
@@ -10302,7 +10300,7 @@
     }
     CAMERA_GLYPHS.time = MATRIX_WORLD.time;
     const player = crew.player;
-    const combatBirdsEye = !!player && pilot.aiming && pilot.birdsEye || clankerPlay.birdsEye;
+    const combatBirdsEye = !!player && pilot.aiming && pilot.birdsEye || clankerPlay.combat && clankerPlay.birdsEye;
     if (combatBirdsEye || RENDER_OPTS.birdsEyeCutaway) {
       // The actual scene is visible through its roof cut. Rock silhouettes and
       // near-camera caps would cover it again using the unchanged solid world.
