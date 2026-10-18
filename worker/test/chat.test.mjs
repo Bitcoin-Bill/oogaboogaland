@@ -115,14 +115,46 @@ const host = (clock = Date, env = {}) => {
     storage: { get: async () => undefined, put: async () => {}, getAlarm: async () => 0, setAlarm: async () => {} },
   };
   const room = () => new context.Room(ctx, env);
-  const join = async (r, id, login, display) => {
+  const join = async (r, id, login, display, contributor = false) => {
     const before = accepted.length;
-    await r.fetch({ url: "https://island.invalid/room", headers: new Headers({ upgrade: "websocket", "x-player-id": String(id), "x-player-login": login, "x-player-display": display }) });
+    await r.fetch({ url: "https://island.invalid/room", headers: new Headers({ upgrade: "websocket", "x-player-id": String(id), "x-player-login": login, "x-player-display": display, "x-player-contributor": contributor ? "1" : "0" }) });
     return accepted[before];
   };
   return { room, join };
 };
 const said = (ws) => ws.sent.filter((m) => m.t === "chat");
+
+test("room: owners take back borrowed Oogas and exclusively switch to their companion, including after tab replacement", async () => {
+  const { room, join } = host(), r = room();
+  const claim = (ws, name) => r.webSocketMessage(ws, JSON.stringify({ t: "body", name }));
+  const visitor = await join(r, 1, "visitor", "Visitor");
+  claim(visitor, "YellowBrokeIt");
+  assert.equal(r.players.get(1).body, "YellowBrokeIt");
+  const owner = await join(r, 2, "YellowBrokeIt", "Yellow");
+  assert.equal(r.players.get(1).body, null);
+  assert.ok(visitor.sent.some(m => m.t === "release" && m.name === "YellowBrokeIt" && m.reason === "owner-here"));
+  claim(owner, "gorilla:YellowBrokeIt");
+  assert.equal(r.players.get(2).body, "gorilla:YellowBrokeIt");
+  assert.equal(owner.store.body, "gorilla:YellowBrokeIt");
+  assert.ok(visitor.sent.some(m => m.t === "body" && m.id === 2 && m.name === "gorilla:YellowBrokeIt"));
+  claim(visitor, "gorilla:YellowBrokeIt");
+  assert.equal(r.players.get(1).body, null);
+  assert.ok(visitor.sent.some(m => m.t === "release" && m.name === "gorilla:YellowBrokeIt" && m.reason === "not-yours"));
+  const next = await join(r, 2, "YellowBrokeIt", "Yellow");
+  assert.equal(owner.closed.reason, "replaced");
+  claim(next, "gorilla:YellowBrokeIt");
+  claim(owner, "YellowBrokeIt");
+  assert.equal(r.players.get(2).body, "gorilla:YellowBrokeIt", "the replaced socket cannot change the current driver's body");
+  claim(next, null);
+  assert.equal(next.store.body, null);
+  claim(visitor, "gorilla:YellowBrokeIt");
+  assert.equal(r.players.get(1).body, null, "detaching does not make a companion borrowable");
+  const temporary = await join(r, 3, "new-contributor", "New", true);
+  claim(temporary, "gorilla:new-contributor");
+  assert.equal(temporary.store.body, "gorilla:new-contributor", "only the Worker-vouched temporary owner can claim its companion");
+  claim(visitor, "gorilla:new-contributor");
+  assert.equal(r.players.get(1).body, null);
+});
 
 test("room: a joiner gets welcome then the held lines; a line goes to everyone, named by the session", async () => {
   const { room, join } = host();

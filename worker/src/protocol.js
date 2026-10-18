@@ -1,15 +1,17 @@
 // The room's wire format and the limits it enforces, as pure functions the tests can reach.
 //
-// Client → room:  { t: "pose", x, y, z, yaw }   the driven Ooga's feet and heading, at most MOVE_HZ
-//                 { t: "body", name }            the Ooga being driven, or null when driving none
-//                 { t: "zone", name }            where that Ooga is (see Zones below)
+// Client → room:  { t: "pose", x, y, z, yaw }   the driven body's feet and heading, at most MOVE_HZ
+//                 { t: "body", name }            Ooga handle, `gorilla:<handle>` for its companion, or null
+//                 { t: "zone", name }            where that body is (see Zones below)
 //                 { t: "hub", on }               this page shows the island and is visible (host candidates)
 //                 { t: "mute", on }              this page muted its own microphone, for everyone's roster
-//                 { t: "hp", v, ko }             the driven Ooga's health (0-100) and whether it is knocked out
+//                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
+//                 pose.g                         optional gorilla locomotion: [flags, speed, stride, climb, side, swim]
 //                 { t: "chat", text, clientId? }            a line for Ooga Chat (see Chat below)
 //                 binary                         the NPC host's frame of every Ooga's pose, relayed as is
 // Room → client:  welcome { you, players, tickHz, now, loopEpoch }, join { p }, leave { id, reason },
-//                 body { id, name }, state { now, ps: [id, x, y, z, yaw, ...] }, kick { reason },
+//                 body { id, name }, state { now, ps: [id, x, y, z, yaw, ...], gs? }, kick { reason },
+//                 state.gs                       gorilla locomotion in [id, ...g] runs; welcome/join carry g too
 //                 release { name, reason }   the Ooga this socket claimed is not, or no longer, its to drive
 //                 host { id, followers }     who runs the NPCs now (0 for nobody) and how many pages follow
 //                                            them (a host with none sends nothing); binary NPC frames from them
@@ -45,7 +47,8 @@ export const SWEEP_MS = 60000;
 export const BOUND_XZ = 160;
 export const BOUND_Y_MIN = -130;
 export const BOUND_Y_MAX = 100;
-export const BODY_NAME = /^[A-Za-z0-9_.-]{1,40}$/;
+export const BODY_NAME = /^(?:gorilla:)?[A-Za-z0-9_.-]{1,40}$/;
+export const bodyName = (body) => typeof body === "string" && body.startsWith("gorilla:") ? body.slice(8) : body;
 export const ZONE_NAME = /^[a-z0-9-]{1,24}(\.[a-z0-9-]{1,16})?$/;
 export const OUTSIDE = "outside";
 export const NOWHERE = "none";
@@ -99,7 +102,16 @@ export const parseClientMessage = (text) => {
     const { x, y, z, yaw } = msg;
     if (!finite(x) || !finite(y) || !finite(z) || !finite(yaw)) return null;
     if (Math.abs(x) > BOUND_XZ || Math.abs(z) > BOUND_XZ || y < BOUND_Y_MIN || y > BOUND_Y_MAX) return null;
-    return { t: "pose", x: round(x), y: round(y), z: round(z), yaw: round(Math.atan2(Math.sin(yaw), Math.cos(yaw))) };
+    const pose = { t: "pose", x: round(x), y: round(y), z: round(z), yaw: round(Math.atan2(Math.sin(yaw), Math.cos(yaw))) };
+    if (msg.g !== undefined) {
+      const g = msg.g;
+      // Bits: airborne, biped, climbing, running, lab stance, office stance. These
+      // are visual locomotion only; no client may transmit a captive or hit here.
+      if (!Array.isArray(g) || g.length !== 6 || !g.every(finite) || !Number.isInteger(g[0]) || g[0] < 0 || g[0] > 63) return null;
+      pose.g = [g[0], round(Math.max(-20, Math.min(20, g[1]))), round(Math.max(-1e6, Math.min(1e6, g[2]))),
+        round(Math.max(-1, Math.min(1, g[3]))), round(Math.max(-1, Math.min(1, g[4]))), round(Math.max(0, Math.min(1, g[5])))];
+    }
+    return pose;
   }
   if (msg.t === "body") {
     if (msg.name === null) return { t: "body", name: null };
@@ -162,10 +174,11 @@ export const playerFromHeaders = (headers) => {
   return { id, login, display: headers.get("x-player-display") || login, contributor: headers.get("x-player-contributor") === "1" };
 };
 
-// Who may drive which Ooga. `cast` is the character rows the build writes from src/characters/
+// Who may drive which Ooga or companion. `cast` is the character rows the build writes from src/characters/
 // (`npm run characters:json`): every Ooga is a contributor's, keyed by handle, owned by its handle and
 // its GitHub login alone: a handle that differs from the login is a name, and some other GitHub account
-// may hold it. A contributor drives only their own; anyone else drives an Ooga only while its owner is
+// may hold it. A contributor drives only their own Ooga or gorilla; companions cannot be borrowed online.
+// Anyone else drives an Ooga only while its owner is
 // not in the room and nobody else holds it. Whether an Ooga is working comes from activity the room does
 // not see, so that rule stays with the page.
 export const castIndex = (cast) => {
@@ -182,7 +195,7 @@ export const castIndex = (cast) => {
 /** null when `login` may drive `body` now; otherwise the refusal reason. `players` iterates { login, body }. */
 export const claimRefusal = (index, login, body, players, contributor = false) => {
   if (body === null) return null;
-  const want = body.toLowerCase();
+  const want = bodyName(body).toLowerCase();
   const me = login.toLowerCase();
   const own = index.handleOf.get(me);
   if (own) return own === want ? null : "not-yours";
@@ -191,6 +204,7 @@ export const claimRefusal = (index, login, body, players, contributor = false) =
   // never grant another visitor an unbundled body, and never mutate the shared cast.
   if (contributor && !index.owners.has(me)) return want === me ? null : "not-yours";
   if (!owner) return "unknown";
+  if (body.startsWith("gorilla:")) return "not-yours";
   for (const p of players) {
     if (p.login.toLowerCase() === me) continue;
     if (p.login.toLowerCase() === owner) return "owner-here";
@@ -199,7 +213,7 @@ export const claimRefusal = (index, login, body, players, contributor = false) =
   return null;
 };
 
-// Voice: who hears whom. Players driving an Ooga hear each other at one volume while they are in the same
+// Voice: who hears whom. Players driving an Ooga or gorilla hear each other at one volume in the same
 // zone group (the island, a bridged land, one cave or portal; see Zones above). A listener with a receiving
 // session hears every other player in its group with a published microphone; nobody hears anyone `none`.
 // The room decides and re-checks it on every pull.
