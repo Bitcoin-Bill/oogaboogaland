@@ -1354,6 +1354,7 @@
       if (MATRIX_WORLD.radius === 0) MATRIX_WORLD.direction = 0;
     }
     MATRIX_WORLD.active = MATRIX_WORLD.radius > 0 ? 1 : 0;
+    MATRIX_WORLD.livingGlobal = MATRIX_WORLD.active;
     const mirrorReveal = mirrorCave.damage.broken || matrixCave.unlocked ? 1 : matrixCave.portal.inside ? Math.max(0, Math.min(1, (MATRIX_WORLD.radius - matrixCave.mirrorDistance) / MATRIX_MIRROR_HEIGHT)) : 0;
     matrixCave.mirrorNode.mirrorReveal = mirrorReveal;
     matrixCave.mirrorNode.mirrorPortal = mirrorReveal === 1;
@@ -2255,7 +2256,7 @@
       const button = createNode({ position: { x: 0, y: 1.2, z: buttonZ }, scale: { x: 0.82, y: 0.82, z: 0.82 }, geometry: { ...hubModels.matrixLeverPlate(), matrixCave: caveIndex }, matrixExterior: true, glow: 0.45 });
       const lights = createNode({ geometry: { ...hubModels.matrixLeverLights(), matrixCave: caveIndex }, glow: 0.25 });
       const hub = createNode({ position: { x: 0, y: 0, z: 0.27 }, rotation: { x: Math.PI / 2, y: 0, z: 0 }, geometry: { ...hubModels.matrixLeverHub(), matrixCave: caveIndex } });
-      const lever = createNode({ position: { x: 0, y: 0, z: 0.48 }, rotation: { x: Math.PI - 0.42, y: 0, z: 0 }, geometry: { ...hubModels.matrixLeverArm(), matrixCave: caveIndex }, glow: 0.45 });
+      const lever = createNode({ position: { x: 0, y: 0, z: 0.48 }, rotation: { x: 0.42, y: 0, z: 0 }, geometry: { ...hubModels.matrixLeverArm(), matrixCave: caveIndex }, glow: 0.45 });
       const grip = createNode({ geometry: { ...hubModels.matrixLeverGrip(), matrixCave: caveIndex }, glow: 0.25 });
       const labels = createNode({ geometry: { ...hubModels.matrixLeverLabels(), matrixCave: caveIndex }, matrixLiving: true, glow: 0.5 });
       addChild(lever, grip);
@@ -5319,7 +5320,7 @@
       break;
     }
   };
-  const inBananas = (cave, x = cave.root.position.x, z = cave.root.position.z) => bananaCover.intersectsBody(x, cave.root.position.y - cave.baseY, z, cave.bodyHeight);
+  const inBananas = (cave, x = cave.root.position.x, z = cave.root.position.z) => bananaCover.intersectsBody(x, cave.root.position.y - (cave.gorilla ? 0 : cave.baseY), z, cave.gorilla ? cave.gorilla.bodyHeight : cave.bodyHeight);
   const npcPileAt = (x, feet, z, height) => feet <= ALTAR_HEIGHT + STEP_MAX && feet + height > 0 && Math.hypot(x, z) < altar.platformRadius + PLAYER_RADIUS
     || bananaCover.intersectsBody(x, feet, z, height);
   const workZoneTraveler = (cave) => cave && cave !== crew?.player && (cave.state !== "working" || cave.bedTravel.mode);
@@ -6070,7 +6071,7 @@
       case "gate":
         return bifrostIsle ? "₿IFRÖST · Bifröst starts here" : `${caves.gate.name} · leads nowhere yet`;
       case "matrix-button":
-        return matrixCave.unlocked ? "Matrix gate lever · pull down" : "Matrix gate lever · push up";
+        return matrixCave.unlocked ? "Matrix lever · push up to turn off" : "Matrix lever · pull down to turn on";
       case "matrix-gate":
         return "Glyph gate · tap or press Space nearby to open";
       case "room-sign":
@@ -6804,12 +6805,8 @@
     if (portal.inside === inside) return;
     portal.inside = inside;
     portal.lastCrossingDirection = inside ? "in" : "out";
-    const global = inside || matrixCave.unlocked;
-    MATRIX_WORLD.livingGlobal = global ? 1 : 0;
-    MATRIX_WORLD.direction = global ? MATRIX_WORLD.radius < MATRIX_WORLD.maxRadius ? 1 : 0 : MATRIX_WORLD.radius > 0 ? -1 : 0;
-    MATRIX_WORLD.active = global || MATRIX_WORLD.radius > 0 ? 1 : 0;
-    // Exiting an unlatched room closes the glass immediately; reentry resumes
-    // its reveal only once the outward world front reaches the mirror.
+    // Occupancy owns the portal view only. The lever owns the world wave.
+    // Exiting an unlatched room closes the glass immediately.
     if (!inside && !matrixCave.unlocked && !mirrorCave.damage.broken) {
       matrixCave.mirrorNode.mirrorReveal = 0;
       matrixCave.mirrorNode.mirrorPortal = false;
@@ -6818,7 +6815,7 @@
   const setMatrixUnlocked = (unlocked, quiet = false) => {
     if (!matrixCave || !matrixControl || matrixCave.unlocked === unlocked) return false;
     matrixCave.unlocked = unlocked;
-    MATRIX_WORLD.livingGlobal = unlocked || matrixCave.portal.inside ? 1 : 0;
+    MATRIX_WORLD.livingGlobal = unlocked || MATRIX_WORLD.radius > 0 ? 1 : 0;
     matrixControl.pressed = unlocked;
     matrixControl.button.glow = unlocked ? 0.65 : 0.45;
     matrixControl.button.highlight = 0;
@@ -6844,24 +6841,23 @@
       MATRIX_WORLD.direction = MATRIX_WORLD.radius < MATRIX_WORLD.maxRadius ? 1 : 0;
       matrixCave.mirrorNode.mirrorReveal = 1;
       matrixCave.mirrorNode.mirrorPortal = true;
-    } else if (matrixCave.portal.inside) {
-      MATRIX_WORLD.active = 1;
-      MATRIX_WORLD.direction = MATRIX_WORLD.radius < MATRIX_WORLD.maxRadius ? 1 : 0;
     } else {
       MATRIX_WORLD.direction = MATRIX_WORLD.radius > 0 ? -1 : 0;
       MATRIX_WORLD.active = MATRIX_WORLD.radius > 0 ? 1 : 0;
-      matrixCave.mirrorNode.mirrorReveal = mirrorCave.damage.broken ? 1 : 0;
-      matrixCave.mirrorNode.mirrorPortal = mirrorCave.damage.broken;
+      if (!matrixCave.portal.inside) {
+        matrixCave.mirrorNode.mirrorReveal = mirrorCave.damage.broken ? 1 : 0;
+        matrixCave.mirrorNode.mirrorPortal = mirrorCave.damage.broken;
+      }
     }
     if (!quiet) hud.toast(unlocked && !mirrorCave.gate.open ? "The outer glyph gates rise. The mirror gate stays shut."
-      : unlocked ? "The glyph gates rise. The Matrix stays." : "The glyph gates descend while the mirror is open.");
+      : unlocked ? "The glyph gates rise. The Matrix spreads." : "The Matrix recedes.");
     return true;
   };
   const respawnAtPile = () => {
     setMatrixUnlocked(false, true);
     setMatrixInside(false);
     // Respawn arrives in the ordinary world immediately, with no retreating wave left in Matrix mode.
-    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = 0;
+    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.livingGlobal = 0;
     navigate("pile", true);
   };
   const matrixControlNear = (x, y, z, reach = MATRIX_BUTTON_REACH) => !!matrixControl && actionWithinReach(x, y, z, matrixControl.x, matrixCave.mouth.floorY + matrixControl.button.position.y, matrixControl.z, reach);
@@ -6926,7 +6922,7 @@
       // Their stored overhead sections are clipped in every render pass, including shadows.
       gate.node.visible = gate.node.position.y + gate.bottom < gate.ceiling && gate.node.position.y + gate.top > gate.floor;
     }
-    const leverAngle = matrixControl.pressed ? 0.42 : Math.PI - 0.42;
+    const leverAngle = matrixControl.pressed ? Math.PI - 0.42 : 0.42;
     matrixControl.lever.rotation.x += (leverAngle - matrixControl.lever.rotation.x) * (1 - Math.exp(-8 * dt));
     const subject = player ? player.root.position : camera.position;
     const action = nearbyAction(subject.x, subject.y + (player ? 1.1 - player.baseY : 0), subject.z, player ? MATRIX_BUTTON_USE_REACH : MATRIX_BUTTON_REACH);
@@ -6960,9 +6956,9 @@
         hud.hint(COARSE ? "Tap OPEN GATE! to open this gate" : "Press Space to open this gate");
         hud.setAct("OPEN GATE!");
       } else if (action === matrixControl) {
-        const label = matrixControl.pressed ? "pull the lever down" : "push the lever up";
+        const label = matrixControl.pressed ? "push the lever up to turn off the Matrix" : "pull the lever down to turn on the Matrix";
         hud.hint(COARSE ? `Tap to ${label}` : `Press Space or tap to ${label}`);
-        if (player) hud.setAct(matrixControl.pressed ? "PULL DOWN" : "PUSH UP");
+        if (player) hud.setAct(matrixControl.pressed ? "PUSH UP" : "PULL DOWN");
       } else {
         hud.hint(COARSE ? "Tap ENTER ARCADE to go in" : "Press Space to enter Ooga Arcade");
         if (player) hud.setAct("ENTER ARCADE");
@@ -6988,7 +6984,7 @@
       return;
     }
     // The detached camera can keep a cave admission while orbiting above or
-    // outside its mouth. Only its actual eye inside the room can start the wave.
+    // outside its mouth. Only its actual eye inside the room owns the portal.
     const eye = camera.position, m = matrixCave.mouth;
     const along = (eye.x - m.x) * matrixCave.sr + (eye.z - m.z) * matrixCave.cr;
     setMatrixInside(cameraCaveIndex === matrixCave.caveIndex && along < PORTAL_Z
@@ -8654,9 +8650,10 @@
     if (RENDER_OPTS.cutawayMaxY !== poolSeamCut) { poolSeamCut = RENDER_OPTS.cutawayMaxY; poolSeamIndex ^= 1; }
     return POOL_SEAMS[poolSeamIndex];
   };
-  const GUIDE_RAMP_COLUMN = { floor: 0, ceiling: 0 };
+  const GUIDE_RAMP_COLUMN = { floor: 0, ceiling: 0 }, GUIDE_EYE = new Float64Array(3);
+  const controlledGuideActor = () => clankerPlay.active ? clankerPlay.player : crew.player;
   const exteriorRampGuides = (player) => {
-    const eye = camera.position, p = player.root.position, feet = p.y - player.baseY;
+    const eye = camera.position, p = player.root.position, feet = p.y - (player.gorilla ? 0 : player.baseY);
     // The exception is for the descent, not the flat entrance corridor or an eye in another room/window.
     if (feet >= -0.1) return false;
     const outside = !island.onLand(eye.x, eye.z)
@@ -8667,6 +8664,14 @@
     return false;
   };
   const guideEyeAt = (player, out) => {
+    if (player.gorilla) {
+      const head = player.gorilla.parts.head, bounds = BL.scene.boundsOf(head.geometry);
+      // The overlay follows rendering, so this is the current posed head,
+      // including the low walking stance and a head resting on its pillow.
+      math.mat4.transformPoint(GUIDE_EYE, head.world, bounds.center[0], bounds.min[1] + (bounds.max[1] - bounds.min[1]) * 0.65, bounds.max[2] + 0.01);
+      setVec(out, GUIDE_EYE[0], GUIDE_EYE[1], GUIDE_EYE[2]);
+      return;
+    }
     // A full turn uses one stable eye anchor, independent of current head yaw.
     // A resting head keeps the same pillow clearance as first person.
     cameraHeadAt(out, player);
@@ -8679,7 +8684,8 @@
     const start = camera.near / depth, end = 1 - 0.018 / Math.hypot(dx, dy, dz);
     if (end <= start) return false;
     const ax = p.x + dx * start, ay = p.y + dy * start, az = p.z + dz * start, bx = p.x + dx * end, by = p.y + dy * end, bz = p.z + dz * end;
-    return guideSegmentClear(ax, ay, az, bx, by, bz) && objectGuides.cameraClear(ax, ay, az, bx, by, bz, crew.player, crew.player.root);
+    const player = controlledGuideActor();
+    return guideSegmentClear(ax, ay, az, bx, by, bz) && objectGuides.cameraClear(ax, ay, az, bx, by, bz, player, player.root);
   };
   // Built with the visit; deferring past first paint was tried and reverted.
   // The build blocks the main thread ~0.5 s with no paint: the curtain jumps and camera easing loses that time.
@@ -10277,7 +10283,7 @@
   };
   let uiGuideObjects = null, uiGuidesReady = false, preparingGuideActor = null;
   const collectViewObjects = () => {
-    const player = crew.player, p = player ? player.root.position : camera.target;
+    const player = controlledGuideActor(), p = player ? player.root.position : camera.target;
     return objectGuides.collect(player, p.x, p.y, p.z, camera, renderer.size.width / Math.max(1, renderer.size.height), sightGuides.state.retainedOwners, sightGuides.state.retainedCount);
   };
   const characterUiOccluded = (cave) => {
@@ -10370,8 +10376,9 @@
       CAMERA_GLYPHS.version++;
     }
     CAMERA_GLYPHS.time = MATRIX_WORLD.time;
-    const player = crew.player;
-    const combatBirdsEye = !!player && pilot.aiming && pilot.birdsEye || clankerPlay.combat && clankerPlay.birdsEye;
+    const gorilla = clankerPlay.active, player = controlledGuideActor();
+    const closeWanted = gorilla ? clankerPlay.firstPerson : pilot.closeWanted, closeMix = gorilla ? (closeWanted ? 1 : 0) : pilot.closeMix;
+    const combatBirdsEye = gorilla ? clankerPlay.combat && clankerPlay.birdsEye : !!player && pilot.aiming && pilot.birdsEye;
     if (combatBirdsEye || RENDER_OPTS.birdsEyeCutaway) {
       // The actual scene is visible through its roof cut. Rock silhouettes and
       // near-camera caps would cover it again using the unchanged solid world.
@@ -10388,24 +10395,24 @@
       // hide the walker: then the walker's rim is drawn through them, and nothing else. Not from an eye that is
       // itself inside that rock, whose back faces are not drawn, so the walker is already in plain sight.
       const eye = camera.position;
-      const buried = !combatBirdsEye && cutawayPool === 2 && !!player && !pilot.closeWanted && pilot.closeMix < 1
+      const buried = !combatBirdsEye && cutawayPool === 2 && !!player && !closeWanted && closeMix < 1
         && (eye.y > RENDER_OPTS.cutawayMaxY || !mempoolIsland.solidAt(eye.x, eye.y, eye.z))
         && (collectViewObjects(), !objectGuides.actorVisible(player, poolSeam()));
       const near = camera.near * Math.sqrt(1 + Math.tan(camera.fov / 2) ** 2 * (1 + (renderer.size.width / Math.max(1, renderer.size.height)) ** 2));
       const cutTop = Math.min(eye.y + near, RENDER_OPTS.cutawayMaxY);
       const touchesPoolRock = !combatBirdsEye && cutawayPool === 2 && cutTop >= eye.y - near
         && !mempoolIsland.boxClear(eye.x - near, eye.y - near, eye.z - near, eye.x + near, cutTop, eye.z + near);
-      cameraCover.state.opacity = 0.22 * (1 - pilot.closeMix);
+      cameraCover.state.opacity = 0.22 * (1 - closeMix);
       cameraCover.draw(camera, buried ? player.root : null, touchesPoolRock, buried, cameraCutRockAt, cameraRockMaterialAt, null, dt);
       return;
     }
-    const insideMirror = !!player && playerCaveIndex === matrixCave.caveIndex;
+    const insideMirror = gorilla ? matrixCave.portal.inside : !!player && playerCaveIndex === matrixCave.caveIndex;
     mirrorGuides.update(insideMirror, MATRIX_WORLD.time, MATRIX_WORLD.density);
-    const bananaActor = bananaCover.prepare(camera, player);
+    const bananaActor = bananaCover.prepare(camera, player, player ? player.root.position.y - (gorilla ? 0 : player.baseY) : 0, gorilla ? player.gorilla.bodyHeight : player?.bodyHeight);
     uiGuideObjects = null; uiGuidesReady = true;
     try { fx.drawOverlay(dt, drawExtra); } finally { uiGuidesReady = false; }
     let touchesRock = false, occluded = false, guides = null, exteriorRamp = false;
-    if (pilot.closeMix < 1) {
+    if (closeMix < 1) {
       const eye = camera.position, tangent = Math.tan(camera.fov / 2), aspect = renderer.size.width / Math.max(1, renderer.size.height);
       const radius = camera.near * Math.sqrt(1 + tangent * tangent * (1 + aspect * aspect));
       // A cheap enclosing-volume check avoids sampling an entirely clear view.
@@ -10420,8 +10427,8 @@
     if (player) {
       const p = player.root.position, aspect = renderer.size.width / Math.max(1, renderer.size.height);
       const objects = uiGuideObjects || collectViewObjects();
-      exteriorRamp = !pilot.closeWanted && pilot.closeMix < 1 && exteriorRampGuides(player);
-      const viewEligible = !pilot.closeWanted && pilot.closeMix < 1;
+      exteriorRamp = !closeWanted && closeMix < 1 && exteriorRampGuides(player);
+      const viewEligible = !closeWanted && closeMix < 1;
       // On the Mempool island only the walker's own rim is drawn through its rock: the whole island is one owner
       // in the outline registry, crowns and all, and the full pass over it is not paid for there.
       // Nor is a rim drawn from an eye inside this rock, which sees the walker through its own undrawn back faces.
@@ -10437,7 +10444,7 @@
       // It must not change the visibility rules in the clear part of the view.
       const fruitGuides = bananaGuides.update(bananaEnabled ? player : null, null, objects, camera, aspect, dt, bananaEnabled, true, SIGHT_RECOMPUTE_HZ);
       if (objectsEnabled || bananaEnabled) {
-        const structure = ensureRockGuides().select(p.x, p.y - player.baseY, p.z, camera.position.x, camera.position.y, camera.position.z), observer = guides.observer;
+        const structure = ensureRockGuides().select(p.x, p.y - (gorilla ? 0 : player.baseY), p.z, camera.position.x, camera.position.y, camera.position.z), observer = guides.observer;
         // Keep wall derivation off a frame that just rebuilt object contours.
         const surfaces = rockGuides.updateSurfaces(observer[19], observer[20], observer[21], camera, dt, player, objectGuides.perceptionClear, objects.occlusionVersion, objects.perceptionVersion, SIGHT_RECOMPUTE_HZ, guides.updates !== contourUpdates);
         guides.structures = objectsEnabled ? surfaces : null; guides.structure = objectsEnabled ? structure : null;
@@ -10455,10 +10462,10 @@
       const p = camera.position, t = camera.target, length = Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z);
       GUIDE_ACTOR_FORWARD[0] = (t.x - p.x) / length; GUIDE_ACTOR_FORWARD[1] = (t.y - p.y) / length; GUIDE_ACTOR_FORWARD[2] = (t.z - p.z) / length;
     }
-    cameraCover.state.opacity = 0.22 * (1 - pilot.closeMix);
+    cameraCover.state.opacity = 0.22 * (1 - closeMix);
     cameraCover.draw(camera, bananaActor ? null : player?.root, touchesRock, occluded, cameraRockAt, cameraRockMaterialAt, cutawayPool && player ? null : guides, dt, MATRIX_WORLD.active ? 1 : 0, CAMERA_GLYPHS, exteriorRamp ? guideActorVisibleAt : null);
     bananaCover.draw(camera, player, dt, guideActorVisibleAt, bananaGuides.state, CAMERA_GLYPHS);
-    drawFirstPersonFire(player);
+    drawFirstPersonFire(crew.player);
   };
 
   const onLootCleared = () => {
@@ -11309,8 +11316,8 @@
     hud.setStats(game.state);
     pile.syncPile(true);
     pileGuides = headquarters.pileGuides = BL.pileGuides.create({ pile, altar,
-      cameraClear: (ax, ay, az, bx, by, bz) => guideSegmentClear(ax, ay, az, bx, by, bz) && objectGuides.cameraClear(ax, ay, az, bx, by, bz, preparingGuideActor || crew.player, pile.core),
-      cameraBoundsState: (minX, minY, minZ, maxX, maxY, maxZ, propsOnly) => objectGuides.cameraBoundsState(minX, minY, minZ, maxX, maxY, maxZ, preparingGuideActor || crew.player, pile.core, guideSegmentClear, propsOnly),
+      cameraClear: (ax, ay, az, bx, by, bz) => guideSegmentClear(ax, ay, az, bx, by, bz) && objectGuides.cameraClear(ax, ay, az, bx, by, bz, preparingGuideActor || controlledGuideActor(), pile.core),
+      cameraBoundsState: (minX, minY, minZ, maxX, maxY, maxZ, propsOnly) => objectGuides.cameraBoundsState(minX, minY, minZ, maxX, maxY, maxZ, preparingGuideActor || controlledGuideActor(), pile.core, guideSegmentClear, propsOnly),
       occlusionVersion: () => objectGuides.result.occlusionVersion
     });
     platformGuides = headquarters.platformGuides = BL.pileGuides.create({ pile, altar, platform: true });
@@ -11724,7 +11731,7 @@
     lampSelValid = false;
     sampledDay = 0;
     RENDER_OPTS.cutawayMaxY = 1e6;
-    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.permanentCave = 0;
+    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.permanentCave = MATRIX_WORLD.livingGlobal = 0;
     cameraCaveIndex = 0;
     cameraEntranceIndex = 0;
     cameraPreviousValid = false;

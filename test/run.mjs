@@ -6108,14 +6108,20 @@ const labKeys = { name: "lab keys", why: "rule: B streams the test bananas onto 
   record("lab keys: B lands 100 test bananas; Escape closes the sheet, frees soft mouse-look, detaches the Ooga and then returns to the island still detached", landed === 100 && focused && ui.scene === "lab" && ui.driving && ui.focused && ui.open === "false" && cursor.scene === "lab" && cursor.driving && !cursor.focused && !cursor.locked && first.scene === "lab" && !first.driving && second.scene === "hub" && !second.driving, JSON.stringify({ landed, focused, ui, cursor, first, second }));
 } };
 // The Matrix room and the mirror, each inside one evaluate so no real frame falls between the steps.
-const hubMatrix = { name: "hub matrix", why: "rule: the room lever raises the mirror's bars and turns the glyph wave on, and pulling it back down puts both back", run: async (b) => {
-  const r = await b.evaluate(`(() => { const B = window.__ooga, G = B.matrixGate, M = B.mirrorCave, W = B.renderOpts.matrix, D = BL.scenes.hub.debug.matrixCave, m = M.mouth, g = M.gate, a = B.cavemen.get("portlandhodl"); if (B.crew.player !== a) B.pilot.possess(a); B.pilot.navigate({ position: { x: G.x + Math.sin(m.ry) * 0.8, y: m.floorY, z: G.z + Math.cos(m.ry) * 0.8 }, yaw: m.ry, pitch: 0.3, dist: 3 }); B.advance(0.5, 1 / 60); const snap = () => ({ pressed: G.pressed, lever: +G.lever.rotation.x.toFixed(2), bars: +g.node.position.y.toFixed(2), wave: W.active, radius: +W.radius.toFixed(1), glyphs: W.livingGlobal, lights: G.lights.matrixLiving, grip: G.grip.matrixLiving, frame: !!G.button.matrixLiving, arm: !!G.lever.matrixLiving }); const before = { near: G.near, ...snap() }; const pressedIn = G.press(); B.advance(3, 1 / 60); const on = snap(), originalQuality = B.renderer.quality, tiers = []; for (const quality of ["high", "medium", "low"]) { B.renderer.setQuality(quality); B.advance(1 / 60, 1 / 60); tiers.push({ quality: D.quality, density: D.qualityDensity, coverage: D.drawnGlyphCount / D.surfaceGlyphCount }); } B.renderer.setQuality(originalQuality); B.advance(1 / 60, 1 / 60); const pressedOut = G.press(); B.advance(6, 1 / 60); const off = snap();
-    // Presence owns the wave while the Ooga stands in the room; the lever owns what survives departure.
-    const apron = () => B.pilot.navigate({ position: { x: m.x + Math.sin(m.ry) * 2, y: m.floorY, z: m.z + Math.cos(m.ry) * 2 }, yaw: m.ry, pitch: 0.3, dist: 3 }), lever = () => B.pilot.navigate({ position: { x: G.x + Math.sin(m.ry) * 0.8, y: m.floorY, z: G.z + Math.cos(m.ry) * 0.8 }, yaw: m.ry, pitch: 0.3, dist: 3 }), state = () => ({ inside: D.portal.inside, wave: W.active, radius: +W.radius.toFixed(1), glyphs: W.livingGlobal });
+const hubMatrix = { name: "hub matrix", why: "rule: pulling the room lever down raises the mirror's bars and starts the glyph wave; switching it off recedes the wave even inside the room", run: async (b) => {
+  const r = await b.evaluate(`(() => { const B = window.__ooga, G = B.matrixGate, M = B.mirrorCave, W = B.renderOpts.matrix, D = BL.scenes.hub.debug.matrixCave, m = M.mouth, g = M.gate, a = B.cavemen.get("portlandhodl"); if (B.crew.player !== a) B.pilot.possess(a); B.pilot.navigate({ position: { x: G.x + Math.sin(m.ry) * 0.8, y: m.floorY, z: G.z + Math.cos(m.ry) * 0.8 }, yaw: m.ry, pitch: 0.3, dist: 3 }); B.advance(0.5, 1 / 60); const snap = () => ({ inside: D.portal.inside, pressed: G.pressed, lever: +G.lever.rotation.x.toFixed(2), bars: +g.node.position.y.toFixed(2), wave: W.active, direction: W.direction, radius: +W.radius.toFixed(1), glyphs: W.livingGlobal, lights: G.lights.matrixLiving, grip: G.grip.matrixLiving, frame: !!G.button.matrixLiving, arm: !!G.lever.matrixLiving }); const before = { near: G.near, ...snap() }; const pressedIn = G.press(); B.advance(3, 1 / 60); const on = snap(), originalQuality = B.renderer.quality, tiers = []; for (const quality of ["high", "medium", "low"]) { B.renderer.setQuality(quality); B.advance(1 / 60, 1 / 60); tiers.push({ quality: D.quality, density: D.qualityDensity, coverage: D.drawnGlyphCount / D.surfaceGlyphCount }); } B.renderer.setQuality(originalQuality); B.advance(1 / 60, 1 / 60); const pressedOut = G.press(); B.advance(0.25, 1 / 60); const receding = snap(); B.advance(5.75, 1 / 60); const off = snap();
+    // Occupancy never starts or reverses the lever's outward/returning wave.
+    const apron = () => B.pilot.navigate({ position: { x: m.x + Math.sin(m.ry) * 2, y: m.floorY, z: m.z + Math.cos(m.ry) * 2 }, yaw: m.ry, pitch: 0.3, dist: 3 }), lever = () => B.pilot.navigate({ position: { x: G.x + Math.sin(m.ry) * 0.8, y: m.floorY, z: G.z + Math.cos(m.ry) * 0.8 }, yaw: m.ry, pitch: 0.3, dist: 3 }), state = () => ({ inside: D.portal.inside, wave: W.active, direction: W.direction, radius: +W.radius.toFixed(1), glyphs: W.livingGlobal });
     apron(); B.advance(6, 1 / 60); const away = state();
-    lever(); B.advance(0.5, 1 / 60); const pressedIn2 = G.press(); B.advance(3, 1 / 60); apron(); B.advance(3, 1 / 60); const held = state();
-    lever(); B.advance(0.5, 1 / 60); const pressedOut2 = G.press(); apron(); B.advance(6, 1 / 60); return { before, pressedIn, on, tiers, pressedOut, off, away, pressedIn2, held, pressedOut2, off2: state() }; })()`);
-  record("hub matrix: pushing the glyphed room lever up lights its green accents, raises the mirror's bars and spreads the glyph wave; pulling it down reverses each change", r.before.near && r.before.lever > 2.5 && r.before.wave === 1 && r.before.glyphs === 1 && !r.before.lights && !r.before.grip && !r.before.frame && !r.before.arm && r.before.bars === 0 && r.pressedIn && r.on.pressed && r.on.lever < 0.5 && r.on.lights && r.on.grip && !r.on.frame && !r.on.arm && r.on.bars > 3 && r.on.wave && r.on.radius > 30 && r.on.glyphs && r.pressedOut && !r.off.pressed && r.off.lever > 2.5 && !r.off.lights && !r.off.grip && r.off.bars === 0 && !r.away.inside && !r.away.wave && !r.away.glyphs && r.away.radius === 0 && r.pressedIn2 && !r.held.inside && r.held.wave === 1 && r.held.radius > 30 && r.held.glyphs === 1 && r.pressedOut2 && !r.off2.wave && !r.off2.glyphs && r.off2.radius === 0, JSON.stringify(r));
+    lever(); B.advance(0.5, 1 / 60); const reenteredOff = state(), pressedIn2 = G.press(); B.advance(3, 1 / 60); apron(); B.advance(3, 1 / 60); const held = state();
+    lever(); B.advance(0.5, 1 / 60); const pressedOut2 = G.press(); apron(); B.advance(0.25, 1 / 60); const exitRecede = state(); lever(); B.advance(0.25, 1 / 60); const reenterRecede = state(); B.advance(6, 1 / 60); return { before, pressedIn, on, tiers, pressedOut, receding, off, away, reenteredOff, pressedIn2, held, pressedOut2, exitRecede, reenterRecede, off2: state() }; })()`);
+  record("hub matrix: entering leaves the world unchanged; pulling the lever down lights its accents, raises the bars and spreads glyphs, while switching it up recedes the wave even inside and crossing the doorway never changes its direction", r.before.near && r.before.inside && r.before.lever < 0.5 && !r.before.wave && !r.before.glyphs && r.before.radius === 0 && !r.before.lights && !r.before.grip && !r.before.frame && !r.before.arm && r.before.bars === 0 && r.pressedIn && r.on.pressed && r.on.lever > 2.5 && r.on.lights && r.on.grip && !r.on.frame && !r.on.arm && r.on.bars > 3 && r.on.wave && r.on.radius > 30 && r.on.glyphs
+    && r.pressedOut && r.receding.inside && r.receding.direction === -1 && r.receding.wave && r.receding.glyphs && r.receding.radius > 0 && r.receding.radius < r.on.radius
+    && r.off.inside && !r.off.pressed && r.off.lever < 0.5 && !r.off.lights && !r.off.grip && r.off.bars === 0 && !r.off.wave && !r.off.glyphs && r.off.radius === 0
+    && !r.away.inside && !r.away.wave && !r.away.glyphs && r.away.radius === 0 && r.reenteredOff.inside && !r.reenteredOff.wave && !r.reenteredOff.glyphs && r.reenteredOff.radius === 0
+    && r.pressedIn2 && !r.held.inside && r.held.wave === 1 && r.held.radius > 30 && r.held.glyphs === 1 && r.pressedOut2
+    && !r.exitRecede.inside && r.exitRecede.direction === -1 && r.reenterRecede.inside && r.reenterRecede.direction === -1 && r.reenterRecede.radius < r.exitRecede.radius
+    && r.off2.inside && !r.off2.wave && !r.off2.glyphs && r.off2.radius === 0, JSON.stringify(r));
   record("hub matrix: high, medium and low WebGL quality retain all glyph lanes instead of exposing black backing panels", r.tiers.every((tier, i) => tier.quality === ["high", "medium", "low"][i] && tier.density === 1 && tier.coverage > 0.55), JSON.stringify(r.tiers));
   const carved = await b.evaluate(`(() => { const B = __ooga, D = BL.scenes.hub.debug, skip = new Set(["c730", "c5"]), rooms = new Map(B.mouths.map(mouth => [mouth.id, mouth.room])); return {
     caves: D.matrixCave.caves.filter(cave => !skip.has(cave.id)).map(cave => ({ id: cave.id, terrain: cave.terrainFaces, counts: { ...cave.surfaceCounts } })),
@@ -11906,6 +11912,34 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     P.update(1);
     const acquired = P.view === "orbit" && !P.combat && !P.focused && reticle.hidden
       && Math.hypot(B.camera.position.x - entryEye.x, B.camera.position.y - entryEye.y, B.camera.position.z - entryEye.z) < 1e-6;
+    const coverRows = [], H = B.headquarters, S = BL.scenes.hub, net = BL.net.state;
+    const coverAccount = net.me, coverBackend = net.backend, coverUp = B.camera.up;
+    const item = BL.scene.createNode({ geometry: BL.models.box({ w: 1, h: 1, d: 1, color: "#fff" }),
+      position: { x: e.root.position.x + 3, y: e.root.position.y + 1.25, z: e.root.position.z + 3 } });
+    BL.scene.addChild(S.root, item); H.objectGuides.register(item);
+    try {
+      const character = BL.characters.get(e.owner.traits.name);
+      for (const signedIn of [false, true]) {
+        net.backend = true; net.me = signedIn ? { id: 71, login: character.github || character.handle } : null;
+        // This camera is behind real island rock, as in the Ooga wall fixture.
+        Object.assign(B.camera.position, { x: 0, y: 0, z: 10 });
+        Object.assign(B.camera.target, { x: e.root.position.x, y: e.root.position.y + 1.25, z: e.root.position.z }); B.camera.up = null;
+        BL.scene.updateWorld(S.root); S.overlay(0.3); S.overlay(0.3);
+        const guides = H.sightGuides, slot = guides.owners.indexOf(item);
+        let itemLines = 0;
+        for (let i = 0; i < guides.count; i++) if (guides.kinds[i] && H.objectGuides.result.owners[guides.sources[i]] === item) itemLines++;
+        const covered = { outlined: H.cameraCover.outlined, enabled: guides.objectsEnabled, itemLines,
+          perceived: slot >= 0 && guides.ownerStates[slot] === 3 && guides.ownerAlphas[slot] > 0,
+          headEye: guides.observer[20] > e.root.position.y + 0.5 && [19, 20, 21].every(i => Number.isFinite(guides.observer[i])) };
+        Object.assign(B.camera.position, { x: e.root.position.x + 5, y: e.root.position.y + 3, z: e.root.position.z - 4 });
+        S.overlay(0.3);
+        coverRows.push({ signedIn, covered, clear: !H.cameraCover.outlined && !guides.objectsEnabled && guides.objectCount === 0 });
+      }
+    } finally {
+      net.me = coverAccount; net.backend = coverBackend;
+      BL.scene.removeChild(S.root, item); H.objectGuides.refresh(); B.renderer.releaseGeometry(item.geometry);
+      B.camera.up = coverUp; P.update(0); S.overlay(0.3);
+    }
     // The remaining camera regression deliberately starts combat shoulder.
     P.action("mode-toggle"); P.zoom(0.01, "camera-fixture"); P.update(2);
     canvas.focus();
@@ -11932,6 +11966,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         nativeCursor: !document.body.classList.contains("carry-cursor-active") && !document.body.classList.contains("aim-cursor-focused"),
         visible: getComputedStyle(reticle).visibility, stroke: getComputedStyle(reticle.querySelector("svg")).stroke,
         headHidden: !!e.gorilla.parts.head.cameraHidden, mix: camera.orthoMix, cutaway: B.renderOpts.birdsEyeCutaway,
+        outlined: B.headquarters.cameraCover.outlined, objectLines: B.headquarters.sightGuides.objectCount,
         hudView: button.dataset.view, hudCombat: button.dataset.combat,
         side: (camera.target.x - p.x) * Math.cos(orbit.yaw) - (camera.target.z - p.z) * Math.sin(orbit.yaw),
         yaw: orbit.yaw, finite: [camera.position.x, camera.position.y, camera.position.z,
@@ -12309,7 +12344,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
         C.wake(); e.owner.override = ownerOverride; e.owner.state = ownerState; P.release();
         BL.net.state.me = sleepAccount; BL.net.state.backend = sleepBackend;
       }
-      return { possessed, acquired, reset, rows, gestures, mapRows, pair, selection, transitions, retakes, sleepRows, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
+      return { possessed, acquired, reset, rows, coverRows, gestures, mapRows, pair, selection, transitions, retakes, sleepRows, escape: { uiStep, repeatHeld, cursorStep, detached, stayed }, swap: shoulder.side * swapped.side < 0,
         turn: Math.abs(turned.yaw - overhead.yaw), north: Math.atan2(Math.sin(north.yaw), Math.cos(north.yaw)), originalHeadHidden, near, released };
     } finally { key("keyup", "q"); key("keyup", "Shift", "ShiftRight", 2); P.release(); }
   })()`);
@@ -12320,6 +12355,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     && (row.combat || !row.focused && !row.locked && !row.tabConsumed && row.nativeCursor)
     && (!row.combat || row.visible === "visible" && row.stroke === "rgb(255, 255, 255)")
     && row.headHidden === (row.view === "first-person") && row.mix === (row.view === "birds-eye" ? 1 : 0)
+    && (!["first-person", "birds-eye"].includes(row.view) || !row.outlined && !row.objectLines)
     && row.cutaway === (row.view === "birds-eye"));
   const released = state.released;
   record("gorilla camera: carry keeps the native cursor and Tab navigation in every view; carry and combat share first-person, shoulder and distant views; Right Shift swaps shoulder, Q rotates birds-eye and N faces north; combat has a white-ring crosshair and release restores the head without moving the camera",
@@ -12328,6 +12364,9 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     && released.target === "none" && released.hit === "none" && released.positionCleared && released.near === state.near
     && released.eyeDelta < 1e-6 && released.targetDelta < 1e-6, JSON.stringify(state));
   record("gorilla Escape: close the sheet, ignore key repeat, free mouse-look, detach, and remain in the detached hub on the next press", Object.values(state.escape).every(Boolean), JSON.stringify(state.escape));
+  record("gorilla occlusion: signed in or out, real island rock reveals the controlled gorilla's silhouette and a nearby perceived item's outline; a clear view removes both, and first-person/bird's-eye stay suppressed",
+    state.coverRows.length === 2 && state.coverRows.every(row => row.covered.outlined && row.covered.enabled && row.covered.perceived
+      && row.covered.itemLines > 0 && row.covered.headEye && row.clear) && cameras, JSON.stringify(state.coverRows));
   record("gorilla camera gestures: signed in or out, wheel and right-click preserve carry/combat; combat overhead right-click aims at ground 10m ahead on either shoulder",
     state.gestures.length === 2 && state.gestures.every(row => row.rightCarry && row.doubleCarry && row.rightChord && row.returned
       && row.carry.every((view, i) => view.view === ["shoulder", "first-person", "shoulder", "orbit"][i] && !view.combat && !view.focused && view.hidden)
