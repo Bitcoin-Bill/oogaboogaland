@@ -1,6 +1,6 @@
 # Cursor and view controls audit
 
-Status: current-behavior audit in progress; no control changes agreed or implemented.
+Status: initial source audit complete; proposed flows await agreement. No runtime control changes.
 
 Baseline: `origin/rock` at `4113d59b69cbcd0f85207902ce4e36bbec8dfca4`, fetched on 2026-10-18. Work proceeds on `codex/controls-audit` in a separate worktree; existing uncommitted work in the original checkout is outside this PR.
 
@@ -41,12 +41,153 @@ This document is the review log for the work. Proposed behavior must remain expl
 | `README.md`, `docs/auth-and-presence.md` | Published player controls and ownership rules |
 | `test/run.mjs` | Existing control, ownership and view coverage to inspect before extending |
 
-## Evidence and validation
+## How to read the current behavior
 
-The first pass is a source audit. No browser scenario, simulation, screenshot or automated test is implied by this log. The repository's default testing level is **wait**: build after the documentation update; syntax-check any changed JavaScript if implementation begins. Fast/full runtime verification requires a testing request.
+There are four separate pieces of state: **who is controlled**, **camera view**, **carry/combat intent**, and **pointer focus/capture**. Shoulder view can be carry or combat. Combat can remain selected with a native cursor after capture is released. Account status chooses who can be controlled and the arrival path; the shared cursor and gesture modules do not branch on authentication.
+
+The main cursor discrepancy is direct: **Ooga carry releases pointer lock and uses the native cursor; focused gorilla carry keeps pointer lock and uses a visible virtual cursor.** Despite its name, the pilot's `carryCursor` currently starts only for combat bird's-eye, as a hidden constrained pointer. Its centered-carry camera transition does not activate a virtual cursor. Evidence: [pilot `armed`/`aimView`](../src/js/pilot.js#L239), [pilot `syncAim`](../src/js/pilot.js#L407), [gorilla `syncCursor`](../src/js/clanker-play.js#L61).
+
+All behavior below is traced from the baseline source. It is not a claim of browser reproduction. Line links refer to unchanged source on this branch.
+
+## Current subject and pointer flows
+
+| Scenario | Current behavior | Evidence |
+|---|---|---|
+| Detached aerial camera | Native cursor. WASD/arrows translate; Q/E turn; R/F pitch; Z/Space rise; X descends. Drag orbits; wheel/pinch zooms. Speed depends on distance. | [controls](../src/js/controls.js#L5), [pilot input](../src/js/pilot.js#L2084) |
+| Detached eye-level camera | Zooming to the minimum enters a ground-following close view. Movement follows ground/falling rules; vertical flight input no longer translates the camera. `pilot.mode` still reports `detached`. | [close entry](../src/js/pilot.js#L1415), [movement](../src/js/pilot.js#L2117) |
+| Ooga carry | Native cursor, drag to look/orbit, no combat reticle. First-person, shoulder and orbit are available. Two mouse buttons together walk forward when the shared shooter state is false. | [cursor release](../src/js/pilot.js#L407), [orbit hooks](../src/js/pilot.js#L1908), [chord](../src/js/controls.js#L138) |
+| Ooga combat shoulder/first-person | Reticle; focused/locked mouse motion looks. After focus is released, the first ordinary canvas click captures input without attacking. Later left press attacks; right hold focuses aim. | [mouse look](../src/js/pilot.js#L1070), [attack entry](../src/js/pilot.js#L1164) |
+| Ooga combat bird's-eye | Hidden constrained virtual pointer. Vertical motion moves aim along the upper centerline; horizontal motion rotates. Q/E rotate; N restores north. | [cursor](../src/js/pilot.js#L420), [north](../src/js/pilot.js#L1206), [overhead input](../src/js/pilot.js#L2137) |
+| Focused gorilla carry | Visible virtual arrow under pointer lock, routed to real HUD/world targets. Drag looks/orbits; shared move/look axes operate. This differs from Ooga carry. | [cursor](../src/js/clanker-play.js#L61), [movement](../src/js/clanker-play.js#L588) |
+| Gorilla combat shoulder/first-person | Reticle and focused mouse look. First ordinary unfocused canvas click focuses without starting a smash. Later left hold charges smash; release attacks. Holding G changes the interaction to grab/throw. | [focus](../src/js/clanker-play.js#L206), [pointer handling](../src/js/clanker-play.js#L403) |
+| Gorilla combat bird's-eye | Fixed center reticle; horizontal mouse movement rotates, vertical movement is ignored. It does not reproduce Ooga vertical reach aiming. | [center ray](../src/js/clanker-play.js#L87), [look](../src/js/clanker-play.js#L444) |
+| Sleeping Ooga | Possession stays out of combat. Space wakes; close view can look from the sleeping pose. Mode toggle asks the visitor to wake/stand first. | [toggle](../src/js/pilot.js#L1730), [possession](../src/js/pilot.js#L1774) |
+| Touch | Shared movement/look sticks and drag/pinch. Ooga capture explicitly skips coarse devices. Gorilla capture lacks that guard; canvas combat interception excludes touch and attacks use the smash button. The resulting phone/hybrid cursor presentation needs play-testing. | [Ooga capture](../src/js/pilot.js#L360), [gorilla capture](../src/js/clanker-play.js#L206), [touch exclusion](../src/js/clanker-play.js#L421) |
+
+## Selection, view changes and release
+
+| Action | Ooga | Hub gorilla |
+|---|---|---|
+| Single click/tap through world picking | Pokes/reacts; does not possess. | Shows its tooltip as a toast. |
+| Double-click/tap another actor | Permission check, then possession. Restores that Ooga's carry/combat preference, initially combat. Successful combat selection explicitly requests focus/lock. | Any active visible companion can be possessed. Always resets to combat shoulder and requests focus/lock. |
+| Select from high detached view | At least 21 m above the head preserves altitude and enters combat bird's-eye or carry orbit. | Enters shoulder regardless of height. |
+| Double-click the same actor | Releases it, when the gesture reaches world picking. | Releases it, when the gesture reaches world picking. |
+| Automatic/URL selection | `possess()` alone does not request pointer capture. Signed-in own-Ooga claim uses this path. | Debug URL selection starts combat shoulder but waits for a canvas click to focus. |
+| X / selected portrait tap | Toggles carry/combat where the scene forwards the action. Remembered per Ooga for the page session, including across scene visits. | Toggles carry/combat; the next possession resets that preference. |
+| Portrait hold | After 650 ms, dispatches detach, where the scene forwards it. | After 650 ms, releases the gorilla. |
+| Scroll/pinch | First-person ↔ shoulder ↔ carry orbit/combat bird's-eye. Stops at mode boundaries per gesture. | Same broad sequence, but inward carry-orbit transition forces combat shoulder. |
+| Right-click from overhead/orbit | Returns to previous close view, normally shoulder; a first-person exit can return to first-person. Preserves carry/combat intent. | Always returns to combat shoulder. |
+| Quick double-right-click in close view | Goes out to carry orbit/combat bird's-eye. | Goes out to carry orbit/combat bird's-eye. |
+| Right Shift | In combat shoulder: tap swaps shoulders; hold with A/D peeks. | In combat shoulder: tap swaps shoulders; hold with A/D peeks. |
+| Hub map/destination | Keeps and relocates the Ooga, retaining its mode. | Releases the gorilla, then navigates detached. |
+| Detach | Preserves the displayed camera eye/heading into free view. | Clears capture/action state and rebases detached pilot from displayed view. |
+| Tab | Combat intercepts Tab to release capture/focus. Carry/detached use normal focus traversal. | Intercepts Tab while possessing, even after already unfocused; does not toggle back into capture. |
+| Escape | Locked combat first releases capture; afterward the scene decides whether to detach or leave. With soft focus but no lock, Escape can reach the scene immediately. | Focused/locked first releases capture/focus; another Escape releases possession. |
+
+Evidence: [Ooga possession](../src/js/pilot.js#L1763), [Ooga release](../src/js/pilot.js#L1821), [double-tap](../src/js/pilot.js#L2003), [Ooga right-click](../src/js/pilot.js#L1122), [Ooga wheel](../src/js/pilot.js#L1936), [Ooga Tab/Escape](../src/js/pilot.js#L1195), [gorilla possession](../src/js/clanker-play.js#L269), [gorilla keys](../src/js/clanker-play.js#L333), [gorilla right-click](../src/js/clanker-play.js#L390), [gorilla wheel](../src/js/clanker-play.js#L456), [portrait gestures](../src/js/hud.js#L1641), [map handoff](../src/js/scene-hub.js#L7240), [Ooga navigation](../src/js/pilot.js#L2753).
+
+Space is intentionally context-sensitive today: Oogas jump/use nearby controls, while gorillas jump/double-jump, dismount a climb or drop-and-roll when burning. Gorillas do not have the Ooga's general nearby-use action. Weapons, grabs and actor abilities should be considered separately from camera consistency.
+
+## Account scenarios
+
+| Account situation | Ooga selection and arrival | Gorilla / detached behavior |
+|---|---|---|
+| No backend, static host or `net=0` | All Oogas permitted by `mayDrive`; hub ordinarily starts detached unless a fixture/return applies. | No shared room identity. Gorilla controls use the same local controller. |
+| Worker signed out | New claims of working Oogas refused; resting/sleeping can be borrowed locally. No room socket, so online owner/driver information is unavailable. | No authentication gate for companion possession. |
+| Signed-in contributor | Own Ooga only. Hub claims it once per visit; explicit detachment stays detached until retake or next visit. Automatic claim does not request mouse capture. | Any active visible companion remains locally selectable; map/retake can release it. |
+| Signed-in account with server-added temporary Ooga | A server-vouched Oogatron contributor not yet bundled can receive an own Ooga before scene construction; then own-Ooga rules apply. It requires sign-in to control. This is not universal guest creation. | Same companion controls. |
+| Signed-in account with no registered/temporary Ooga | Can borrow nonworking Oogas subject to the room's owner-present/taken information. | Same companion controls. |
+| Owner arrival/server rejection while borrowing | Hub releases disallowed Ooga and shows the reason. | No equivalent companion ownership check. |
+| Sign-out while driving | Clears room/remotes and voice. Existing bundled Ooga is rechecked with `working=false`, so a working Ooga can remain locally driven although a fresh claim would fail; temporary own Ooga is refused. | No analogous sign-out release for a controlled gorilla. |
+
+Evidence: [account lookup](../src/js/net.js#L275), [temporary registration](../src/js/contributors.js#L31), [room connection gate](../src/js/net.js#L263), [permissions](../src/js/net.js#L467), [hub account changes/claim](../src/js/scene-hub.js#L8285), [gorilla possession](../src/js/clanker-play.js#L269).
+
+Two boundaries matter for the intended design:
+
+- The README says signed-out borrowers cannot take an online owner's Ooga, but signed-out pages do not receive the room's ownership information. This is a documentation/enforcement mismatch, not a different low-level cursor implementation.
+- Only `crew.player` is reported as the network body. Normal gorilla possession releases that Ooga, leaving the network body null, like detached mode. Gorilla movement is not published as the visitor's room avatar, and room voice requires a body. Equal cursor controls would not by themselves provide multiplayer gorilla identity. Evidence: [shared body](../src/js/scene-hub.js#L8371), [remote visibility](../src/js/scene-hub.js#L8384), [voice eligibility](../worker/src/protocol.js#L220).
+
+Initial account lookup is awaited before the first scene builds ([director](../src/js/director.js#L623)); the audit does not claim a normal startup race between delayed account lookup and gorilla selection.
+
+## Scene exceptions
+
+These Escape outcomes apply after any modal and pointer-capture handling above them.
+
+| Scene | Escape | Mode-control wiring |
+|---|---|---|
+| Hub | Detach Ooga; detached stays on island. | X and portrait actions supported; map navigation has actor-specific handoff. |
+| Debug lab | Detach, then another Escape leaves. | X and portrait actions supported. |
+| Factory | Close guide menu if present; otherwise leave. Kiosk has its own flow. | X and portrait actions supported. |
+| Arcade | Close prizes if present; otherwise leave. | Explicitly forces empty-handed carry and hides mode HUD. |
+| Bifrost | Leave chamber. | Portrait appears through shared HUD, but only `mode-retake` is forwarded. Tap toggle/hold detach have no handler; X absent. |
+| DSB | Detached overview when not inside/transitioning. | Portrait `mode-*` forwarded; X absent. |
+| Poker | Leave focused table UI, then stand if seated, otherwise leave floor. | Portrait `mode-*` forwarded; X absent. |
+
+Evidence: [hub](../src/js/scene-hub.js#L10328), [lab](../src/js/scene-lab.js#L337), [Factory](../src/js/scene-factory.js#L1015), [Arcade](../src/js/scene-arcade.js#L855), [Arcade forced carry](../src/js/scene-arcade.js#L1733), [Bifrost Escape](../src/js/scene-bifrost.js#L239), [Bifrost HUD](../src/js/scene-bifrost.js#L536), [DSB](../src/js/scene-dsb.js#L477), [poker](../src/js/scene-poker.js#L312).
+
+The legacy scene Agent is a third controller, not the hub companion. It has camera-relative movement, Q/E turn, C chest beat, H stance and one Escape to release, but no companion carry/combat/overhead/capture flow. Right Shift+A summons/releases it where offered; the hub explicitly excludes it. Evidence: [Agent controller](../src/js/agent.js#L2132), [director](../src/js/director.js#L449). Arcade games' own controls are separate from this walking-camera audit.
+
+## Pointer gestures, UI and interruption
+
+- World gestures: movement beyond 7 px becomes drag; a pending release within 420 ms is a tap; the second tap within 380 ms and 24 px on the same actor/target is double-tap. The first tap already fires. Touch grab waits 320 ms; a second finger cancels grab for pinch. Wheel and pinch share zoom hooks. Evidence: [interact](../src/js/interact.js#L194).
+- Virtual cursor: routes pointer presses, primary clicks, hover and wheel to real DOM/world targets. Direct fields and modal dialogs release capture for native interaction. Failed/pending lock consumes canvas presses to retry, while native HUD presses stop virtual mode; right-click can still change view. Evidence: [cursor routing](../src/js/cursor.js#L162), [fallback](../src/js/cursor.js#L218).
+- Sheet focus differs by actor. Ooga/shared/director guards exclude all of `#sheet`; gorilla/legacy Agent guards exclude fields/dialogs but not the sheet. Gorilla capture-phase Space/Tab/Escape can consume focused sheet-button keys. Legacy Agent additionally captures arrows/WASD. Evidence: [shared guard](../src/js/controls.js#L65), [pilot guard](../src/js/pilot.js#L1196), [gorilla guard](../src/js/clanker-play.js#L149), [gorilla keys](../src/js/clanker-play.js#L333), [Agent keys](../src/js/agent.js#L2143).
+- Field guards also disagree on `select`/`contenteditable`. Existing sheet selects are protected by their ancestor for Oogas; the mismatch is a policy gap, not evidence every field currently misbehaves.
+- Native double-click resets sheet height. The virtual cursor synthesizes `click` with detail 1 and does not retarget `dblclick`, so focused gorilla carry cannot use the same reset gesture on that handle. Evidence: [synthetic click](../src/js/cursor.js#L47), [compatibility suppression](../src/js/cursor.js#L258), [sheet reset](../src/js/hud.js#L1929).
+- Chat-tab selection focuses its input on desktop, but virtual cursor post-click unlock checks only for a modal. Indirect focus from gorilla carry needs a play-test for cursor/focus behavior. Evidence: [Chat focus](../src/js/chat.js#L235), [post-click](../src/js/cursor.js#L198).
+- Generic feed/recipe/board dialogs do not themselves reset every held movement key; some specialized interfaces explicitly suspend the pilot. The consequence of opening one while holding movement remains to be measured. New key presses in dialogs are filtered, and key-up still clears held state. Evidence: [controls](../src/js/controls.js#L65), [feed](../src/js/hud.js#L970), [board](../src/js/hud.js#L1383), [recipe](../src/js/hud.js#L1555).
+- Window blur clears shared held keys/chords and releases controller focus. Pointer-lock loss clears attacks/virtual presses. Gorilla catches synchronous lock errors; Ooga only handles promise rejection/lock-error events. No failure-path browser observation has been made. Evidence: [controls blur](../src/js/controls.js#L89), [pilot capture](../src/js/pilot.js#L360), [pilot lock loss](../src/js/pilot.js#L1246), [gorilla capture](../src/js/clanker-play.js#L206).
+
+## Findings to resolve
+
+| ID | Finding | Evidence status | Decision |
+|---|---|---|---|
+| C01 | Native cursor in Ooga carry versus locked virtual cursor in gorilla carry. | Source-confirmed | Pending |
+| C02 | Capture/Tab/Escape behavior varies with actor, capture success and entry path. | Source-confirmed | Pending |
+| C03 | Gorilla right-click and inward zoom can change carry to combat; Ooga preserves intent. | Source-confirmed | Pending |
+| C04 | Ooga remembers mode/preserves high selection; gorilla resets combat shoulder. | Source-confirmed | Pending |
+| C05 | Ooga bird's-eye has vertical aim; gorilla has fixed center aim. | Source-confirmed | Pending |
+| C06 | Hub map keeps Ooga but releases gorilla; generic presets also detach Oogas. | Source-confirmed | Pending |
+| C07 | Sheet keyboard handling and field exclusions differ by actor. | Source-confirmed dispatch paths | Pending |
+| C08 | Bifrost mode buttons lack handlers; X/HUD and Escape differ across walking scenes. | Source-confirmed wiring | Pending |
+| C09 | Virtual/native HUD gestures differ; Chat indirect focus and coarse-device gorilla capture need review. | Missing dblclick route confirmed; visual consequences untested | Pending |
+| C10 | Signed-out ownership wording exceeds available presence data; gorilla has no shared room body. | Source-confirmed boundary | Pending scope decision |
+| C11 | Close-view look may apply twice: carry Q/E and R/F, and look-stick yaw/pitch in carry or combat, except lying. Combat keyboard Q/E applies once. | Suspected sensitivity defect, unmeasured: [first application](../src/js/pilot.js#L2059), [tail](../src/js/pilot.js#L2150) | Measure if runtime checks requested |
+| C12 | Forced Arcade carry can become the Ooga's remembered mode on return. | Source-confirmed state path; intent undecided | Pending |
+
+Help also lags behavior: README omits Tab, capture-only first click, detached eye-level, portrait hold and double-right-click. “Escape lets go” misses capture/scene layers. Some weapon hints say scroll out for navigation although combat zoom stays in combat overhead. AGENTS asks shared scenes to route 0 to pilot, but several walking scenes have no 0 handler. Update help after agreeing behavior, not before.
+
+## Proposed agreement order
+
+These are recommendations for discussion, not approved requirements or implemented behavior.
+
+| Order | Scenario | Proposed rule | Open choice |
+|---|---|---|---|
+| 1 | Cursor while exploring/carrying | Detached and both actors in carry use a native cursor; drag looks, wheel zooms. Combat can capture the mouse after a deliberate gesture. UI focus suppresses world actions uniformly. | Prefer this, or keep a virtual cursor for both actors' carry? |
+| 2 | Freeing/resuming the cursor | Tab frees capture without changing actor/view/combat. Once free, Tab can navigate UI. A canvas click resumes capture without attacking. Escape closes the top UI, then frees capture, then detaches; a separate final Escape may leave a cave. | Confirm Escape order and whether detached Escape should leave interiors. |
+| 3 | Selecting/retaking an actor | Same manual selection flow for Ooga/gorilla. Automatic arrivals keep native cursor until a gesture. Preserve carry/combat preference; selection and zoom should not silently change combat intent. | Initial default: carry or combat? Memory per actor or per visitor? Preserve altitude on high selection? |
+| 4 | Camera modes | Same wheel boundaries and right-click returns for both actors. Keep camera distance changes separate from combat intent. | Retain double-right-click? Same overhead aim model for both? |
+| 5 | Map, reset and scene transitions | Define actor retention explicitly and apply it consistently. Keep selected mode unless a scene has a clearly communicated limitation. | Map transports controlled actor, or always detaches? How should Arcade's carry restriction restore prior preference? |
+| 6 | Accounts and exceptional controllers | Authentication changes eligibility/presence, with the same controls for permitted actors. Document legacy Agent and game exceptions. | Is gorilla multiplayer identity in scope, or a separate follow-up? |
+
+Touch should provide equivalent actions using sticks/buttons and native touch UI, without requiring mouse capture. Sleeping, climbing, kiosk/table interactions and actor-specific abilities remain explicit cases in the agreed flow.
+
+## Validation and play-test queue
+
+Testing level remains **wait**. This pass reads source and existing checks; no scenes, browser sessions, probes, screenshots, simulations or automated tests were run. Build result is recorded at the review checkpoint. No JavaScript changed, so there are no touched JavaScript files to syntax-check.
+
+Existing checks to extend if implementation and runtime testing are requested: `hubBirdsEye` (selection, view gestures and cursor handoffs), `hubWalking`/`labWalking` (movement), `hubChat` (focus), and relevant scene walking/exit checks in `test/run.mjs`. Their presence is not evidence they passed on this branch. Keep the existing value/STOP rules; do not add parallel duplicate checks.
+
+For the maintainer's play-test, exercise each agreed flow with:
+
+1. No backend, Worker signed out, signed-in own Ooga (bundled/temporary), and a borrowing account where available. Use manual and automatic arrival separately; `nosim` disables accounts and cannot validate the signed-in rows.
+2. Ooga/gorilla/detached; carry/combat; shoulder/first-person/orbit/overhead; native cursor, successful lock, denied/lost lock, and blur/resume.
+3. World selection, portrait tap/hold, X, wheel/pinch, right-click/double-right-click, Tab/Escape, map/reset, and each walking scene boundary.
+4. Keyboard-focused sheet buttons, Chat, native form controls and modal dialogs; mouse and coarse/touch devices; clean console throughout.
 
 ## Review checkpoints
 
-- Baseline and audit scope recorded. Current-behavior tables and findings are being traced against this exact baseline.
-- Intended behavior: pending discussion.
-- Implementation: pending agreement.
+- `8d5346f`: baseline and audit scope, draft PR opened against `rock`.
+- Initial audit: current flows, source references, inconsistencies, proposals and play-test queue recorded. `npm run build` passed; no runtime tests requested or run.
+- Agreed decisions: none yet.
+- Runtime implementation: none yet.
