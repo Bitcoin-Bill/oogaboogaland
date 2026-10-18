@@ -4768,19 +4768,26 @@ const donationClientChecks = async () => {
   const F = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
     invoice: async () => ({ request: "request", invoice: { id: "invoice", bolt11: "lntbs1", expires: now / 1000 + 10 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
     open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {},
-    editDetails: () => { detailsOpen = true; }, closeDetails: () => { detailsOpen = false; } });
+    editDetails: (field) => { detailsOpen = !!field; }, closeDetails: () => { detailsOpen = false; } });
   const quote = async () => { F.start(); for (const key of ["Enter", "1", "Enter"]) F.key({ key }); await Promise.resolve(); };
+  F.start(); F.key({ key: "Enter" }); F.key({ key: "A" }); F.update(0.1);
+  const fromAmount = F.state === "details" && detailsOpen;
+  F.key({ key: "Escape" });
+  const backToAmount = fromAmount && F.state === "amount" && !detailsOpen;
   await quote();
   const fractionalQuote = F.bananas === 0.25;
   F.key({ key: "A" });
-  const editing = detailsOpen;
-  const quoted = F.state === "quote" && F.receive("invoice", { exact: 1.75, rounded: 2 }, "tester", 1800) && F.state === "paid" && F.who === "tester";
+  const editing = detailsOpen && F.state === "details";
+  F.key({ key: "Escape" });
+  const doneEditing = F.state === "quote" && !detailsOpen;
+  F.key({ key: "A" });
+  const quoted = F.state === "details" && F.receive("invoice", { exact: 1.75, rounded: 2 }, "tester", 1800) && F.state === "paid" && F.who === "tester";
   const fractionalPaid = F.bananas === 1.75 && F.sats === 1800 && editing && !detailsOpen;
   await quote(); now += 11000; F.update(0.1);
   const expired = F.state === "expired", late = F.receive("invoice", { exact: 0.25, rounded: 0 }, "tester") && F.state === "paid";
   await quote(); now += 11000; F.update(0.1); F.key({ key: "Escape" });
   const back = F.state === "amount";
-  record("donation kiosk: real quotes preserve fractional bananas, settlement uses the donation's actual amount, an invoice expires on its quote screen, Back returns to the amount, and payment is recognized on the quote or after expiry", fractionalQuote && fractionalPaid && quoted && expired && late && back, JSON.stringify({ fractionalQuote, fractionalPaid, quoted, expired, late, back }));
+  record("donation kiosk: real quotes preserve fractional bananas, the name and message open on a screen of their own from the amount or the quote and close back there, settlement uses the donation's actual amount, an invoice expires on its quote screen, Back returns to the amount, and payment is recognized while editing the details or after expiry", fractionalQuote && fractionalPaid && backToAmount && doneEditing && quoted && expired && late && back, JSON.stringify({ fractionalQuote, fractionalPaid, backToAmount, doneEditing, quoted, expired, late, back }));
   const waits = [];
   const G = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
     invoice: async () => ({ request: "request", invoice: { id: "unlit", bolt11: null, expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
@@ -4913,8 +4920,10 @@ const donationClientChecks = async () => {
   elements.get("donation-message").value = "m".repeat(281);
   elements.get("donation-fields").listeners.get("input")();
   await [...detailTimers.values()][0]();
-  const edited = focused && notes.at(-1).handle === "another-name" && notes.at(-1).message.length === 280
+  const edited = focused && popupFlow.state === "details" && notes.at(-1).handle === "another-name" && notes.at(-1).message.length === 280
     && notes.at(-1).request === "request" && popupFlow.invoice === originalInvoice && invoices.length === invoiceCount;
+  popupFlow.key({ key: "Enter" });
+  const detailsDone = popupFlow.state === "quote";
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
   elements.get("donation-fields").listeners.get("input")();
@@ -4934,8 +4943,8 @@ const donationClientChecks = async () => {
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
-  record("donation popup: signed-out visitors can quote a payment, edits save automatically on the same invoice, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
-    anonymous && signedIn && edited && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
+  record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice and Enter goes back to the quote, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
+    anonymous && signedIn && edited && detailsDone && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
@@ -8485,6 +8494,7 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
     document.getElementById("donation-message").dispatchEvent(new Event("change", { bubbles: true }));
     document.getElementById("donation-handle").blur();
   })()`);
+  await b.key("Escape");
   for (const k of ["1", "2", "0", "0"]) await b.key(k);
   const typed = await screen();
   await b.key("Enter");
