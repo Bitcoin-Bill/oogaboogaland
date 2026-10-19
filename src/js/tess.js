@@ -409,7 +409,7 @@
     for (const node of head.children) for (const key of ["lens", "housing", "armor", "irisMarks"])
       if (node.geometry === meshes[key]) registerDetail(node, key);
     for (const node of optics.children) if (node.geometry === meshes.glints) registerDetail(node, "glints");
-    let detailed = false, selectedTier = meshes;
+    let detailed = false, selectedTier = meshes, priming = fineMeshes ? 2 : 0;
     // The beam lives in the scene's frame, not hers: it runs from her eye to wherever it lands.
     const beam = createNode({ geometry: BEAM(), visible: false, sightHidden: true });
     const glint = createNode({ geometry: GLINT(), visible: false, sightHidden: true });
@@ -490,11 +490,14 @@
       get shown() { return shown; },
       update(dt, elapsed) {
         stepFlecks(dt);
-        // Hysteresis avoids mesh churn. Every prepared tier stays in the visit's live set.
+        // Hysteresis avoids mesh churn. Every prepared tier stays in the visit's live set. Her first two frames wear the
+        // fine tier and then the light one, so the renderer uploads every tier behind the scene's curtain or fade rather
+        // than the moment she first comes close, a frame of some 70 ms on a laptop, or the quality drops.
         const distance = camera ? Math.hypot(camera.position.x - position.x,
           camera.position.y - position.y, camera.position.z - position.z) : Infinity;
         const fine = !!fineMeshes && quality() !== "low" && distance < (detailed ? 7 : 6);
-        const tier = quality() === "low" ? lightMeshes : fine ? fineMeshes : meshes;
+        const tier = priming === 2 ? fineMeshes : priming === 1 ? lightMeshes : quality() === "low" ? lightMeshes : fine ? fineMeshes : meshes;
+        if (priming > 0) priming--;
         if (tier !== selectedTier) {
           for (let i = 0; i < detailNodes.length; i++) detailNodes[i].geometry = tier[detailKeys[i]];
           for (let i = 0; i < rings.length; i++) rings[i].geometry = tier.rings[i];
