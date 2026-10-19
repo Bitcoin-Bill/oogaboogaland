@@ -373,7 +373,11 @@
     };
     // The panel's two buttons and their keys: on, and back out.
     const forward = () => {
-      if (state.phase === "offer") { answered(); startTour(); }
+      if (state.phase === "offer") {
+        // Another actor or panel may have taken the controls since she offered. Leave its control and unread news alone.
+        if (busy()) { toWork(); return; }
+        answered(); startTour();
+      }
       else if (state.phase === "tour") {
         if (state.stop === state.legs.length - 1) endTour(state.kind === "news" ? "newsDone" : "done");
         else visit(state.stop + 1);

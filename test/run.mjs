@@ -5810,7 +5810,7 @@ const hubWalking = { name: "hub walking", why: "regression: steering keys came o
   record("hub walking: W A S D walk an Ooga away, left, back and right on screen from two camera angles, and Right Shift+A does not restore the removed hub Agent", allWalk(ooga) && !agent, JSON.stringify({ ooga, agent }));
 } };
 // Tess on the island: a fresh, unmoved landing with an Ooga gets her offer, and the tour takes the controls cleanly.
-const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only its first speech bubble, she stopped shots aimed past her, an Ooga walking or flying as her tour began went on through it, and T during her tour switched the visitor to their gorilla under it", run: async (b) => {
+const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only its first speech bubble, she stopped shots aimed past her, an Ooga walking or flying as her tour began went on through it, and T before or during her tour let the gorilla and tour share control", run: async (b) => {
   const guide = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = B.cavemen.get("portlandhodl"), G = BL.scenes.hub.debug.tess, s = G.state;
     const key = (type, key, code) => window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }));
@@ -5853,7 +5853,20 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
       press("t", "KeyT"); B.advance(0.3, 1 / 30);
       const toGorilla = play.active && play.player === gorilla;
       press("t", "KeyT"); B.advance(0.6, 1 / 30);
-      pair = { gorillaReady: !!gorilla && gorilla.active && gorilla.root.visible, kept, ended, toGorilla, back: P.player === a && !play.active };
+      const back = P.player === a && !play.active;
+      // T before Enter must leave the gorilla in control. Accept between frames so the offer must recheck who owns it.
+      for (let t = 0; t < 12 && s.phase !== "work"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+      G.tap();
+      for (let t = 0; t < 15 && s.phase !== "offer"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+      const offerBeforeSwitch = s.phase === "offer";
+      press("t", "KeyT");
+      const switched = play.active && play.player === gorilla;
+      press("Enter", "Enter");
+      const declinedBusy = s.phase === "work" && !s.holding && play.player === gorilla && !P.player
+        && document.querySelector(".greeter-menu").hidden && !document.body.classList.contains("tess-touring");
+      press("t", "KeyT"); B.advance(0.6, 1 / 30);
+      pair = { gorillaReady: !!gorilla && gorilla.active && gorilla.root.visible, kept, ended, toGorilla, back,
+        offerBeforeSwitch, switched, declinedBusy, retaken: P.player === a && !play.active };
     } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
     const returned = !s.holding, after = at();
     key("keydown", "w", "KeyW"); B.advance(0.4, 1 / 60); key("keyup", "w", "KeyW");
@@ -5879,6 +5892,7 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
   record("hub guide: a shot aimed straight at Tess passes her, while a tap there still reaches her", !guide.shotTess && guide.pokeTess, JSON.stringify(guide));
   record("hub guide: an Ooga walking as the tour starts stands through it once W is let go, and walks again when the tour ends", guide.walked > 0.3 && guide.touring && guide.drift < 0.05 && guide.returned && guide.again > 0.3 && guide.driving, JSON.stringify(guide));
   record("hub guide: during a tour T switches no actor for a signed-in owner, Escape ends the tour, and afterwards T switches to the gorilla and back", !!guide.pair && guide.pair.gorillaReady && guide.pair.kept && guide.pair.ended && guide.pair.toGorilla && guide.pair.back, JSON.stringify(guide.pair));
+  record("hub guide: switching to a gorilla before accepting an offer leaves it in control, closes the offer, and allows switching back", !!guide.pair && guide.pair.offerBeforeSwitch && guide.pair.switched && guide.pair.declinedBusy && guide.pair.retaken, JSON.stringify(guide.pair));
   record("hub guide: a jetpack climbing as a tour starts lets go once Space is released, rising no more and spending no fuel through the tour", guide.reoffered && guide.climbing && !guide.thrusting && guide.rose <= 0 && guide.burned <= 0 && guide.released, JSON.stringify(guide));
 } };
 const hubMapNavigation = { name: "hub map navigation", why: "regression: choosing a destination or resetting the camera must preserve the controlled actor and view family", run: async (b) => {
