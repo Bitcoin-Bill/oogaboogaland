@@ -3869,6 +3869,12 @@
     const jumpWalker = (cave, tx, tz) => {
       const nav = cave.avoidance.navigation, p = cave.root.position, feet = p.y - cave.baseY;
       if (inBananas(cave) || nav.jumpCandidate >= 8) { nav.mode = 0; cave.avoidance.stalled = -1; return; }
+      // The search spans frames: traffic or scenery can clear before it fails.
+      // Recheck the supported ground route before committing to an escape jump.
+      if (Number.isFinite(recoveryHeight(cave, p.x, p.z, feet, tx, tz, NAV_STEP))) {
+        nav.mode = 0; cave.avoidance.stalled = 0; cave.avoidance.best = Infinity; cave.avoidance.active = false;
+        return;
+      }
       for (let otherIndex = 0; otherIndex < crewList.length; otherIndex++) {
         const other = crewList[otherIndex];
         if (!shoulderNeighbor(cave, other)) continue;
