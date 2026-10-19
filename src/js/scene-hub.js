@@ -10797,7 +10797,7 @@
       if (workCave(slot)) {
         workZones.push({ x: m.x, z: m.z, floor: m.floorY, sr: Math.sin(m.ry), cr: Math.cos(m.ry), active: false, half: 3.4, front: 5.8 });
       }
-      if (slot.status === "open" || slot.status === "mirror") entranceZones.push({ x: m.x, z: m.z, sr: Math.sin(m.ry), cr: Math.cos(m.ry) });
+      if (slot.status === "open" || slot.status === "mirror" || slot.status === "headquarters") entranceZones.push({ x: m.x, z: m.z, sr: Math.sin(m.ry), cr: Math.cos(m.ry) });
 
       if (slot.scene) presets[slot.scene] = mouthView(m);
       else if (slot.place) presets[slot.place] = mouthView(m);
