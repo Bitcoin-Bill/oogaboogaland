@@ -2038,27 +2038,38 @@
     lawn.node.instanceVersion++;
     lawn.version = island.path.version;
   };
-  // Palms: a pair beside every dressed mouth, groves of one to three along the meadow's edge under the cliffs and
-  // on the cliff tops. Each is its own node on one of three shared geometries, so the wind bends every crown on
-  // its own phase for three draws; each claims its own slot, so nothing else stands in its trunk or crown.
+  // Palms: single palms spread evenly across the meadow, from beside the pile's ring out to the cliffs, and groves
+  // of one to three on the cliff tops. Each is its own node on one of three shared geometries, so the wind bends
+  // every crown on its own phase for three draws; each claims its own slot, so nothing else stands in its trunk or
+  // crown. The meadow's keep off every gorilla's run between caves (the straight line one walks from a work cave's
+  // doorway to another's apron), off the foot of the Mempool island's stair, where every bedtime walk ends, and out
+  // of the south, where the totems and the Oogatron face the pile. A trunk stands PALM_PATH off every path; one the
+  // pile's ring path grows to is removed.
+  const PALM_COUNT = 7, PALM_CANDIDATES = 400, PALM_GAP = 5, PALM_INNER = 6, PALM_OUTER = MEADOW_OUTER - 2.5;
+  const PALM_RUN_CLEAR = 3, PALM_STAIR_CLEAR = 6, PALM_SOUTH = 45 * DEG, PALM_PATH = 0.9;
+  // The visit's meadow palms, { owner, reservation }, for the ring to take back.
+  const meadowPalms = [];
   const plantPalms = () => {
     if (renderer.kind === "canvas2d") return;
     const rand = mulberry32(fnv1a("palms"));
     let n = 0;
-    const plant = (x, z) => {
+    // Level ground off the paths and stairs, with nothing else claimed where the trunk would stand.
+    const stands = (x, z) => {
       const y = island.surfaceAt(x, z);
-      // Leave the meadow palms out of the totems' clearing beside the jumbotron approach.
-      if (y === 0 && Math.hypot(x + 5.2, z - 17.5) < 3.6) return false;
-      if (nearPath(x, z, 1.1) || island.overlapsStairs(x, z, 2) || !free(x, z, 1.2)) return false;
+      if (nearPath(x, z, PALM_PATH) || island.overlapsStairs(x, z, 2) || !free(x, z, 1.2)) return false;
       // Level ground only: every side within a quarter metre of the foot.
       for (let i = 0; i < 4; i++) if (Math.abs(island.surfaceAt(x + Math.cos(i * 1.571) * 0.6, z + Math.sin(i * 1.571) * 0.6) - y) > 0.26) return false;
+      return true;
+    };
+    const plant = (x, z) => {
+      if (!stands(x, z)) return null;
+      const y = island.surfaceAt(x, z);
       const node = createNode({ geometry: BL.dressing.palm(n++ % 3), position: { x, y, z }, rotation: { x: 0, y: rand() * Math.PI * 2, z: 0 }, sightHidden: true });
       addChild(root, node);
       placed.push(node);
-      addProp("palm", node, x, z, 1.6);
+      const owner = addProp("palm", node, x, z, 1.6);
       solids.add(node);
-      claim(x, z, 1.2);
-      return true;
+      return { owner, reservation: claim(x, z, 1.2) };
     };
     // A grove: up to `size` palms round a centre a trunk-and-crown apart (2.9 m), each standing only where it fits.
     const grove = (cx, cz, size, fits) => {
@@ -2075,22 +2086,42 @@
       const r = rand();
       return r < 0.25 ? 1 : r < 0.65 ? 2 : 3;
     };
-    for (const m of island.mouths) {
-      const slot = caves.slots.find((candidate) => candidate.id === m.id);
-      if (!THEMES[slot.theme]) continue;
-      const sr = Math.sin(m.ry), cr = Math.cos(m.ry);
-      for (const lx of [-7.6, 7.6]) {
-        let planted = 0;
-        for (const lz of [1.4, 4.4, 2.9]) if (planted < 2 && plant(m.x + cr * (lx + Math.sign(lx) * (lz - 1.4) * 0.3) + sr * lz, m.z - sr * (lx + Math.sign(lx) * (lz - 1.4) * 0.3) + cr * lz)) planted++;
+    // The gorillas' runs join every pair of work caves, from either cave's doorway step or apron (2.6 m and 5.5 m
+    // out, where clankers.js walks a gorilla out and in) to either of the other's.
+    const ends = caves.slots.filter(workCave).map((slot) => {
+      const m = island.mouths.find((entry) => entry.id === slot.id), sr = Math.sin(m.ry), cr = Math.cos(m.ry);
+      return [2.6, 5.5].map((d) => ({ x: m.x + sr * d, z: m.z + cr * d }));
+    });
+    // Where a bed trip leaves the meadow (clankerBeds' first point).
+    const foot = poolModels.SITE.approachFrom - 0.8, footX = poolModels.DIR.x * foot, footZ = poolModels.DIR.z * foot;
+    const runs = [];
+    for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++)
+      for (const a of ends[i]) for (const b of ends[j]) runs.push(a, b);
+    const offRuns = (x, z) => {
+      for (let i = 0; i < runs.length; i += 2) {
+        const a = runs[i], dx = runs[i + 1].x - a.x, dz = runs[i + 1].z - a.z;
+        const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz), 0, 1);
+        if (Math.hypot(a.x + dx * t - x, a.z + dz * t - z) < PALM_RUN_CLEAR) return false;
       }
-    }
-    const meadowEdge = (x, z) => !nearMouth(x, z, 6) && island.surfaceAt(x, z) === 0;
-    for (let deg = 5; deg < 360; deg += 38) {
-      const size = groveSize();
-      for (let k = 0; k < 4; k++) {
-        const p = polar(deg + (rand() - 0.5) * 12, MEADOW_OUTER - 3 - rand() * 3.5);
-        if (grove(p.x, p.z, size, meadowEdge)) break;
+      return true;
+    };
+    // Nothing within PALM_SOUTH of due south, the meadow between the Headquarters mouths: the clearing before the
+    // totems and the Oogatron's board.
+    const meadowFits = (x, z) => island.surfaceAt(x, z) === 0 && !nearMouth(x, z, 6) && offRuns(x, z)
+      && Math.hypot(x - footX, z - footZ) >= PALM_STAIR_CLEAR && Math.atan2(Math.abs(x), z) >= PALM_SOUTH && stands(x, z);
+    // Best candidate: of PALM_CANDIDATES seeded spots each time, the fitting one farthest from the palms already
+    // standing, so they spread evenly at every distance from the pile, none nearer another than PALM_GAP. The radius
+    // is drawn uniformly, not by area, so the inner meadow holds its share.
+    for (let k = 0; k < PALM_COUNT; k++) {
+      let x = 0, z = 0, best = PALM_GAP;
+      for (let c = 0; c < PALM_CANDIDATES; c++) {
+        const p = polar(rand() * 360, lerp(PALM_INNER, PALM_OUTER, rand()));
+        let gap = Infinity;
+        for (const { owner } of meadowPalms) gap = Math.min(gap, Math.hypot(owner.x - p.x, owner.z - p.z));
+        if (gap > best && meadowFits(p.x, p.z)) { best = gap; x = p.x; z = p.z; }
       }
+      if (best === PALM_GAP) break;
+      meadowPalms.push(plant(x, z));
     }
     // Along the cliff tops, where they break the skyline.
     const cliffTop = (x, z) => island.surfaceAt(x, z) > 2.5 && !nearMouth(x, z, 5);
@@ -2102,6 +2133,21 @@
         if (planted) { placedTop += planted; break; }
       }
     }
+  };
+  // The pile's ring path widens as the pile grows: a meadow palm it comes within PALM_PATH of is removed for the
+  // rest of the visit, its pick, prop, solid and claim with it. The next visit plants only where the ring leaves room.
+  const clearRingPalms = () => {
+    const reach = island.path.debug.ringOuterRadius + PALM_PATH;
+    let removed = false;
+    for (let i = meadowPalms.length - 1; i >= 0; i--) {
+      const { owner, reservation } = meadowPalms[i];
+      if (Math.hypot(owner.x, owner.z) >= reach) continue;
+      meadowPalms.splice(i, 1);
+      input.remove(owner.node); drop(targets, owner.node); drop(props, owner); drop(claimed, reservation);
+      solids.remove(owner.node); removeChild(root, owner.node); drop(placed, owner.node);
+      removed = true;
+    }
+    if (removed && clankers) clankers.supportRemoved();
   };
   // The sea far below and the islands on it, standing well out past the clouds.
   const SEA_Y = -70;
@@ -10658,7 +10704,7 @@
       CAMERA_GLYPHS.version++;
       const changed = island.path.setRadius(altar.platformRadius);
       island.path.apply(pathNode);
-      if (changed) { movePilePosts(); reflowScenery(); invalidateRageThrowMap(); }
+      if (changed) { movePilePosts(); clearRingPalms(); reflowScenery(); invalidateRageThrowMap(); }
     };
     layoutPile(pileMod.visualFootprintFor(world.level, PILE_SCALE));
     // While ₿IFRÖST is open its arch stands over the pass in the old gate's place, at the head of Bifröst; its stone is
@@ -11745,7 +11791,7 @@
     }
     for (const node of targets) input.remove(node);
     for (const node of placed) removeChild(root, node);
-    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = cloudObstacles.length = lamps.length = pilePosts.length = entranceLights.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = 0;
+    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = cloudObstacles.length = lamps.length = pilePosts.length = entranceLights.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
     cloudRandom = null;
     fireHazards.length = 0;
     clankerFireReachable = null;
