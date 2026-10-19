@@ -343,11 +343,13 @@
       pilot.setActive(false); pilot.controls.reset(); input.reset();
       pilot.setExternalControl(true);
       state.holding = true;
+      document.body.classList.add("tess-touring");
     };
     const release = () => {
       pilot.setExternalControl(false);
       pilot.setActive(true); pilot.controls.reset(); input.reset();
       state.holding = false;
+      document.body.classList.remove("tess-touring");
     };
     // The tour keeps where the view was, to give it back.
     const startTour = () => {
