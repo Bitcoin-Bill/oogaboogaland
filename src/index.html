@@ -157,6 +157,7 @@
         <p data-scene="lab" hidden>EntropyLab cave</p>
         <p data-scene="factory" hidden>Lightning Factory</p>
         <p data-scene="bifrost" hidden>₿IFRÖST</p>
+        <p data-scene="timechain" id="sphere-subtitle" hidden>Timechain Sphere</p>
         <p data-scene="arcade" hidden>Ooga Arcade</p>
         <p data-scene="skee" hidden>Ooga Arcade · Thro-ball</p>
         <p data-scene="hoops" hidden>Ooga Arcade · Hoop Shot</p>
@@ -285,6 +286,10 @@
       <nav class="presets" aria-label="DSB Land" data-scene="dsb" hidden>
         <button type="button" data-action="dsb-lookout" title="Camera viewpoint · releases character control">Island overview</button>
         <button type="button" data-action="dsb-mute" id="dsb-mute" aria-pressed="false">Mute</button>
+      </nav>
+      <nav class="presets" aria-label="Timechain Sphere room" data-scene="timechain" hidden>
+        <span class="sphere-mode" id="sphere-mode" role="status"></span>
+        <button type="button" class="leave" data-action="leave">Leave<span> room</span></button>
       </nav>
       <nav class="presets" aria-label="₿IFRÖST" data-scene="bifrost" hidden>
         <button type="button" data-preset="core">Core</button>
@@ -1605,6 +1610,29 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
       <ol aria-label="Destinations"></ol>
       <p class="help" id="ooga-portal-status" role="status"></p>
     </dialog>
+    <section class="sphere-keypad" id="sphere-keypad" data-state="idle" hidden aria-label="Timechain Sphere room keypad">
+      <output class="sphere-keypad-room" id="sphere-keypad-room">CHOOSE A ROOM</output>
+      <div class="sphere-keypad-keys" role="group" aria-label="Rooms 1 to 9">
+        <button type="button" data-sphere-key="1" aria-pressed="false">1</button>
+        <button type="button" data-sphere-key="2" aria-pressed="false">2</button>
+        <button type="button" data-sphere-key="3" aria-pressed="false">3</button>
+        <button type="button" data-sphere-key="4" aria-pressed="false">4</button>
+        <button type="button" data-sphere-key="5" aria-pressed="false">5</button>
+        <button type="button" data-sphere-key="6" aria-pressed="false">6</button>
+        <button type="button" data-sphere-key="7" aria-pressed="false">7</button>
+        <button type="button" data-sphere-key="8" aria-pressed="false">8</button>
+        <button type="button" data-sphere-key="9" aria-pressed="false">9</button>
+      </div>
+      <div class="sphere-keypad-actions">
+        <button type="button" class="sphere-keypad-back" data-sphere-key="back">Back</button>
+        <button type="button" class="sphere-keypad-enter" data-sphere-key="enter" disabled>Enter</button>
+        <button type="button" data-sphere-key="retry" hidden>Retry</button>
+        <button type="button" data-sphere-key="solo" hidden>Continue solo</button>
+        <button type="button" data-sphere-key="cancel" hidden>Cancel</button>
+      </div>
+      <p class="sphere-keypad-status" id="sphere-keypad-status" role="status" aria-live="polite"></p>
+      <p class="sphere-keypad-mode" id="sphere-keypad-mode"></p>
+    </section>
     <div class="bottom-hud">
       <button type="button" class="act" id="act" data-action="act" hidden>JUMP!</button>
       <div class="message-stack" id="message-stack">
@@ -1730,10 +1758,10 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/pool-water.js"></script>
   <script src="js/pool-paintings.js"></script>
   <script src="js/pool-wildlife.js"></script>
+  <script src="js/timechain-rooms.js"></script>
+  <script src="js/deferred.js"></script>
   <script src="js/timechain-models.js"></script>
-  <script src="js/timechain-beer.js"></script>
-  <script src="js/timechain-data.js"></script>
-  <script src="js/timechain-boards.js"></script>
+  <script src="js/timechain-gate.js"></script>
   <script src="js/solid-props.js"></script>
   <script src="js/breakables.js"></script>
   <script src="js/agent.js"></script>
@@ -1855,6 +1883,13 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/bifrost-heimdall.js"></script>
   <script src="js/bifrost-window.js"></script>
   <script src="js/scene-bifrost.js"></script>
+  <script src="js/scene-timechain.js"></script>
+  <script src="js/timechain-beer.js" data-defer="timechain"></script>
+  <script src="js/timechain-data.js" data-defer="timechain"></script>
+  <script src="js/timechain-blocks.js" data-defer="timechain"></script>
+  <script src="js/timechain-charts.js" data-defer="timechain"></script>
+  <script src="js/timechain-room-models.js" data-defer="timechain"></script>
+  <script src="js/timechain-interior.js" data-defer="timechain"></script>
   <script src="js/routes.js"></script>
   <script src="js/router.js"></script>
   <script src="js/poker-rules.js"></script>

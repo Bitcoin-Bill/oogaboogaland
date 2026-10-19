@@ -39,9 +39,13 @@
   const brushGeometry = cached(() => merge(box({ w: 0.045, h: 0.65, d: 0.045, color: "#b17d46", offset: { y: -0.25 } }), box({ w: 0.4, h: 0.13, d: 0.12, color: "#d3ba72", offset: { y: -0.6 } })));
   const leverGeometry = cached(() => box({ w: 0.08, h: 0.28, d: 0.08, color: "#263843", offset: { y: 0.12 } }));
   const DURATIONS = { work: 18, sip: 3, chug: 6.5, spin: 2.5, rise: 2, walk: 5, fill: 7, return: 5, sit: 2, cleanwalk: 1, clean: 1.25, trashwalk: 2.5, discard: 0.75, cabinetwalk: 1, take: 0.75, tapwalk: 1 };
-  const STATION_X = 11.6, DISPENSER_Z = 0, CABINET_Z = -2.2, BIN_Z = 2.2, WALK_X = 9.6;
+  const DISPENSER_Z = 0, CABINET_Z = -2.2, BIN_Z = 2.2;
   const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+  // `site` is the corner's frame: `node` (the recliner 1.8 m along +z from its origin), `chair`, `swivel`, `place`
+  // (where the frame stands, for the resident's own position) and how far along +x the gear stands (`station`) and
+  // where Sani stops in front of it (`walk`).
   const create = site => {
+    const STATION_X = site.station, WALK_X = site.walk;
     const station = (geometry, z) => createNode({ geometry, position: { x: STATION_X, y: 0, z }, rotation: { x: 0, y: -Math.PI / 2, z: 0 } });
     const dispenser = station(dispenserGeometry(), DISPENSER_Z), cabinet = station(cabinetGeometry(), CABINET_Z), bin = station(binGeometry(), BIN_Z);
     const badge = createNode({ geometry: BL.hubModels.caveSign("500 ML"), position: { x: 0, y: 0.62, z: 0.46 }, scale: { x: 0.18, y: 0.18, z: 0.18 } });

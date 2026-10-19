@@ -8564,3 +8564,95 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .sheet-toggle-loot { top: -39px; left: 144px; height: 42px; }
   .sheet-toggle-chat { top: -39px; left: var(--sheet-chat-left); height: 42px; }
 }
+
+/* The Timechain Sphere's room keypad: an iron plate beside the doors, its chosen room in amber. */
+.sphere-keypad {
+  position: absolute;
+  top: 50%;
+  right: calc(16px + var(--safe-right));
+  z-index: 14;
+  display: grid;
+  gap: 10px;
+  width: 232px;
+  padding: 14px;
+  transform: translateY(-50%);
+  border: 3px solid #1a1612;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #2e2924, #201c18 60%, #171411);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.55);
+  color: var(--paper);
+  font-family: var(--mono);
+}
+.sphere-keypad[hidden] { display: none; }
+.sphere-keypad-room {
+  display: block;
+  padding: 8px 6px;
+  border: 1px solid #4a3412;
+  border-radius: 5px;
+  background: #110d08;
+  color: #f7931a;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(247, 147, 26, 0.45);
+}
+.sphere-keypad-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.sphere-keypad button {
+  min-height: 44px;
+  border: 2px solid #12100d;
+  border-radius: 6px;
+  background: linear-gradient(#3d3732, #2c2724);
+  color: var(--paper);
+  font: 700 17px var(--mono);
+  cursor: pointer;
+  box-shadow: 0 3px 0 #0c0a08;
+}
+.sphere-keypad button:hover:not(:disabled),
+.sphere-keypad button:focus-visible { background: linear-gradient(#4a423b, #36302b); outline: none; }
+.sphere-keypad button[aria-pressed="true"] {
+  border-color: #f7931a;
+  background: linear-gradient(#f7a53a, #d9800f);
+  color: #1b1004;
+  box-shadow: 0 0 12px rgba(247, 147, 26, 0.55), 0 3px 0 #7a4508;
+}
+.sphere-keypad button:disabled { cursor: default; opacity: 0.55; }
+.sphere-keypad-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sphere-keypad-actions button { min-height: 40px; padding: 0 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.sphere-keypad-actions [data-sphere-key="solo"],
+.sphere-keypad-actions [data-sphere-key="cancel"] { grid-column: 1 / -1; }
+.sphere-keypad-actions button[hidden] { display: none; }
+.sphere-keypad .sphere-keypad-enter:not(:disabled) { border-color: #f7931a; color: #ffd9a0; }
+.sphere-keypad-status, .sphere-keypad-mode { margin: 0; font-size: 11px; line-height: 1.4; }
+.sphere-keypad-status { color: #ffd9a0; min-height: 1.4em; }
+.sphere-keypad-mode { color: var(--muted); }
+.sphere-keypad[data-state="preparing"] .sphere-keypad-keys,
+.sphere-keypad[data-state="waiting"] .sphere-keypad-keys,
+.sphere-keypad[data-state="account"] .sphere-keypad-keys { opacity: 0.45; }
+.sphere-mode {
+  align-self: center;
+  padding: 0 10px;
+  color: #f2a33a;
+  font: 700 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .sphere-keypad {
+    top: auto;
+    right: 50%;
+    bottom: calc(16px + var(--safe-bottom));
+    width: min(300px, calc(100vw - 32px));
+    transform: translateX(50%);
+  }
+  .sphere-mode { white-space: normal; max-width: 46vw; overflow-wrap: anywhere; }
+}

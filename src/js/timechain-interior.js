@@ -1,0 +1,680 @@
+// One Timechain Sphere room, entered through the island's keypad (timechain-gate.js) and the scene shell
+// (scene-timechain.js), which has already resolved the visit: the room's number and whether it is shared (signed in,
+// `sphere-<id>`) or a solo copy (signed out: no presence, poses, voice or remote players at all). Only the room
+// entered is built; it starts its own readers, sound and inputs on entry and drops every one of them on leaving.
+//
+// First person is the only view in here: the pilot is made with `close.only`, so scroll, pinch, the mode buttons, X,
+// Escape and possession never leave the eye, and the Ooga walks empty-handed, as in the arcade, with no jetpack (a
+// built-in pack is taken off for the visit; the island gives the visitor's pack back on the way out). A guided arrival
+// walks in from the vestibule as the doors close behind; Space at the Exit button (or Leave, or Escape) walks back out
+// through them and hands the same Ooga to the island, which walks it out onto the bridge.
+//
+// The screens are native charts (timechain-charts.js) of mempool.space's public block and mining data
+// (timechain-blocks.js), repainted only when what they print changes, one picture a frame at most, plus the six
+// Timechain Index holdings readings at the desk's terminal. Sani sits in his recliner in every room with his beer.
+(() => {
+  "use strict";
+  const BL = window.BL;
+  const { math, models, contributors, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
+  const { clamp } = math;
+  const { createNode, addChild, removeChild, createCamera, stepTweens, tweenCount, traverseVisible } = BL.scene;
+  const ROOMS = BL.timechainRooms, RM = BL.timechainRoomModels, CH = BL.timechainCharts, DOOR = ROOMS.DOOR;
+  const COARSE = window.matchMedia("(pointer: coarse)").matches;
+  const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
+  // The doors take DOOR_TIME to slide; a guided walk goes at WALK_SPEED of a walk and gives up after GUIDE_LIMIT.
+  const DOOR_TIME = 0.7, WALK_SPEED = 0.55, GUIDE_LIMIT = 7, TURN_RATE = 6, PREVIEW_FOV = 62 * Math.PI / 180;
+  // What the HUD's jetpack button shows in here: no pack at all.
+  const NO_JETPACK = { owned: false, equipped: false, fuel: 1, blocked: false };
+  const RENDER_OPTS = {
+    clear: [0.018, 0.016, 0.02], sky: [0.32, 0.29, 0.27], ground: [0.12, 0.1, 0.09], direct: [0.52, 0.46, 0.4], directStrength: 0.2,
+    ambientFloor: 0.32, sun: { x: 0.2, y: 0.95, z: 0.25 }, shadowCenter: { x: 0, y: 2, z: 0 }, shadowExtent: 14,
+    lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, bloomStrength: 0.65
+  };
+  // The room's hum: a low drone and a soft fan hiss, pitched a little apart in each room, honouring the page-wide
+  // mute and the tab's visibility; a context only after a gesture, closed on leaving.
+  const STORAGE_KEY = "oogaboogaland.audio";
+  const ambience = (room) => {
+    let context = null, bus = null, sources = [], nodes = [], connected = false, disposed = false, muted = false;
+    try { muted = localStorage.getItem(STORAGE_KEY) === "off"; } catch { muted = false; }
+    const gate = () => {
+      if (!bus) return;
+      const on = !muted && !document.hidden && !disposed;
+      if (on && !connected) { bus.connect(context.destination); connected = true; }
+      if (!on && connected) { bus.disconnect(); connected = false; }
+    };
+    const wake = () => {
+      if (context || disposed || muted || typeof AudioContext === "undefined" || navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+      context = new AudioContext();
+      bus = context.createGain();
+      bus.gain.value = 0.5;
+      const pitch = 1 + (room.id - 5) * 0.012;
+      for (const [hz, level] of [[49 * pitch, 0.03], [73.5 * pitch, 0.016]]) {
+        const tone = context.createOscillator(), gain = context.createGain();
+        tone.type = "sine"; tone.frequency.value = hz; gain.gain.value = level;
+        tone.connect(gain); gain.connect(bus); tone.start();
+        sources.push(tone); nodes.push(gain);
+      }
+      const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate), data = buffer.getChannelData(0);
+      let seed = 4111 + room.id * 97;
+      for (let i = 0; i < data.length; i++) { seed = (Math.imul(seed, 1103515245) + 12345) | 0; data[i] = (seed >>> 0) / 2147483648 - 1; }
+      const noise = context.createBufferSource(), filter = context.createBiquadFilter(), gain = context.createGain();
+      noise.buffer = buffer; noise.loop = true;
+      filter.type = "lowpass"; filter.frequency.value = 520 * pitch;
+      gain.gain.value = 0.012;
+      noise.connect(filter); filter.connect(gain); gain.connect(bus); noise.start();
+      sources.push(noise); nodes.push(filter, gain);
+      gate();
+    };
+    const gesture = () => { wake(); if (context && context.state === "suspended") context.resume().catch(() => {}); };
+    document.addEventListener("pointerdown", gesture);
+    document.addEventListener("keydown", gesture);
+    document.addEventListener("visibilitychange", gate);
+    wake();
+    return {
+      get stats() { return { contexts: context ? 1 : 0, sources: sources.length, connected }; },
+      dispose() {
+        disposed = true;
+        gate();
+        document.removeEventListener("pointerdown", gesture);
+        document.removeEventListener("keydown", gesture);
+        document.removeEventListener("visibilitychange", gate);
+        for (const source of sources) { source.stop(); source.disconnect(); }
+        for (const node of [...nodes, bus]) if (node) node.disconnect();
+        sources = []; nodes = [];
+        if (context) context.close().catch(() => {});
+        context = bus = null;
+      }
+    };
+  };
+
+  // A picture slot: a canvas the painters draw, and the node that shows it once its image has decoded. A slot is
+  // repainted only when its `key` (what it prints) changes; the old picture's GPU record goes when the new one hangs.
+  const slot = (node, w, h, pw, ph) => ({ node, canvas: CH.canvas(pw, ph), w, h, key: "", live: true, loading: 0 });
+  const hang = (renderer, s) => {
+    const image = new Image(), stamp = ++s.loading;
+    image.onload = () => {
+      if (!s.live || stamp !== s.loading) return;
+      const old = s.node.geometry;
+      s.node.geometry = RM.picture(image, s.canvas.width, s.canvas.height, s.w, s.h);
+      if (old) renderer.releaseGeometry(old);
+    };
+    image.src = s.canvas.toDataURL("image/png");
+  };
+  // A ray against a slot's own rectangle, for picking a screen exactly rather than by its bounding sphere.
+  const INVERSE = math.mat4.create();
+  const rectPick = (node, w, h) => (ray) => {
+    math.mat4.invert(INVERSE, node.world);
+    const m = INVERSE;
+    const ox = m[0] * ray.ox + m[4] * ray.oy + m[8] * ray.oz + m[12], oy = m[1] * ray.ox + m[5] * ray.oy + m[9] * ray.oz + m[13], oz = m[2] * ray.ox + m[6] * ray.oy + m[10] * ray.oz + m[14];
+    const dx = m[0] * ray.dx + m[4] * ray.dy + m[8] * ray.dz, dy = m[1] * ray.dx + m[5] * ray.dy + m[9] * ray.dz, dz = m[2] * ray.dx + m[6] * ray.dy + m[10] * ray.dz;
+    if (Math.abs(dz) < 1e-9) return Infinity;
+    const t = -oz / dz, x = ox + dx * t, y = oy + dy * t;
+    return t >= 0 && Math.abs(x) <= w / 2 && Math.abs(y) <= h / 2 ? t : Infinity;
+  };
+
+  const TIPS = {
+    exit: "Exit · press Space beside it to walk out",
+    screen: "Timechain display · tap for a close-up",
+    card: "Latest blocks · tap for the charts",
+    terminal: "Holdings desk · tap for Timechain Index holdings",
+    sani: "Sani · tap to spin his chair",
+    beer: "500 ml beer · tap to chug",
+    recliner: "Sani's recliner · tap to spin and spill the glass",
+    door: "The way out · use the Exit button",
+    table: "Meeting table"
+  };
+
+  // The visit. `shell` is the scene object the director knows (scene-timechain.js), `visit` what the shell resolved.
+  const create = (shell, ctx, visit) => {
+    const { renderer, game, world, go, canvas } = ctx;
+    const room = ROOMS.get(visit.room), L = ROOMS.layout(room.scale), shared = visit.mode === "shared";
+    const camera = createCamera({ fov: 58, near: 0.12, far: L.radius * 3 + 20 });
+    const root = createNode();
+    const hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
+    const hooks = {};
+    const input = interactMod.create({ canvas, renderer, camera, hooks });
+    const built = RM.build(room.scale);
+    addChild(root, built.root);
+    RENDER_OPTS.shadowExtent = L.radius * 1.2;
+    let n = 0;
+    for (const l of built.lights) { RENDER_OPTS.lights.set([l[0], l[1], l[2], l[3], l[4], l[5], l[6], 0], n * 8); n++; }
+    RENDER_OPTS.lightCount = n;
+
+    // Walking: inside the round wall, short of the closed doors and clear of the furniture; the doorway and the
+    // vestibule open to the guided walk alone.
+    let guided = false;
+    const walkable = (ax, az, bx, bz, y, height, actor) => {
+      const r = actor && actor.bodyRadius || 0.35, steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2));
+      for (let i = 1; i <= steps; i++) if (!ROOMS.clearAt(L, ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, r, guided)) return false;
+      return true;
+    };
+    const clampTarget = (p) => {
+      p.y = clamp(p.y, 0.4, L.wall - 0.5);
+      const r = Math.hypot(p.x, p.z), max = L.walkRadius - 0.2;
+      if (r > max) { p.x *= max / r; p.z *= max / r; }
+      if (!guided) p.z = Math.min(p.z, L.doorZ - 0.3);
+    };
+    const clampCamera = (p) => {
+      p.y = clamp(p.y, 0.3, L.wall - 0.3);
+      const r = Math.hypot(p.x, p.z), max = L.radius - 0.25;
+      if (r > max) { p.x *= max / r; p.z *= max / r; }
+      if (!guided || Math.abs(p.x) > DOOR.halfW - 0.2) p.z = Math.min(p.z, L.doorZ - 0.2);
+      else p.z = Math.min(p.z, L.doorZ + DOOR.vestibule - 0.3);
+    };
+    const view = { yaw: 0, pitch: 0.05, dist: 4, target: { x: L.arrival.x, y: 1.6, z: L.arrival.z } };
+    const pilot = pilotMod.create({
+      renderer, canvas, camera, hud, presets: { entrance: view }, landing: "entrance", pitch: [-0.2, 1.2], dist: [3, 8],
+      follow: { y: 0.9, min: 3, max: 6, pitch: [0.2, 0.7] }, fly: { speed: 4, perDist: 0.4, climb: 2, yMax: L.wall - 1 },
+      clampTarget, clampCamera, ceilingAt: () => L.wall, coarse: COARSE, mayPossess: (cave) => BL.net.mayDrive(cave.traits.name),
+      jetpackStatus: () => NO_JETPACK,
+      close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: () => 0, only: true }
+    });
+    const fx = fxMod.create({ root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 4, z: 0 } });
+    const targets = [];
+    const target = (node, owner, radius = 0) => { input.add(node, owner, { radius }); targets.push(node); return owner; };
+
+    // The screens, the ribbon, the terminal and the signs, each a picture slot.
+    // The block and mining readings repaint a slot through its key (what it would print), never by callback.
+    const reader = BL.timechainBlocks.create();
+    const screens = built.screens.map((node, i) => slot(node, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H));
+    const cards = built.cards.map((node, i) => slot(node, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H));
+    const terminal = slot(built.terminal, RM.DESK_SCREEN.w, RM.DESK_SCREEN.h, CH.PANEL_W, CH.PANEL_H);
+    const signs = [
+      [built.exitSign, 1.1, 0.34, 330, 102, "EXIT", 64],
+      [built.useSign, 0.9, 0.2, 360, 80, COARSE ? "TAP · EXIT" : "SPACE · EXIT", 38],
+      [built.roomSign, 0.9, 0.3, 300, 100, room.name.toUpperCase(), 54]
+    ].map(([node, w, h, pw, ph, words, size]) => {
+      const s = slot(node, w, h, pw, ph);
+      CH.sign(s.canvas.getContext("2d"), pw, ph, words, size);
+      hang(renderer, s);
+      return s;
+    });
+    const all = [...screens, ...cards, terminal, ...signs];
+    screens.forEach((s, i) => { const owner = target(s.node, { kind: "screen", index: i }); owner.pickRay = rectPick(s.node, s.w, s.h); });
+    cards.forEach((s, i) => { const owner = target(s.node, { kind: "card", index: i }); owner.pickRay = rectPick(s.node, s.w, s.h); });
+    target(built.desk, { kind: "terminal" }, 1.3);
+    target(built.exitButton, { kind: "exit" }, 0.45);
+    target(built.table, { kind: "table" }, 1.2);
+    for (const leaf of built.doors) target(leaf, { kind: "door" }, 1.6);
+    // The holdings readings the old sphere's walls showed, one canvas each; the terminal shows the one chosen.
+    const holdingsCanvases = BL.timechainData.TITLES.map(() => CH.canvas(CH.PANEL_W, CH.PANEL_H));
+    let holdingsIndex = 0, holdingsVersion = 0, chartIndex = 0, chartVersion = 0;
+    const holdingsKeys = holdingsCanvases.map(() => "");
+    const holdings = BL.timechainData.create(() => { holdingsDirty = true; });
+    let holdingsDirty = true;
+
+    const minute = () => Math.floor(Date.now() / 60000);
+    // Slots are looked at only after a reading, a new minute (the ages printed) or a new holdings page: `sweep` runs
+    // until no key moved, so a quiet frame builds no key and paints nothing.
+    let seenVersion = -1, seenMinute = -1, sweep = true;
+    // What a slot would print now, as a key; a changed key earns a repaint.
+    const keyOf = (s, i) => {
+      if (s === terminal) return `${holdingsIndex}|${holdingsKeys[holdingsIndex]}`;
+      if (screens[i] === s) {
+        const sets = CH.PANELS[i].sets;
+        let k = "";
+        for (const name of sets) k += name === "history" ? `${reader.historyStatus()}:${reader.summary ? reader.summary.coverage + "/" + reader.summary.tip : ""}|` : `${reader.status(name)}:${reader.at(name)}|`;
+        return k + minute();
+      }
+      const blocks = reader.value("recent");
+      if (i === 0) return `label|${reader.status("recent")}`;
+      const b = blocks && blocks[i - 1];
+      return b ? `${b.id}|${b.pool}|${Math.floor((Date.now() / 1000 - b.time) / 60)}` : `none|${reader.status("recent")}`;
+    };
+    // At most one picture a frame: the first slot whose key moved.
+    const paintNext = () => {
+      const m = minute();
+      if (reader.version !== seenVersion || m !== seenMinute || holdingsDirty) { seenVersion = reader.version; seenMinute = m; sweep = true; }
+      if (!sweep) return;
+      if (holdingsDirty) {
+        holdingsDirty = false;
+        holdings.boards.forEach((board, i) => {
+          const k = `${board.status}|${board.asof}|${board.lines.join("|")}`;
+          if (k === holdingsKeys[i]) return;
+          holdingsKeys[i] = k;
+          CH.holdings(holdingsCanvases[i].getContext("2d"), board);
+          holdingsVersion++;
+        });
+      }
+      const now = Date.now();
+      for (let i = 0; i < screens.length; i++) {
+        const s = screens[i], k = keyOf(s, i);
+        if (k === s.key) continue;
+        s.key = k;
+        CH.PANELS[i].paint(s.canvas.getContext("2d"), reader, now);
+        chartVersion++;
+        hang(renderer, s);
+        return;
+      }
+      for (let i = 0; i < cards.length; i++) {
+        const s = cards[i], k = keyOf(s, i);
+        if (k === s.key) continue;
+        s.key = k;
+        const ctx2d = s.canvas.getContext("2d"), blocks = reader.value("recent");
+        if (i === 0) CH.ribbonLabel(ctx2d, reader.status("recent"));
+        else CH.card(ctx2d, blocks && blocks[i - 1], now);
+        hang(renderer, s);
+        return;
+      }
+      const k = keyOf(terminal, -1);
+      if (k !== terminal.key) {
+        terminal.key = k;
+        terminal.canvas.getContext("2d").drawImage(holdingsCanvases[holdingsIndex], 0, 0);
+        hang(renderer, terminal);
+        return;
+      }
+      sweep = false;
+    };
+    const chartBoard = {
+      title: "Timechain Sphere", help: "Live block and mining charts, drawn here from mempool.space's public API. Arrow keys flip the screens.", wide: true,
+      get canvas() { return screens[chartIndex].canvas; }, get count() { return screens.length; }, get index() { return chartIndex; },
+      get caption() { return CH.PANELS[chartIndex].title; }, get note() { return CH.PANELS[chartIndex].note; }, get version() { return chartVersion; },
+      go: (i) => { chartIndex = i; chartVersion++; }
+    };
+    const holdingsBoard = {
+      title: "Holdings desk", help: "Timechain Index holdings and distributions. Arrow keys flip the readings.", wide: true,
+      get canvas() { return holdingsCanvases[holdingsIndex]; }, get count() { return holdingsCanvases.length; }, get index() { return holdingsIndex; },
+      get caption() { return BL.timechainData.TITLES[holdingsIndex]; },
+      get note() { const b = holdings.boards[holdingsIndex]; return `${b.note ? b.note + "\n" : ""}Source: ${b.source}`; },
+      get version() { return holdingsVersion; },
+      go: (i) => { holdingsIndex = i; holdingsVersion++; sweep = true; }
+    };
+
+    // Sani in his recliner with his beer, in every room, unless the visitor drives him in.
+    const lounge = built.lounge, beer = BL.timechainBeer.create(lounge);
+    const seat = { x: lounge.place.x, z: lounge.place.z + 1.8, angle: Math.PI, speed: 0, phase: 0, active: true };
+    target(lounge.chair, { kind: "recliner" }, 1.2);
+    target(beer.mug, { kind: "beer" }, 0.3);
+    let sani = null;
+    const saniActor = { x: 0, y: 0, z: 0, radius: 0.35, height: 1.8 };
+    const NO_ACTORS = [], actors = [];
+
+    // The visitor's Ooga: the one handed over, else the visit's, else `character=` on a page that opens here, else
+    // their own (signed in) or the roster's first they may drive.
+    const mayPick = (entry) => !BL.net.mayDrive(entry.name);
+    const asked = ctx.from === null ? new URLSearchParams(location.search).get("character")?.trim().toLowerCase() : null;
+    const own = BL.net.ownCharacter();
+    const wanted = [visit.character, world.pilot, asked && contributors.roster.find((c) => c.name.toLowerCase() === asked)?.name, own && own.handle];
+    let playerName = null;
+    for (const name of wanted) {
+      const entry = name && contributors.roster.find((c) => c.name === name);
+      if (entry && mayPick(entry)) { playerName = entry.name; break; }
+    }
+    if (!playerName) playerName = contributors.activeRoster.find(mayPick)?.name || null;
+    world.pilot = null;
+    const playerWorld = { level: 0, weapons: new Map(), magazine: { owned: false, count: 0, ammo: 0, carrier: null } };
+    let remotes = null, people = null, avatar = null;
+    const outsideActors = () => {
+      actors.length = 0;
+      if (remotes) { const list = remotes.actors(); for (let i = 0; i < list.length; i++) actors.push(list[i]); }
+      if (sani && sani.root.visible) actors.push(saniActor);
+      return actors.length ? actors : NO_ACTORS;
+    };
+    // Space beside the Exit button walks out; anywhere else it jumps.
+    const nearExit = () => {
+      if (!avatar) return false;
+      const p = avatar.root.position, E = L.exitButton;
+      return Math.hypot(p.x - E.x, p.z - E.z) < L.exitReach;
+    };
+    const useNear = () => {
+      if (!nearExit() || guide.stage) return false;
+      walkOut();
+      return true;
+    };
+    if (playerName) {
+      const sharedCtx = { root, input, hud, game, world: playerWorld, playerName, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: () => 0, walkable, useNear, jetpackAllowed: () => false };
+      people = sharedCtx.crew = BL.crew.create(sharedCtx);
+      pilot.bind(sharedCtx);
+      avatar = people.cavemen.get(playerName);
+      // Empty-handed, as in the arcade: no rifle on the back, no aiming; and no jetpack, built in or not.
+      avatar.weapon.secondaryOwned = false;
+      people.selectWeapon(0, avatar);
+      avatar.weapon.aiming = false;
+      avatar.parts.gun.visible = false;
+      if (avatar.jet) people.removeJetpack(avatar);
+      avatar.root.position.y = avatar.baseY;
+      pilot.possess(avatar);
+      pilot.enterClose();
+    }
+    if (playerName !== "SaniExp") {
+      sani = models.caveman(contributors.traitsFor("SaniExp"));
+      sani.baseY = sani.root.position.y;
+      for (const key of ["snack", "gun", "jetpack", "jetFlame"]) if (sani.parts[key]) sani.parts[key].visible = false;
+      addChild(root, sani.root);
+      for (const key of ["head", "torso", "legL", "legR", "armL", "armR"]) if (sani.parts[key]) target(sani.parts[key], { kind: "sani" });
+    }
+    // In the room, as the visit has it: a guided arrival from the vestibule, or (a reload, a link, a history step)
+    // standing at the arrival facing the screens.
+    const arrive = (at) => pilot.navigate({ position: { x: at.x, y: 0, z: at.z }, yaw: 0, pitch: 0.04, dist: 4 });
+    const guide = { stage: visit.guided && avatar ? "arrive" : null, t: 0, quick: false };
+    const doors = { open: guide.stage ? 1 : 0, want: guide.stage ? 1 : 0, until: 0 };
+    if (avatar) arrive(guide.stage ? L.threshold : L.arrival);
+    if (guide.stage) { guided = true; pilot.setActive(false); }
+    // Presence: a shared room is its own zone, published once the Ooga stands in it, and a guided arrival opens the
+    // doors for whoever is already here; a solo copy publishes nothing at all.
+    if (shared) {
+      BL.net.setZone(room.zone);
+      if (guide.stage) BL.net.passDoor(room.zone, "in");
+    } else { BL.net.setBody(null); BL.net.setZone("none"); }
+    remotes = shared ? BL.remotePlayers.create({ root, crew: people, hide: (name, on) => { if (sani && name === "SaniExp") sani.root.visible = !on; } }) : null;
+    const footsteps = BL.footsteps.create();
+    const sound = ambience(room);
+    // Another player crossing this room's own doorway opens its doors here too (net.js `subscribeDoor`).
+    const unsubscribeDoor = shared ? BL.net.subscribeDoor((event) => {
+      if (event.t !== "transit" || event.door !== room.zone) return;
+      doors.until = Math.max(doors.until, performance.now() + Math.max(0, Math.min(8000, event.exp - BL.net.serverNow())));
+    }) : null;
+    let leaving = false;
+    // Leaving: the same Ooga goes back out to the island's passage behind the sphere's doors.
+    const exitNote = (signedOut) => ({ room: room.id, mode: signedOut ? "solo" : visit.mode, character: avatar ? avatar.traits.name : null, jetpack: visit.jetpack || null });
+    const handOff = (signedOut = false) => {
+      if (leaving) return;
+      world.sphereExit = exitNote(signedOut);
+      world.pilot = avatar ? avatar.traits.name : null;
+      world.pilotDetached = !avatar;
+      BL.net.setBody(null);
+      BL.net.setZone("none");
+      leaving = go("hub", "timechain");
+      if (!leaving) world.sphereExit = null;
+    };
+    // Space at the button: turn to the doorway, the doors part, walk through into the vestibule, then the island.
+    const walkOut = () => {
+      if (guide.stage || leaving) return;
+      if (!avatar || !nearExit() && Math.hypot(avatar.root.position.x - L.doorStep.x, avatar.root.position.z - L.doorStep.z) > 3) { handOff(); return; }
+      guide.stage = "toDoor"; guide.t = 0;
+      guided = true;
+      pilot.setActive(false);
+      hud.tooltip.hide();
+      if (shared) BL.net.passDoor(room.zone, "out");
+    };
+    const accountChanged = () => {
+      if (shared && !BL.net.state.me && !leaving) {
+        hud.toast("Signed out · back outside");
+        handOff(true);
+      }
+    };
+    const unsubscribeAccount = BL.net.subscribe(accountChanged);
+    // Weapon keys and right-click aiming do nothing in here (registered before the pilot's, in the capture phase).
+    const WEAPON_KEYS = new Set(["1", "2", "r", "x", "f", "g"]);
+    const armsKeys = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || !WEAPON_KEYS.has(e.key.toLowerCase()) || e.target && e.target.closest && e.target.closest("input, textarea, [contenteditable]")) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    const rightClick = (e) => {
+      if (e.button !== 2) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", armsKeys, true);
+    canvas.addEventListener("pointerdown", rightClick, true);
+
+    const tipFor = (hit) => {
+      const o = hit.owner;
+      return o.kind === "screen" ? `${CH.PANELS[o.index].title} · tap for a close-up` : TIPS[o.kind] || "";
+    };
+    Object.assign(hooks, {
+      onHover: (hit, p) => { if (hit && !guide.stage) hud.tooltip.show(tipFor(hit), p.x, p.y); else hud.tooltip.hide(); },
+      onHoverMove: (hit, p) => { if (!guide.stage) hud.tooltip.show(tipFor(hit), p.x, p.y); },
+      onTap: (hit) => {
+        if (!hit || guide.stage) return;
+        const o = hit.owner;
+        if (o.kind === "exit") { if (nearExit()) walkOut(); else hud.toast("Walk up to the Exit button, then press it"); }
+        else if (o.kind === "screen" || o.kind === "card") { chartIndex = o.kind === "screen" ? o.index : 2; chartVersion++; hud.openBoard(chartBoard); }
+        else if (o.kind === "terminal") { holdingsVersion++; hud.openBoard(holdingsBoard); }
+        else if (o.kind === "sani" || o.kind === "recliner") beer.act("spin", seat);
+        else if (o.kind === "beer") beer.act("chug", seat);
+        else if (o.kind === "door") hud.toast(COARSE ? "Tap EXIT beside the doors to walk out" : "Press Space at the Exit button to walk out");
+        else if (o.kind === "table") hud.toast(`${room.name} · ${room.scale}× · ${shared ? "shared with whoever chose it" : "a solo copy, just for you"}`);
+      },
+      ...pilot.hooks
+    });
+    hud.onAction((action) => {
+      if (action === "leave") walkOut();
+      else if (action === "reset-view") pilot.resetCamera();
+      else if (action === "jetpack-toggle") hud.toast("No jetpacks in the Sphere");
+      else if (action.startsWith("mode-")) pilot.modeAction(action);
+    });
+    const mode = document.getElementById("sphere-mode"), subtitle = document.getElementById("sphere-subtitle");
+    if (subtitle) subtitle.textContent = `Timechain Sphere · ${room.name}`;
+    // The chip under the title: the room and its size, or that this is a solo copy; checked once a second.
+    let modeWait = 0;
+    const showMode = () => {
+      if (!mode) return;
+      let others = 0;
+      if (shared) for (const rec of BL.net.remotes.values()) if (rec.zone === room.zone && rec.body) others++;
+      const text = shared ? `${room.name} · ${room.scale}×${others ? ` · ${others + 1} here` : ""}` : `${room.name} · Solo visit · not signed in`;
+      if (mode.textContent !== text) mode.textContent = text;
+    };
+    showMode();
+    hud.hint(guide.stage ? `Entering ${room.name}` : COARSE ? "Stick walks · drag to look · EXIT by the doors leaves" : "W A S D walk · mouse looks · Space at the Exit button leaves", 5000);
+
+    // The guided walks, steered as a held stick would steer them; the view turns with the walk.
+    const steerTo = (x, z, dt) => {
+      const p = avatar.root.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+      if (d < 0.12) { people.steer(0, 0, 0, 0, 0); return true; }
+      people.steer(dx / d, dz / d, 0, 1, 0, WALK_SPEED);
+      const yaw = Math.atan2(-dx, -dz), o = pilot.orbit;
+      o.yaw = o.tYaw = o.yaw + Math.atan2(Math.sin(yaw - o.yaw), Math.cos(yaw - o.yaw)) * Math.min(1, dt * TURN_RATE);
+      o.pitch = o.tPitch = o.pitch + (0.04 - o.pitch) * Math.min(1, dt * TURN_RATE);
+      return false;
+    };
+    // Square to the doors, the view with the body.
+    const faceDoor = (dt) => {
+      const o = pilot.orbit, k = Math.min(1, dt * TURN_RATE), r = avatar.root.rotation;
+      o.yaw = o.tYaw = o.yaw + Math.atan2(Math.sin(Math.PI - o.yaw), Math.cos(Math.PI - o.yaw)) * k;
+      r.y += Math.atan2(Math.sin(-r.y), Math.cos(-r.y)) * k;
+    };
+    const finishGuide = () => {
+      guide.stage = null;
+      guided = false;
+      people.steer(0, 0, 0, 0, 0);
+      pilot.setActive(true);
+      hud.hint(COARSE ? "Stick walks · drag to look · EXIT by the doors leaves" : "W A S D walk · mouse looks · Space at the Exit button leaves", 5000);
+    };
+    const runGuide = (dt) => {
+      guide.t += dt;
+      const p = avatar.root.position;
+      if (guide.stage === "arrive") {
+        if (p.z < L.doorZ - 0.9) doors.want = 0;
+        if (steerTo(L.arrival.x, L.arrival.z, dt) || guide.t > GUIDE_LIMIT) {
+          if (guide.t > GUIDE_LIMIT) arrive(L.arrival);
+          doors.want = 0;
+          finishGuide();
+        }
+      } else if (guide.stage === "toDoor") {
+        if (steerTo(L.doorStep.x, L.doorStep.z, dt) || guide.t > GUIDE_LIMIT) { guide.stage = "open"; guide.t = 0; doors.want = 1; }
+      } else if (guide.stage === "open") {
+        faceDoor(dt);
+        if (doors.open >= 0.85) { guide.stage = "through"; guide.t = 0; }
+      } else if (guide.stage === "through") {
+        steerTo(0, L.threshold.z + 0.6, dt);
+        if (p.z > L.threshold.z || guide.t > GUIDE_LIMIT) { guide.stage = "out"; handOff(); }
+      } else if (guide.stage === "out") steerTo(0, L.threshold.z + 0.6, dt);
+    };
+    // Sani at his laptop, in the pose the island used to give him there, his beer gear doing the rest.
+    const poseSani = (dt) => {
+      if (!sani) return;
+      seat.phase = (seat.phase + dt * 7) % (Math.PI * 2);
+      const decay = Math.exp(-1.15 * dt);
+      seat.angle = (seat.angle + seat.speed * (1 - decay) / 1.15) % (Math.PI * 2);
+      seat.speed *= decay;
+      if (seat.speed < 0.005) seat.speed = 0;
+      lounge.swivel.rotation.y = seat.angle;
+      const h = sani.traits.height, parts = sani.parts;
+      sani.root.position.x = seat.x; sani.root.position.z = seat.z; sani.root.position.y = 0.88 * h;
+      sani.root.rotation.x = -0.23; sani.root.rotation.z = 0; sani.root.rotation.y = seat.angle;
+      lounge.chair.scale.x = lounge.chair.scale.y = lounge.chair.scale.z = h;
+      parts.legR.rotation.x = parts.legL.rotation.x = -1.05;
+      parts.armR.rotation.x = -0.95 + Math.sin(seat.phase) * 0.035;
+      parts.armL.rotation.x = -0.95 - Math.sin(seat.phase) * 0.035;
+      parts.armR.rotation.z = -0.12; parts.armL.rotation.z = 0.12;
+      parts.head.rotation.x = 0.28;
+      if (parts.club) parts.club.visible = false;
+      beer.update(sani, seat, dt);
+      saniActor.x = sani.root.position.x; saniActor.z = sani.root.position.z;
+    };
+
+    const update = (dt, elapsed) => {
+      pilot.readInput(dt);
+      if (guide.stage && avatar) runGuide(dt);
+      if (people) people.update(dt, elapsed);
+      pilot.update(dt);
+      // The doors: open for a guided walk or another player's crossing here, closed otherwise.
+      const want = Math.max(doors.want, performance.now() < doors.until ? 1 : 0);
+      const step = REDUCED.matches ? 1 : dt / DOOR_TIME;
+      doors.open = doors.open < want ? Math.min(want, doors.open + step) : Math.max(want, doors.open - step);
+      const slide = doors.open * doors.open * (3 - 2 * doors.open) * DOOR.halfW;
+      built.doors[0].position.x = -DOOR.halfW / 2 - slide;
+      built.doors[1].position.x = DOOR.halfW / 2 + slide;
+      // A shared room hears and shows whoever drives an Ooga in it; a solo copy reports nothing.
+      const driven = people && people.player;
+      if (shared && !leaving) {
+        BL.net.setBody(driven ? driven.traits.name : null);
+        if (driven) {
+          const p = driven.root.position;
+          BL.net.sendPose(p.x, p.y - driven.baseY, p.z, driven.root.rotation.y);
+          BL.net.setHealth(driven.health.value, driven.health.stunned);
+        }
+      }
+      if (remotes) remotes.update(dt);
+      footsteps.update(driven);
+      poseSani(dt);
+      if (avatar && !guide.stage) {
+        const near = nearExit();
+        if (near !== guide.near) { guide.near = near; if (near) { hud.setAct("EXIT"); hud.hint(COARSE ? "Tap EXIT to walk out" : "Space · Exit"); } else pilot.showAct(); }
+      }
+      if ((modeWait -= dt) <= 0) { modeWait = 1; showMode(); }
+      paintNext();
+      stepTweens(dt);
+      fx.update(dt, elapsed);
+    };
+    const drawExtra = (ctx2d, project) => { if (remotes) remotes.drawNames(ctx2d, project); };
+    const overlay = (dt) => fx.drawOverlay(dt, drawExtra);
+    const onKey = (e) => {
+      if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !guide.stage) return pilot.resetCamera();
+      if (e.key === "Escape") {
+        if (!pilot.escape() && !guide.stage) walkOut();
+        return true;
+      }
+      return false;
+    };
+    const onDonation = (donation, counted = null) => {
+      game.recordDonation(donation, counted && counted.exact);
+      world.level = Math.min(BL.pile.MAX_BANANAS, world.level + (counted ? counted.exact : BL.game.bananasFor(donation.sats)));
+      hud.toast(`${donation.handle || "anon"} tipped ${BL.game.formatLarge(donation.sats)} sats · the island's pile grows`);
+    };
+    reader.start();
+    holdings.start();
+
+    shell.root = root;
+    shell.camera = camera;
+    shell.input = input;
+    shell.debug = {
+      hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
+      timechain: {
+        room, visit, layout: L, built, reader, holdings, guide, doors, beer, seat,
+        get avatar() { return avatar; }, get sani() { return sani; }, get remotes() { return remotes; }, get sound() { return sound.stats; },
+        get slots() { return all.map((s) => ({ key: s.key, shown: !!s.node.geometry })); },
+        exit: walkOut, chartBoard, holdingsBoard
+      }
+    };
+
+    const leave = () => {
+      // Left by Back or Forward rather than the doors, the Ooga still goes out by the passage if the island is next.
+      if (!leaving) {
+        world.pilotDetached = !avatar;
+        world.pilot = avatar ? avatar.traits.name : null;
+        world.sphereExit = exitNote(!BL.net.state.me);
+      }
+      reader.dispose();
+      holdings.dispose();
+      sound.dispose();
+      if (unsubscribeDoor) unsubscribeDoor();
+      unsubscribeAccount();
+      window.removeEventListener("keydown", armsKeys, true);
+      canvas.removeEventListener("pointerdown", rightClick, true);
+      BL.net.setBody(null);
+      for (const s of all) {
+        s.live = false;
+        if (s.node.geometry) renderer.releaseGeometry(s.node.geometry);
+        s.node.geometry = null;
+      }
+      beer.dispose();
+      if (remotes) remotes.dispose();
+      footsteps.dispose();
+      if (people) people.dispose();
+      fx.dispose();
+      pilot.dispose();
+      for (const node of targets) input.remove(node);
+      targets.length = 0;
+      while (root.children.length) removeChild(root, root.children[root.children.length - 1]);
+      const count = input.targetCount;
+      input.dispose();
+      hud.dispose();
+      shell.input = shell.debug = null;
+      return { targets: count };
+    };
+    const liveGeometry = (set) => {
+      if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
+      if (remotes) remotes.liveGeometry(set);
+    };
+    const stats = () => {
+      let visible = 0;
+      traverseVisible(root, () => visible++);
+      const count = (node) => 1 + node.children.reduce((sum, c) => sum + count(c), 0);
+      return { visibleNodes: visible, allNodes: count(root), tweens: tweenCount(), targets: input.targetCount, ...fx.stats(), ...(remotes ? remotes.stats() : {}), requests: reader.pending, timers: reader.timers };
+    };
+    return { update, overlay, onKey, onDonation, leave, liveGeometry, stats, renderOpts: RENDER_OPTS, get inMotion() { return true; } };
+  };
+
+  // The traveler's look through the island's open doors before they cross: this room built off the graph with its
+  // screens as the page's cache would paint them, and one picture of it from just inside its doorway, at eye height,
+  // looking at the screens. `preview` paints and decodes (async); `take` renders in a frame, before that frame's own
+  // render, and releases the room's GPU records again. The island hangs the picture at the end of its passage, for
+  // this page alone.
+  const preview = async (roomId, renderer) => {
+    const room = ROOMS.get(roomId), L = ROOMS.layout(room.scale), built = RM.build(room.scale), reader = BL.timechainBlocks.create();
+    const pictures = [], now = Date.now();
+    const paint = async (node, w, h, pw, ph, draw) => {
+      const c = CH.canvas(pw, ph);
+      draw(c.getContext("2d"));
+      const image = new Image();
+      image.src = c.toDataURL("image/png");
+      await image.decode();
+      node.geometry = RM.picture(image, pw, ph, w, h);
+      pictures.push(node.geometry);
+    };
+    // One picture at a time, each decode a pause, so the island keeps its frames while they paint.
+    const blocks = reader.value("recent");
+    for (let i = 0; i < built.screens.length; i++) await paint(built.screens[i], L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, (g) => CH.PANELS[i].paint(g, reader, now));
+    for (let i = 0; i < built.cards.length; i++) await paint(built.cards[i], L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, (g) => i ? CH.card(g, blocks && blocks[i - 1], now) : CH.ribbonLabel(g, reader.status("recent")));
+    for (let i = 0; i < 2; i++) built.doors[i].visible = false;
+    const lights = { ...RENDER_OPTS, lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: built.lights.length, shadowExtent: L.radius * 1.2 };
+    built.lights.forEach((l, i) => lights.lights.set([l[0], l[1], l[2], l[3], l[4], l[5], l[6], 0], i * 8));
+    const release = () => {
+      for (const geometry of [...RM.geometries(room.scale), ...pictures]) renderer.releaseGeometry(geometry);
+    };
+    return {
+      // A picture `w` by `h` (metres, for its proportions): the view just inside the doorway, PREVIEW_FOV high.
+      take: (canvas, w, h) => {
+        if (!renderer.ready || !canvas.clientWidth || !canvas.clientHeight) return null;
+        const W = canvas.width, H = canvas.height, aspect = W / H, up = Math.tan(PREVIEW_FOV / 2), across = up * w / h, t = Math.max(up, across / aspect);
+        const shot = createCamera({ fov: 2 * Math.atan(t) * 180 / Math.PI, near: 0.2, far: L.radius * 3 });
+        Object.assign(shot.position, { x: 0, y: 1.75, z: L.doorZ - 0.2 });
+        Object.assign(shot.target, { x: 0, y: 1.95, z: 0 });
+        if (!renderer.render(built.root, shot, lights)) return null;
+        const sx = W / 2 * (1 - across / (t * aspect)), sy = H / 2 * (1 - up / t), sw = W - 2 * sx, sh = H - 2 * sy;
+        const pw = 384, ph = Math.round(pw * h / w), out = CH.canvas(pw, ph), g = out.getContext("2d");
+        g.imageSmoothingQuality = "high";
+        g.drawImage(canvas, sx, sy, sw, sh, 0, 0, pw, ph);
+        release();
+        const image = new Image();
+        image.src = out.toDataURL("image/jpeg", 0.9);
+        return { width: pw, height: ph, load: () => image };
+      },
+      dispose: release
+    };
+  };
+  BL.timechainInterior = { create, preview };
+})();

@@ -210,6 +210,9 @@
   };
   const create = (ctx) => {
     const { renderer, canvas, camera, hud, presets, dist: [DIST_MIN, DIST_MAX], follow, fly, clampTarget, clampCamera, coarse, close = null, ceilingAt = null, mayPossess = null } = ctx;
+    // A scene that is first person only (`close.only`, the Timechain Sphere's rooms): once the eye is entered, no
+    // scroll, pinch, mode button, shortcut, Escape or letting go leaves it while the pilot lives.
+    const firstOnly = !!(close && close.only);
     const handoff = cameraHandoff(camera, renderer);
     let solvingHandoff = false;
     let crew = null, fx = null, input = null, reticleTarget = null, active = true;
@@ -1781,7 +1784,7 @@
       }
     };
     const exitClose = () => {
-      if (!closeWanted) return;
+      if (!closeWanted || firstOnly) return;
       clearRightGesture();
       const cave = player();
       shoulderView = !!cave;
@@ -2058,6 +2061,10 @@
     };
     const modeAction = (action) => {
       const cave = player();
+      if (firstOnly && cave) {
+        hud.hint(coarse ? "First person only in here · stick walks, drag looks" : "First person only in here · W A S D walk, mouse looks");
+        return true;
+      }
       if (action === "mode-retake") {
         const last = hud.retakeActor;
         if (!last || last.gorilla) return false;
@@ -2224,6 +2231,7 @@
       releaseMix = 1;
     };
     const release = (quiet = false) => {
+      if (firstOnly && player() && !disposed) return;
       handoff.cancel();
       restoredPose = null;
       endCenteredCarry();
@@ -2284,7 +2292,7 @@
         unlockAim();
         return true;
       }
-      if (!player()) return false;
+      if (!player() || firstOnly) return false;
       release();
       return true;
     };
@@ -2352,7 +2360,7 @@
         }
       },
       onZoom: (factor, gesture = null, px = null, py = null) => {
-        if (factor === 1) return;
+        if (factor === 1 || firstOnly) return;
         const now = performance.now(), direction = Math.sign(factor - 1);
         const fresh = gesture !== null ? gesture !== zoomGesture
           : zoomGesture !== null || direction !== zoomDirection || now - zoomAt > ZOOM_PAUSE;
