@@ -3228,6 +3228,7 @@
       const x = node.position.x, z = node.position.z;
       addProp(kind, node, worldX(x, z), worldZ(x, z), radius);
     }
+    for (const key of site.keys) addTarget(key.node, { kind: "sphere-key", key: key.key, priority: 2 }, { radius: key.key.length === 1 ? 0.055 : 0.09 });
     // From the bridge, square to the doors with the keypad in view.
     presets.timechain = { yaw: p.ry, pitch: 0.1, dist: 9, target: { x: worldX(0.6, 13.2), y: p.y + 2.2, z: worldZ(0.6, 13.2) } };
     const claimGround = () => {
@@ -6223,6 +6224,8 @@
         return "Glyph gate · tap or press Space nearby to open";
       case "room-sign":
         return "Room sign · tap to copy hash";
+      case "sphere-key":
+        return o.key === "back" ? "Back · return to room choice" : o.key === "enter" ? "Enter · open selected room" : `Room ${o.key} · select`;
       case "lab-link":
         return "EntropyLab · open website in a new tab";
       case "prop":
@@ -6299,7 +6302,7 @@
   };
   const reticleTarget = (hit) => {
     const o = hit.owner;
-    if (hit.node === mirrorCave.node || o.kind === "cave-sign" || o.kind === "room-sign" || o.kind === "matrix-button" || o.kind === "matrix-gate"
+    if (hit.node === mirrorCave.node || o.kind === "cave-sign" || o.kind === "room-sign" || o.kind === "sphere-key" || o.kind === "matrix-button" || o.kind === "matrix-gate"
       || o.kind === "lab-link" || o.kind === "piece") return "object";
     if (o.kind === "cave") return o.slot.status === "open" ? "object" : "none";
     if (o.kind === "prop" && (o.breakable || RETICLE_PROPS.has(o.prop))) return "object";
@@ -6839,6 +6842,16 @@
       case "room-sign":
         tapRoomSign(o.roomSign);
         break;
+      case "sphere-key": {
+        const gate = timechainIsland.gate, player = pilot.player, at = player && player.root.position;
+        if (!player) hud.toast("Only an Ooga can go in. Double-tap one, then walk it up to the keypad.");
+        else if (!gate.busy && !gate.nearKeypad(at.x, at.y - player.baseY + 1.1, at.z)) hud.toast("Walk up to the keypad beside the doors.");
+        else {
+          if (!gate.busy) gate.engage();
+          gate.press(o.key);
+        }
+        break;
+      }
       case "lab-link":
         window.open("https://entropylab.online", "_blank", "noopener,noreferrer");
         break;

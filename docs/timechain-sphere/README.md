@@ -14,7 +14,7 @@ Frontend, implemented:
 | Block and mining data from mempool.space's public API: one in-flight request per dataset, backoff with Retry-After, hidden-tab pause, last good value kept as STALE, the 144-block window chained by parent hash, a page-wide cache shared by every room | `src/js/timechain-blocks.js` |
 | Native charts in the Timechain Blocks look, each naming its source, window and freshness; the six holdings readings at the desk | `src/js/timechain-charts.js` |
 | The exterior: doors whose outer faces carry the ball's turning pattern across their seam, the keypad, the dim passage and its curtain, the plug that stops tailgating | `src/js/timechain-models.js` |
-| Keypad engagement, single selection, account resolution (Retry / Continue solo), bounded preparation, the reservation client, the crossing and the swoop into first person, the walk back out, spectator doors | `src/js/timechain-gate.js`, wired in `src/js/scene-hub.js` |
+| Physical keypad engagement and picking, single selection, account resolution (selected number retries / Enter continues solo), bounded preparation, the reservation client, the crossing and the swoop into first person, the walk back out, spectator doors | `src/js/timechain-gate.js`, wired in `src/js/scene-hub.js` |
 | Routes `/sphere-1` … `/sphere-9`, reload and history (a stored visit repeats only as it was; a signed-in arrival without one goes to the keypad with the room chosen) | `src/js/routes.js`, `src/js/scene-timechain.js`, `prepare` in `src/js/director.js` |
 | Hosted deferral: the interior's modules leave the hosted pages for one same-origin file fetched after Enter; the portable page keeps them inline | `data-defer` in `src/index.html`, `scripts/build.mjs`, `scripts/distribution-modules.mjs`, `src/js/deferred.js` |
 
@@ -65,7 +65,7 @@ Show “Solo visit · not signed in”. Do not register guest rooms, poses, tran
 
 Wait for account resolution before choosing shared versus solo mode, then keep the choice for the visit. Pending authentication is not confirmed sign-out. Late authentication/reconnect cannot publish a solo room. Sign-in returns to the exterior keypad for deliberate shared entry. Logout or session revocation inside immediately removes shared presence/voice and returns safely outside.
 
-Account lookup failure must not lock the exterior controls or wait forever. After a bounded timeout, show an account-unavailable state with Retry and an explicit Continue solo action. That choice keeps the visit local even if authentication later succeeds; it never silently enters a shared room.
+Account lookup failure must not lock the exterior controls or wait forever. After a bounded timeout, the physical selected number retries, Enter explicitly continues solo and Back returns to room choice. That choice keeps the visit local even if authentication later succeeds; it never silently enters a shared room.
 
 ## Network and resource boundaries
 

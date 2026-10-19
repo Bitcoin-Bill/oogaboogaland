@@ -10152,18 +10152,18 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
     window.__sphereSlot = B.pilot.player.weapon.selectedSlot;
   })()`);
   await b.key(" ");
-  const engaged = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate; return { state: G.debug.state, panel: !document.getElementById("sphere-keypad").hidden, enter: document.querySelector('[data-sphere-key="enter"]').disabled, act: document.getElementById("act").hidden, room: document.getElementById("sphere-keypad-room").textContent, mode: document.getElementById("sphere-keypad-mode").textContent }; })()`);
+  const engaged = await b.evaluate(`(() => { const T = BL.scenes.hub.debug.timechainIsland, G = T.gate, enter = T.site.keys.find(k => k.key === "enter").node; return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), enter: enter.geometry.faces[0].color, act: document.getElementById("act").hidden, keys: T.site.keys.length, hint: document.getElementById("hint").textContent }; })()`);
   for (const k of ["1", "3", "3"]) await b.key(k);
-  const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate; return { selection: G.debug.selection, pressed: [...document.querySelectorAll('[data-sphere-key][aria-pressed="true"]')].map(k => k.dataset.sphereKey), enter: document.querySelector('[data-sphere-key="enter"]').disabled, room: document.getElementById("sphere-keypad-room").textContent, lit: T.site.keypad.children[0].visible, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
+  const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate, key = k => T.site.keys.find(v => v.key === k).node; return { selection: G.debug.selection, three: key("3").geometry.faces[0].color, one: key("1").geometry.faces[0].color, enter: key("enter").geometry.faces[0].color, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
   await b.key("Escape");
   const left = await b.evaluate(`(() => { const B = __ooga; B.advance(0.6, 1 / 60); const T = BL.scenes.hub.debug.timechainIsland, G = T.gate; window.fetch = window.__sphereFetch;
-    return { state: G.debug.state, panel: document.getElementById("sphere-keypad").hidden, act: document.getElementById("act").hidden, lens: G.debug.lens, lit: T.site.keypad.children[0].visible,
+    return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), act: document.getElementById("act").hidden, lens: G.debug.lens, one: T.site.keys[0].node.geometry.faces[0].color,
       requests: window.__sphereRequests, read: BL.timechainBlocks.cache.sets.recent.checked, visit: BL.scenes.timechain.visit, scene: B.scene, doors: G.debug.open }; })()`);
-  record("timechain keypad: Space engages it with Enter off; 1 then 3 lights only 3, and 3 again keeps it; the number keys never reach the Ooga's weapons",
-    engaged.state === "keypad" && engaged.panel && engaged.enter && engaged.act && engaged.room === "CHOOSE A ROOM" && engaged.mode === "Solo visit · not signed in"
-      && chosen.selection === 3 && chosen.pressed.join() === "3" && !chosen.enter && chosen.room === "ROOM 3" && chosen.lit && chosen.slot, JSON.stringify({ engaged, chosen }));
-  record("timechain keypad: Escape lets go with the view back, the doors shut, no room built and no data requested",
-    left.state === "idle" && left.panel && !left.act && left.lens === null && !left.lit && left.requests === 0 && left.read === 0 && left.visit === null && left.scene === "hub" && left.doors === 0, JSON.stringify(left));
+  record("timechain keypad: Space engages the physical panel with no popup; 1 then 3 lights only 3 with black type and arms Enter, and the number keys never reach the Ooga's weapons",
+    engaged.state === "keypad" && !engaged.popup && engaged.enter.join() === "90,64,34" && engaged.act && engaged.keys === 11 && engaged.hint.includes("Choose a room")
+      && chosen.selection === 3 && chosen.three.join() === "247,147,26" && chosen.one.join() === "58,52,48" && chosen.enter.join() === "255,189,83" && chosen.slot, JSON.stringify({ engaged, chosen }));
+  record("timechain keypad: Escape lets go with the view back, resets the physical keys, leaves the doors shut and loads no room data",
+    left.state === "idle" && !left.popup && !left.act && left.lens === null && left.one.join() === "58,52,48" && left.requests === 0 && left.read === 0 && left.visit === null && left.scene === "hub" && left.doors === 0, JSON.stringify(left));
 } };
 const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter walks the same Ooga through the doors into its room in first person, and Space at the Exit button walks it back out onto the bridge", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} })()`);
@@ -10171,7 +10171,7 @@ const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter wa
   await b.key("3");
   await b.key("Enter");
   const crossing = await untilPage(b, 'B.scene === "hub" && BL.scenes.hub.debug.timechainIsland.gate.debug.state === "crossing"', 20000);
-  const passage = await b.evaluate(`(() => { const ${sphereLocal}, G = T.gate; return { plug: T.site.plug.visible, panel: document.getElementById("sphere-keypad").hidden, lens: G.debug.lens }; })()`);
+  const passage = await b.evaluate(`(() => { const ${sphereLocal}, G = T.gate; return { plug: T.site.plug.visible, popup: !!document.getElementById("sphere-keypad"), lens: G.debug.lens }; })()`);
   const inside = await untilPage(b, 'B.scene === "timechain" && !B.transitioning && B.timechain.guide.stage === null', 20000);
   const room = await b.evaluate(`(() => { const B = __ooga, D = B.timechain, a = B.pilot.player.root.position; B.advance(1.2, 1 / 60);
     return { room: D.room.id, mode: D.visit.mode, player: B.pilot.player.traits.name, view: B.pilot.mode, doors: D.doors.open, atArrival: Math.hypot(a.x - D.layout.arrival.x, a.z - D.layout.arrival.z), hash: location.hash, zone: BL.net.state.zone }; })()`);
@@ -10181,27 +10181,26 @@ const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter wa
   const back = await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}, G = T.gate, c = B.pilot.player; B.advance(1.2, 1 / 60);
     return { player: c && c.traits.name, fromDoors: c ? local(c.root.position) - SP.THRESHOLD : null, doors: G.debug.open, plug: T.site.plug.visible, view: B.pilot.mode, hash: location.hash, head: c ? !c.parts.head.cameraHidden : null, zone: BL.net.state.zone }; })()`);
   record("timechain crossing: Enter opens the doors, lifts the plug for the traveler alone and swoops into its eyes as it walks in",
-    crossing && !passage.plug && passage.panel && passage.lens === "eyes", JSON.stringify({ crossing, passage }));
+    crossing && !passage.plug && !passage.popup && passage.lens === "eyes", JSON.stringify({ crossing, passage }));
   record("timechain crossing: the same Ooga arrives in a solo Room 3 in first person, the doors close behind it and the address names the room",
     inside && room.room === 3 && room.mode === "solo" && room.player === "portlandhodl" && room.view === "first-person" && room.doors === 0 && room.atArrival < 0.4 && room.hash === "#/sphere-3" && room.zone === "none", JSON.stringify(room));
   record("timechain crossing: Space at the Exit button walks it back out of the passage onto the bridge, the doors shut, the plug back and the view out of its eyes",
     out && back.player === "portlandhodl" && back.fromDoors > 1 && back.doors === 0 && back.plug && back.view !== "first-person" && back.hash === "#/sphere" && back.head, JSON.stringify(back));
 } };
-const sphereAccount = { name: "timechain account", why: "rule: an account look that went unanswered offers Retry or Continue solo at the keypad and never guesses a shared room", run: async (b) => {
+const sphereAccount = { name: "timechain account", why: "rule: an account look that went unanswered lets the physical selected number retry or Enter continue solo and never guesses a shared room", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; BL.net.state.resolved = false; ${sphereStand("0.7", "13.8")} })()`);
   await b.key(" ");
   await b.key("5");
   await b.key("Enter");
-  const asked = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate, shown = (k) => !document.querySelector('[data-sphere-key="' + k + '"]').hidden;
-    return { state: G.debug.state, retry: shown("retry"), solo: shown("solo"), cancel: shown("cancel"), mode: document.getElementById("sphere-keypad-mode").textContent }; })()`);
-  await b.evaluate(`document.querySelector('[data-sphere-key="solo"]').click()`);
+  const asked = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate; return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), hint: document.getElementById("hint").textContent }; })()`);
+  await b.evaluate(`BL.scenes.hub.debug.timechainIsland.gate.press("enter")`);
   const solo = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate; return { state: G.debug.state, mode: G.debug.mode }; })()`);
-  await b.evaluate(`document.querySelector('[data-sphere-key="cancel"]').click()`);
+  await b.evaluate(`BL.scenes.hub.debug.timechainIsland.gate.press("back")`);
   const cancelled = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate; return { state: G.debug.state, selection: G.debug.selection }; })()`);
   await b.key("Escape");
   const done = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate; BL.net.state.resolved = true; __ooga.advance(0.6, 1 / 60); return { state: G.debug.state, scene: __ooga.scene }; })()`);
-  record("timechain account: Enter with the account unanswered asks rather than guesses, Continue solo commits a solo visit, Cancel keeps the room chosen and Escape lets go",
-    asked.state === "account" && asked.retry && asked.solo && asked.cancel && asked.mode === "Account unavailable" && solo.state === "preparing" && solo.mode === "solo"
+  record("timechain account: Enter with the account unanswered asks rather than guesses, physical Enter commits a solo visit, Back keeps the room chosen and Escape lets go",
+    asked.state === "account" && !asked.popup && asked.hint.includes("Enter continues solo") && solo.state === "preparing" && solo.mode === "solo"
       && cancelled.state === "keypad" && cancelled.selection === 5 && done.state === "idle" && done.scene === "hub", JSON.stringify({ asked, solo, cancelled, done }));
 } };
 scene("hub", { label: "timechain doorway", query: "solo=1&character=portlandhodl&view=timechain&pos=0", steps: [sphereApproach, sphereThreshold, sphereKeypad, sphereCrossing, sphereAccount, trip("hub")] });
@@ -13496,7 +13495,7 @@ scene("bifrost", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("bifrost", { 
 scene("timechain", { url: roomPage(3), opts: PHONE_SIZE, steps: [phone("timechain", { required: ["#joy-move", "#joy-look", ".leave", "#sphere-mode"] })] });
 scene("hub", { label: "sphere keypad", query: "solo=1&character=portlandhodl&view=timechain&pos=0", opts: PHONE_SIZE, steps: [{ ...phone("hub", {
   play: `(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} T.gate.engage(); B.advance(0.6, 1 / 60); })()`,
-  required: ['[data-sphere-key="1"]', '[data-sphere-key="9"]', ".sphere-keypad-back", ".sphere-keypad-enter", "#sphere-keypad-room"] }), name: "sphere keypad phone" }] });
+  required: ["#hint"] }), name: "sphere keypad phone" }] });
 scene("arcade", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("arcade", { required: ["#joy-move", "#joy-look", ".leave"] })] });
 
 // Focused component fixtures enter DSB directly with the selected Ooga.

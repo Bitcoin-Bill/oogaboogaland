@@ -1,12 +1,13 @@
 // The Timechain Sphere's doorway on the island: the keypad, the doors and the short crossing into a room and back.
 // The hub creates it with the sphere (`create`) and drives it every frame; it owns no geometry of its own.
 //
-// Space beside the keypad (or a tap on it) engages it: the view turns to it and the keypad's panel takes the keys.
+// Space beside the keypad (or a tap on it) engages it: the view turns to the physical controls and the doorway takes
+// the keys.
 // 1–9 choose exactly one room (choosing another replaces it), Enter is off until one is chosen, Back or Escape lets
 // go without anything loading. Enter commits: the visitor's account must already be resolved (signed in: a shared
-// room; signed out: a solo copy); an unanswered account look offers Retry or an explicit Continue solo instead of
-// guessing. The Ooga steps to the waiting spot square to the doors while the room's code and the traveler's look into
-// it prepare; a slow or failed preparation holds there, with Cancel, and returns to the keypad. Only then does a shared
+// room; signed out: a solo copy); after an unanswered account look, the selected number retries and Enter explicitly
+// continues solo. The Ooga steps to the waiting spot square to the doors while the room's code and the traveler's look into
+// it prepare; Back cancels a slow or failed preparation and returns to the keypad. Only then does a shared
 // crossing ask the island room for the doorway (net.js `askDoor`, docs/timechain-sphere/doorway-contract.md), waiting
 // with "Door in use · waiting" while someone else crosses; a solo one asks nobody. The doors part (on every signed-in
 // page in the sphere's zone too, from the room's `transit`), the view moves into the Ooga's eyes before the guided
@@ -34,11 +35,6 @@
     const cos = Math.cos(place.ry), sin = Math.sin(place.ry);
     const worldX = (x, z) => place.x + x * cos + z * sin, worldZ = (x, z) => place.z - x * sin + z * cos;
     const localZ = (x, z) => (x - place.x) * sin + (z - place.z) * cos, localX = (x, z) => (x - place.x) * cos - (z - place.z) * sin;
-    const panel = document.getElementById("sphere-keypad");
-    const el = {
-      room: document.getElementById("sphere-keypad-room"), status: document.getElementById("sphere-keypad-status"), mode: document.getElementById("sphere-keypad-mode"),
-      keys: [...panel.querySelectorAll("[data-sphere-key]")]
-    };
     // idle, keypad, account, preparing, waiting, crossing, gone, arriving, leaving.
     const g = {
       state: "idle", selection: 0, room: null, mode: null, prep: 0, prepared: null, shot: null, picture: null, pictureTries: 0, t: 0, ask: 0,
@@ -58,31 +54,8 @@
     // Facing the doors from the bridge, and out of them.
     const IN_HEADING = place.ry + Math.PI, OUT_HEADING = place.ry;
 
-    const accountWords = () => {
-      const net = BL.net.state;
-      if (!net.resolved) return "Account unavailable";
-      return net.me ? `Signed in · a shared room` : "Solo visit · not signed in";
-    };
     const show = (status = "") => {
-      const busy = g.state === "preparing" || g.state === "waiting";
-      el.room.textContent = g.selection ? `ROOM ${g.selection}` : "CHOOSE A ROOM";
-      el.status.textContent = status;
-      el.mode.textContent = g.state === "account" ? "Account unavailable" : accountWords();
-      for (const b of el.keys) {
-        const k = b.dataset.sphereKey, digit = Number(k);
-        if (digit) {
-          b.setAttribute("aria-pressed", String(digit === g.selection));
-          b.disabled = g.state !== "keypad";
-        } else if (k === "enter") b.disabled = g.state !== "keypad" || !g.selection;
-        else if (k === "back") { b.hidden = busy || g.state === "account"; b.disabled = g.state !== "keypad"; }
-        else if (k === "cancel") b.hidden = !busy && g.state !== "account";
-        else if (k === "retry" || k === "solo") b.hidden = g.state !== "account";
-      }
-      panel.dataset.state = g.state;
-    };
-    const openPanel = (open) => {
-      panel.hidden = !open;
-      if (!open && panel.contains(document.activeElement)) document.activeElement.blur();
+      if (status) hud.hint(status, 7000);
     };
     // The view eases between poses (eye and heading) after the pilot's update, as the factory's kiosk does.
     const readPose = (out) => {
@@ -159,15 +132,13 @@
       if (document.pointerLockElement) document.exitPointerLock();
       lens("keypad");
       hud.tooltip.hide();
-      show(g.selection ? `Press Enter to go to Room ${g.selection}` : "Choose a room, 1 to 9");
-      openPanel(true);
+      show(g.selection ? `Room ${g.selection} selected · press Enter` : "Choose a room on the keypad · 1–9");
       return true;
     };
     // Back to walking, the view gliding back from the keypad.
     const disengage = () => {
       if (g.state !== "keypad" && g.state !== "account") return;
       g.state = "idle";
-      openPanel(false);
       site.choose(0);
       lens("back");
       hold(false);
@@ -176,7 +147,7 @@
       if (g.state !== "keypad" || !ROOMS.parse(digit)) return;
       g.selection = digit;
       site.choose(digit);
-      show(`Press Enter to go to Room ${digit}`);
+      show(`Room ${digit} selected · press Enter`);
     };
     // Enter: the room, the account's answer, then the walk to the waiting spot and the preparation.
     const commit = (solo = false) => {
@@ -185,7 +156,7 @@
       const net = BL.net.state;
       if (!solo && !net.resolved) {
         g.state = "account";
-        show("Your account could not be looked up. Try again, or visit a private copy of the room on your own.");
+        show("Account unavailable · selected number retries · Enter continues solo · Back changes room");
         return;
       }
       g.room = room;
@@ -198,7 +169,7 @@
       g.lens = "eyes";
       g.swoop = 1;
       hideHead(cave, true);
-      show(`Preparing Room ${room.id}…`);
+      show(`Preparing Room ${room.id}… · Back cancels`);
       prepare();
     };
     const retryAccount = () => {
@@ -207,7 +178,7 @@
       BL.net.recheck().then(() => {
         if (g.state !== "account") return;
         if (BL.net.state.resolved) { g.state = "keypad"; show(`Press Enter to go to Room ${g.selection}`); }
-        else show("Still unavailable. Try again, or continue solo.");
+        else show("Still unavailable · selected number retries · Enter continues solo · Back changes room");
       });
     };
     // Preparing: the room's code (deferred on a hosted page) and the traveler's look into it, bounded in time. A
@@ -241,7 +212,6 @@
       g.state = "keypad";
       lens("keypad");
       show(words);
-      openPanel(true);
     };
     const hangPicture = () => {
       if (!g.shot || g.picture || g.pictureTries <= 0) return;
@@ -295,7 +265,6 @@
       g.state = "crossing";
       g.t = 0;
       g.want = 1;
-      openPanel(false);
       g.lens = "eyes";
       g.swoop = 1;
       if (crew.player) hideHead(crew.player, true);
@@ -445,6 +414,21 @@
       }
     };
     const keyOf = (e) => e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const press = (key) => {
+      const digit = Number(key);
+      if (digit >= 1 && digit <= 9) {
+        if (g.state === "account" && digit === g.selection) retryAccount();
+        else if (g.state === "account") { g.state = "keypad"; choose(digit); }
+        else choose(digit);
+      } else if (key === "enter") {
+        if (g.state === "keypad") commit();
+        else if (g.state === "account") commit(true);
+      } else if (key === "back") {
+        if (g.state === "account") { g.state = "keypad"; show(`Room ${g.selection} selected · press Enter`); }
+        else if (g.state === "keypad") disengage();
+        else if (g.state === "preparing" || g.state === "waiting") fallBack(`Cancelled · Room ${g.selection} remains selected`);
+      }
+    };
     // From the keypad until the Ooga is through, the doorway has the keys: nothing reaches the Ooga, the camera or
     // the hub's shortcuts (a chat line being typed still gets its own).
     const onKey = (e) => {
@@ -453,25 +437,12 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       if (e.repeat || g.state !== "keypad" && g.state !== "account" && g.state !== "preparing" && g.state !== "waiting") return true;
-      if (/^[1-9]$/.test(k)) choose(Number(k));
-      else if (k === "Enter") { if (g.state === "keypad") commit(); }
-      else if (k === "Escape" || k === "Backspace") { if (g.state === "keypad" || g.state === "account") disengage(); else fallBack(`Cancelled · press Enter for Room ${g.selection}`); }
+      if (/^[1-9]$/.test(k)) press(k);
+      else if (k === "Enter") press("enter");
+      else if (k === "Escape" || k === "Backspace") press("back");
       return true;
     };
     window.addEventListener("keydown", onKey, true);
-    const onClick = (e) => {
-      const b = e.target.closest("[data-sphere-key]");
-      if (!b || b.disabled) return;
-      b.blur();
-      const k = b.dataset.sphereKey;
-      if (/^[1-9]$/.test(k)) choose(Number(k));
-      else if (k === "enter") commit();
-      else if (k === "back") disengage();
-      else if (k === "cancel") { if (g.state === "account") { g.state = "keypad"; show(`Press Enter to go to Room ${g.selection}`); } else fallBack(`Cancelled · press Enter for Room ${g.selection}`); }
-      else if (k === "retry") retryAccount();
-      else if (k === "solo") commit(true);
-    };
-    panel.addEventListener("click", onClick);
     // A hidden tab can come back long after a grant ran out; a waiting request is then given up rather than kept.
     const onVisibility = () => {
       if (!document.hidden && g.state === "waiting" && g.ask && performance.now() - g.ask > 60000) fallBack("The wait ran out · press Enter to try again");
@@ -479,7 +450,6 @@
     document.addEventListener("visibilitychange", onVisibility);
     const dispose = () => {
       window.removeEventListener("keydown", onKey, true);
-      panel.removeEventListener("click", onClick);
       document.removeEventListener("visibilitychange", onVisibility);
       unsubscribeDoor();
       // Through the curtain the crossing is done; anything short of that gives the doorway back.
@@ -488,7 +458,6 @@
       g.prep++;
       dropPicture();
       if (crew.player) hideHead(crew.player, false);
-      openPanel(false);
       g.state = "idle";
     };
     show();
@@ -496,7 +465,7 @@
       action, nearKeypad, engage, update, view, arrive, dispose, onKey, get preselected() { return preselect; },
       get busy() { return g.state !== "idle"; },
       get crossing() { return g.state === "crossing" || g.state === "gone" || g.state === "leaving" || g.state === "arriving"; },
-      debug: g, choose, commit, disengage
+      debug: g, choose, commit, disengage, press
     };
   };
   BL.timechainGate = { create };

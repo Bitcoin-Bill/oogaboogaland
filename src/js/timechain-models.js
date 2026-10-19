@@ -296,31 +296,38 @@
     return geo;
   });
   // The keypad on the right-hand post, facing the bridge: an iron plate, a dim display, 1–9 in a 3 by 3 grid with each
-  // number picked out in the signs' pixels, and Back and Enter under them. `KEYS` is where each key sits on it.
+  // number picked out in the signs' pixels, and Back and Enter under them. Each button stays a separate node so the
+  // island can pick the real control. `KEYS` is where each number sits on it.
   const KEY_PITCH = 0.105, KEYS = Array.from({ length: 9 }, (_, i) => ({ x: (i % 3 - 1) * KEY_PITCH, y: 0.1 - Math.floor(i / 3) * KEY_PITCH }));
   const keypad = cached(() => {
     const parts = [
       box({ w: 0.44, h: 0.7, d: 0.05, color: "#2a2420" }),
       box({ w: 0.36, h: 0.09, d: 0.012, color: "#1a120a", emissive: 0.35, offset: { y: 0.25, z: 0.03 } }),
-      box({ w: 0.15, h: 0.07, d: 0.02, color: "#4a3a30", offset: { x: -0.085, y: -0.235, z: 0.033 } }),
-      box({ w: 0.15, h: 0.07, d: 0.02, color: "#5a4022", offset: { x: 0.085, y: -0.235, z: 0.033 } }),
       ...[[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([x, y]) => box({ w: 0.03, h: 0.03, d: 0.012, color: "#8a7a6a", offset: { x: x * 0.19, y: y * 0.32, z: 0.03 } }))
     ];
-    const pixel = 0.011, geo = { verts: [], faces: [], lines: [] };
-    KEYS.forEach((key, i) => {
-      parts.push(box({ w: 0.085, h: 0.085, d: 0.02, color: "#3a3430", offset: { x: key.x, y: key.y, z: 0.033 } }));
-      const glyph = BL.hubModels.SIGN_GLYPHS[String(i + 1)];
-      glyph.forEach((row, r) => [...row].forEach((on, c) => {
-        if (on !== "1") return;
-        const x0 = key.x + (c - 1.5) * pixel, y0 = key.y + (2 - r) * pixel, z = 0.0445;
-        facing(geo, [[x0, y0, z], [x0 + pixel, y0, z], [x0 + pixel, y0 + pixel, z], [x0, y0 + pixel, z]], "#f2d39a", 0.6, [0, 0, 1]);
-      }));
-    });
-    return merge(...parts, geo);
+    return merge(...parts);
   });
-  // The lit key, moved onto whichever number is chosen, and Enter lit once one is.
-  const keyMark = cached(() => box({ w: 0.09, h: 0.09, d: 0.024, color: "#f7931a", emissive: 1 }));
-  const enterMark = cached(() => box({ w: 0.155, h: 0.075, d: 0.024, color: "#ffbd53", emissive: 1, offset: { x: 0.085, y: -0.235, z: 0.034 } }));
+  const keyLabel = (text, pixel, color, emissive) => {
+    const geo = { verts: [], faces: [], lines: [], castShadow: false }, glyphs = BL.hubModels.SIGN_GLYPHS;
+    const cells = text.length * 3 + Math.max(0, text.length - 1), left = -cells * pixel / 2;
+    for (let i = 0; i < text.length; i++) {
+      const glyph = glyphs[text[i]];
+      for (let r = 0; r < glyph.length; r++) for (let c = 0; c < glyph[r].length; c++) {
+        if (glyph[r][c] !== "1") continue;
+        const x = left + (i * 4 + c) * pixel, y = (2 - r - 0.5) * pixel, z = 0.0115;
+        facing(geo, [[x, y, z], [x + pixel, y, z], [x + pixel, y + pixel, z], [x, y + pixel, z]], color, emissive, [0, 0, 1]);
+      }
+    }
+    return geo;
+  };
+  const keyFace = (w, h, text, pixel, color, ink, emissive = 0) => merge(
+    box({ w, h, d: 0.02, color, emissive }), keyLabel(text, pixel, ink, emissive ? 0.75 : 0.45)
+  );
+  const DIGIT_KEYS = Array.from({ length: 9 }, (_, i) => keyFace(0.085, 0.085, String(i + 1), 0.011, "#3a3430", "#f2d39a"));
+  const LIT_DIGIT_KEYS = Array.from({ length: 9 }, (_, i) => keyFace(0.09, 0.09, String(i + 1), 0.011, "#f7931a", "#17110a", 1));
+  const BACK_KEY = keyFace(0.15, 0.07, "BACK", 0.0072, "#4a3a30", "#f2d39a");
+  const ENTER_KEY = keyFace(0.15, 0.07, "ENTER", 0.0062, "#5a4022", "#f2d39a");
+  const READY_ENTER_KEY = keyFace(0.155, 0.075, "ENTER", 0.0062, "#ffbd53", "#17110a", 1);
   const build = (island) => {
     let rim = 27.4;
     while (rim < 36 && island.surfaceAt(DIR.x * (rim + 0.1), DIR.z * (rim + 0.1)) > 0.5) rim += 0.1;
@@ -373,18 +380,22 @@
     const bridgeNode = createNode({ position: { x: 0, y: 0, z: bridgeZ }, geometry: bridge() });
     const plugNode = createNode({ geometry: plug(), sightHidden: true });
     const K = SPOTS.KEYPAD, pad = createNode({ geometry: keypad(), position: { x: K.x, y: K.y, z: K.z }, sightHidden: true });
-    const mark = createNode({ geometry: keyMark(), visible: false, sightHidden: true }), go = createNode({ geometry: enterMark(), visible: false, sightHidden: true });
-    addChild(pad, mark, go);
+    const keys = KEYS.map((key, i) => ({ key: String(i + 1), node: createNode({ geometry: DIGIT_KEYS[i], position: { x: key.x, y: key.y, z: 0.033 }, sightHidden: true }) }));
+    const back = { key: "back", node: createNode({ geometry: BACK_KEY, position: { x: -0.085, y: -0.235, z: 0.033 }, sightHidden: true }) };
+    const enter = { key: "enter", node: createNode({ geometry: ENTER_KEY, position: { x: 0.085, y: -0.235, z: 0.033 }, sightHidden: true }) };
+    addChild(pad, ...keys.map(key => key.node), back.node, enter.node);
     // The traveler's look into their room hangs here, just in front of the curtain, on their page alone.
     const picture = createNode({ position: { x: 0, y: PASSAGE.floor, z: PASSAGE.curtain + 0.03 }, sightHidden: true });
     addChild(node, shellNode, createNode({ geometry: passageGlow(), sightHidden: true }), outer, entrance, bridgeNode, ...doors, plugNode, pad, picture);
-    // A key lit (1–9), or none (0).
+    // A key lit (1–9), or none (0); the selected number and ready Enter label turn black against amber.
+    let selected = 0;
     const choose = (digit) => {
-      mark.visible = digit > 0;
-      go.visible = digit > 0;
-      if (digit > 0) { mark.position.x = KEYS[digit - 1].x; mark.position.y = KEYS[digit - 1].y; mark.position.z = 0.034; }
+      if (selected) keys[selected - 1].node.geometry = DIGIT_KEYS[selected - 1];
+      selected = digit > 0 && digit <= 9 ? digit : 0;
+      if (selected) keys[selected - 1].node.geometry = LIT_DIGIT_KEYS[selected - 1];
+      enter.node.geometry = selected ? READY_ENTER_KEY : ENTER_KEY;
     };
-    return { node, shell: shellNode, outer, turn, setDoors, screen, logoBatches, entrance, bridge: bridgeNode, doors, plug: plugNode, keypad: pad, choose, picture, place };
+    return { node, shell: shellNode, outer, turn, setDoors, screen, logoBatches, entrance, bridge: bridgeNode, doors, plug: plugNode, keypad: pad, keys: [...keys, back, enter], choose, picture, place };
   };
   // Most of the time the screen holds its picture; every minute or so it runs a seven-second show on the lunes'
   // `glow` and `highlight`, never the same one twice running, then settles back exactly. Some shows take the logos

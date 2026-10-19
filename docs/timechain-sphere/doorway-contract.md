@@ -48,7 +48,7 @@ Room → client:
 
 ## What the page does with it (`timechain-gate.js`)
 
-- Enter on the keypad needs a resolved account (`net.state.resolved`). Signed in, the visit is shared; signed out, solo; unresolved, the keypad offers Retry (`net.recheck`) or Continue solo and never guesses.
+- Enter on the keypad needs a resolved account (`net.state.resolved`). Signed in, the visit is shared; signed out, solo; unresolved, pressing the selected room retries (`net.recheck`), Enter continues solo, Back returns to room choice and the client never guesses.
 - Preparation (the room's deferred code and the traveler's picture) is bounded at 15 s and happens before any `ask`. A failure returns to the keypad with the room still chosen.
 - With `state.doorway`, a shared crossing asks and waits; without it (or with no live socket for 6 s), it crosses locally. A lost socket while waiting falls back to the keypad; a grant that expires before the walk starts (a tab that slept) is not resumed.
 - The plug across the doorway (`timechain-models.js`) is lifted only for this page's own guided walk, so nobody tailgates through doors another player opened.
