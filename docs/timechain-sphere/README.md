@@ -9,7 +9,7 @@ Frontend, implemented:
 | Part | Where |
 |---|---|
 | Nine rooms, `roomId` 1–9 validated at every boundary, 1× / 1.5× / 2× layouts with a fixed doorway, arrival, Exit button and furniture | `src/js/timechain-rooms.js` |
-| The shared room design (screens centred opposite the one doorway, latest-blocks ribbon, chain floor, table, holdings desk, Sani's corner, doors and vestibule) | `src/js/timechain-room-models.js` |
+| The shared room design (screens centred opposite the one doorway, latest-blocks ribbon, the ribbed dome, charcoal tiles with the amber chain from the doorway's seam to the ring round the table and out to either side, table, holdings desk and Sani's corner against the side walls, doors and vestibule) | `src/js/timechain-room-models.js` |
 | The room scene: first person only (`close.only` in `pilot.js`), no weapons or jetpack, guided arrival and exit, shared presence (`sphere-<id>`) or a solo copy, Sani and his beer, local ambience, complete disposal | `src/js/scene-timechain.js` (always loaded), `src/js/timechain-interior.js` (deferred) |
 | Block and mining data from mempool.space's public API: one in-flight request per dataset, backoff with Retry-After, hidden-tab pause, last good value kept as STALE, the 144-block window chained by parent hash, a page-wide cache shared by every room | `src/js/timechain-blocks.js` |
 | Native charts in the Timechain Blocks look, each naming its source, window and freshness; the six holdings readings at the desk | `src/js/timechain-charts.js` |

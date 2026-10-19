@@ -26,8 +26,8 @@
   // What the HUD's jetpack button shows in here: no pack at all.
   const NO_JETPACK = { owned: false, equipped: false, fuel: 1, blocked: false };
   const RENDER_OPTS = {
-    clear: [0.018, 0.016, 0.02], sky: [0.32, 0.29, 0.27], ground: [0.12, 0.1, 0.09], direct: [0.52, 0.46, 0.4], directStrength: 0.2,
-    ambientFloor: 0.32, sun: { x: 0.2, y: 0.95, z: 0.25 }, shadowCenter: { x: 0, y: 2, z: 0 }, shadowExtent: 14,
+    clear: [0.018, 0.016, 0.02], sky: [0.5, 0.46, 0.42], ground: [0.24, 0.2, 0.17], direct: [0.52, 0.46, 0.4], directStrength: 0.2,
+    ambientFloor: 0.4, sun: { x: 0.2, y: 0.95, z: 0.25 }, shadowCenter: { x: 0, y: 2, z: 0 }, shadowExtent: 14,
     lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, bloomStrength: 0.65
   };
   // The room's hum: a low drone and a soft fan hiss, pitched a little apart in each room, honouring the page-wide
@@ -148,24 +148,31 @@
       for (let i = 1; i <= steps; i++) if (!ROOMS.clearAt(L, ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, r, guided)) return false;
       return true;
     };
+    // Under the dome: the ceiling `margin` lower than it stands over (x, z), read that far further out too, so a
+    // point keeps clear of the curve above and the cornice beside it. The vestibule's flat ceiling is the doorway's.
+    const roof = (x, z, margin) => {
+      if (z > L.doorZ) return DOOR.height - margin;
+      const r = Math.hypot(x, z), k = r > 1e-6 ? (r + margin) / r : 1;
+      return ROOMS.ceilingAt(L, x * k, z * k) - margin;
+    };
     const clampTarget = (p) => {
-      p.y = clamp(p.y, 0.4, L.wall - 0.5);
       const r = Math.hypot(p.x, p.z), max = L.walkRadius - 0.2;
       if (r > max) { p.x *= max / r; p.z *= max / r; }
       if (!guided) p.z = Math.min(p.z, L.doorZ - 0.3);
+      p.y = clamp(p.y, 0.4, roof(p.x, p.z, 0.5));
     };
     const clampCamera = (p) => {
-      p.y = clamp(p.y, 0.3, L.wall - 0.3);
       const r = Math.hypot(p.x, p.z), max = L.radius - 0.25;
       if (r > max) { p.x *= max / r; p.z *= max / r; }
       if (!guided || Math.abs(p.x) > DOOR.halfW - 0.2) p.z = Math.min(p.z, L.doorZ - 0.2);
       else p.z = Math.min(p.z, L.doorZ + DOOR.vestibule - 0.3);
+      p.y = clamp(p.y, 0.3, roof(p.x, p.z, 0.3));
     };
     const view = { yaw: 0, pitch: 0.05, dist: 4, target: { x: L.arrival.x, y: 1.6, z: L.arrival.z } };
     const pilot = pilotMod.create({
       renderer, canvas, camera, hud, presets: { entrance: view }, landing: "entrance", pitch: [-0.2, 1.2], dist: [3, 8],
       follow: { y: 0.9, min: 3, max: 6, pitch: [0.2, 0.7] }, fly: { speed: 4, perDist: 0.4, climb: 2, yMax: L.wall - 1 },
-      clampTarget, clampCamera, ceilingAt: () => L.wall, coarse: COARSE, mayPossess: (cave) => BL.net.mayDrive(cave.traits.name),
+      clampTarget, clampCamera, ceilingAt: (x, z) => roof(x, z, 0), coarse: COARSE, mayPossess: (cave) => BL.net.mayDrive(cave.traits.name),
       jetpackStatus: () => NO_JETPACK,
       close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: () => 0, only: true }
     });
