@@ -273,7 +273,7 @@
     const canvas = document.createElement("canvas"), g = canvas.getContext("2d"), idleCode = BL.qr.encode(hooks.link()), real = !!hooks.real;
     canvas.width = W;
     canvas.height = H;
-    let dirty = true, shown = -1, buttons = [], ticket = 0, detailsFrom = "quote", shownOpen = null, shownNet = "", saving = null, saveQueued = false, unwatchRate = null, rateAt = 0, rateStale = false;
+    let dirty = true, shown = -1, buttons = [], ticket = 0, detailsVisit = 0, detailsFrom = "quote", shownOpen = null, shownNet = "", saving = null, saveQueued = false, unwatchRate = null, rateAt = 0, rateStale = false;
     const flow = { canvas, W, H, open: false, state: "idle", digits: "", sats: 0, bananas: 0, invoice: null, reply: null, error: "", left: 0, settle: 0, hold: 0, who: "", chain: null, chainNote: null, got: 0, due: 0, rest: 0, savedDetails: null, detailsDirty: false, detailsSaving: false, detailsError: "", limits: null };
     const bananaAmount = () => real ? BANANAS.format(flow.bananas) : sats(flow.bananas);
     flow.rate = flow.frozenPricing = null;
@@ -308,6 +308,7 @@
     // Leaving the details screen, by any way, takes the typing out of the fields.
     const set = (state) => {
       if (flow.state === "details" && state !== "details" && hooks.editDetails) hooks.editDetails(null);
+      if (state === "details" && flow.state !== "details") detailsVisit++;
       flow.state = state;
       dirty = true;
     };
@@ -484,8 +485,10 @@
         }
         if (a === "done" || a === "back") {
           if (!hooks.details || !onInvoice()) return set(detailsFrom);
+          const visit = detailsVisit;
           return flow.saveDetails().then(() => {
-            if (flow.state === "details" && !flow.detailsError && !flow.detailsDirty) set(detailsFrom);
+            // The reply belongs to this editor opening, even if the same invoice was opened again meanwhile.
+            if (visit === detailsVisit && flow.state === "details" && !flow.detailsError && !flow.detailsDirty) set(detailsFrom);
           });
         }
       }

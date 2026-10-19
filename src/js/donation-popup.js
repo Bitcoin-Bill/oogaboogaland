@@ -89,7 +89,8 @@
     };
     const save = () => {
       clearTimeout(saveTimer); saveTimer = 0;
-      return fieldFlow ? fieldFlow.saveDetails() : Promise.resolve({});
+      // A blur on the way to KEEP SAVED must not retry first. Only a new edit or an explicit retry clears an error.
+      return fieldFlow && !fieldFlow.detailsError ? fieldFlow.saveDetails() : Promise.resolve({});
     };
     const changed = () => {
       if (!fieldFlow) return;

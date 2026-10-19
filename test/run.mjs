@@ -4841,6 +4841,39 @@ const donationClientChecks = async () => {
   const waited = waits.join() === "unlit";
   record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 
+  // A DONE reply may outlive the editor that requested it: the factory reuses its flow between visits,
+  // and a short on-chain payment can leave and reopen the editor without replacing the invoice.
+  let deferredDetails = { handle: "tester", message: "saved" }, finishNote;
+  const deferred = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
+    invoice: async () => ({ request: "request", invoice: { id: "deferred", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 1, rounded: 1 }, rate: null }),
+    onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor() {},
+    note: () => new Promise(resolve => { finishNote = resolve; }), details: () => ({ ...deferredDetails }), editDetails() {},
+    open: () => true, testNetwork: () => "signet" });
+  const deferredQuote = async () => { deferred.start(); for (const key of ["Enter", "1", "Enter"]) deferred.key({ key }); await Promise.resolve(); };
+  await deferredQuote();
+  deferred.key({ key: "A" });
+  deferredDetails.message = "old visit"; deferred.detailsChanged();
+  const oldDone = deferred.key({ key: "Enter" });
+  deferred.stop(); deferred.start(); deferred.key({ key: "Enter" }); deferred.key({ key: "A" });
+  deferredDetails.message = "new visit"; deferred.detailsChanged();
+  finishNote({}); await oldDone;
+  const reopenedVisit = deferred.state === "details" && deferredDetails.message === "new visit" && deferred.savedDetails === null;
+  await deferred.key({ key: "Enter" });
+  const newDone = deferred.state === "amount";
+  await deferredQuote();
+  await deferred.key({ key: "O" }); deferred.key({ key: "Escape" }); deferred.key({ key: "A" });
+  deferredDetails.message = "same invoice"; deferred.detailsChanged();
+  const invoiceDone = deferred.key({ key: "Enter" }), pendingInvoice = deferred.invoice;
+  const interrupted = deferred.seen("deferred", 400, 1000, 615) && deferred.state === "chain";
+  deferred.key({ key: "Escape" }); deferred.key({ key: "A" });
+  finishNote({}); await invoiceDone;
+  const reopenedInvoice = deferred.state === "details" && deferred.invoice === pendingInvoice && !deferred.detailsDirty;
+  await deferred.key({ key: "Enter" });
+  const currentDone = deferred.state === "quote";
+  deferred.stop();
+  record("donation details: a late DONE save cannot dismiss a new visit's editor or a reopened editor for the same invoice, and the current DONE still returns to its screen",
+    reopenedVisit && newDone && interrupted && reopenedInvoice && currentDone, JSON.stringify({ reopenedVisit, newDone, interrupted, reopenedInvoice, currentDone }));
+
   let liveRate = { usdPerBtc: 100000, satsPerBanana: 1000, at: now, stale: false }, watching = 0;
   const live = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
     invoice: async () => ({ request: "request", pricing: "receipt", invoice: { id: "floating", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 1, rounded: 1 }, rate: liveRate }),
@@ -9317,6 +9350,53 @@ const factoryShields = { name: "factory peer portals", why: "rule: paired peer m
     && Math.abs(row.after.feet - row.before.feet) < 0.25 && row.cameraChange < 0.25 && row.sameMode && row.walkedOut && row.stayedOut && row.returned && row.supported)
     && r.rows[1].air && r.rows[1].after.feet > 0, JSON.stringify(r));
 } };
+const donationDetails = { name: "donation details", why: "regression: clicking KEEP SAVED blurred a changed native field, retried its failed autosave and saved the edits the visitor was discarding", run: async (b) => {
+  await b.evaluate(`(() => {
+    const D = BL.donations, K = BL.factoryKiosk, fields = document.getElementById("donation-fields");
+    const probe = window.__donationDetails = { invoice: D.invoice, note: D.note, open: D.state.open, create: K.create, notes: 0, changes: 0 };
+    probe.changed = event => { if (event.isTrusted) probe.changes++; };
+    fields.addEventListener("change", probe.changed);
+    D.state.open = true;
+    D.invoice = async () => ({ request: "details-test", invoice: { id: "details-test", bolt11: "lntbs1", expires: Date.now() / 1000 + 900 }, bananas: { exact: 1, rounded: 1 }, rate: null });
+    D.note = async () => { probe.notes++; return { error: "busy" }; };
+    K.create = hooks => (probe.flow = probe.create(hooks));
+    BL.donationPopup.open();
+    K.create = probe.create;
+  })()`);
+  try {
+    await b.key("1"); await b.key("Enter");
+    await untilPage(b, 'window.__donationDetails.flow.state === "quote"');
+    await b.key("A"); await b.key("Tab");
+    await b.send("Input.insertText", { text: "discard this edit" });
+    const failed = await untilPage(b, '!!window.__donationDetails.flow.detailsError');
+    const before = await b.evaluate(`(() => {
+      const p = __donationDetails, canvas = document.getElementById("donation-screen"), r = canvas.getBoundingClientRect();
+      p.flow.paint();
+      return { focused: document.activeElement.id, notes: p.notes, changes: p.changes, saved: p.flow.savedDetails.message,
+        x: r.left + 110 * r.width / canvas.width, y: r.top + 352 * r.height / canvas.height };
+    })()`);
+    await b.click(before.x, before.y);
+    const after = await b.evaluate(`(() => {
+      const p = __donationDetails;
+      return { state: p.flow.state, notes: p.notes, changes: p.changes, message: document.getElementById("donation-message").value,
+        focused: document.activeElement.id, error: p.flow.detailsError, saving: p.flow.detailsSaving };
+    })()`);
+    record("donation details: clicking KEEP SAVED after a failed autosave commits the native field's change event without retrying, restores the saved message and returns focus to the quote",
+      failed && before.focused === "donation-message" && before.notes === 1 && before.changes === 0
+      && after.changes === 1 && after.notes === 1 && after.state === "quote" && after.message === before.saved
+      && after.focused === "donation-screen" && !after.error && !after.saving, JSON.stringify({ failed, before, after }));
+  } finally {
+    await b.evaluate(`(() => {
+      const p = __donationDetails;
+      BL.donationPopup.close();
+      document.getElementById("donation-fields").removeEventListener("change", p.changed);
+      BL.donations.invoice = p.invoice; BL.donations.note = p.note; BL.donations.state.open = p.open;
+      BL.factoryKiosk.create = p.create;
+      delete window.__donationDetails;
+    })()`);
+  }
+} };
+
 // The banana cooker: a tip is counted once, the moment it arrives, and cooked where the visitor can watch it, never
 // passed off as routing. The demo node is held still and its conduits emptied, so anything moving is the tip's, and
 // the exit shield's hum is stopped, so its ripple count is crossings alone. The kiosk is tapped with the view free, as
@@ -12982,7 +13062,7 @@ scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on t
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit")] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls] });
 scene("factory", { query: "character=portlandhodl", steps: [factoryWalking, factoryGreeter, factoryLadders, factoryRailingJump, factoryWeapons, factoryForward, factoryForge, factoryShields, trip("factory")] });
-scene("factory", { label: "cooker", query: "character=portlandhodl", steps: [donation("factory", { stat: "cooker.out", seconds: 14, where: "the cooker sends its bananas up through the ceiling tube" }), factoryCooker, trip("factory")] });
+scene("factory", { label: "cooker", query: "character=portlandhodl", steps: [donation("factory", { stat: "cooker.out", seconds: 14, where: "the cooker sends its bananas up through the ceiling tube" }), donationDetails, factoryCooker, trip("factory")] });
 scene("factory", { label: "entrance", url: hubPage(src, "character=portlandhodl"), steps: [factoryFloor, factoryEntrance] });
 scene("factory", { label: "canvas2d", query: "canvas2d=1&character=portlandhodl", steps: [factoryCanvas, factoryGreeter] });
 scene("bifrost", { url: hubPage(src, "solo=1&character=portlandhodl"), steps: [bifrostEntrance, bifrostWalking, bifrostExit, trip("bifrost")] });
