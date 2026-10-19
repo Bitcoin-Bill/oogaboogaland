@@ -4,8 +4,8 @@
 // with the island, and she leaves them be. A visitor who is not signed in gets a quick look round the island; a signed-in one, once the page knows who
 // they are, gets what is new since their last visit in this browser, and nothing at all when nothing is. A tour stops
 // at each landmark: the view glides there each time the visitor goes on (the camera moves only on input), and she flies
-// ahead and points her soft beam at it. She greets once a page; after that a tap on her brings the island tour. The
-// view is the visitor's again when the tour ends.
+// ahead and points her soft beam at it. She greets once a page, and offers the island tour unasked only until this
+// browser has answered it; a tap on her brings it at any time. The view is the visitor's again when the tour ends.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -108,7 +108,7 @@
     { at: [7, 3, 5.6], aim: [8.8, 0.5, 7.4] },
     { at: [-2.8, 5.2, 17], aim: [-4.6, 4.2, 19.3] }
   ];
-  const NOTICE_AFTER = 2.5, OFFER_TIME = 12, GLIDE = 1.8, RETURN = 1.2, VISITS = "ooga-tess-visits";
+  const NOTICE_AFTER = 2.5, OFFER_TIME = 12, GLIDE = 1.8, RETURN = 1.2, VISITS = "ooga-tess-visits", TOURED = "ooga-tess-tour";
   // The view counts as moved past half a metre or about three degrees, after a second to settle on arrival and on an
   // Ooga handed to the visitor (the island hands a signed-in contributor their own).
   const SETTLE = 1, MOVED = 0.5, TURNED = 0.05;
@@ -177,6 +177,14 @@
     all[login] = { line: entry.line, date: entry.date };
     try { localStorage.setItem(VISITS, JSON.stringify(all)); } catch { /* A private window keeps no visits. */ }
   };
+  // Whether this browser has answered her island tour, Show me or Not now: a visitor who is not signed in is then not
+  // offered it again unasked. Kept in localStorage only; anything unreadable there counts as not yet.
+  const toured = () => {
+    try { return localStorage.getItem(TOURED) === "1"; } catch { return false; }
+  };
+  const markToured = () => {
+    try { localStorage.setItem(TOURED, "1"); } catch { /* Storage unavailable: she offers it again next visit. */ }
+  };
   // Under debug, `tessnews=YYYY-MM-DD` plays the signed-in greeting as if the visitor's last visit were that day: the
   // news from that day on.
   const DEBUG_NEWS = (() => {
@@ -187,7 +195,7 @@
   const create = ({ parent, input, fx, camera, pilot, visitor, world, hud, busy, coarse, quality, landing }) => {
     const rig = BL.tess.create({ parent, input, fx, camera, kind: "tess", coarse, quality }), position = rig.position;
     const state = { phase: "work", stage: "beam", timer: 3, site: 0, seen: 0, again: false, kind: "island", legs: ISLAND, welcome: null,
-      stop: -1, line: 0, arrived: false, closing: null, holding: false, beats: null, utterance: 0, advance: 0, glide: 0, glideTime: GLIDE,
+      stop: -1, line: 0, arrived: false, closing: null, holding: false, tourGuest: false, beats: null, utterance: 0, advance: 0, glide: 0, glideTime: GLIDE,
       login: null, newest: null, still: landing, settle: SETTLE, driven: null };
     const spot = { x: 0, y: 0, z: 0 }, home = pose(), from = pose(), to = pose();
     position.x = WORK[0].at[0]; position.y = WORK[0].at[1]; position.z = WORK[0].at[2];
@@ -271,12 +279,12 @@
     };
     // Who the visitor is, once the page knows: the signed-in account, or none.
     const account = () => DEBUG_NEWS ? { login: "you", display: "you" } : BL.net.state.me;
-    // The visit's one greeting: the island tour for a visitor who is not signed in; for a signed-in one, what is new
-    // since their last visit here, or no greeting at all when nothing is.
+    // The visit's one greeting: the island tour for a visitor who is not signed in, until this browser has answered it;
+    // for a signed-in one, what is new since their last visit here, or no greeting at all when nothing is.
     const greet = () => {
       world.tessGreeted = true;
       const me = account();
-      if (!me) { state.kind = "island"; state.legs = ISLAND; state.welcome = null; notice(); return; }
+      if (!me) { if (toured()) return; state.kind = "island"; state.legs = ISLAND; state.welcome = null; notice(); return; }
       const fresh = DEBUG_NEWS ? NEWS.filter((n) => n.date >= DEBUG_NEWS) : freshAfter(lastSeen(me.login));
       if (!fresh.length) return;
       const count = fresh.length;
@@ -288,6 +296,7 @@
     const approach = () => { placeBy(); flyTo(spot.x, spot.y, spot.z, 6, true); show("approach"); };
     const offer = (beats) => {
       state.timer = OFFER_TIME;
+      state.tourGuest = state.kind === "island" && !account();
       rig.clearPath(3, 1); rig.push(spot.x, spot.y, spot.z); rig.track();
       rig.nod(); show("offer"); speak(beats);
     };
@@ -366,10 +375,11 @@
       placeBy(); flyTo(spot.x, spot.y, spot.z, 10, true);
       show("returning");
     };
-    // An answer to her offer, Show me or Not now, counts its news as seen; news she offered but got no answer to waits
-    // for the next visit.
+    // An answer to her offer, Show me or Not now, counts its news as seen, or the island tour as answered; an offer she
+    // got no answer to waits for the next visit.
     const answered = () => {
       if (state.kind === "news" && state.login) { markSeen(state.login, state.newest); state.login = null; }
+      else if (state.tourGuest) markToured();
     };
     // The panel's two buttons and their keys: on, and back out.
     const forward = () => {
