@@ -41,6 +41,25 @@ test("room broadcasts DSB zone changes, persists them and keeps ownership enforc
   assert.equal(room.view(player).zone, "dsb-svrn");
   assert.equal(attachment.zone, "dsb-svrn");
   assert.ok(sent.some(m => m.t === "zone" && m.id === 1 && m.name === "dsb-svrn"));
+  room.webSocketMessage(ws, JSON.stringify({ t: "body", name: "gorilla:YellowBrokeIt" }));
+  assert.equal(player.body, "gorilla:YellowBrokeIt");
+  assert.equal(attachment.body, player.body);
+  const g = [4, 1.8, 12.5, 1, -0.5, 0];
+  room.scheduleFlush = () => {};
+  room.webSocketMessage(ws, JSON.stringify({ t: "pose", x: -45, y: 55, z: -43, yaw: 0.7, g }));
+  assert.deepEqual(attachment.g, g);
+  assert.deepEqual(room.view(player).g, g, "late joiners see the companion's current climbing stance");
+  assert.equal(room.view(player).y, 55, "the room keeps an elevated companion pose");
+  room.snapshot();
+  const state = sent.filter(m => m.t === "state").at(-1);
+  assert.deepEqual(state.ps, [1, -45, 55, -43, 0.7], "legacy position records keep five fields");
+  assert.deepEqual(state.gs, [1, ...g]);
+  room.webSocketMessage(ws, JSON.stringify({ t: "pose", x: -45, y: 55, z: -43, yaw: 0.7, g: [5, 0, 12.5, 0, 0, 0] }));
+  assert.ok(room.dirty, "changing stance with no positional movement still schedules a snapshot");
+  room.webSocketMessage(ws, JSON.stringify({ t: "body", name: "YellowBrokeIt" }));
+  assert.equal(player.g, null, "switching back to the Ooga clears companion state");
+  room.webSocketMessage(ws, JSON.stringify({ t: "pose", x: -45, y: 40, z: -43, yaw: 0, g }));
+  assert.equal(player.g, null, "Ooga poses cannot install companion locomotion");
   room.webSocketMessage(ws, JSON.stringify({ t: "body", name: "someone-else" }));
   assert.equal(player.body, null);
   assert.ok(sent.some(m => m.t === "release" && m.reason === "not-yours"));
@@ -63,7 +82,7 @@ test("voice lists survive the room sleeping and follow a microphone published ag
   room.sfu = {};
   room.players = new Map(); room.chatBuckets = new Map();
   for (const id of [1, 2]) {
-    const p = room.record(sockets[id], { id, login: `p${id}`, display: `p${id}`, body: `ooga-${id}`, zone: "factory.hall", x: 0, y: 0, z: 0, yaw: 0 });
+    const p = room.record(sockets[id], { id, login: `p${id}`, display: `p${id}`, body: id === 1 ? "gorilla:ooga-1" : "ooga-2", g: id === 1 ? [4, 1.8, 12, 1, 0, 0] : null, zone: "factory.hall", x: 0, y: 0, z: 0, yaw: 0 });
     p.voice = { pub: `pub${id}`, sub: `sub${id}`, track: "mic", gen: 10 + id };
     room.players.set(id, p);
     sockets[id].serializeAttachment(room.attachment(p));
@@ -73,6 +92,8 @@ test("voice lists survive the room sleeping and follow a microphone published ag
   assert.deepEqual(last(1), { t: "voice", peers: [2], gens: [12] });
   // Asleep and woken: the room still knows what it sent, so nothing repeats...
   const woken = wake();
+  assert.equal(woken.players.get(1).body, "gorilla:ooga-1");
+  assert.deepEqual(woken.players.get(1).g, [4, 1.8, 12, 1, 0, 0], "hibernation preserves a companion's locomotion");
   const before = sockets[1].sent.length;
   woken.updateVoice();
   assert.equal(sockets[1].sent.length, before);
@@ -110,7 +131,7 @@ const studioRoom = () => {
   room.sfu = { closeTracks: async (_session, mids) => ({ tracks: mids.map(mid => ({ mid })) }), getSession: async () => ({ tracks: [] }) };
   const add = (id, fields = {}) => {
     const ws = { sent: [], send(text) { this.sent.push(JSON.parse(text)); }, serializeAttachment() {} };
-    const p = room.record(ws, { id, login: `synthetic-${id}`, zone: studio.STUDIO_ZONE, x: -2.4, y: .75, z: -2.1, body: `synthetic-${id}`, connectionToken: `token-${id}`, ...fields });
+    const p = room.record(ws, { id, login: `synthetic-${id}`, contributor: true, zone: studio.STUDIO_ZONE, x: -2.4, y: .75, z: -2.1, body: `synthetic-${id}`, connectionToken: `token-${id}`, ...fields });
     room.players.set(id, p); return p;
   };
   const call = (p, op, body) => room.voiceRequest(op, new Request(`https://example.test/voice/${op}`, { method: "POST", headers: { "x-player-id": String(p.id), "x-room-token": p.connectionToken }, body: JSON.stringify(body) }));
@@ -316,8 +337,8 @@ test("Studio wake migrates old snapshots, clamps catalogue edits and rechecks co
   const wake = async (saved, ids) => {
     const pending = [];
     const attachments = [
-      { id: 1, login: "synthetic-host", zone: studio.STUDIO_ZONE, body: "synthetic-host" },
-      { id: 2, login: "synthetic-attendee", zone: studio.STUDIO_ZONE, body: "synthetic-attendee", studioSeat: 0 }
+      { id: 1, login: "synthetic-host", contributor: true, zone: studio.STUDIO_ZONE, body: "synthetic-host" },
+      { id: 2, login: "synthetic-attendee", contributor: true, zone: studio.STUDIO_ZONE, body: "synthetic-attendee", studioSeat: 0 }
     ];
     const sockets = attachments.map(a => ({ deserializeAttachment: () => a, serializeAttachment() {}, send() {} }));
     const ctx = { setWebSocketAutoResponse() {}, getWebSockets: () => sockets, blockConcurrencyWhile: fn => pending.push(fn()), waitUntil: p => pending.push(p), storage: { get: async key => key === "studio" ? structuredClone(saved) : null, put: async () => {} } };
