@@ -4577,6 +4577,17 @@ const workCaveTrips = async (b) => {
           const moving = c.work.phase === "outbound" || c.work.phase === "station" || c.work.phase === "return";
           row.stall = moving && step < 0.001 ? row.stall + dt : 0;
           row.maximumStall = Math.max(row.maximumStall, row.stall); row.maximumStep = Math.max(row.maximumStep, step);
+          // Preserve the first bad frame, not only the eventual arrival.
+          // Rare traffic failures otherwise lose the blocked route when the
+          // recovery jump or relocation lets the worker finish its trip.
+          if (!row.failure && (row.stall >= 5 || step > 2.8 * dt + 1e-6 || c.progress.resets > row.resets || c.avoidance.navigation.jumps > row.jumps)) {
+            const path = c.pathing, avoid = c.avoidance;
+            row.failure = { frame: frames, position: { ...p }, phase: c.work.phase, site: c.work.site, index: c.work.index, slot: { ...c.slot }, pileApproach: c.pileApproach,
+              path: { count: path.count, index: path.index, tx: path.tx, tz: path.tz, targetX: path.targetX, targetZ: path.targetZ },
+              recovery: { mode: avoid.navigation.mode, tx: avoid.tx, tz: avoid.tz, stalled: avoid.stalled, ...c.progress },
+              nearby: actors.filter(other => other !== c && Math.hypot(other.root.position.x - p.x, other.root.position.z - p.z) < 3)
+                .map(other => ({ name: other.contributor.name, position: { ...other.root.position }, phase: other.work.phase })) };
+          }
           const approach = B.crew.workSites[c.work.site].route.at(-1);
           const followsPath = c.work.phase === "outbound" && Math.hypot(p.x - approach.x, p.z - approach.z) > 3
             || c.work.phase === "return" && c.work.index < 0 && !c.pileApproach
@@ -4596,7 +4607,7 @@ const workCaveTrips = async (b) => {
   record("work movement cave trips: five workers retain path routes and finish repeated trips to lab, OBL and LF without stuck loops, jumps or relocation",
     r.sites.length === 3 && r.sites.every(Boolean) && r.rows.length === 5 && r.rows.every(row => row.outbound.every(n => n >= 2)
       && row.returned.every(n => n >= 2) && row.maximumStall < 5 && row.maximumStep <= 2.8 / 20 + 1e-6
-      && row.missingRoutes === 0 && row.resets === 0 && row.jumps === 0), JSON.stringify(r));
+      && row.missingRoutes === 0 && row.resets === 0 && row.jumps === 0), JSON.stringify({ failures: r.rows.filter(row => row.failure), ...r }));
   const rejoin = await b.evaluate(`(() => {
     const island = { path: { version: 0, debug: { active: false, ringCenterRadius: 0 }, centerlines: [[{ x: 0, z: 0 }, { x: 0, z: 10 }]] }, surfaceAt: () => 0, isPath: () => true };
     const clear = (x, z, tx, tz) => {
@@ -6534,7 +6545,9 @@ const hubMelee = { name: "hub melee", why: "rule: a ready swing does five damage
 } };
 const AK_STATE = `(() => { const w = window.__ooga.crew.player.weapon; return { ammo: w.ammo, spares: w.spareAmmo.slice(), shots: w.shotsFired, aiming: w.aiming }; })()`;
 const hubAk = { name: "hub ak", why: "regression: R did nothing unless the player was aiming, so an AK emptied with V could not swap in its spare", run: async (b) => {
-  const barrel = await b.evaluate(nextTo("barrel", 3, -1.34, 0.12));
+  // The western shoulder ray crosses a neighbouring crate even though the
+  // muzzle clears it. Approach from the east for this barrel-hit fixture.
+  const barrel = await b.evaluate(nextTo("barrel", -3, 1.34, 0.12));
   await tapKey(b, "2");
   // Selecting a weapon preserves carry/combat. Establish shoulder combat
   // before applying shoulder mouse deltas, and let its entry camera settle.
@@ -8589,7 +8602,17 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
       B.advance(0.06, 1 / 60);
       const edgeAnchor = P.assistedTarget && { x: P.assistedTarget.x, y: P.assistedTarget.y, z: P.assistedTarget.z };
       edge.mode = P.mode; edge.height = edgeAnchor?.y;
-      B.advance(1, 1 / 60);
+      // The reticle glides toward centre until the overhead blend ends.
+      // Check the selected point against that displayed reticle throughout,
+      // then require exact centering once the handoff is actually complete.
+      edge.reticleError = 0; edge.settleFrames = 0;
+      for (; edge.settleFrames < 90 && P.birdsEyeMix > 0; edge.settleFrames++) {
+        B.advance(1 / 60, 1 / 60);
+        if (!P.birdsEyeMix) break;
+        const q = edgeAnchor && B.project(edgeAnchor.x, edgeAnchor.y, edgeAnchor.z, {});
+        edge.reticleError = Math.max(edge.reticleError, q ? Math.hypot(q.x - parseFloat(reticle.style.left), q.y - parseFloat(reticle.style.top)) : Infinity);
+      }
+      edge.settled = P.birdsEyeMix === 0;
       const edgeHeld = P.assistedTarget, edgeScreen = edgeAnchor && B.project(edgeAnchor.x, edgeAnchor.y, edgeAnchor.z, {});
       edge.targetError = edgeAnchor && edgeHeld ? Math.hypot(edgeAnchor.x - edgeHeld.x, edgeAnchor.y - edgeHeld.y, edgeAnchor.z - edgeHeld.z) : Infinity;
       edge.centerError = edgeScreen ? Math.hypot(edgeScreen.x - B.renderer.size.width / 2, edgeScreen.y - B.renderer.size.height / 2) : Infinity;
@@ -8610,7 +8633,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
     result.closeAim.length === 2 && result.closeAim.every(row => row.found && row.mode === "first-person" && row.error < 0.1 && row.exitFound && row.exitMode === "shoulder" && row.exitError < 0.1), JSON.stringify(result.closeAim));
   record("combat zoom: continued pointer input above the viewport clamps to its edge and retains the resulting same-floor point through shoulder entry", result.edge.offscreen > 0 && result.edge.clamped
     && result.edge.mode === "shoulder" && result.edge.frames > 0 && result.edge.frames < 45 && Math.abs(result.edge.height - result.floor) < 0.05
-    && result.edge.targetError < 1e-6 && result.edge.centerError < 0.1, JSON.stringify(result.edge));
+    && result.edge.settled && result.edge.reticleError < 0.1 && result.edge.targetError < 1e-6 && result.edge.centerError < 0.1, JSON.stringify(result.edge));
 } };
 
 // ---- Phones ----
