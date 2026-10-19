@@ -183,7 +183,7 @@
   const DOCK_DEG = 75, LADDER_Z = -3.6, LADDER_LEAN = 0.65;
   const CLOUD_COUNT = 30, CLOUD_WRAP = 60, CLOUD_NEAR = 36;
   const CLOUD_GAP = 0.35, CLOUD_LOOK = 36, CLOUD_PLAN_STEP = 2;
-  const CLOUD_SIDE_RATE = 0.7, CLOUD_RISE_RATE = 0.55;
+  const CLOUD_SIDE_RATE = 0.7, CLOUD_RISE_RATE = 0.55, CLOUD_SUPPORT_EPSILON = 0.01;
   const CLOUD_FADE = 2.5, CLOUD_STALL = 1.5, CLOUD_NO_PROGRESS = 24, CLOUD_CLEAR_RUN = 8;
   const CLOUD_SIDE_OFFSETS = [0, -7, 7, -14, 14, -24, 24];
   const CLOUD_HEIGHT_OFFSETS = [0, -6, 6, -12, 12];
@@ -3224,7 +3224,7 @@
     placed.push(site.node);
     for (const node of [site.shell, site.entrance, site.bridge, site.plug]) solids.add(node);
     // Match the visible grass tiles, not the bounding sphere around the cliff.
-    for (const [kind, node, radius] of [["timechainentrance", site.entrance, 3], ["timechainbridge", site.bridge, 1.5], ["timechainkeypad", site.keypad, 0.6]]) {
+    for (const [kind, node, radius] of [["timechainentrance", site.entrance, 3], ["timechainbridge", site.bridge, T.SITE.width / 2 + 0.2], ["timechainkeypad", site.keypad, 0.6]]) {
       const x = node.position.x, z = node.position.z;
       addProp(kind, node, worldX(x, z), worldZ(x, z), radius);
     }
@@ -3232,7 +3232,7 @@
     presets.timechain = { yaw: p.ry, pitch: 0.1, dist: 9, target: { x: worldX(0.6, 13.2), y: p.y + 2.2, z: worldZ(0.6, 13.2) } };
     const claimGround = () => {
       claim(p.x, p.z, T.SITE.radius + 1);
-      for (let r = p.approachFrom - 1; r <= p.rim; r += 1) claim(T.DIR.x * r, T.DIR.z * r, 2.4);
+      for (let r = p.approachFrom - 1; r <= p.rim; r += 1) claim(T.DIR.x * r, T.DIR.z * r, T.SITE.width / 2 + 0.9);
     };
     return { site, place: p, cos, sin, worldX, worldZ, claimGround, show: T.show(site), gate: null, residentInside: false };
   };
@@ -4881,8 +4881,12 @@
     const grounded = cave.hop === 0 && cave.hopV <= 0;
     const height = cave.bodyHeight + Math.max(0, cave.viewLift);
     if (previous && grounded && !previous.wrapped && previous.node.visible && previous.node.parent === root) {
-      const x = p.x + previous.dx, z = p.z + previous.dz, floor = Math.max(feet, cloudFloorAt(x, z, feet, STEP_MAX, height, cave));
-      if (flyable(p.x, p.z, x, z, feet, height, cave) && physicalClearAt(x, floor, z, PLAYER_RADIUS, height, cave) && island.voxelSegmentClearAt(p.x, feet, p.z, x, floor, z, PLAYER_RADIUS, height)) {
+      const x = p.x + previous.dx, z = p.z + previous.dz;
+      const floor = cloudFloorAt(x, z, feet, STEP_MAX, height, cave);
+      // A remembered cloud can now be above, below or beside the Ooga. Carry only when its same top surface still
+      // touches the feet; proximity elsewhere in the cloud must never add horizontal motion.
+      const onTop = cloudHit === previous && Math.abs(floor - feet) <= Math.abs(previous.dy) + CLOUD_SUPPORT_EPSILON;
+      if (onTop && flyable(p.x, p.z, x, z, feet, height, cave) && physicalClearAt(x, floor, z, PLAYER_RADIUS, height, cave) && island.voxelSegmentClearAt(p.x, feet, p.z, x, floor, z, PLAYER_RADIUS, height)) {
         p.x = x; p.z = z;
       }
     }
@@ -5762,7 +5766,7 @@
       cloud.life = lerp(55, 145, rand());
       cloud.size = initial ? 1 : 0.01;
       cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
-      cloud.stalled = cloud.blocked = cloud.dx = cloud.dz = 0;
+      cloud.stalled = cloud.blocked = cloud.dx = cloud.dy = cloud.dz = 0;
       cloud.planTimer = 0;
       cloud.wrapped = !initial;
       return;
@@ -5800,7 +5804,7 @@
         surfaces.set(node.geometry, surface);
       }
       const cloud = { node, speed: 0.4 + rand() * 0.4, beside, tops: surface.tops, bounds: surface.bounds,
-        fullBounds: surface.fullBounds, centerTop: surface.centerTop, dx: 0, dz: 0, wrapped: false,
+        fullBounds: surface.fullBounds, centerTop: surface.centerTop, dx: 0, dy: 0, dz: 0, wrapped: false,
         goalSide: 0, goalY: 0, planTimer: i / CLOUD_COUNT, bestTime: 0, bestCost: 0, bestSide: 0, bestY: 0,
         age: 0, life: 0, size: 1, stalled: 0, blocked: 0 };
       placeCloud(cloud, true);
@@ -5840,6 +5844,7 @@
       cloud.blocked = (cloud.beside ? p.z - z : p.x - x) < cloud.speed * dt * 0.25 ? cloud.blocked + dt : 0;
       if (cloud.stalled >= CLOUD_STALL || cloud.blocked >= CLOUD_NO_PROGRESS) { placeCloud(cloud); planCloud(cloud); continue; }
       cloud.dx = cloud.wrapped ? 0 : p.x - x;
+      cloud.dy = cloud.wrapped ? 0 : p.y - y;
       cloud.dz = cloud.wrapped ? 0 : p.z - z;
     }
   };

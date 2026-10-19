@@ -10,7 +10,9 @@
   const { cached, box, bevelBox, lathe, merge, makeVox, voxelGeometry } = BL.models;
   const { limb, padNormals, flatInto } = BL.hubModels;
   const { createNode, addChild } = BL.scene;
-  const SITE = { bearing: BL.terrain.TIMECHAIN.bearing, radius: 13, depth: 12, span: 18, width: 2.6 };
+  // The bridge deck meets the portal at its full outer width, so the approach does not pinch down before the doors.
+  const PORTAL_WIDTH = 6;
+  const SITE = { bearing: BL.terrain.TIMECHAIN.bearing, radius: 13, depth: 12, span: 18, width: PORTAL_WIDTH };
   const DIR = { x: Math.sin(SITE.bearing), z: -Math.cos(SITE.bearing) };
   const UNIT = 0.5, WOOD = "#795335", PLANK = "#8b6340", POST = "#5e3f27", ORANGE = "#f7931a";
   const SHELL_R = 13, SHELL_SKIN = 0.16, SHELL_CY = 3;
@@ -166,7 +168,7 @@
   };
   // A chunky timber frame over the cut edges of both skins, lit gold along its inner faces.
   const portal = cached(() => merge(
-    bevelBox({ w: 6, h: 0.5, d: 0.9, color: WOOD, offset: { y: 5.05 } }),
+    bevelBox({ w: PORTAL_WIDTH, h: 0.5, d: 0.9, color: WOOD, offset: { y: 5.05 } }),
     box({ w: 4.82, h: 0.06, d: 0.5, color: "#ffbd53", emissive: 0.9, offset: { y: 4.765 } }),
     ...[-1, 1].flatMap(side => [
       bevelBox({ w: 0.5, h: 5.1, d: 0.9, color: WOOD, offset: { x: side * 2.72, y: 2.45 } }),

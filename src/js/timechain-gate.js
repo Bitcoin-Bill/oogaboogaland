@@ -9,10 +9,12 @@
 // it prepare; a slow or failed preparation holds there, with Cancel, and returns to the keypad. Only then does a shared
 // crossing ask the island room for the doorway (net.js `askDoor`, docs/timechain-sphere/doorway-contract.md), waiting
 // with "Door in use · waiting" while someone else crosses; a solo one asks nobody. The doors part (on every signed-in
-// page in the sphere's zone too, from the room's `transit`), the Ooga walks in as the view swoops into its eyes, and
+// page in the sphere's zone too, from the room's `transit`), the view moves into the Ooga's eyes before the guided
+// approach and stays there while it walks in, and
 // once it is through the curtain at the end of the passage the room's scene takes over. Coming back, the Ooga appears
 // behind that curtain (the sphere's zone, out of sight), asks for the doorway again when shared, and walks out onto the
-// bridge as the view eases back out behind it; the doors close once it is clear and its jetpack comes back as it was.
+// bridge in first person; only after the doors close does the normal island view return, and its jetpack comes back as
+// it was.
 //
 // The plug across the doorway (timechain-models.js) is lifted only for this page's own traveler, while it crosses.
 (() => {
@@ -20,9 +22,9 @@
   const BL = window.BL = window.BL || {};
   const ROOMS = BL.timechainRooms, TM = BL.timechainModels, S = TM.SPOTS, P = TM.PASSAGE;
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
-  // Seconds: the doors' slide, the swoop into the eyes, a preparation's limit, the room socket's grace before a shared
-  // crossing goes ahead without a reservation, and the longest any one walk may take.
-  const DOOR_TIME = 0.75, SWOOP = 1.25, PREPARE_LIMIT = 15, CONNECT_GRACE = 6, WALK_LIMIT = 8;
+  // Seconds: the doors' slide, a preparation's limit, the room socket's grace before a shared crossing goes ahead
+  // without a reservation, and the longest any one walk may take.
+  const DOOR_TIME = 0.75, PREPARE_LIMIT = 15, CONNECT_GRACE = 6, WALK_LIMIT = 8;
   const WALK_SPEED = 0.6, TURN_RATE = 6, GLIDE = 0.45, HINT_GAP = 4;
   // The traveler's look into the room: the picture's size at the curtain.
   const PICTURE_W = 2 * P.halfW, PICTURE_H = P.top - P.floor;
@@ -43,7 +45,7 @@
       cycle: null, exp: 0, open: 0, want: 0, remoteUntil: 0, swoop: 0, hintAt: -Infinity, jetpack: null, from: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 },
       // The view's lens, since the pilot leaves the camera alone while it is held: null (the pilot's own), "keypad"
       // (gliding to and holding the keypad's), "trail" (gliding to and following a view over the Ooga's shoulder),
-      // "eyes" (between that view and the Ooga's eyes by `swoop`) or "back" (gliding back to the pilot's, once free).
+      // "eyes" (held at the Ooga's eyes throughout a committed trip) or "back" (gliding back to the pilot's, once free).
       to: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 }, lens: null, glide: 1, hidden: null, exit: null, failures: 0, login: null
     };
     const action = { kind: "sphere-keypad" };
@@ -193,7 +195,9 @@
       g.jetpack = { equipped: !!cave.jet, fuel: cave.jetFuel };
       g.state = "preparing";
       g.t = 0;
-      lens("trail");
+      g.lens = "eyes";
+      g.swoop = 1;
+      hideHead(cave, true);
       show(`Preparing Room ${room.id}…`);
       prepare();
     };
@@ -293,7 +297,8 @@
       g.want = 1;
       openPanel(false);
       g.lens = "eyes";
-      g.swoop = 0;
+      g.swoop = 1;
+      if (crew.player) hideHead(crew.player, true);
     };
     // Through the curtain: the room takes over with this Ooga and what it carried.
     const handOff = () => {
@@ -381,7 +386,6 @@
           site.plug.visible = false;
           steerTo(PARK.x, PARK.z, dt);
         } else turnTo(IN_HEADING, dt);
-        g.swoop = REDUCED.matches ? 1 : Math.min(1, g.swoop + dt / SWOOP);
         hangPicture();
         if (localZ(cave.root.position.x, cave.root.position.z) < P.curtain + 0.9 || g.t > WALK_LIMIT) handOff();
       } else if (g.state === "gone") {
@@ -400,9 +404,8 @@
         if (cave && (g.open > 0.55 || g.want === 0)) {
           const out = steerTo(WAIT.x, WAIT.z, dt), z = localZ(cave.root.position.x, cave.root.position.z);
           if (z > S.THRESHOLD + 1.2) { g.want = 0; site.plug.visible = true; }
-          // Out of the eyes once through the doorway, so the view never trails back into the passage's pocket.
-          if (z > S.THRESHOLD + 0.5) g.swoop = REDUCED.matches ? 0 : Math.max(0, g.swoop - dt / SWOOP);
-          if (out && g.swoop === 0 || g.t > WALK_LIMIT) { site.plug.visible = true; finishLeaving(); }
+          // Hold the eye through the walk and the doors closing; the ordinary island camera returns afterward.
+          if (out && g.open === 0 || g.t > WALK_LIMIT) { site.plug.visible = true; finishLeaving(); }
         }
       } else if (g.state === "idle" && cave) {
         // Pressing against the doorway: it only opens from the keypad.
@@ -434,10 +437,10 @@
         trailPose(cave, g.to);
         putPose(g.from, g.to, g.glide);
       } else if (g.lens === "eyes" && cave) {
-        // From over the shoulder into the eyes going in, and back out of them coming out.
+        // Every committed approach, crossing and exit frame is from the Ooga's eyes.
         trailPose(cave, g.from);
         eyePose(cave, g.to);
-        hideHead(cave, g.swoop > 0.8);
+        hideHead(cave, true);
         putPose(g.from, g.to, g.swoop);
       }
     };
