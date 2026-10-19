@@ -10154,16 +10154,16 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
   await b.key(" ");
   const engaged = await b.evaluate(`(() => { const T = BL.scenes.hub.debug.timechainIsland, G = T.gate, enter = T.site.keys.find(k => k.key === "enter").node; return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), enter: enter.geometry.faces[0].color, act: document.getElementById("act").hidden, keys: T.site.keys.length, hint: document.getElementById("hint").textContent }; })()`);
   for (const k of ["1", "3", "3"]) await b.key(k);
-  const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate, key = k => T.site.keys.find(v => v.key === k).node; return { selection: G.debug.selection, three: key("3").geometry.faces[0].color, one: key("1").geometry.faces[0].color, enter: key("enter").geometry.faces[0].color, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
+  const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate, key = k => T.site.keys.find(v => v.key === k).node; return { selection: G.debug.selection, three: key("3").geometry.faces[0].color, one: key("1").geometry.faces[0].color, enter: key("enter").geometry.faces[0].color, readout: T.site.readout.room, readoutVisible: T.site.readout.visible, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
   await b.key("Escape");
   const left = await b.evaluate(`(() => { const B = __ooga; B.advance(0.6, 1 / 60); const T = BL.scenes.hub.debug.timechainIsland, G = T.gate; window.fetch = window.__sphereFetch;
-    return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), act: document.getElementById("act").hidden, lens: G.debug.lens, one: T.site.keys[0].node.geometry.faces[0].color,
+    return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), act: document.getElementById("act").hidden, lens: G.debug.lens, one: T.site.keys[0].node.geometry.faces[0].color, readout: T.site.readout.visible,
       requests: window.__sphereRequests, read: BL.timechainBlocks.cache.sets.recent.checked, visit: BL.scenes.timechain.visit, scene: B.scene, doors: G.debug.open }; })()`);
   record("timechain keypad: Space engages the physical panel with no popup; 1 then 3 lights only 3 with black type and arms Enter, and the number keys never reach the Ooga's weapons",
     engaged.state === "keypad" && !engaged.popup && engaged.enter.join() === "90,64,34" && engaged.act && engaged.keys === 11 && engaged.hint.includes("Choose a room")
-      && chosen.selection === 3 && chosen.three.join() === "247,147,26" && chosen.one.join() === "58,52,48" && chosen.enter.join() === "255,189,83" && chosen.slot, JSON.stringify({ engaged, chosen }));
+      && chosen.selection === 3 && chosen.three.join() === "247,147,26" && chosen.one.join() === "58,52,48" && chosen.enter.join() === "255,189,83" && chosen.readout === 3 && chosen.readoutVisible && chosen.slot, JSON.stringify({ engaged, chosen }));
   record("timechain keypad: Escape lets go with the view back, resets the physical keys, leaves the doors shut and loads no room data",
-    left.state === "idle" && !left.popup && !left.act && left.lens === null && left.one.join() === "58,52,48" && left.requests === 0 && left.read === 0 && left.visit === null && left.scene === "hub" && left.doors === 0, JSON.stringify(left));
+    left.state === "idle" && !left.popup && !left.act && left.lens === null && left.one.join() === "58,52,48" && !left.readout && left.requests === 0 && left.read === 0 && left.visit === null && left.scene === "hub" && left.doors === 0, JSON.stringify(left));
 } };
 const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter walks the same Ooga through the doors into its room in first person, and Space at the Exit button walks it back out onto the bridge", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} })()`);

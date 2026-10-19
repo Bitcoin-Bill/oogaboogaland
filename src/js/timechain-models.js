@@ -307,14 +307,15 @@
     ];
     return merge(...parts);
   });
-  const keyLabel = (text, pixel, color, emissive) => {
+  const keyLabel = (text, pixel, color, emissive, front = 0.0115) => {
     const geo = { verts: [], faces: [], lines: [], castShadow: false }, glyphs = BL.hubModels.SIGN_GLYPHS;
     const cells = text.length * 3 + Math.max(0, text.length - 1), left = -cells * pixel / 2;
     for (let i = 0; i < text.length; i++) {
       const glyph = glyphs[text[i]];
+      if (!glyph) continue;
       for (let r = 0; r < glyph.length; r++) for (let c = 0; c < glyph[r].length; c++) {
         if (glyph[r][c] !== "1") continue;
-        const x = left + (i * 4 + c) * pixel, y = (2 - r - 0.5) * pixel, z = 0.0115;
+        const x = left + (i * 4 + c) * pixel, y = (2 - r - 0.5) * pixel, z = front;
         facing(geo, [[x, y, z], [x + pixel, y, z], [x + pixel, y + pixel, z], [x, y + pixel, z]], color, emissive, [0, 0, 1]);
       }
     }
@@ -328,6 +329,7 @@
   const BACK_KEY = keyFace(0.15, 0.07, "BACK", 0.0072, "#4a3a30", "#f2d39a");
   const ENTER_KEY = keyFace(0.15, 0.07, "ENTER", 0.0062, "#5a4022", "#f2d39a");
   const READY_ENTER_KEY = keyFace(0.155, 0.075, "ENTER", 0.0062, "#ffbd53", "#17110a", 1);
+  const ROOM_LABELS = Array.from({ length: 9 }, (_, i) => keyLabel(`ROOM ${i + 1}`, 0.007, "#f7931a", 1, 0));
   const build = (island) => {
     let rim = 27.4;
     while (rim < 36 && island.surfaceAt(DIR.x * (rim + 0.1), DIR.z * (rim + 0.1)) > 0.5) rim += 0.1;
@@ -383,7 +385,9 @@
     const keys = KEYS.map((key, i) => ({ key: String(i + 1), node: createNode({ geometry: DIGIT_KEYS[i], position: { x: key.x, y: key.y, z: 0.033 }, sightHidden: true }) }));
     const back = { key: "back", node: createNode({ geometry: BACK_KEY, position: { x: -0.085, y: -0.235, z: 0.033 }, sightHidden: true }) };
     const enter = { key: "enter", node: createNode({ geometry: ENTER_KEY, position: { x: 0.085, y: -0.235, z: 0.033 }, sightHidden: true }) };
-    addChild(pad, ...keys.map(key => key.node), back.node, enter.node);
+    const readout = createNode({ position: { x: 0, y: 0.25, z: 0.0365 }, visible: false, sightHidden: true });
+    readout.room = 0;
+    addChild(pad, readout, ...keys.map(key => key.node), back.node, enter.node);
     // The traveler's look into their room hangs here, just in front of the curtain, on their page alone.
     const picture = createNode({ position: { x: 0, y: PASSAGE.floor, z: PASSAGE.curtain + 0.03 }, sightHidden: true });
     addChild(node, shellNode, createNode({ geometry: passageGlow(), sightHidden: true }), outer, entrance, bridgeNode, ...doors, plugNode, pad, picture);
@@ -394,8 +398,11 @@
       selected = digit > 0 && digit <= 9 ? digit : 0;
       if (selected) keys[selected - 1].node.geometry = LIT_DIGIT_KEYS[selected - 1];
       enter.node.geometry = selected ? READY_ENTER_KEY : ENTER_KEY;
+      readout.room = selected;
+      readout.geometry = selected ? ROOM_LABELS[selected - 1] : null;
+      readout.visible = !!selected;
     };
-    return { node, shell: shellNode, outer, turn, setDoors, screen, logoBatches, entrance, bridge: bridgeNode, doors, plug: plugNode, keypad: pad, keys: [...keys, back, enter], choose, picture, place };
+    return { node, shell: shellNode, outer, turn, setDoors, screen, logoBatches, entrance, bridge: bridgeNode, doors, plug: plugNode, keypad: pad, keys: [...keys, back, enter], readout, choose, picture, place };
   };
   // Most of the time the screen holds its picture; every minute or so it runs a seven-second show on the lunes'
   // `glow` and `highlight`, never the same one twice running, then settles back exactly. Some shows take the logos
