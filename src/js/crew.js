@@ -5235,7 +5235,7 @@
       const p = cave.root.position;
       const dealt = power * 4;
       health.value = Math.max(0, health.value - dealt);
-      if (showDamage) fx.damageNumber(p.x, p.y - cave.baseY + cave.bodyHeight + 0.15, p.z, dealt);
+      if (showDamage) ctx.fx.damageNumber(p.x, p.y - cave.baseY + cave.bodyHeight + 0.15, p.z, dealt);
       health.delay = HEALTH_REGEN_DELAY;
       if (health.value <= 0) {
         health.stunned = true;

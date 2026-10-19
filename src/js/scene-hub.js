@@ -5138,12 +5138,14 @@
       : mempoolIsland.coveredAt(player.root.position.x, actorFeet + 0.5, player.root.position.z) ? 2 : 1;
     const subterranean = player && (cutawayPool ? cutawayPool === 2 : actorFeet < -STEP_MAX);
     if (overhead) cutawayHandoffPlayer = player;
-    else if (combat && subterranean && (cutawayHandoffPlayer || pilot.cameraHandoff.active)) {
+    else if (combat && subterranean && (cutawayHandoffPlayer || pilot.cameraHandoff.active || cameraMix > 0)) {
       cutawayHandoffPlayer = combatCameraReady(player, gorilla) ? null : player;
     } else cutawayHandoffPlayer = null;
     // Keep an overhead exit or actor handoff open until the displayed eye has
-    // reached clear air connected to the actor. After the handoff, an ordinary
-    // close view never reopens the island just because a wall blocks its camera.
+    // reached clear air connected to the actor. Recheck throughout the swoop:
+    // a briefly clear frame can be followed by another ceiling contact.
+    // After the handoff, an ordinary close view never reopens the island just
+    // because a wall blocks its camera.
     const active = combat && (overhead || (subterranean ? cutawayHandoffPlayer === player : cameraMix > 0));
     const mix = active ? cameraMix : 0;
     const showRampMarkers = active && cameraMix > 0.5;
@@ -7205,9 +7207,9 @@
     } else { hud.toast("That destination is unavailable."); return "That destination is unavailable."; }
     BL.scene.updateWorld(root);
     let found = false;
-    // Mouth approaches need room on both axes: a prop can block the whole
-    // original arrival row, or its trailing camera, without blocking the cave.
-    const depths = name === "lab" || name === "mirror" || name === "factory" || name === "bca" ? NAVIGATION_DEPTHS : NAVIGATION_SAME_DEPTH;
+    // Mouth approaches and the Bifrost stair foot need room on both axes:
+    // a wide body can overlap the whole arrival row but fit farther forward.
+    const depths = name === "lab" || name === "mirror" || name === "factory" || name === "bca" || name === "bifrost" ? NAVIGATION_DEPTHS : NAVIGATION_SAME_DEPTH;
     arrivals: for (const depth of depths) for (const offset of NAVIGATION_SIDES) {
       if (randomPile) { if (!pileRespawnSpot(player, p)) continue; }
       else {

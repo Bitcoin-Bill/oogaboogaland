@@ -5705,7 +5705,9 @@ const hubDestinationNames = { name: "destination accessible names", why: "regres
     })()`);
     const tree = await b.send("Accessibility.getFullAXTree");
     rows.push({ ...row, expected: label, named: tree.result.nodes.some(node => node.role?.value === "button"
-      && node.name?.value.includes(label) && /map/i.test(node.name.value)) });
+      // CSS paints the destination in uppercase; Chrome's labelled-by name
+      // contains that rendered text rather than the title-case DOM source.
+      && node.name?.value.includes(label.toUpperCase()) && /map/i.test(node.name.value)) });
   }
   record("destinations: each Map click advances through all twelve places and wraps to Pile, with matching accessible labels including LN Factory and TC Sphere and no picker or reset button",
     rows.every(row => row.label === row.expected && row.action === "mode-preset" && row.detached && row.removed && row.noPopup && row.named), JSON.stringify(rows));
@@ -5812,7 +5814,8 @@ const hubMapNavigation = { name: "hub map navigation", why: "regression: choosin
           resetKept, resetChanged: error(key.eye.concat(key.target), keyBefore.eye.concat(keyBefore.target)) > 1e-5 });
       }
     } finally { net.me = account; net.backend = backend; }
-    P.goPreset("pile"); P.possess(a); if (P.aiming) P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
+    P.goPreset("pile"); P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+    if (P.aiming) P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
     H.setDetachedView("pile"); const beforeRefusal = snapshot(), grabbedBy = a.grabbedBy;
     let refusal;
     try {
@@ -5822,7 +5825,8 @@ const hubMapNavigation = { name: "hub map navigation", why: "regression: choosin
       a.grabbedBy = grabbedBy; map.click();
       refusal = { blocked, nextDestination: label.textContent === "Mirror" && P.player === a, selected: P.player === a, toast: document.getElementById("toast").textContent };
     } finally { a.grabbedBy = grabbedBy; }
-    P.goPreset("pile"); P.possess(a); if (P.aiming) P.modeAction("mode-toggle");
+    P.goPreset("pile"); P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+    if (P.aiming) P.modeAction("mode-toggle");
     H.setDetachedView("pile"); map.click(); B.advance(0.1, 1 / 60);
     P.hooks.onOrbit(10, 0); P.hooks.onZoom(1.05); B.advance(0.1, 1 / 60);
     const looking = label.textContent === "Lab";
@@ -6532,7 +6536,9 @@ const AK_STATE = `(() => { const w = window.__ooga.crew.player.weapon; return { 
 const hubAk = { name: "hub ak", why: "regression: R did nothing unless the player was aiming, so an AK emptied with V could not swap in its spare", run: async (b) => {
   const barrel = await b.evaluate(nextTo("barrel", 3, -1.34, 0.12));
   await tapKey(b, "2");
-  await b.evaluate(`window.__ooga.advance(0.4, 1 / 60)`);
+  // Selecting a weapon preserves carry/combat. Establish shoulder combat
+  // before applying shoulder mouse deltas, and let its entry camera settle.
+  await b.evaluate(`(() => { const B = __ooga, P = B.pilot; if (!P.aiming) P.modeAction("mode-toggle"); if (P.birdsEye) P.hooks.onZoom(0.001); B.advance(1, 1 / 60); })()`);
   // The fixed pitch missed the barrel's centre, so random shot spread could make
   // all six rounds miss. Centre its real mesh through ordinary shoulder input.
   const aimed = await b.evaluate(`(() => {
@@ -6557,7 +6563,7 @@ const hubAk = { name: "hub ak", why: "regression: R did nothing unless the playe
   const burst = async () => { await tapKey(b, "v"); await b.evaluate(`window.__ooga.advance(0.7, 1 / 60)`); return b.evaluate(AK_STATE); };
   const one = await burst(), two = await burst(), dry = await burst();
   const hit = await b.evaluate(`window.__target.broken || window.__target.health < ${barrel}`);
-  // R must reload while carrying: the URL currently starts in shoulder aim.
+  // R must reload while carrying after the explicitly aimed firing checks.
   await b.evaluate(`(() => { const B = __ooga; if (B.pilot.aiming) B.pilot.modeAction("mode-toggle"); B.advance(0.3, 1 / 60); })()`);
   await tapKey(b, "r");
   await b.evaluate(`window.__ooga.advance(0.8, 1 / 60)`);
@@ -6776,8 +6782,10 @@ const combatTabProbe = (B, actor, gorilla, pointer) => {
       const shift = pending ? "ShiftLeft" : "ShiftRight", location = pending ? 1 : 2;
       key("keydown", "w", "KeyW"); key("keydown", "Shift", shift, { location });
       pointer("pointerdown", 0, 1); P.readInput(0.05);
-      // The Ooga scenario starts with weapon=1 and retains that melee slot.
-      const held = controls.read().y > 0 && (gorilla ? actor.motion.poundCharge > 0 : actor.weapon.meleeHeld);
+      // A pending Ooga overhead lock consumes the capture click before it
+      // reaches combat. Soft focus still exercises cancellation of a charge.
+      const held = controls.read().y > 0;
+      const attackPrepared = gorilla ? actor.motion.poundCharge > 0 : pending ? !actor.weapon.meleeHeld : actor.weapon.meleeHeld;
       const first = key("keydown", "Tab", "Tab", { shiftKey: true });
       const stopped = quiet() && !focused() && (gorilla ? !actor.motion.poundCharge && !actor.drive.x && !actor.drive.z && !actor.drive.run
         : !actor.weapon.meleeHeld && !actor.weapon.triggerHeld);
@@ -6795,7 +6803,7 @@ const combatTabProbe = (B, actor, gorilla, pointer) => {
       pointer("pointerup", 0, 0);
       if (reject) { const failed = reject; reject = null; failed(); }
       const after = P.captureControl({});
-      rows.push({ kind, view: before.view, held, first, stopped, heldPointer, repeat, blockedRepeat, blockedShift, native, noShift, repress,
+      rows.push({ kind, view: before.view, held, attackPrepared, first, stopped, heldPointer, repeat, blockedRepeat, blockedShift, native, noShift, repress,
         requested, lateSafe: !focused(), kept: P.player === actor && after.view === before.view && after.combat === before.combat
           && after.side === before.side && (gorilla ? actor.smashSerial : actor.weapon.shotsFired) === serial });
     }
@@ -8515,7 +8523,10 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
       P.navigate({ position: { x: 6, y: H.basement.floor, z: -2 }, yaw: Math.PI, pitch: 0.3, dist: 8 }); B.advance(0.5, 1 / 60);
       P.hooks.onZoom(100); B.advance(1, 1 / 60); aim(); const fromHeight = P.birdsEyeHeight;
       P.hooks.onZoom(0.001);
-      let frames = 0; for (; frames < 120 && P.mode === "birds-eye"; frames++) { pointAtLower(); B.advance(1 / 60, 1 / 60); }
+      // A stationary pointer retains the exact object hit as zoom carries its
+      // projection beyond the screen. Exercise moving edge input separately
+      // below: asking for an off-screen pixel deliberately changes that aim.
+      let frames = 0; for (; frames < 120 && P.mode === "birds-eye"; frames++) B.advance(1 / 60, 1 / 60);
       B.advance(0.06, 1 / 60);
       const anchor = P.assistedTarget ? { x: P.assistedTarget.x, y: P.assistedTarget.y, z: P.assistedTarget.z } : null;
       const reticle = document.getElementById("weapon-reticle"), handoff = { mode: P.mode, mix: P.birdsEyeMix, frames, fromHeight, anchor,
@@ -8557,7 +8568,32 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
         closeAim.push({ fresh, found, mode, error, exitFound, exitMode: P.mode, exitError });
       }
       P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60);
-      return { far, farBefore, farAfter, near, firearm, jump, handoff, closeAim, floor: H.basement.floor, beforeMelee, afterMelee, afterShot,
+      P.navigate({ position: { x: 6, y: H.basement.floor, z: -2 }, yaw: Math.PI, pitch: 0.3, dist: 8 }); B.advance(0.5, 1 / 60);
+      // The close-view probe deliberately turned the aim. Restore the same
+      // exact overhead bearing before replaying the original vertical input.
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "n" })); window.dispatchEvent(new KeyboardEvent("keyup", { key: "n" })); B.advance(1.5, 1 / 60);
+      P.hooks.onOrbit(0, halfHeight - parseFloat(reticle.style.top));
+      for (let i = 0; i < 3; i++) P.hooks.onOrbit(-reach * Math.tan(Math.PI / 3), 0);
+      B.advance(1.5, 1 / 60);
+      P.hooks.onZoom(100, {}); B.advance(1, 1 / 60); aim(); P.hooks.onZoom(0.001, {});
+      const edge = { frames: 0, offscreen: 0, clamped: true };
+      for (; edge.frames < 120 && P.mode === "birds-eye"; edge.frames++) {
+        // Retain the original per-frame input sequence, including requests
+        // above the viewport as the continuous zoom lowers the overhead eye.
+        pointAtLower();
+        const projected = B.renderer.project(lower.node.position.x, lower.node.position.y, lower.node.position.z, {});
+        if (projected.y < 0) edge.offscreen++;
+        B.advance(1 / 60, 1 / 60);
+        if (P.birdsEye) edge.clamped &&= parseFloat(reticle.style.top) >= 0;
+      }
+      B.advance(0.06, 1 / 60);
+      const edgeAnchor = P.assistedTarget && { x: P.assistedTarget.x, y: P.assistedTarget.y, z: P.assistedTarget.z };
+      edge.mode = P.mode; edge.height = edgeAnchor?.y;
+      B.advance(1, 1 / 60);
+      const edgeHeld = P.assistedTarget, edgeScreen = edgeAnchor && B.project(edgeAnchor.x, edgeAnchor.y, edgeAnchor.z, {});
+      edge.targetError = edgeAnchor && edgeHeld ? Math.hypot(edgeAnchor.x - edgeHeld.x, edgeAnchor.y - edgeHeld.y, edgeAnchor.z - edgeHeld.z) : Infinity;
+      edge.centerError = edgeScreen ? Math.hypot(edgeScreen.x - B.renderer.size.width / 2, edgeScreen.y - B.renderer.size.height / 2) : Infinity;
+      return { far, farBefore, farAfter, near, firearm, jump, handoff, closeAim, edge, floor: H.basement.floor, beforeMelee, afterMelee, afterShot,
         upperHealth: upper.breakable.health, shots, mode };
     } finally {
       B.crew.stopBurst(a); B.crew.selectWeapon(1, a);
@@ -8572,6 +8608,9 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
     && result.handoff.targetError < 1e-6 && result.handoff.centerError < 0.1 && result.handoff.shots > 0 && result.handoff.after < result.handoff.before, JSON.stringify(result.handoff));
   record("combat zoom: object points stay under the crosshair in both shoulder/first-person directions, including after new first-person aim",
     result.closeAim.length === 2 && result.closeAim.every(row => row.found && row.mode === "first-person" && row.error < 0.1 && row.exitFound && row.exitMode === "shoulder" && row.exitError < 0.1), JSON.stringify(result.closeAim));
+  record("combat zoom: continued pointer input above the viewport clamps to its edge and retains the resulting same-floor point through shoulder entry", result.edge.offscreen > 0 && result.edge.clamped
+    && result.edge.mode === "shoulder" && result.edge.frames > 0 && result.edge.frames < 45 && Math.abs(result.edge.height - result.floor) < 0.05
+    && result.edge.targetError < 1e-6 && result.edge.centerError < 0.1, JSON.stringify(result.edge));
 } };
 
 // ---- Phones ----
@@ -9436,7 +9475,12 @@ const bifrostWalking = { name: "bifrost walking", why: "rule: W A S D walk the v
   record("bifrost portrait: holding releases the Ooga without leaving the chamber", released);
 } };
 const bifrostExit = { name: "bifrost exit", why: "playthrough: walking back out through the field returns the same Ooga to the bridge's end, and Escape leaves the chamber", run: async (b) => {
-  await b.evaluate(`(() => { const B = window.__ooga, E = window.BL.bifrostModels.ENTRY; B.pilot.navigate({ position: { x: 0, y: 0, z: E.field - 2.2 }, target: { x: 0, y: 1, z: E.field + 4 }, yaw: Math.PI, pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); })()`);
+  // ONLY may omit the entrance/walking steps on this shared hub page.
+  if (await b.evaluate(`__ooga.scene !== "bifrost"`)) await bifrostEntrance.run(b);
+  await b.evaluate(`(() => { const B = window.__ooga, E = window.BL.bifrostModels.ENTRY;
+    if (B.scene !== "bifrost") throw new Error("Bifrost exit fixture did not enter its chamber");
+    const cave = B.cavemen.get("portlandhodl"); if (B.pilot.player !== cave) B.pilot.possess(cave);
+    B.pilot.navigate({ position: { x: 0, y: 0, z: E.field - 2.2 }, target: { x: 0, y: 1, z: E.field + 4 }, yaw: Math.PI, pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); })()`);
   await walkToward(b, 0, 1, 0.8);
   const back = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "hub"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const p = B.crew.player && B.crew.player.root.position, a = B.bifrost && B.bifrost.site.arrival; return { scene: B.scene, ooga: B.crew.player ? B.crew.player.traits.name : null, fromArrival: p && a ? +Math.hypot(p.x - a.x, p.z - a.z).toFixed(1) : null }; })()`);
   await tourGo(b, "bifrost");
@@ -12252,6 +12296,11 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       // Camera-only updates above do not finish the preceding charged smash.
       // Travel is tested from an idle body, after the world advances its recovery.
       P.cancelInput(); B.advance(2, 1 / 60);
+      // The earlier combat probes leave NPCs crowding both cave approaches.
+      // This matrix measures successful travel and camera translation, so
+      // isolate it from that traffic; restore every actor before continuing.
+      const mapTraffic = B.crew.list.map(cave => [cave, cave.root.visible]);
+      for (const [cave] of mapTraffic) cave.root.visible = false;
       const xyz = p => [p.x, p.y, p.z], error = (a, b) => Math.max(...a.map((n, i) => Math.abs(n - b[i])));
       const mapState = () => ({ actor: xyz(e.root.position), eye: xyz(B.camera.position), target: xyz(B.camera.target), view: P.view, combat: P.combat, controlled: P.player === e && e.controlled });
       try {
@@ -12278,7 +12327,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
             arrived, refusal: P.travelRefusal(), toast: document.getElementById("toast").textContent, label: label.textContent,
             delta, resetKept, resetChanged: error(keyboard.eye.concat(keyboard.target), keyboardBefore.eye.concat(keyboardBefore.target)) > 1e-5 });
         }
-      } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
+      } finally {
+        for (const [cave, visible] of mapTraffic) cave.root.visible = visible;
+        BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore;
+      }
       // Restore the prior fixture's combat overhead state for its Escape chain.
       if (P.view === "first-person") P.zoom(2, {});
       if (P.view === "shoulder") P.zoom(2, {});
@@ -12914,7 +12966,9 @@ scene("poker", { opts: PHONE_SIZE, steps: [phone("poker", { card: '[data-intro="
   if (process.env.POKER_SHOTS) await b.screenshot(join(process.env.POKER_SHOTS, "poker-phone.png"));
 } }] });
 scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubAk, hubMelee, hubJetpack] });
-scene("hub", { label: "birds-eye combat", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEye] });
+// Native pointer-lock assertions need sole focus; another browser lane can
+// steal capture and spend this long scenario's deadline waiting for it back.
+scene("hub", { label: "birds-eye combat", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", exclusive: true, steps: [hubBirdsEye] });
 scene("hub", { label: "birds-eye combat projection and targets", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeProjection, hubBirdsEyeTargets, hubCombatReplay] });
 scene("hub", { label: "birds-eye lower floors", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeFloors] });
 scene("hub", { label: "mirror", steps: [hubJumbotron, hubMatrix, hubMirror] });
@@ -13475,14 +13529,14 @@ for (const backend of ["webgl2", "canvas2d"]) scene("dsb", { label: `dsb land ${
     }
     const done = E.phase, mode = B.pilot.mode, same = B.pilot.player === a;
     E.skip(); const p = { ...B.camera.position }; B.advance(1, 1 / 60);
-    return { initial, before, forward, reverse, arrival, done, mode, same, clearance, samples: samples.length,
+    return { initial, before, forward, reverse, arrival, done, mode, combat: B.pilot.aiming, same, clearance, samples: samples.length,
       travel: Math.max(...samples.map(p => Math.hypot(p.x - start.x, p.z - start.z))),
       drift: Math.hypot(B.camera.position.x - p.x, B.camera.position.y - p.y, B.camera.position.z - p.z),
       controlsClear: controls.read().y === 0, arrivalClass: document.body.classList.contains("dsb-arrival") };
   })()`);
-  record("dsb entrance " + backend + ": real movement reverses and arrival tours above terrain before returning shoulder control",
+  record("dsb entrance " + backend + ": real movement reverses and arrival tours above terrain before returning carry/orbit control",
     state.initial === "tunnel" && state.before === 0 && state.forward > .2 && state.reverse < state.forward
-    && state.arrival === "arrival" && state.done === "done" && state.mode === "shoulder" && state.same
+    && state.arrival === "arrival" && state.done === "done" && state.mode === "orbit" && !state.combat && state.same
     && state.clearance >= 1 && state.samples >= 30 && state.travel > 60 && state.drift < .01 && state.controlsClear && !state.arrivalClass, JSON.stringify(state));
   await dsbExit(b);
   record("dsb land " + backend + ": Portara returns to Bifrost with a clean console", await b.evaluate('__ooga.scene === "bifrost" && !__ooga.transitioning && !document.body.classList.contains("dsb-active")') && b.logs.length === 0, JSON.stringify(await b.evaluate('({scene:__ooga.scene,transitioning:__ooga.transitioning,gate:__ooga.dsb?.gate.state,receiving:__ooga.dsb?.gate.receiving,logs:[]})')) + b.logs.join(" | "));
@@ -16459,6 +16513,21 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     }
     record("DSB plaza: all canonical bodies clear transformed fronts and travel lanes with old footprints removed", layout.length === CAST && layout.every(row => row.clear), JSON.stringify(layout));
     crew.dispose();
+  }
+  {
+    // Regression: a player's hit on an Ooga referenced an unbound effects
+    // object and threw before completing the damage/recovery update.
+    const root = BL.scene.createNode(), noop = () => {}, hits = [];
+    const crew = BL.crew.create({ root, world: { level: 0 }, playerName: "portlandhodl", viewYaw: 0, input: { add: noop, remove: noop }, hud: { setRosterRow: noop },
+      game: { state: { assignments: {}, inventory: [] } }, groundAt: () => 0, walkable: () => true,
+      fx: { say: noop, zzzAt: noop, burst: noop, puff: noop, spawnParticle: noop, damageNumber: (x, y, z, amount) => hits.push({ x, y, z, amount }) } });
+    try {
+      const cave = crew.cavemen.values().next().value; cave.root.visible = true;
+      const before = cave.health.value, silent = crew.damage(cave, 1), shown = crew.damage(cave, 2, true), rejected = crew.damage(cave, 0, true);
+      record("Ooga damage numbers: player hits use the scene effects, NPC hits stay silent and both complete health updates", silent && shown && !rejected
+        && cave.health.value === before - 12 && cave.health.delay > 0 && hits.length === 1 && hits[0].amount === 8
+        && hits[0].y > cave.root.position.y - cave.baseY + cave.bodyHeight, JSON.stringify({ before, health: cave.health, hits }));
+    } finally { crew.dispose(); }
   }
   const rockGuides = BL.rockGuides.create({ island, sealed: [] });
   globalThis.__ooga = { island, headquarters: { rockGuides } };
