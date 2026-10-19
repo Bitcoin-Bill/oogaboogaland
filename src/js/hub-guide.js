@@ -490,7 +490,7 @@
       rig.dispose();
       panel.remove();
     };
-    return { root: rig.root, state, update, escape, tap, dispose, liveGeometry: rig.liveGeometry };
+    return { root: rig.root, state, update, escape, tap, dispose, liveGeometry: rig.liveGeometry, get holding() { return state.holding; } };
   };
   BL.hubGuide = { create, NAME, LINES, STOPS, NEWS, freshAfter, legsOf };
 })();

@@ -6658,7 +6658,7 @@
       TAP_RAY.ox + TAP_RAY.dx * depth, TAP_RAY.oy + TAP_RAY.dy * depth, TAP_RAY.oz + TAP_RAY.dz * depth);
   };
   const onTap = (hit, p) => {
-    if (factoryDeparting || bifrostDeparting) return;
+    if (factoryDeparting || bifrostDeparting || islandGuide.holding) return;
     if (gorillaBehindBillboard(hit, p)) return;
     if (debugMovementTap(hit, p)) return;
     if (!hit) return;
@@ -10518,6 +10518,8 @@
       return;
     }
     if (e.key === "Escape" && islandGuide.escape()) { e.preventDefault(); return; }
+    // While Tess's tour holds the view the island's keys wait, actor switches (T) among them; Enter and → are hers.
+    if (islandGuide.holding) return;
     if (e.key === "Escape" && debugSelectedGorilla) { selectDebugGorilla(null); e.preventDefault(); return; }
     if (e.key === "Escape") {
       if (!e.repeat) { if (clankerPlay.active) clankerPlay.escape(); else pilot.escape(); }
@@ -11226,15 +11228,17 @@
       ...pilot.hooks,
       hoverIgnore: () => clankerPlay.firstPerson ? clankerPlay.player : pilot.hooks.hoverIgnore(),
       onOrbit: (dx, dy) => {
+        if (islandGuide.holding) return;
         if (clankerPlay.active) clankerPlay.orbit(dx, dy);
         else pilot.hooks.onOrbit(dx, dy);
       },
       onZoom: (factor, gesture, px, py) => {
+        if (islandGuide.holding) return;
         if (clankerPlay.active) clankerPlay.zoom(factor, gesture);
         else pilot.hooks.onZoom(factor, gesture, px, py);
       },
       onDoubleTap: (hit, p) => {
-        if (factoryDeparting || bifrostDeparting) return;
+        if (factoryDeparting || bifrostDeparting || islandGuide.holding) return;
         if (gorillaBehindBillboard(hit, p)) return;
         if (hit && hit.owner.kind === "clanker") {
           if (selectGorilla(hit.owner.entry)) selectDebugGorilla(null);
@@ -11249,11 +11253,11 @@
     entering = false;
     enteringTween = null;
     now = 0;
-    hud.onPreset(name => { if (!factoryDeparting && !bifrostDeparting) navigate(name); });
+    hud.onPreset(name => { if (!factoryDeparting && !bifrostDeparting && !islandGuide.holding) navigate(name); });
     hud.setDetachedView("pile");
     hud.setDestinations(["pile", "lab", "mirror", "underground", "basement", "mempool", "factory", "arcade", "bca", "gate", "bifrost", "timechain"]);
     hud.onAction((action, value) => {
-      if (factoryDeparting || bifrostDeparting) return false;
+      if (factoryDeparting || bifrostDeparting || islandGuide.holding) return false;
       if (action === "mode-retake") {
         if (pilot.player || clankerPlay.active) return;
         const last = hud.retakeActor;
