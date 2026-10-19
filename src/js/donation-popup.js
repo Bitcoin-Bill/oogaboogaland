@@ -80,6 +80,13 @@
       else input.setSelectionRange(input.value.length, input.value.length);
       track();
     };
+    // The details the invoice holds back in the fields, after a save the visitor gave up on.
+    const restoreDetails = (value) => {
+      clearTimeout(saveTimer); saveTimer = 0;
+      handle.value = value.handle; message.value = value.message;
+      track();
+      if (fieldFlow) fieldFlow.detailsChanged();
+    };
     const save = () => {
       clearTimeout(saveTimer); saveTimer = 0;
       return fieldFlow ? fieldFlow.saveDetails() : Promise.resolve({});
@@ -137,7 +144,7 @@
       if (dialog.open) return;
       flow = BL.factoryKiosk.create({
         real: true, outerClose: true, link: () => location.origin + "/lightning",
-        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed,
+        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails,
         closeDetails: () => detachDetails(flow), detailsState,
         invoice: (sats, value) => donations.invoice({ sats, ...value }),
         note: (request, value, changedHandle) => donations.note(request, value.message, changedHandle ? value.handle : undefined),
@@ -193,7 +200,7 @@
       for (const type of ["keyup", "select", "focusin", "focusout"]) fields.removeEventListener(type, track);
       closeButton.removeEventListener("click", close); canvas.removeEventListener("click", tap);
     };
-    return { open, close, receive, seen, dispose, defaults, details, typing: () => typed, focusDetails, attachDetails, detachDetails, detailsState };
+    return { open, close, receive, seen, dispose, defaults, details, typing: () => typed, restoreDetails, focusDetails, attachDetails, detachDetails, detailsState };
   };
   BL.donationPopup = { create };
 })();

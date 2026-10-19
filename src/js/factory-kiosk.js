@@ -10,11 +10,12 @@
 // pushes, `{ id, sats, handle, message, at }` under the invoice's id. In real mode (`hooks.real`, the page's API in
 // use) the amount, once confirmed, asks the API for its invoice at once (`hooks.invoice`): the quote shows the API's
 // bananas and rate, the invoice its bolt11 as a `lightning:` QR and its own expiry, and nothing settles but the
-// socket. Both kiosks show who the tip is from and its message on the quote, and edit them on a screen of their own
-// (`details`): the name, initially the signed-in login or anon, and the message, typed into the page's two hidden fields
-// (`hooks.typing()`) and drawn here in the screen's letters with a caret. Changing them updates that invoice in place,
-// keeping its payment code, and the screen waits for that save before it closes, keeping it and its error up when the
-// save fails. Receipt-priced invoices
+// socket. Both kiosks show who the tip is from and its message on the amount and the quote, and edit them on a screen
+// of their own (`details`): the name, initially the signed-in login or anon, and the message, typed into the page's two
+// hidden fields (`hooks.typing()`) and drawn here in the screen's letters with a caret. From the amount, the next CONTINUE
+// asks for the invoice with them; from the quote, they update that invoice in place, keeping its payment code, and the
+// screen waits for that save before it closes. A failed save keeps it up with its error, to try again or to keep the
+// details the invoice holds (`hooks.restoreDetails`). Receipt-priced invoices
 // follow the live rate until full payment is detected; legacy invoices retain their quoted rate. Either
 // way the scene hands every donation back through `receive(id, bananas, handle)`, which takes the one this invoice is
 // waiting for and thanks the donor it names. The scene holds that tip's bananas until the visitor asks to watch, or
@@ -264,7 +265,8 @@
   // reply or `{ error }`, open(), the API's word on whether donations are open (null before it has said),
   // testNetwork(), the test network payments are on or "" for mainnet, details() for the editable handle/message,
   // startDetails() for the shared fields, editDetails(field) to type in "handle" or "message" (null to stop), typing()
-  // for what is typed there ({ handle, message, field, start, end, max }), outerClose when the popup supplies its own X,
+  // for what is typed there ({ handle, message, field, start, end, max }), restoreDetails(value) to put saved details
+  // back in the fields, outerClose when the popup supplies its own X,
   // onchain(request), which resolves to the API's `{ address, sats }` or `{ error }`, and
   // waitFor(id) for an invoice left with its on-chain address shown and nothing received.
   const create = (hooks) => {
@@ -475,6 +477,11 @@
         if (a === "name" || a === "message") return hooks.editDetails(a === "name" ? "handle" : "message");
         // Edits to an invoice are saved before the screen that opened them shows them: a failed save keeps this one,
         // its error up, for the visitor to retry (Enter, or DONE) before paying.
+        // Back after a failed save gives up on the edits: the fields take the details the invoice holds again.
+        if (a === "back" && flow.detailsError && flow.savedDetails && hooks.restoreDetails) {
+          hooks.restoreDetails(flow.savedDetails);
+          return set(detailsFrom);
+        }
         if (a === "done" || a === "back") {
           if (!hooks.details || !onInvoice()) return set(detailsFrom);
           return flow.saveDetails().then(() => {
@@ -538,9 +545,8 @@
     };
     // Keys, as the screen's buttons: Enter or Space the main one, Escape back (or out, from the attract screen), the
     // digits, Backspace and Delete on the keypad, A to edit the name and message on the amount or a quote, O to pay
-    // on-chain on a quote,
-    // C to copy the invoice or on-chain address, and R to replace an expired invoice. While a field has the typing, the
-    // page's fields take the keys instead.
+    // on-chain on a quote, C to copy the invoice or on-chain address, and R to replace an expired invoice. While a field
+    // has the typing, the page's fields take the keys instead.
     flow.key = (e) => {
       const k = e.key, s = flow.state;
       if (k === "Escape") return s === "idle" ? hooks.close() : act("back");
@@ -824,7 +830,10 @@
         buttons.push({ x: 30, y: 58, w: 340, h: 40, act: "name" });
         const name = `@${t.handle}`, ns = width(name, 2) <= 324 ? 2 : 1, ny = 58 + Math.round((40 - GH * ns) / 2), step = (GW + TR) * ns;
         if (t.handle) write(g, name, 38, ny, ns, INK.gold);
-        else write(g, "@ANON", 38, ny, ns, INK.dim);
+        else {
+          write(g, "@", 38, ny, ns, INK.gold);
+          if (!named) write(g, "ANON", 38 + step, ny, ns, INK.dim);
+        }
         if (named && t.end > t.start) {
           g.fillStyle = INK.amber;
           g.fillRect(38 + (t.start + 1) * step - ns, ny - ns, (t.end - t.start) * step + ns, (GH + 2) * ns);
@@ -848,7 +857,10 @@
           : flow.detailsDirty ? "CHANGES SAVE AUTOMATICALLY" : flow.invoice && flow.savedDetails ? "SAVED WITH YOUR INVOICE" : "";
         writeFit(g, word, W / 2, 222, 1, flow.detailsError ? INK.red : INK.dim, 340, "center");
         write(g, "YOUR NAME AND MESSAGE GO WITH YOUR TIP", W / 2, 244, 1, INK.dim, "center");
-        button(30, 326, 340, 52, "DONE", "primary", "done");
+        if (flow.detailsError && onInvoice()) {
+          button(30, 326, 160, 52, "< KEEP SAVED", "", "back");
+          button(198, 326, 172, 52, "TRY AGAIN", "primary", "done");
+        } else button(30, 326, 340, 52, "DONE", "primary", "done");
         closeButton();
       } else if (s === "invoice" || s === "waiting") {
         const waiting = s === "waiting";

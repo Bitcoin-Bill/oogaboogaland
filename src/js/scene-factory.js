@@ -762,15 +762,15 @@
     }
   };
   // At the kiosk, keys go to its screen once the view is in; watching, any key walks on. Space and Backspace never
-  // reach the page, nor does any key the screen takes, so one that moves the typing into a field (A opens the name)
-  // never types itself there. Keys with a modifier are left to the browser.
+  // reach the page, nor does a character key the screen takes, so one that moves the typing into a field (A opens the
+  // name) never types itself there. Keys with a modifier, and the browser's own (F5, F11), are left to the browser.
   const boothKey = (s, e) => {
     const b = s.booth;
     if (e.metaKey || e.ctrlKey || e.altKey) return false;
     if (e.key === " " || e.key === "Backspace") e.preventDefault();
     if (b.mode === WATCHING) leaveBooth(s);
     else if (b.mode === AT_KIOSK && b.t >= 1) {
-      e.preventDefault();
+      if (e.key.length === 1) e.preventDefault();
       b.flow.key(e);
     }
     return true;
@@ -839,6 +839,7 @@
       closeDetails: () => BL.donationPopup.detachDetails(b.flow),
       editDetails: (field) => BL.donationPopup.focusDetails(field),
       typing: () => BL.donationPopup.typing(),
+      restoreDetails: (value) => BL.donationPopup.restoreDetails(value),
       detailsState: (flow) => BL.donationPopup.detailsState(flow),
       invoice: (sats, value) => donations.invoice({ sats, ...value }),
       note: (request, value, changedHandle) => donations.note(request, value.message, changedHandle ? value.handle : undefined),

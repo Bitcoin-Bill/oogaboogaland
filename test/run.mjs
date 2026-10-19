@@ -4933,6 +4933,15 @@ const donationClientChecks = async () => {
   const failedStays = popupFlow.state === "details" && !!popupFlow.detailsError && !elements.get("donation-screen").focused;
   await popupFlow.key({ key: "Enter" });
   const detailsDone = failedStays && popupFlow.state === "quote" && notes.at(-1).message === "kept until saved" && elements.get("donation-screen").focused;
+  popupFlow.key({ key: "A" });
+  noteFails = 1;
+  elements.get("donation-message").value = "never saved";
+  elements.get("donation-fields").listeners.get("input")();
+  await popupFlow.key({ key: "Enter" });
+  const failedAgain = popupFlow.state === "details" && !!popupFlow.detailsError;
+  popupFlow.key({ key: "Escape" });
+  const keptSaved = failedAgain && popupFlow.state === "quote" && !popupFlow.detailsError
+    && elements.get("donation-message").value === "kept until saved" && popup.details().message === "kept until saved";
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
   elements.get("donation-fields").listeners.get("input")();
@@ -4952,8 +4961,8 @@ const donationClientChecks = async () => {
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
-  record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice, Tab goes between its fields, a failed save keeps the screen with its error, and a saved one goes back to the quote with the keys on the popup's screen, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
-    anonymous && signedIn && edited && detailsDone && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
+  record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice, Tab goes between its fields, a failed save keeps the screen with its error until it is tried again or given up on for the details the invoice holds, and a saved one goes back to the quote with the keys on the popup's screen, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
+    anonymous && signedIn && edited && detailsDone && keptSaved && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, keptSaved, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
