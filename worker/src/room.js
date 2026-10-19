@@ -366,11 +366,18 @@ export class Room extends DurableObject {
     for (const p of this.players.values()) {
       const peers = desired.get(p.id) || [];
       const gens = peers.map((id) => this.players.get(id).voice.gen || 0);
-      const sig = peers.map((id, i) => `${id}:${gens[i]}`).join(",");
+      // Receiving attendees do not publish tracks. Their receive sessions, rather
+      // than the list of speakers this player hears, keep a Studio microphone live.
+      let listeners;
+      if (p.zone === STUDIO_ZONE) {
+        listeners = 0;
+        for (const q of this.players.values()) if (q !== p && q.zone === STUDIO_ZONE && q.voice && q.voice.sub) listeners++;
+      }
+      const sig = peers.map((id, i) => `${id}:${gens[i]}`).join(",") + (listeners === undefined ? "" : `|${listeners}`);
       if (p.sent === sig) continue;
       p.sent = sig;
       p.ws.serializeAttachment(this.attachment(p));
-      this.send(p.ws, { t: "voice", peers, gens });
+      this.send(p.ws, { t: "voice", peers, gens, ...(listeners === undefined ? {} : { listeners }) });
     }
   }
 
@@ -425,6 +432,9 @@ export class Room extends DurableObject {
         if (!current() || (kind === "pub" && !mayPublish())) return json({ error: "connection or permission changed" }, 409);
         p.voice[kind] = sessionId;
         if (kind === "pub") p.voice.track = p.voice.pending = null;
+        // A restarted client cleared its local list, even if the room's list
+        // and audience count have not changed since its previous receiver.
+        if (kind === "sub") p.sent = null;
         p.ws.serializeAttachment(this.attachment(p));
         this.updateVoice();
         if (was && !p.voice.track) this.voiceState(p);

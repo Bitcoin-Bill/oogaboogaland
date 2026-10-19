@@ -44,7 +44,7 @@
       status.textContent=!connected?"Sign in and connect to join the shared Studio.":state.hostId?`${state.mode} · Host: ${BL.net.remotes.get(state.hostId)?.display||(isHost()?BL.net.state.me?.display:"connected participant")}`:state?.allowedHost?"Session suspended · You can claim the Studio.":"Session suspended · Awaiting an approved host. Host accounts are configured by the operator.";
       if(state?.cleanupPending)status.textContent+=" · Media cleanup pending; permissions revoked";
       q("[data-host]").hidden=!connected||!state.allowedHost;q("[data-claim]").hidden=!!state?.hostId;q("[data-presenter]").hidden=!isHost();
-      mic.disabled=!connected||!state.canSpeak||micRequested;mic.textContent=micRequested?"Joining microphone…":BL.voice.stats.publishing&&!BL.voice.stats.muted?"Mute microphone":"Join conversation";
+      mic.disabled=!connected||!state.canSpeak||micRequested;mic.textContent=micRequested?"Joining microphone…":BL.voice.stats.publishing?BL.voice.stats.muted?"Unmute microphone":"Mute microphone":"Join conversation";
       q("[data-mic-reason]").textContent=micReason();q("[data-mic-error]").textContent=BL.voice.stats.micError||"";
       sound.disabled=!connected;sound.textContent=soundWanted?"Turn Studio sound off":"Enable Studio sound";
       q("[data-retry]").hidden=stage!=="blocked"&&stage!=="error";
@@ -112,7 +112,7 @@
     listen(q("[data-close]"),"click",()=>close());listen(dialog,"cancel",e=>{e.preventDefault();close();});
     listen(sound,"click",()=>{if(soundWanted){soundGeneration++;soundWanted=false;soundEnabled=false;soundAttempt=false;soundFailure="";video.muted=true;BL.voice.stop();reflect();}else void requestSound();});
     listen(q("[data-retry]"),"click",()=>void requestSound());
-    listen(mic,"click",()=>{if(!state?.canSpeak)return;if(BL.voice.stats.publishing&&!BL.voice.stats.muted)BL.voice.dropMic();else{soundWanted=true;soundFailure="";playBlocked=false;micRequested=true;const generation=++micRequestGeneration;void BL.voice.enable().finally(()=>{if(generation===micRequestGeneration){micRequested=false;reconcile();reflect();}});}reflect();});
+    listen(mic,"click",()=>{if(!state?.canSpeak)return;if(BL.voice.stats.publishing){if(BL.voice.stats.muted)BL.voice.toggle();else BL.voice.dropMic();}else{soundWanted=true;soundFailure="";playBlocked=false;micRequested=true;const generation=++micRequestGeneration;void BL.voice.enable().finally(()=>{if(generation===micRequestGeneration){micRequested=false;reconcile();reflect();}});}reflect();});
     listen(q("[data-listen-off]"),"click",()=>{soundGeneration++;soundWanted=false;soundEnabled=false;soundAttempt=false;video.muted=true;BL.voice.stop();reflect();});
     for(const action of ["claim","play","pause","release","raise","lower"])listen(q(`[data-${action}]`),"click",()=>command(action));
     for(const mode of ["presentation","discussion","qa"])listen(q(`[data-${mode}]`),"click",()=>command("mode",{mode}));

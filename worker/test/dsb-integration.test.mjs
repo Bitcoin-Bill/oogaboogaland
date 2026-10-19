@@ -163,6 +163,20 @@ test("Studio receive-only listener hears host but unseated/presentation micropho
   room.sfu.newSession = async () => ({ sessionId: "listener" });
   assert.equal((await call(listener, "session", { kind: "sub" })).status, 200);
   assert.deepEqual(protocol.voicePeers([...room.players.values()], room.studio).get(2), [1]);
+  const hostVoice = () => host.ws.sent.filter(m => m.t === "voice").at(-1);
+  assert.deepEqual(hostVoice().peers, []);
+  assert.equal(hostVoice().listeners, 1, "a receive-only audience must keep the host microphone live");
+  const sent = host.ws.sent.length;
+  room.updateVoice(); assert.equal(host.ws.sent.length, sent, "unchanged listener counts are not rebroadcast");
+  await call(listener, "leave", {});
+  assert.equal(hostVoice().listeners, 0, "the final receiver departure is sent even with no publishers");
+  await call(listener, "session", { kind: "sub" });
+  assert.equal(hostVoice().listeners, 1, "receive-only rejoin updates the speaker's gate");
+  await call(host, "leave", {});
+  const beforeRestart = host.ws.sent.length;
+  await call(host, "session", { kind: "sub" });
+  assert.ok(host.ws.sent.length > beforeRestart, "a fresh receiver must receive its current audience even when the list is unchanged");
+  assert.equal(hostVoice().listeners, 1);
   assert.equal((await call(listener, "session", { kind: "pub" })).status, 403);
   const stale = await room.voiceRequest("session", new Request("https://example.test", { method: "POST", headers: { "x-player-id": "2", "x-room-token": "old-tab" }, body: '{}' }));
   assert.equal(stale.status, 409);
@@ -179,6 +193,78 @@ test("presentation revokes existing publications and subscriptions without trust
   await Promise.all(pending); await room.retryCleanup();
   assert.ok(closed.some(([s, mids]) => s === "speaker-session" && mids.includes("0")));
   assert.ok(closed.some(([s, mids]) => s === "listener-session" && mids.includes("7")));
+});
+
+test("simulated 8/16/32-account Studio sessions preserve audience, moderation, transfer and cleanup", async t => {
+  for (const count of [8, 16, 32]) await t.test(`${count} authenticated fixture accounts; mocked SFU transport`, async () => {
+    const { room, add, call, pending } = studioRoom();
+    const players = Array.from({ length: count }, (_, i) => add(i + 1));
+    const host = players[0], sessions = new Map(); let serial = 0;
+    const settle = async () => { while (pending.length) await Promise.all(pending.splice(0)); await room.retryCleanup(); };
+    room.sfu.newSession = async () => { const sessionId = `fixture-${++serial}`; sessions.set(sessionId, new Map()); return { sessionId }; };
+    room.sfu.newTracks = async (session, body) => {
+      const owned = sessions.get(session);
+      const tracks = body.tracks.map(track => {
+        const mid = track.location === "local" ? track.mid : `r${owned.size}`;
+        owned.set(mid, { ...track, mid, status: "active" });
+        return { ...track, mid };
+      });
+      return { tracks, sessionDescription: { type: "answer", sdp: "simulated SDP; no media transport" } };
+    };
+    room.sfu.closeTracks = async (session, mids) => ({ tracks: mids.map(mid => { const track = sessions.get(session)?.get(mid); if (track) track.status = "inactive"; return { mid }; }) });
+    room.sfu.getSession = async session => ({ tracks: [...(sessions.get(session)?.values() || [])] });
+    const publish = async p => {
+      assert.equal((await call(p, "session", { kind: "pub" })).status, 200);
+      assert.equal((await call(p, "publish", { mid: "0", sdp: "simulated offer" })).status, 200);
+      assert.equal((await call(p, "live", {})).status, 200);
+    };
+    const pull = async p => {
+      const already = new Set(Object.values(p.voice.mids || {}));
+      const ids = protocol.voicePeers([...room.players.values()], room.studio).get(p.id).filter(id => !already.has(id));
+      assert.equal((await call(p, "pull", { ids })).status, 200);
+    };
+    const active = location => [...sessions.values()].flatMap(tracks => [...tracks.values()]).filter(track => track.status === "active" && track.location === location).length;
+    room.studioCommand(host, { action: "claim" });
+    room.studioCommand(host, { action: "mode", mode: "presentation" });
+    for (const p of players) assert.equal((await call(p, "session", { kind: "sub" })).status, 200);
+    await publish(host);
+    for (const p of players) await pull(p);
+    assert.equal(active("remote"), count - 1);
+    const hostState = () => host.ws.sent.filter(m => m.t === "voice").at(-1);
+    assert.equal(hostState().listeners, count - 1);
+    assert.deepEqual(hostState().peers, [], "a host can speak to a wholly receive-only audience");
+    room.studioCommand(host, { action: "mode", mode: "discussion" });
+    for (let i = 1; i < players.length; i++) {
+      const p = players[i], seat = studio.studioSeats[i - 1]; Object.assign(p, seat);
+      room.studioCommand(p, { action: "seat", seat: i - 1 });
+      assert.equal(studio.studioCanSpeak(room.studio, p), true);
+      await publish(p);
+    }
+    for (const p of players) { await pull(p); assert.equal(Object.keys(p.voice.mids).length, count - 1); }
+    assert.equal(active("remote"), count * (count - 1));
+    room.studioCommand(host, { action: "mode", mode: "presentation" }); await settle();
+    assert.equal(active("local"), 1); assert.equal(active("remote"), count - 1);
+    assert.ok(players.slice(1).every(p => !p.voice.pub && !p.voice.track));
+    room.studioCommand(host, { action: "mode", mode: "qa" });
+    const guest = players[1]; room.studioCommand(guest, { action: "raise" }); room.studioCommand(host, { action: "invite", id: guest.id });
+    assert.equal(guest.voice.pub, null, "invitation never publishes without the guest's request");
+    await publish(guest); for (const p of players) await pull(p);
+    room.studioCommand(guest, { action: "lower" }); await settle();
+    assert.equal(active("local"), 1); assert.equal(active("remote"), count - 1);
+    const epoch = room.studio.epoch;
+    room.studioCommand(host, { action: "transfer", id: 3 }); await settle();
+    assert.equal(room.studio.hostId, 3); assert.equal(room.studio.epoch, epoch + 1);
+    assert.ok(players.every(p => !p.voice.pub), "transfer requires fresh microphone consent");
+    await publish(players[2]); for (const p of players) await pull(p);
+    room.leaveStudio(players[2]); await settle();
+    assert.equal(room.studio.mode, "suspended"); assert.equal(active("local"), 0); assert.equal(active("remote"), 0);
+    for (const p of players) assert.equal((await call(p, "leave", {})).status, 200);
+    await settle();
+    assert.ok(room.cleanupJobs.every(job => job.inspect && job.mids.length === 0), "empty sessions retain ownership during the late-allocation inspection window");
+    for (const job of room.cleanupJobs) job.inspectUntil = 0; // Advance beyond the existing bounded inspection window, without sleeping.
+    await room.retryCleanup(); assert.equal(room.cleanupJobs.length, 0);
+    assert.equal(active("local"), 0); assert.equal(active("remote"), 0);
+  });
 });
 
 test("late publication cannot resurrect a revoked microphone and its allocated MID is closed", async () => {

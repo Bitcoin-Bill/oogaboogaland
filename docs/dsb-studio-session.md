@@ -26,6 +26,20 @@ SFU signaling remains server-side with the existing app secret. A per-room-conne
 
 Host departure suspends presentation immediately and pauses the program. No attendee is automatically promoted. An approved host explicitly reclaims the session. Sign-out, account deletion/ban, replacement, zone departure and revoked speaking reconcile server media ownership. Existing other-zone voice keeps its previous speaking rules.
 
+Studio voice snapshots also carry the number of other receive sessions in the room. A receive-only attendee is an audience member even without a published microphone, so a host must not infer that nobody is listening from an empty list of speakers. The client uses the bounded server count for its existing alone gate, preserves personal mute, and clears the count on stop or zone departure. Other voice zones retain their existing behavior. Opening a fresh receiver forces a current voice snapshot even when the publisher list and audience count are unchanged.
+
+The Studio panel can explicitly unmute an existing publication muted through the global voice control. It does not try to recapture a microphone while that publication is already active. Its normal mute action still releases publication and hardware.
+
+## Current implementation verification
+
+The receive-only audience gate, fresh-receiver snapshot and panel-unmute regressions failed on the preceding implementation for their claimed reasons before the corresponding fixes. Coverage extends the existing client lifecycle/controller checks and the Worker receive-only test.
+
+The corrected tree passes 282/282 local checks: 255 unit and 27 browser checks over same-origin HTTP across desktop WebGL2, desktop Canvas2D and a phone-sized WebGL2 viewport. Automatic driver retries were disabled in memory without changing assertions or thresholds. Video decoding/seek, decoded-frame uploads, real caption/transcript loading, sound consent, panel unmute without recapture, Q&A consent and repeated cleanup passed with clean consoles. The Worker suite passes 104/104. `dsb-studio-audience-acceptance.json` records tested source hashes, exact observations and the limits of the synthetic transport.
+
+One Worker scenario runs the real Room handlers with 8, 16 and 32 synthetic authenticated player records and a mocked SFU. It exercises receive-only presentation, all seated participants explicitly publishing in discussion, 56/240/992 directed subscriptions, forced return to presentation, Q&A invitation without automatic publication, question completion, approved host transfer with fresh consent, suspension and cleanup. It checks retained ownership during the existing late-allocation inspection window before advancing that window and requiring complete cleanup. This is simulated state/permission coverage, not live SFU transport, bandwidth, audible output or a measured provider-capacity result.
+
+Production use still needs explicitly approved host/cohost IDs and reviewed content with distribution rights, accurate duration, captions and transcripts. The current scope is synchronized hosted clips with discussion as the initial claimed-session mode; live screen capture is a separate product decision. Live account/SFU termination, audible mixing/echo/ducking, physical iPhone/Android lifecycle and actual 8/16/32-account capacity require the corresponding environment and human/device access. Those requirements do not prevent completing and testing the implementation locally.
+
 ## Rendering and sound
 
 Both WebGL2 and Canvas2D support the same dynamic image surface backed by the video element. WebGL updates the existing texture and avoids per-frame mipmap generation; video surfaces are capped at 1280×720. The native panel remains the accessible fallback. The video has one audio path, avoiding duplicate sound between the panel and the world. Received voice never enters the microphone publication. Existing echo-cancellation/noise-suppression constraints are retained; headphones are recommended for live acceptance.
@@ -40,7 +54,7 @@ Physical iOS/Android sound, background/lock-screen behavior, real multi-account 
 
 Provider contracts: https://developers.cloudflare.com/realtime/sfu/api/ ; https://developers.cloudflare.com/realtime/sfu/get-started/connection-patterns/#stop-forwarding-without-negotiation ; https://developers.cloudflare.com/realtime/sfu/concepts/negotiation/#retry-and-reconnect . Forced closure uses no SDP; inspect individual track results and retain unresolved ownership. Do not retry uncertain creation blindly.
 
-## Verification and remaining acceptance
+## Historical validation and repair record
 
 Final non-browser verification passes: `npm run build:site`, 206/206 client unit checks, 55/55 Worker tests, syntax checks and `git diff --check`. Independent server, client and renderer fallback reviews identified concrete findings that were addressed.
 

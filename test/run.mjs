@@ -15098,7 +15098,7 @@ const netFixture=(BL,response,step=200)=>{
   const voice={setPeers:()=>{},restart:()=>{},stop:()=>{}};
   const context={window:{BL:{characters:BL.characters,contributors:BL.contributors,donations:BL.donations,voice},setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){}},document:{hidden:false,addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)},location:{protocol:"https:",host:"fixture.invalid",search:""},fetch:async(...args)=>{calls++;return response(...args);},AbortSignal,WebSocket:Socket,performance:{now:()=>tick+=step},Date,ArrayBuffer,URLSearchParams};
   runInNewContext(source,context);
-  return {net:context.window.BL.net,sockets,sent,events,advance(ms){tick+=ms;},get calls(){return calls;}};
+  return {net:context.window.BL.net,voice,sockets,sent,events,advance(ms){tick+=ms;},get calls(){return calls;}};
 };
 // Ooga Chat's wire on the page: what it sends, and the lines it hands on (chat.js keeps and shows them).
 // Execute the real chat controller with a small DOM and a controllable acknowledgement clock.
@@ -15197,12 +15197,17 @@ const integrationChecks = async BL => {
   await f.net.start();const ws=f.sockets[0],message=v=>ws.onmessage({data:JSON.stringify(v)});
   message({t:"welcome",you:{id:71},players:[{id:72,login:"peer",body:"w-s-bitcoin",zone:"dsb-svrn",x:1,y:0,z:2,yaw:0}],now:Date.now()});
   f.net.setZone("dsb-studio");f.net.setBody("YellowBrokeIt");f.net.sendPose(-45,40,-43,1);
+  const audienceMessages=[];f.voice.setPeers=(...args)=>audienceMessages.push(args);
+  message({t:"voice",peers:[],gens:[],listeners:2});
+  const studioAudience=audienceMessages.at(-1)[2]===2;
   record("integration network: resolved account, owned body, DSB zone and pose share one room",f.net.state.resolved&&f.sockets.length===1&&f.net.ownCharacter()?.handle==="YellowBrokeIt"&&f.net.mayDrive("w-s-bitcoin",false)!==null&&f.sent.some(m=>m.t==="zone"&&m.name==="dsb-studio")&&f.sent.some(m=>m.t==="body"&&m.name==="YellowBrokeIt")&&f.sent.some(m=>m.t==="pose"&&m.x===-45));
   message({t:"zone",id:72,name:"dsb-outside"});
   record("integration network: remote zones change through the shared wire contract",f.net.remotes.get(72).zone==="dsb-outside");
   message({t:"join",p:{id:71,login:"YellowBrokeIt",body:"YellowBrokeIt",zone:"dsb-outside"}});
   record("integration network: the local identity never becomes a remote",!f.net.remotes.has(71)&&f.net.remotes.size===1);
   f.net.setBody(null);f.net.setZone("scene-bifrost");
+  message({t:"voice",peers:[],gens:[],listeners:2});
+  record("integration network: Studio audience counts reach the microphone gate and are ignored in other zones",studioAudience&&audienceMessages.at(-1)[2]===undefined);
   record("integration network: leaving DSB clears its body and zone",f.sent.at(-2).t==="body"&&f.sent.at(-2).name===null&&f.sent.at(-1).name==="scene-bifrost");
   message({t:"leave",id:72});f.net.dispose();
   record("integration network: disposal clears presence and visibility listeners",f.net.remotes.size===0&&f.events.size===0&&ws.readyState===3);
@@ -16125,6 +16130,13 @@ const studioVoiceLifecycleProof = async () => {
   const drain=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
   const listener=fixture();await listener.voice.listen();await listener.voice.restart();await drain();
   const receiveOnly=listener.gum===0&&listener.voice.stats.enabled&&!listener.voice.stats.publishing&&listener.calls.filter(c=>c.op==="session").every(c=>c.body.kind==="sub");listener.voice.dispose();await drain();
+  const audience=fixture();audience.voice.setPeers([],[],1);await audience.voice.enable();await drain();
+  const receiveOnlyAudience=audience.voice.stats.publishing&&!audience.voice.stats.alone&&audience.streams[0].track.enabled&&audience.gum===1;
+  audience.voice.toggle();audience.voice.setPeers([],[],31);const audienceKeepsMute=audience.voice.stats.muted&&!audience.streams[0].track.enabled;
+  audience.voice.toggle();audience.voice.setPeers([],[],0);const lastListenerLeaves=audience.voice.stats.alone&&!audience.streams[0].track.enabled;
+  audience.voice.setPeers([],[],1);const listenerReturns=!audience.voice.stats.alone&&audience.streams[0].track.enabled&&audience.gum===1;
+  const invalidAudience=[-1,32,NaN,Infinity,"1"].every(value=>{audience.voice.setPeers([],[],value);return audience.voice.stats.alone&&!audience.streams[0].track.enabled;});
+  audience.voice.stop();await audience.voice.enable();const audienceClearedOnStop=audience.voice.stats.alone&&!audience.streams[1].track.enabled;audience.voice.dispose();await drain();
   const late=fixture();late.deferPermission();const opening=late.voice.enable();late.voice.stop();const lateStream=late.makeStream();late.resolvePermission(lateStream);await opening;await drain();
   const permissionCancelled=lateStream.track.stops===1&&!late.voice.stats.publishing&&!late.voice.stats.enabled&&!late.calls.some(c=>c.op==="publish");late.voice.dispose();
   const rejoin=fixture();await rejoin.voice.enable();rejoin.voice.dropMic();await drain();const revoked=rejoin.streams[0].track.stops===1&&!rejoin.voice.stats.publishing&&rejoin.voice.stats.muted;
@@ -16151,7 +16163,7 @@ const studioVoiceLifecycleProof = async () => {
   const denied=fixture();await denied.voice.listen();denied.denyPermission();await denied.voice.preflight();
   const deniedPreviewKeepsReceiver=denied.voice.stats.ready&&denied.voice.stats.enabled&&!denied.voice.stats.error&&!!denied.voice.stats.micError&&denied.voice.stats.permission==="denied";
   await denied.voice.enable();const deniedPublishKeepsReceiver=denied.voice.stats.ready&&denied.voice.stats.enabled&&!denied.voice.stats.error&&!!denied.voice.stats.micError&&!denied.voice.stats.publishing;denied.voice.dispose();await drain();
-  return {receiveOnly,permissionCancelled,explicitUnmute,restartMute,publishCancelled,stopCancelled,localPreview,previewReleased,latePreviewReleased,previewCancelCannotStopPublication,receiveLevel,aggregateBlocked,retryClears,stalePlaybackIgnored,deniedPreviewKeepsReceiver,deniedPublishKeepsReceiver,timersReleased:[listener,late,rejoin,stale,stopped,preview,autoplay,denied].every(f=>f.timers.size===0)};
+  return {receiveOnly,receiveOnlyAudience,audienceKeepsMute,lastListenerLeaves,listenerReturns,invalidAudience,audienceClearedOnStop,permissionCancelled,explicitUnmute,restartMute,publishCancelled,stopCancelled,localPreview,previewReleased,latePreviewReleased,previewCancelCannotStopPublication,receiveLevel,aggregateBlocked,retryClears,stalePlaybackIgnored,deniedPreviewKeepsReceiver,deniedPublishKeepsReceiver,timersReleased:[listener,audience,late,rejoin,stale,stopped,preview,autoplay,denied].every(f=>f.timers.size===0)};
 };
 
 // The real controller runs against a bounded DOM/media double: no permission prompts or SFU.
@@ -16178,11 +16190,12 @@ const studioSessionProof = async () => {
     remove(){this.removed=true;}
   }
   const body=new Element(),doc=new Element();Object.assign(doc,{body,createElement:()=>new Element(),activeElement:new Element(),hidden:false});
-  const calls={listen:0,enable:0,stop:0,drop:0,unsub:0,rejected:0,cancelPreview:0,commands:[]};let accept,account,voiceEvent,resolveSound;
+  const calls={listen:0,enable:0,toggle:0,stop:0,drop:0,unsub:0,rejected:0,cancelPreview:0,commands:[]};let accept,account,voiceEvent,resolveSound;
   const net={state:{room:"live",selfId:1,me:{display:"Synthetic host"}},remotes:new Map(),serverNow:()=>5000,
     subscribeStudio:fn=>{accept=fn;return()=>calls.unsub++;},subscribe:fn=>{account=fn;return()=>calls.unsub++;},
     studioCommand:(action,fields)=>{calls.commands.push({action,...fields});return true;}};
   const voice={stats:{publishing:false,muted:false,ready:false,enabled:false},subscribe:fn=>{voiceEvent=fn;return()=>calls.unsub++;},listen:()=>{calls.listen++;return new Promise(resolve=>{resolveSound=()=>{voice.stats.ready=voice.stats.enabled=true;voiceEvent();resolve();};});},enable:()=>{calls.enable++;return Promise.resolve();},stop:()=>{calls.stop++;voice.stats.ready=voice.stats.enabled=false;},dropMic:()=>calls.drop++,devices:async()=>[],preflight:async()=>true,cancelPreflight(){calls.cancelPreview++;voice.stats.permission="unknown";voice.stats.preflightPending=false;},selectDevice:async()=>true,setReceiveLevel(){}};
+  voice.toggle=()=>{calls.toggle++;voice.stats.muted=!voice.stats.muted;};
   const ctx={window:{BL:{net,voice}},document:doc,AbortController,location:{protocol:"https:"}};
   ctx.BL=ctx.window.BL;runInNewContext(await readFile(join(root,"src/js/studio-catalogue.js"),"utf8"),ctx);
   runInNewContext(await readFile(join(root,"src/js/studio-session.js"),"utf8"),ctx);
@@ -16201,6 +16214,9 @@ const studioSessionProof = async () => {
   panel.querySelector("[data-mic]").fire("click");const forbidden=calls.enable===0;
   accept({t:"studio",state:{...snapshot,revision:3,mode:"discussion",canSpeak:true,playing:false}});
   panel.querySelector("[data-mic]").fire("click");const discussion=calls.enable===1;
+  for(let i=0;i<8;i++)await Promise.resolve();voice.stats.publishing=true;voice.stats.muted=true;voiceEvent();
+  panel.querySelector("[data-mic]").fire("click");const mutedPublisherUnmutes=calls.toggle===1&&!voice.stats.muted&&calls.enable===1;
+  voice.stats.publishing=false;
   session.seat("audience-0");accept({t:"studio-result",action:"seat",ok:false,error:"occupied"});
   const rejection=calls.rejected===1&&panel.querySelector("[data-error]").textContent==="occupied"&&calls.commands.at(-1).revision===3;
   accept({t:"studio",state:snapshot});const stale=session.stats.mode==="discussion";
@@ -16228,7 +16244,7 @@ const studioSessionProof = async () => {
   net.state.room="live";session.leave();video.readyState=2;video.fire("canplay");const staleMetadataIgnored=video.currentTime===0;const cleaned=!room.screen.geometry.imageSurface&&video.paused&&video.muted&&!video.src&&session.stats.media===0;
   for(let i=0;i<3;i++){session.enter(room);session.leave();}
   session.dispose();accept({t:"studio",state:snapshot});
-  return {initial,connecting,listening,audible,micErrorKeepsSound,pendingPreviewRelease,previewReleaseDisabledForPublication,blocked,forbidden,discussion,rejection,stale,nextCommand,catalogueSwap,qaWaiting,invitationConsent,finishQuestion,orderedQueue,buffering,bufferingClears,metadataRecovery,latestSourceSeek,onePendingSeek,latestSeekWaits,latestSeekAfterSettlement,seekSettles,staleMetadataIgnored,disconnected,cleaned,disposed:panel.removed&&calls.unsub===3&&body.children.length===1&&video.loads>=4};
+  return {initial,connecting,listening,audible,micErrorKeepsSound,pendingPreviewRelease,previewReleaseDisabledForPublication,blocked,forbidden,discussion,mutedPublisherUnmutes,rejection,stale,nextCommand,catalogueSwap,qaWaiting,invitationConsent,finishQuestion,orderedQueue,buffering,bufferingClears,metadataRecovery,latestSourceSeek,onePendingSeek,latestSeekWaits,latestSeekAfterSettlement,seekSettles,staleMetadataIgnored,disconnected,cleaned,disposed:panel.removed&&calls.unsub===3&&body.children.length===1&&video.loads>=4};
 };
 
 const studioPreviewRangeProof = async () => {
@@ -18229,6 +18245,9 @@ const dsbSharedSessionCheckpoint={name:"dsb shared session checkpoint",why:"cont
   await b.evaluate(`(()=>{const C=__sharedStudio;BL.net.state.selfId=902;C.snapshot={...C.snapshot,revision:4,mode:"qa",canSpeak:false,seats:[{id:902,seat:0}]};C.accept({t:"studio",state:C.snapshot});document.querySelector(".studio-session [data-raise]").click();C.raised=C.command.action==="raise";C.snapshot={...C.snapshot,revision:5,canSpeak:true,invited:[902]};C.accept({t:"studio",state:C.snapshot});})()`);
   const qa=await b.evaluate('({raised:__sharedStudio.raised,micDisabled:document.querySelector(".studio-session [data-mic]").disabled,enabled:__sharedStudio.calls.enable,finish:document.querySelector(".studio-session [data-lower]").textContent})');
   record("Shared Studio: a Q&A invitation enables the explicit join control without activating the microphone",qa.raised&&!qa.micDisabled&&qa.enabled===0&&qa.finish==="Finish question",JSON.stringify(qa));
+  await b.evaluate(`(()=>{const C=__sharedStudio;C.calls.toggle=0;BL.voice.toggle=()=>{C.calls.toggle++;BL.voice.stats.muted=!BL.voice.stats.muted;};document.querySelector(".studio-session [data-mic]").click();})()`);
+  const unmuted=await b.evaluate(`(()=>{const C=__sharedStudio,mic=document.querySelector(".studio-session [data-mic]");BL.voice.stats.publishing=true;BL.voice.stats.muted=true;C.controller.update(.6);const before=C.calls.enable;mic.click();const unmuted=!BL.voice.stats.muted&&C.calls.toggle===1&&C.calls.enable===before;mic.click();BL.voice.stats.publishing=false;return {unmuted,released:C.calls.drop===1,enabled:C.calls.enable};})()`);
+  record("Shared Studio: an explicitly muted publisher can unmute through the panel without recapturing; mute releases publication",unmuted.unmuted&&unmuted.released&&unmuted.enabled===1,JSON.stringify(unmuted));
   await b.evaluate(`(()=>{const C=__sharedStudio;C.controller.close();C.controller.leave();C.clean=!C.room.screen.geometry.imageSurface&&C.video.paused&&!C.video.getAttribute("src");for(let i=0;i<3;i++){C.controller.enter(C.room);C.controller.leave();}C.controller.dispose();BL.scenes.dsb.update=C.oldUpdate;BL.net=C.oldNet;BL.voice=C.oldVoice;CanvasRenderingContext2D.prototype.drawImage=C.originalDraw;WebGL2RenderingContext.prototype.texImage2D=C.originalUpload;WebGL2RenderingContext.prototype.texSubImage2D=C.originalSub;})()`);
   const clean=await b.evaluate('({clean:__sharedStudio.clean,dialogs:document.querySelectorAll(".studio-session").length,screen:!!__sharedStudio.room.screen.geometry.imageSurface,media:__sharedStudio.controller.stats.media,calls:__sharedStudio.calls})');
   record("Shared Studio: repeated enter/leave releases media source, screen binding, dialog and voice",clean.clean&&clean.dialogs===0&&!clean.screen&&clean.media===0&&clean.calls.stop>=4,JSON.stringify(clean));

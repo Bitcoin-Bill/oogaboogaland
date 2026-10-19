@@ -14,11 +14,10 @@
 // The room's lists carry each voice's publication count, so a microphone published again (its owner
 // reconnected or restarted) is pulled again rather than left on a dead track; a connection that fails or stays
 // dropped after it was up starts voice over on its own, and a pull that misses a wanted voice is retried.
-// Alone (#181): while the room's list of whom to hear is empty, nobody here can hear this page either (the room
-// lists exactly the players driving an Ooga in the same place with a live microphone, and lets a page pull only
-// those), so the microphone track is held off as a mute holds it (`stats.alone`), and comes back by itself when the
-// room lists someone. It is still published, so the room can tell others this page is here to be heard. Alone is
-// not a mute: the room is not told, and a visitor's own mute stands whoever comes and goes.
+// Alone (#181): hold the microphone track off when nobody can hear it. Studio
+// sends an authoritative count of receive sessions, including listeners who
+// never publish. Other zones retain their existing speaker-list gate. A user's
+// own mute stands whoever comes and goes; no count acquires a microphone.
 // Exports enable, toggle, restart, stop, setPeers, subscribe, dispose, inspect, speaking, muteLocal, mutedLocally and stats.
 (() => {
   "use strict";
@@ -39,6 +38,7 @@
   const samples = new Float32Array(SAMPLES);
   const mutedLogins = new Set();
   let mic = null, pubPc = null, subPc = null, desired = [], queue = Promise.resolve();
+  let listenerCount = null;
   let lifecycle = 0, micGeneration = 0, microphoneWanted = stats.micWanted = false;
   let cleanup = Promise.resolve(), receiverOpening = null;
   const requests = new Set();
@@ -398,7 +398,7 @@
   const gate = () => {
     // Only a visitor who opted in to speak (passed the mic test and permission step) is ever "alone";
     // a listen-only visitor has no microphone to hold off.
-    stats.alone = microphoneWanted && (stats.publishing || stats.joining) && desired.length === 0;
+    stats.alone = microphoneWanted && (stats.publishing || stats.joining) && (listenerCount ?? desired.length) === 0;
     if (mic) for (const t of mic.getAudioTracks()) t.enabled = !stats.muted && !stats.alone;
   };
 
@@ -430,6 +430,7 @@
     stats.muted = stats.alone = false; stats.micError = "";
     BL.net.setMuted(false);
     desired = [];
+    listenerCount = null;
     wantedGen.clear();
     if (was) cleanup = api("leave").catch(() => {});
     emit();
@@ -462,8 +463,9 @@
   };
 
   // Whom the room wants heard, and each one's publication count (`gens`; none from an older room).
-  const setPeers = (ids, gens = null) => {
+  const setPeers = (ids, gens = null, listeners = null) => {
     desired = ids.slice();
+    listenerCount = Number.isSafeInteger(listeners) && listeners >= 0 && listeners < 32 ? listeners : null;
     wantedGen.clear();
     for (let i = 0; i < ids.length; i++) wantedGen.set(ids[i], gens ? gens[i] : 0);
     for (const [id, s] of subs) s.el.muted = !heard(id);
