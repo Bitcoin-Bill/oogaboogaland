@@ -195,7 +195,7 @@
   const create = ({ parent, input, fx, camera, pilot, visitor, world, hud, busy, coarse, quality, landing }) => {
     const rig = BL.tess.create({ parent, input, fx, camera, kind: "tess", coarse, quality }), position = rig.position;
     const state = { phase: "work", stage: "beam", timer: 3, site: 0, seen: 0, again: false, kind: "island", legs: ISLAND, welcome: null,
-      stop: -1, line: 0, arrived: false, closing: null, holding: false, beats: null, utterance: 0, advance: 0, glide: 0, glideTime: GLIDE,
+      stop: -1, line: 0, arrived: false, closing: null, holding: false, tourGuest: false, beats: null, utterance: 0, advance: 0, glide: 0, glideTime: GLIDE,
       login: null, newest: null, still: landing, settle: SETTLE, driven: null };
     const spot = { x: 0, y: 0, z: 0 }, home = pose(), from = pose(), to = pose();
     position.x = WORK[0].at[0]; position.y = WORK[0].at[1]; position.z = WORK[0].at[2];
@@ -296,6 +296,7 @@
     const approach = () => { placeBy(); flyTo(spot.x, spot.y, spot.z, 6, true); show("approach"); };
     const offer = (beats) => {
       state.timer = OFFER_TIME;
+      state.tourGuest = state.kind === "island" && !account();
       rig.clearPath(3, 1); rig.push(spot.x, spot.y, spot.z); rig.track();
       rig.nod(); show("offer"); speak(beats);
     };
@@ -378,7 +379,7 @@
     // got no answer to waits for the next visit.
     const answered = () => {
       if (state.kind === "news" && state.login) { markSeen(state.login, state.newest); state.login = null; }
-      else if (state.kind === "island") markToured();
+      else if (state.tourGuest) markToured();
     };
     // The panel's two buttons and their keys: on, and back out.
     const forward = () => {
