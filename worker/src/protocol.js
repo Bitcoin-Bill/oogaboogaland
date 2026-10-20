@@ -3,6 +3,7 @@
 // Client → room:  { t: "pose", x, y, z, yaw }   the driven body's feet and heading, at most MOVE_HZ
 //                 { t: "body", name }            Ooga handle, `gorilla:<handle>` for its companion, or null
 //                 { t: "zone", name }            where that body is (see Zones below)
+//                 { t: "poker-voice", table }   0-9 while watching a table, null for the Ember Den floor
 //                 { t: "hub", on }               this page shows the island and is visible (host candidates)
 //                 { t: "mute", on }              this page muted its own microphone, for everyone's roster
 //                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
@@ -149,6 +150,7 @@ export const parseClientMessage = (text) => {
       ? { t: "door", op: "pass", door: msg.door, dir: msg.dir } : null;
     return null;
   }
+  if (msg.t === "poker-voice") return msg.table === null || Number.isInteger(msg.table) && msg.table >= 0 && msg.table < 10 ? { t: "poker-voice", table: msg.table } : null;
   return null;
 };
 
@@ -245,7 +247,7 @@ export const voicePeers = (players) => {
     const ids = [];
     const group = zoneGroup(p.zone);
     if (p.body && p.voice && p.voice.sub && group !== NOWHERE) {
-      for (const q of players) if (q !== p && q.body && zoneGroup(q.zone) === group && q.voice && q.voice.track) ids.push(q.id);
+      for (const q of players) if (q !== p && q.body && zoneGroup(q.zone) === group && (group !== "ember-den" || (p.pokerVoice ?? null) === (q.pokerVoice ?? null)) && q.voice && q.voice.track) ids.push(q.id);
       ids.sort((a, b) => a - b);
     }
     out.set(p.id, ids);
