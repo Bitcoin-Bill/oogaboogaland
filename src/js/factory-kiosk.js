@@ -411,7 +411,7 @@
     const limits = () => real && hooks.limits ? hooks.limits() : null;
     const overLightning = () => real && limits() && flow.sats > limits().lightningMaxSats;
     const canLightning = () => !!flow.invoice?.bolt && !overLightning();
-    const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= Math.max(MIN, limits()?.minSats || MIN)
+    const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= (limits()?.minSats || MIN)
       && flow.sats <= (limits()?.maxSats || Number.MAX_SAFE_INTEGER) : flow.sats >= MIN && flow.sats <= MAX;
     const closed = () => real && hooks.open() === false;
     // The fewest sats a tip needs to carry a message. Below it the details screen offers the name alone, and every
@@ -782,7 +782,7 @@
         if (real) rateLine(W / 2, 106, 320);
         if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 332, 1, INK.red, "center");
         else if (flow.digits && !valid()) {
-          const min = real ? Math.max(MIN, limits()?.minSats || MIN) : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
+          const min = real ? (limits()?.minSats || MIN) : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
           writeFit(g, flow.sats < min ? `MIN ${sats(min)} SATS` : `MAX ${sats(max)} SATS`, W / 2, 332, 1, INK.red, 320, "center");
         }
         else if (overLightning()) write(g, "OVER LIGHTNING LIMIT · ON-CHAIN ONLY", W / 2, 332, 1, INK.amber, "center");

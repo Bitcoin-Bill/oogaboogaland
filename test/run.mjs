@@ -4999,8 +4999,15 @@ const donationClientChecks = async () => {
   capped.key({ key: "Enter" });
   const overallCap = capped.state === "amount" && capCalls === 1;
   capped.stop();
-  record("donation limits: amounts above Lightning warn before Continue, keep on-chain available, disable the Lightning button, and still reject invalid Bitcoin amounts",
-    capWarning && capContinue && lightningDisabled && capOnchain && overallCap, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap }));
+  capped.start(); for (const key of ["Enter", "1", "Enter"]) capped.key({ key });
+  await Promise.resolve();
+  const configuredMinimum = capped.state === "quote" && capCalls === 2;
+  capped.stop(); caps.minSats = 10;
+  capped.start(); for (const key of ["Enter", "9", "Enter"]) capped.key({ key });
+  const belowConfiguredMinimum = capped.state === "amount" && capCalls === 2;
+  capped.stop();
+  record("donation limits: real amounts follow the advertised minimum, warn above Lightning, keep on-chain available, disable the Lightning button, and reject invalid Bitcoin amounts",
+    capWarning && capContinue && lightningDisabled && capOnchain && overallCap && configuredMinimum && belowConfiguredMinimum, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap, configuredMinimum, belowConfiguredMinimum }));
 
   const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];
   let noteFails = 0;
