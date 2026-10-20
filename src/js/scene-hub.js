@@ -11239,7 +11239,17 @@
     mark("cavemen");
     crates = shared.crates = cratesMod.create(shared);
     pilot.bind(shared);
-    timechainIsland.gate = BL.timechainGate.create({ site: timechainIsland.site, place: timechainIsland.place, pilot, crew, hud, camera, renderer, canvas: glCanvas, world, go, equipJetpack });
+    // The doorway draws the island once from inside the passage for the way back out (`renderView`), sets the
+    // sphere's heartbeat going while a room readies slowly (`show`), and hands a crossing the island's own meshes to
+    // keep on the GPU while the visit lasts (`keep`).
+    const keepGeometry = () => {
+      const kept = new Set(), walk = (node) => { if (node.geometry) kept.add(node.geometry); for (const child of node.children) walk(child); };
+      walk(root);
+      liveGeometry(kept);
+      return kept;
+    };
+    timechainIsland.gate = BL.timechainGate.create({ site: timechainIsland.site, place: timechainIsland.place, pilot, crew, hud, camera, renderer, canvas: glCanvas, world, go, equipJetpack,
+      show: timechainIsland.show, renderView: (view) => renderer.render(root, view, RENDER_OPTS), keep: keepGeometry });
     // A room's address opened signed in, with no visit of this tab's own to repeat, comes here with the room chosen.
     if (timechainIsland.gate.preselected) hud.toast(`Room ${timechainIsland.gate.preselected} is chosen at the keypad · walk up to it and press Enter to go in`);
     breakables = headquarters.breakables = BL.breakables.create({ root, input, renderer, fx, crew,
@@ -11947,6 +11957,7 @@
     for (const item of clankerEquipment) set.add(item.node.geometry);
     for (const cave of crew.cavemen.values()) set.add(cave.headOpen).add(cave.headClosed);
     remotes.liveGeometry(set);
+    if (timechainIsland && timechainIsland.gate) timechainIsland.gate.liveGeometry(set);
   };
   const stats = () => {
     let nodes = 0;

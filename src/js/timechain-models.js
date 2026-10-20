@@ -408,8 +408,9 @@
   // `glow` and `highlight`, never the same one twice running, then settles back exactly. Some shows take the logos
   // away (the plain tiles under them light in their place) and bring them back. Every node and geometry is built
   // once with the site, so a show only writes floats and flips visibility. `show(site)` returns the per-frame step;
-  // the first step after the wait only picks the show.
-  const SHOW_SECONDS = 7, SHOWS = 7;
+  // the first step after the wait only picks the show. `step.cue(kind)` starts that show next, as soon as none is
+  // running (the doorway's heartbeat, `HEARTBEAT`, while a room takes longer than usual to ready).
+  const SHOW_SECONDS = 7, SHOWS = 7, HEARTBEAT = 6;
   // A small integer hash for the sparkle, so a lune's flicker needs no allocation.
   const flicker = (a, b) => {
     let h = Math.imul(a + 1, 0x9e3779b1) ^ Math.imul(b + 7, 0x85ebca6b);
@@ -418,17 +419,17 @@
   };
   const wrap = (angle) => (angle + 5 * Math.PI) % (2 * Math.PI) - Math.PI;
   const show = (site) => {
-    let wait = 20 + Math.random() * 40, t = -1, kind = -1;
+    let wait = 20 + Math.random() * 40, t = -1, kind = -1, next = -1;
     const logo = site.screen[LUNES];
     const showLogo = (on) => {
       if (logo.visible === on) return;
       logo.visible = on;
       for (const batch of site.logoBatches) batch.node.visible = on;
     };
-    return (dt) => {
+    const step = (dt) => {
       if (t < 0) {
         if ((wait -= dt) > 0) return;
-        t = 0; kind = (kind + 1 + Math.floor(Math.random() * (SHOWS - 1))) % SHOWS;
+        t = 0; kind = next >= 0 ? next : (kind + 1 + Math.floor(Math.random() * (SHOWS - 1))) % SHOWS; next = -1;
         return;
       }
       t = Math.min(SHOW_SECONDS, t + dt);
@@ -477,6 +478,12 @@
       showLogo(logoOn || fade < 1);
       if (t >= SHOW_SECONDS) { t = -1; wait = 45 + Math.random() * 60; showLogo(true); }
     };
+    step.cue = (want) => {
+      if (t >= 0) return;
+      next = want;
+      wait = 0;
+    };
+    return step;
   };
-  BL.timechainModels = { SITE, DIR, PASSAGE, SPOTS, build, show };
+  BL.timechainModels = { SITE, DIR, PASSAGE, SPOTS, HEARTBEAT, build, show };
 })();

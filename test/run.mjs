@@ -10084,6 +10084,42 @@ const timechainBlockChecks = async () => {
 };
 const sphereLocal = `T = BL.scenes.hub.debug.timechainIsland, SP = BL.timechainModels.SPOTS, local = (p) => (p.x - T.place.x) * T.sin + (p.z - T.place.z) * T.cos`;
 const sphereStand = (x, z) => `__ooga.pilot.navigate({ position: { x: T.worldX(${x}, ${z}), y: T.place.y, z: T.worldZ(${x}, ${z}) }, yaw: T.place.ry, pitch: 0.1, dist: 4 }); __ooga.advance(0.3, 1 / 60);`;
+// Logs every frame of a crossing from the page: the camera's pose in each side's handover frame (the island's from its
+// handover point, `handZ` in, `outZ` out; the room's from `entry` in, `exitEye` out), the last frame before and first
+// after each swap, and every held first-person frame whose camera stands off the Ooga (a third-person frame).
+const sphereLog = `(() => {
+  const H = window.__handover = { swapIn: null, swapOut: null, far: 0, farAt: null, frames: 0 };
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  let last = null;
+  const step = () => {
+    try {
+      const B = __ooga, c = B.camera, p = c.position, t = c.target, dx = t.x - p.x, dz = t.z - p.z, yaw = Math.atan2(dx, dz), pitch = Math.atan2(t.y - p.y, Math.hypot(dx, dz));
+      let row = null, body = null;
+      if (B.scene === "hub") {
+        const T = BL.scenes.hub.debug.timechainIsland, g = T.gate.debug, out = g.state === "arriving" || g.state === "leaving";
+        if (g.state !== "idle") {
+          const lx = (p.x - T.place.x) * T.cos - (p.z - T.place.z) * T.sin, lz = (p.x - T.place.x) * T.sin + (p.z - T.place.z) * T.cos;
+          row = { scene: "hub", s: g.state, x: lx, dz: lz - (out ? g.outZ : g.handZ), h: wrap(yaw - T.place.ry - (out ? 0 : Math.PI)), pitch, fov: c.fov };
+          if (g.lens === "eyes" && g.glide >= 1 && g.still === 0) body = B.pilot.player;
+        }
+      } else if (B.scene === "timechain" && B.timechain && B.timechain.guide.stage) {
+        const D = B.timechain, st = D.guide.stage, out = st !== "arrive";
+        row = { scene: "room", s: st, x: p.x, dz: p.z - (out ? D.exitEye : D.layout.entry.z), h: wrap(yaw - (out ? 0 : Math.PI)), pitch, fov: c.fov };
+        body = D.avatar;
+      }
+      if (body && Math.hypot(p.x - body.root.position.x, p.z - body.root.position.z) > 0.6) { H.far++; H.farAt = row; }
+      if (row) {
+        if (last && last.scene !== row.scene) { if (row.scene === "room") H.swapIn = [last, row]; else H.swapOut = [last, row]; }
+        last = row; H.frames++;
+      }
+    } catch {}
+    H.raf = requestAnimationFrame(step);
+  };
+  H.raf = requestAnimationFrame(step);
+})()`;
+// The two sides of a swap are one view: the same eye, heading, pitch and field of view, give or take a frame's walk.
+const seamless = (pair) => !!pair && Math.abs(pair[1].x - pair[0].x) < 0.08 && Math.abs(pair[1].dz - pair[0].dz) < 0.15
+  && Math.abs(pair[1].h - pair[0].h) < 0.04 && Math.abs(pair[1].pitch - pair[0].pitch) < 0.03 && Math.abs(pair[1].fov - pair[0].fov) < 0.005;
 const sphereApproach = { name: "timechain approach", why: "playthrough: an Ooga crosses the shore and the bridge to the Sphere's closed doors, walks the grass, and the edge has no invisible floor", run: async (b) => {
   const result = await b.evaluate(`(() => {
     const B = __ooga, S = B.headquarters.solids, c = B.pilot.player, ${sphereLocal}, p = T.place;
@@ -10153,8 +10189,20 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
   })()`);
   await b.key(" ");
   const engaged = await b.evaluate(`(() => { const T = BL.scenes.hub.debug.timechainIsland, G = T.gate, enter = T.site.keys.find(k => k.key === "enter").node; return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), enter: enter.geometry.faces[0].color, act: document.getElementById("act").hidden, keys: T.site.keys.length, hint: document.getElementById("hint").textContent }; })()`);
+  // Into the Ooga's own eyes, turned to the keypad: the camera at its head, the head hidden, the keypad in mid-view.
+  const view = await b.evaluate(`(() => { const B = __ooga; B.advance(1, 1 / 60); const T = BL.scenes.hub.debug.timechainIsland, G = T.gate.debug, c = B.camera.position, a = B.pilot.player, out = {}, k = T.site.keypad.world;
+    B.renderer.project(k[12], k[13], k[14], out);
+    return { lens: G.lens, glide: G.glide, atBody: Math.hypot(c.x - a.root.position.x, c.z - a.root.position.z), headHidden: a.parts.head.cameraHidden, kx: out.x / B.renderer.size.width, ky: out.y / B.renderer.size.height }; })()`);
   for (const k of ["1", "3", "3"]) await b.key(k);
   const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate, key = k => T.site.keys.find(v => v.key === k).node; return { selection: G.debug.selection, three: key("3").geometry.faces[0].color, one: key("1").geometry.faces[0].color, enter: key("enter").geometry.faces[0].color, readout: T.site.readout.room, readoutVisible: T.site.readout.visible, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
+  // Enter while the room's code is held back: the keys lock and the Ooga turns to the doors; Back cancels that and
+  // turns it to the keypad again with the room still chosen, nothing prepared and the doors shut.
+  await b.evaluate(`(() => { window.__deferredLoad = BL.deferred.load; BL.deferred.load = () => new Promise(() => {}); })()`);
+  await b.key("Enter");
+  await b.key("7");
+  const preparing = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate.debug; __ooga.advance(0.4, 1 / 60); return { state: G.state, selection: G.selection, open: G.open }; })()`);
+  await b.key("Escape");
+  const cancelled = await b.evaluate(`(() => { const G = BL.scenes.hub.debug.timechainIsland.gate.debug; __ooga.advance(0.4, 1 / 60); BL.deferred.load = window.__deferredLoad; return { state: G.state, selection: G.selection, prepared: !!G.prepared, open: G.open, lens: G.lens }; })()`);
   await b.key("Escape");
   const left = await b.evaluate(`(() => { const B = __ooga; B.advance(0.6, 1 / 60); const T = BL.scenes.hub.debug.timechainIsland, G = T.gate; window.fetch = window.__sphereFetch;
     return { state: G.debug.state, popup: !!document.getElementById("sphere-keypad"), act: document.getElementById("act").hidden, lens: G.debug.lens, one: T.site.keys[0].node.geometry.faces[0].color, readout: T.site.readout.visible,
@@ -10162,11 +10210,16 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
   record("timechain keypad: Space engages the physical panel with no popup; 1 then 3 lights only 3 with black type and arms Enter, and the number keys never reach the Ooga's weapons",
     engaged.state === "keypad" && !engaged.popup && engaged.enter.join() === "90,64,34" && engaged.act && engaged.keys === 11 && engaged.hint.includes("Choose a room")
       && chosen.selection === 3 && chosen.three.join() === "247,147,26" && chosen.one.join() === "58,52,48" && chosen.enter.join() === "255,189,83" && chosen.readout === 3 && chosen.readoutVisible && chosen.slot, JSON.stringify({ engaged, chosen }));
+  record("timechain keypad: engaging moves the view into the Ooga's own first person, head hidden, turned to the keypad, and no detached camera",
+    view.lens === "eyes" && view.glide === 1 && view.atBody < 0.6 && view.headHidden && Math.abs(view.kx - 0.5) < 0.25 && Math.abs(view.ky - 0.5) < 0.3, JSON.stringify(view));
+  record("timechain keypad: Enter locks the keys while the room prepares, and Back then returns to the keypad in first person with the room still chosen",
+    preparing.state === "preparing" && preparing.selection === 3 && preparing.open === 0 && cancelled.state === "keypad" && cancelled.selection === 3 && !cancelled.prepared && cancelled.open === 0 && cancelled.lens === "eyes", JSON.stringify({ preparing, cancelled }));
   record("timechain keypad: Escape lets go with the view back, resets the physical keys, leaves the doors shut and loads no room data",
     left.state === "idle" && !left.popup && !left.act && left.lens === null && left.one.join() === "58,52,48" && !left.readout && left.requests === 0 && left.read === 0 && left.visit === null && left.scene === "hub" && left.doors === 0, JSON.stringify(left));
 } };
 const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter walks the same Ooga through the doors into its room in first person, and Space at the Exit button walks it back out onto the bridge", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} })()`);
+  await b.evaluate(sphereLog);
   await b.key(" ");
   await b.key("3");
   await b.key("Enter");
@@ -10180,12 +10233,15 @@ const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter wa
   const out = await untilPage(b, 'B.scene === "hub" && !B.transitioning && BL.scenes.hub.debug.timechainIsland.gate.debug.state === "idle"', 25000);
   const back = await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}, G = T.gate, c = B.pilot.player; B.advance(1.2, 1 / 60);
     return { player: c && c.traits.name, fromDoors: c ? local(c.root.position) - SP.THRESHOLD : null, doors: G.debug.open, plug: T.site.plug.visible, view: B.pilot.mode, hash: location.hash, head: c ? !c.parts.head.cameraHidden : null, zone: BL.net.state.zone }; })()`);
+  const seams = await b.evaluate(`(() => { const H = window.__handover; cancelAnimationFrame(H.raf); return { swapIn: H.swapIn, swapOut: H.swapOut, far: H.far, farAt: H.farAt, frames: H.frames }; })()`);
   record("timechain crossing: Enter opens the doors, lifts the plug for the traveler alone and swoops into its eyes as it walks in",
     crossing && !passage.plug && !passage.popup && passage.lens === "eyes", JSON.stringify({ crossing, passage }));
   record("timechain crossing: the same Ooga arrives in a solo Room 3 in first person, the doors close behind it and the address names the room",
     inside && room.room === 3 && room.mode === "solo" && room.player === "portlandhodl" && room.view === "first-person" && room.doors === 0 && room.atArrival < 0.4 && room.hash === "#/sphere-3" && room.zone === "none", JSON.stringify(room));
   record("timechain crossing: Space at the Exit button walks it back out of the passage onto the bridge, the doors shut, the plug back and the view out of its eyes",
     out && back.player === "portlandhodl" && back.fromDoors > 1 && back.doors === 0 && back.plug && back.view !== "first-person" && back.hash === "#/sphere" && back.head, JSON.stringify(back));
+  record("timechain crossing: from the keypad into the room and from the Exit button out to the bridge every frame is the Ooga's own eye, and each scene swap is the same view on both sides",
+    seams.frames > 30 && seams.far === 0 && seamless(seams.swapIn) && seamless(seams.swapOut), JSON.stringify(seams));
 } };
 const sphereAccount = { name: "timechain account", why: "rule: an account look that went unanswered lets the physical selected number retry or Enter continue solo and never guesses a shared room", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; BL.net.state.resolved = false; ${sphereStand("0.7", "13.8")} })()`);
@@ -10203,7 +10259,7 @@ const sphereAccount = { name: "timechain account", why: "rule: an account look t
     asked.state === "account" && !asked.popup && asked.hint.includes("Enter continues solo") && solo.state === "preparing" && solo.mode === "solo"
       && cancelled.state === "keypad" && cancelled.selection === 5 && done.state === "idle" && done.scene === "hub", JSON.stringify({ asked, solo, cancelled, done }));
 } };
-scene("hub", { label: "timechain doorway", query: "solo=1&character=portlandhodl&view=timechain&pos=0", steps: [sphereApproach, sphereThreshold, sphereKeypad, sphereCrossing, sphereAccount, trip("hub")] });
+scene("hub", { label: "timechain doorway", query: "solo=1&character=portlandhodl&view=timechain&pos=0", opts: { motion: true }, steps: [sphereApproach, sphereThreshold, sphereKeypad, sphereCrossing, sphereAccount, trip("hub")] });
 scene("hub", { label: "timechain doorway canvas2d", exclusive: true, query: "solo=1&character=portlandhodl&view=timechain&pos=0&canvas2d=1", steps: [sphereApproach, sphereCrossing] });
 scene("hub", { label: "timechain resident", steps: [{ name: "timechain resident", why: "regression: Sani slept in HQ on ordinary visits, leaving his island empty", run: async (b) => {
   const r = await b.evaluate(`(() => {
@@ -13493,9 +13549,16 @@ scene("mine", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("mine", { card: 
 scene("factory", { query: "pos=0&character=portlandhodl", opts: PHONE_SIZE, steps: [phone("factory", { required: ["#joy-move", "#joy-look", ".leave"] }), factoryGreeter] });
 scene("bifrost", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("bifrost", { required: ["#joy-move", "#joy-look", ".leave"] })] });
 scene("timechain", { url: roomPage(3), opts: PHONE_SIZE, steps: [phone("timechain", { required: ["#joy-move", "#joy-look", ".leave", "#sphere-mode"] })] });
-scene("hub", { label: "sphere keypad", query: "solo=1&character=portlandhodl&view=timechain&pos=0", opts: PHONE_SIZE, steps: [{ ...phone("hub", {
-  play: `(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} T.gate.engage(); B.advance(0.6, 1 / 60); })()`,
-  required: ["#hint"] }), name: "sphere keypad phone" }] });
+// The keypad's controls are its physical keys: from the first person a phone shows, each is on screen with nothing of
+// the page's over it (the hint over the view takes no pointer, so it is checked as text, not as a control).
+const sphereKeypadPhone = phone("hub", { play: `(() => { const B = __ooga, ${sphereLocal}; ${sphereStand("0.7", "13.8")} T.gate.engage(); B.advance(0.6, 1 / 60); })()`, required: [] });
+scene("hub", { label: "sphere keypad", query: "solo=1&character=portlandhodl&view=timechain&pos=0", opts: PHONE_SIZE, steps: [{ ...sphereKeypadPhone, name: "sphere keypad phone", run: async (b) => {
+  await sphereKeypadPhone.run(b);
+  const keys = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, out = {};
+    return T.site.keys.map((k) => { const w = k.node.world; B.renderer.project(w[12], w[13], w[14], out); const hit = document.elementFromPoint(out.x, out.y);
+      return { key: k.key, x: Math.round(out.x), y: Math.round(out.y), on: out.x > 0 && out.x < innerWidth && out.y > 0 && out.y < innerHeight, free: !!hit && hit.id === "scene" }; }); })()`);
+  record("timechain keypad phone: in first person every physical key, 1–9, Back and Enter, is on screen with nothing over it", keys.length === 11 && keys.every((k) => k.on && k.free), JSON.stringify(keys));
+} }] });
 scene("arcade", { query: "pos=0", opts: PHONE_SIZE, steps: [phone("arcade", { required: ["#joy-move", "#joy-look", ".leave"] })] });
 
 // Focused component fixtures enter DSB directly with the selected Ooga.

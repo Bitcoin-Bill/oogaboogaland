@@ -6,8 +6,11 @@
 // First person is the only view in here: the pilot is made with `close.only`, so scroll, pinch, the mode buttons, X,
 // Escape and possession never leave the eye, and the Ooga walks empty-handed, as in the arcade, with no jetpack (a
 // built-in pack is taken off for the visit; the island gives the visitor's pack back on the way out). A guided arrival
-// walks in from the vestibule as the doors close behind; Space at the Exit button (or Leave, or Escape) walks back out
-// through them and hands the same Ooga to the island, which walks it out onto the bridge.
+// starts where the island's crossing handed over, from the same eye, and walks in from the vestibule as the doors
+// close behind; Space at the Exit button (or Leave, or Escape) walks back out through them into the vestibule, comes to
+// rest where the island's view out of its passage (hung at the vestibule's end) fills the eye, and hands the same Ooga
+// to the island without a fade, which walks it out onto the bridge. A room the island prepared after Enter (`prepare`)
+// is adopted as it stands, built, painted and on the GPU.
 //
 // The screens are native charts (timechain-charts.js) of mempool.space's public block and mining data
 // (timechain-blocks.js), repainted only when what they print changes, one picture a frame at most, plus the six
@@ -21,8 +24,10 @@
   const ROOMS = BL.timechainRooms, RM = BL.timechainRoomModels, CH = BL.timechainCharts, DOOR = ROOMS.DOOR;
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
-  // The doors take DOOR_TIME to slide; a guided walk goes at WALK_SPEED of a walk and gives up after GUIDE_LIMIT.
-  const DOOR_TIME = 0.7, WALK_SPEED = 0.55, GUIDE_LIMIT = 7, TURN_RATE = 6, PREVIEW_FOV = 62 * Math.PI / 180;
+  // The doors take DOOR_TIME to slide; a guided walk goes at WALK_SPEED of a walk (the island's doorway's own, so a
+  // crossing keeps its pace through the hand over) and gives up after GUIDE_LIMIT.
+  // The way out stands still EXIT_HOLD at the handover point before the island takes over.
+  const DOOR_TIME = 0.7, WALK_SPEED = 0.6, GUIDE_LIMIT = 7, TURN_RATE = 6, EXIT_HOLD = 0.12;
   // What the HUD's jetpack button shows in here: no pack at all.
   const NO_JETPACK = { owned: false, equipped: false, fuel: 1, blocked: false };
   const RENDER_OPTS = {
@@ -89,7 +94,7 @@
 
   // A picture slot: a canvas the painters draw, and the node that shows it once its image has decoded. A slot is
   // repainted only when its `key` (what it prints) changes; the old picture's GPU record goes when the new one hangs.
-  const slot = (node, w, h, pw, ph) => ({ node, canvas: CH.canvas(pw, ph), w, h, key: "", live: true, loading: 0 });
+  const slot = (node, w, h, pw, ph, painted = null) => ({ node, canvas: painted ? painted.canvas : CH.canvas(pw, ph), w, h, key: painted ? painted.key : "", live: true, loading: 0 });
   const hang = (renderer, s) => {
     const image = new Image(), stamp = ++s.loading;
     image.onload = () => {
@@ -112,6 +117,26 @@
     return t >= 0 && Math.abs(x) <= w / 2 && Math.abs(y) <= h / 2 ? t : Infinity;
   };
 
+  // What a screen or a ribbon card would print now, as a key: a slot is repainted only when its key moves. A room
+  // prepared at the island's doorway paints with the same keys, so the visit keeps what was painted there.
+  const minute = () => Math.floor(Date.now() / 60000);
+  const screenKey = (reader, i) => {
+    let k = "";
+    for (const name of CH.PANELS[i].sets) k += name === "history" ? `${reader.historyStatus()}:${reader.summary ? reader.summary.coverage + "/" + reader.summary.tip : ""}|` : `${reader.status(name)}:${reader.at(name)}|`;
+    return k + minute();
+  };
+  const cardKey = (reader, i) => {
+    if (i === 0) return `label|${reader.status("recent")}`;
+    const blocks = reader.value("recent"), b = blocks && blocks[i - 1];
+    return b ? `${b.id}|${b.pool}|${Math.floor((Date.now() / 1000 - b.time) / 60)}` : `none|${reader.status("recent")}`;
+  };
+
+  const signsOf = (built, room) => [
+    [built.exitSign, 1.1, 0.34, 330, 102, "EXIT", 64],
+    [built.useSign, 0.9, 0.2, 360, 80, COARSE ? "TAP · EXIT" : "SPACE · EXIT", 38],
+    [built.roomSign, 0.9, 0.3, 300, 100, room.name.toUpperCase(), 54]
+  ];
+
   const TIPS = {
     exit: "Exit · press Space beside it to walk out",
     screen: "Timechain display · tap for a close-up",
@@ -133,7 +158,12 @@
     const hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
     const hooks = {};
     const input = interactMod.create({ canvas, renderer, camera, hooks });
-    const built = RM.build(room.scale);
+    // A room the island's doorway prepared for this visit (`prepare`) is taken as it stands: built, painted and already
+    // on the GPU, so arriving costs no build, no paint and no upload.
+    const prepared = visit.prepared && visit.prepared.room.id === room.id ? visit.prepared : null;
+    if (visit.prepared && !prepared) visit.prepared.dispose();
+    visit.prepared = null;
+    const built = prepared ? prepared.built : RM.build(room.scale);
     addChild(root, built.root);
     RENDER_OPTS.shadowExtent = L.radius * 1.2;
     let n = 0;
@@ -155,15 +185,17 @@
       const r = Math.hypot(x, z), k = r > 1e-6 ? (r + margin) / r : 1;
       return ROOMS.ceilingAt(L, x * k, z * k) - margin;
     };
+    // A guided walk takes the view through the doorway into the vestibule; otherwise it stays inside the round wall.
+    const corridor = (p) => guided && Math.abs(p.x) < DOOR.halfW - 0.2 && p.z > L.doorZ - 1;
     const clampTarget = (p) => {
       const r = Math.hypot(p.x, p.z), max = L.walkRadius - 0.2;
-      if (r > max) { p.x *= max / r; p.z *= max / r; }
+      if (r > max && !corridor(p)) { p.x *= max / r; p.z *= max / r; }
       if (!guided) p.z = Math.min(p.z, L.doorZ - 0.3);
       p.y = clamp(p.y, 0.4, roof(p.x, p.z, 0.5));
     };
     const clampCamera = (p) => {
       const r = Math.hypot(p.x, p.z), max = L.radius - 0.25;
-      if (r > max) { p.x *= max / r; p.z *= max / r; }
+      if (r > max && !corridor(p)) { p.x *= max / r; p.z *= max / r; }
       if (!guided || Math.abs(p.x) > DOOR.halfW - 0.2) p.z = Math.min(p.z, L.doorZ - 0.2);
       else p.z = Math.min(p.z, L.doorZ + DOOR.vestibule - 0.3);
       p.y = clamp(p.y, 0.3, roof(p.x, p.z, 0.3));
@@ -183,14 +215,12 @@
     // The screens, the ribbon, the terminal and the signs, each a picture slot.
     // The block and mining readings repaint a slot through its key (what it would print), never by callback.
     const reader = BL.timechainBlocks.create();
-    const screens = built.screens.map((node, i) => slot(node, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H));
-    const cards = built.cards.map((node, i) => slot(node, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H));
+    const screens = built.screens.map((node, i) => slot(node, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, prepared && prepared.screens[i]));
+    const cards = built.cards.map((node, i) => slot(node, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, prepared && prepared.cards[i]));
     const terminal = slot(built.terminal, RM.DESK_SCREEN.w, RM.DESK_SCREEN.h, CH.PANEL_W, CH.PANEL_H);
-    const signs = [
-      [built.exitSign, 1.1, 0.34, 330, 102, "EXIT", 64],
-      [built.useSign, 0.9, 0.2, 360, 80, COARSE ? "TAP · EXIT" : "SPACE · EXIT", 38],
-      [built.roomSign, 0.9, 0.3, 300, 100, room.name.toUpperCase(), 54]
-    ].map(([node, w, h, pw, ph, words, size]) => {
+    // The signs on the doorway's bay, painted once (a prepared room has them already).
+    const signs = signsOf(built, room).map(([node, w, h, pw, ph, words, size], i) => {
+      if (prepared) return slot(node, w, h, pw, ph, prepared.signs[i]);
       const s = slot(node, w, h, pw, ph);
       CH.sign(s.canvas.getContext("2d"), pw, ph, words, size);
       hang(renderer, s);
@@ -210,24 +240,10 @@
     const holdings = BL.timechainData.create(() => { holdingsDirty = true; });
     let holdingsDirty = true;
 
-    const minute = () => Math.floor(Date.now() / 60000);
     // Slots are looked at only after a reading, a new minute (the ages printed) or a new holdings page: `sweep` runs
     // until no key moved, so a quiet frame builds no key and paints nothing.
     let seenVersion = -1, seenMinute = -1, sweep = true;
-    // What a slot would print now, as a key; a changed key earns a repaint.
-    const keyOf = (s, i) => {
-      if (s === terminal) return `${holdingsIndex}|${holdingsKeys[holdingsIndex]}`;
-      if (screens[i] === s) {
-        const sets = CH.PANELS[i].sets;
-        let k = "";
-        for (const name of sets) k += name === "history" ? `${reader.historyStatus()}:${reader.summary ? reader.summary.coverage + "/" + reader.summary.tip : ""}|` : `${reader.status(name)}:${reader.at(name)}|`;
-        return k + minute();
-      }
-      const blocks = reader.value("recent");
-      if (i === 0) return `label|${reader.status("recent")}`;
-      const b = blocks && blocks[i - 1];
-      return b ? `${b.id}|${b.pool}|${Math.floor((Date.now() / 1000 - b.time) / 60)}` : `none|${reader.status("recent")}`;
-    };
+    const keyOf = (s, i) => s === terminal ? `${holdingsIndex}|${holdingsKeys[holdingsIndex]}` : screens[i] === s ? screenKey(reader, i) : cardKey(reader, i);
     // At most one picture a frame: the first slot whose key moved.
     const paintNext = () => {
       const m = minute();
@@ -352,11 +368,32 @@
     }
     // In the room, as the visit has it: a guided arrival from the vestibule, or (a reload, a link, a history step)
     // standing at the arrival facing the screens.
-    const arrive = (at) => pilot.navigate({ position: { x: at.x, y: 0, z: at.z }, yaw: 0, pitch: 0.04, dist: 4 });
-    const guide = { stage: visit.guided && avatar ? "arrive" : null, t: 0, quick: false };
+    const arrive = (at, yaw = 0, pitch = 0.04) => pilot.navigate({ position: { x: at.x, y: 0, z: at.z }, yaw, pitch, dist: 4 });
+    const guide = { stage: visit.guided && avatar ? "arrive" : null, t: 0, hold: 0, quick: false };
     const doors = { open: guide.stage ? 1 : 0, want: guide.stage ? 1 : 0, until: 0 };
-    if (avatar) arrive(guide.stage ? L.threshold : L.arrival);
-    if (guide.stage) { guided = true; pilot.setActive(false); }
+    const eyeForward = (cave, pitch) => 0.16 * cave.traits.height * Math.cos(pitch);
+    // Guided, the doorway and vestibule are walkable for the arrival, before it is placed in them.
+    if (guide.stage) guided = true;
+    if (avatar) {
+      const e = guide.stage && visit.entry;
+      // Handed over mid-stride by the island: the same eye, heading and pitch it last drew, in the vestibule facing the
+      // room through the open doors (`entry`, offset as the island's eye stood from its handover point), so the
+      // crossing has no cut. A reload or a link lands at the old spots.
+      if (e) arrive({ x: e.x + Math.sin(e.heading) * eyeForward(avatar, e.pitch), z: L.entry.z + e.dz + Math.cos(e.heading) * eyeForward(avatar, e.pitch) }, e.heading, -e.pitch);
+      else arrive(guide.stage ? L.threshold : L.arrival);
+    }
+    // The island's view back out of its passage (taken there before this crossing), hung at the vestibule's far end so
+    // the walk out sees it fill the view as it reaches the handover point; without one, the hand over is between two
+    // dark corridors.
+    const outView = world.sphereOutView;
+    let exitEye = L.doorZ + 1;
+    if (avatar && outView) {
+      const eye = avatar.headOffset * 0.95 + avatar.viewLift, q = ROOMS.fill(outView.fov, outView.aspect, eye, 2 * DOOR.halfW, 0, DOOR.height, DOOR.vestibule - 0.63);
+      const node = createNode({ geometry: RM.picture(outView.canvas, outView.canvas.width, outView.canvas.height, q.w, q.h), position: { x: 0, y: eye, z: L.veil }, rotation: { x: 0, y: Math.PI, z: 0 } });
+      addChild(root, node);
+      exitEye = L.veil - q.D;
+    }
+    if (guide.stage) pilot.setActive(false);
     // Presence: a shared room is its own zone, published once the Ooga stands in it, and a guided arrival opens the
     // doors for whoever is already here; a solo copy publishes nothing at all.
     if (shared) {
@@ -374,15 +411,22 @@
     let leaving = false;
     // Leaving: the same Ooga goes back out to the island's passage behind the sphere's doors.
     const exitNote = (signedOut) => ({ room: room.id, mode: signedOut ? "solo" : visit.mode, character: avatar ? avatar.traits.name : null, jetpack: visit.jetpack || null });
-    const handOff = (signedOut = false) => {
+    // A walked-out exit hands over mid-stride without the fade, with where its eye stood from the handover point
+    // (`pose`), so the island starts from the same view; any other way out (signed out, Leave far from the doors)
+    // fades as before.
+    const handOff = (signedOut = false, pose = null) => {
       if (leaving) return;
-      world.sphereExit = exitNote(signedOut);
+      world.sphereExit = { ...exitNote(signedOut), pose };
       world.pilot = avatar ? avatar.traits.name : null;
       world.pilotDetached = !avatar;
       BL.net.setBody(null);
       BL.net.setZone("none");
-      leaving = go("hub", "timechain");
+      leaving = go("hub", "timechain", !!pose);
       if (!leaving) world.sphereExit = null;
+    };
+    const exitPose = () => {
+      const p = camera.position, t = camera.target, dx = t.x - p.x, dy = t.y - p.y, dz = t.z - p.z;
+      return { x: p.x, dz: p.z - exitEye, heading: Math.atan2(dx, dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
     };
     // Space at the button: turn to the doorway, the doors part, walk through into the vestibule, then the island.
     const walkOut = () => {
@@ -456,20 +500,22 @@
     showMode();
     hud.hint(guide.stage ? `Entering ${room.name}` : COARSE ? "Stick walks · drag to look · EXIT by the doors leaves" : "W A S D walk · mouse looks · Space at the Exit button leaves", 5000);
 
-    // The guided walks, steered as a held stick would steer them; the view turns with the walk.
-    const steerTo = (x, z, dt) => {
-      const p = avatar.root.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+    // The guided walks, steered as a held stick would steer them; the view turns with the walk, its pitch easing to
+    // `pitch` (level on the way out, so the island's view, hung level, lines up).
+    const steerTo = (x, z, dt, pitch = 0.04) => {
+      const p = avatar.root.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz), o = pilot.orbit, k = Math.min(1, dt * TURN_RATE);
+      o.pitch = o.tPitch = o.pitch + (pitch - o.pitch) * k;
       if (d < 0.12) { people.steer(0, 0, 0, 0, 0); return true; }
       people.steer(dx / d, dz / d, 0, 1, 0, WALK_SPEED);
-      const yaw = Math.atan2(-dx, -dz), o = pilot.orbit;
-      o.yaw = o.tYaw = o.yaw + Math.atan2(Math.sin(yaw - o.yaw), Math.cos(yaw - o.yaw)) * Math.min(1, dt * TURN_RATE);
-      o.pitch = o.tPitch = o.pitch + (0.04 - o.pitch) * Math.min(1, dt * TURN_RATE);
+      const yaw = Math.atan2(-dx, -dz);
+      o.yaw = o.tYaw = o.yaw + Math.atan2(Math.sin(yaw - o.yaw), Math.cos(yaw - o.yaw)) * k;
       return false;
     };
-    // Square to the doors, the view with the body.
+    // Square to the doors and level, the view with the body.
     const faceDoor = (dt) => {
       const o = pilot.orbit, k = Math.min(1, dt * TURN_RATE), r = avatar.root.rotation;
       o.yaw = o.tYaw = o.yaw + Math.atan2(Math.sin(Math.PI - o.yaw), Math.cos(Math.PI - o.yaw)) * k;
+      o.pitch = o.tPitch = o.pitch * (1 - k);
       r.y += Math.atan2(Math.sin(-r.y), Math.cos(-r.y)) * k;
     };
     const finishGuide = () => {
@@ -493,11 +539,16 @@
         if (steerTo(L.doorStep.x, L.doorStep.z, dt) || guide.t > GUIDE_LIMIT) { guide.stage = "open"; guide.t = 0; doors.want = 1; }
       } else if (guide.stage === "open") {
         faceDoor(dt);
-        if (doors.open >= 0.85) { guide.stage = "through"; guide.t = 0; }
+        if (doors.open >= 0.85) { guide.stage = "through"; guide.t = 0; guide.hold = 0; }
       } else if (guide.stage === "through") {
-        steerTo(0, L.threshold.z + 0.6, dt);
-        if (p.z > L.threshold.z || guide.t > GUIDE_LIMIT) { guide.stage = "out"; handOff(); }
-      } else if (guide.stage === "out") steerTo(0, L.threshold.z + 0.6, dt);
+        // Straight on through the doors into the vestibule, to where the island's view fills the eye, and still there a
+        // moment: the island builds itself on a frame that does not move, then walks on from the same view.
+        if (camera.position.z < exitEye && guide.t < GUIDE_LIMIT) steerTo(0, L.veil, dt, 0);
+        else {
+          people.steer(0, 0, 0, 0, 0);
+          if ((guide.hold += dt) > EXIT_HOLD) { guide.stage = "out"; handOff(false, exitPose()); }
+        }
+      } else if (guide.stage === "out") people.steer(0, 0, 0, 0, 0);
     };
     // Sani at his laptop, in the pose the island used to give him there, his beer gear doing the rest.
     const poseSani = (dt) => {
@@ -582,7 +633,7 @@
       timechain: {
         room, visit, layout: L, built, reader, holdings, guide, doors, beer, seat,
         get avatar() { return avatar; }, get sani() { return sani; }, get remotes() { return remotes; }, get sound() { return sound.stats; },
-        get slots() { return all.map((s) => ({ key: s.key, shown: !!s.node.geometry })); },
+        get slots() { return all.map((s) => ({ key: s.key, shown: !!s.node.geometry })); }, get exitEye() { return exitEye; },
         exit: walkOut, chartBoard, holdingsBoard
       }
     };
@@ -594,6 +645,7 @@
         world.pilot = avatar ? avatar.traits.name : null;
         world.sphereExit = exitNote(!BL.net.state.me);
       }
+      world.sphereKeep = null;
       reader.dispose();
       holdings.dispose();
       sound.dispose();
@@ -622,9 +674,12 @@
       shell.input = shell.debug = null;
       return { targets: count };
     };
+    // The island's own meshes stay on the GPU while the visit lasts (`world.sphereKeep`, set as it handed over), so
+    // walking back out does not upload the whole island again in the frame it appears.
     const liveGeometry = (set) => {
       if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
       if (remotes) remotes.liveGeometry(set);
+      if (world.sphereKeep) for (const geometry of world.sphereKeep) set.add(geometry);
     };
     const stats = () => {
       let visible = 0;
@@ -635,53 +690,66 @@
     return { update, overlay, onKey, onDonation, leave, liveGeometry, stats, renderOpts: RENDER_OPTS, get inMotion() { return true; } };
   };
 
-  // The traveler's look through the island's open doors before they cross: this room built off the graph with its
-  // screens as the page's cache would paint them, and one picture of it from just inside its doorway, at eye height,
-  // looking at the screens. `preview` paints and decodes (async); `take` renders in a frame, before that frame's own
-  // render, and releases the room's GPU records again. The island hangs the picture at the end of its passage, for
-  // this page alone.
-  const preview = async (roomId, renderer) => {
+  // A room readied at the island's doorway once Enter commits to it, so that arriving costs no build, paint or upload:
+  // built off the graph (one frame), its screens and ribbon painted from the page's cache a picture at a time, each
+  // decode a pause so the island keeps its frames (`ready`), then seen once from its handover point (`capture`), which
+  // uploads it, and kept on the GPU (`liveGeometry`) until the visit takes it (`create`) or it is let go (`dispose`).
+  const prepare = (roomId, renderer) => {
     const room = ROOMS.get(roomId), L = ROOMS.layout(room.scale), built = RM.build(room.scale), reader = BL.timechainBlocks.create();
-    const pictures = [], now = Date.now();
-    const paint = async (node, w, h, pw, ph, draw) => {
-      const c = CH.canvas(pw, ph);
-      draw(c.getContext("2d"));
+    const screens = [], cards = [], signs = [], pictures = [];
+    let live = true;
+    const paint = async (node, list, w, h, pw, ph, key, draw) => {
+      const canvas = CH.canvas(pw, ph);
+      draw(canvas.getContext("2d"));
       const image = new Image();
-      image.src = c.toDataURL("image/png");
+      image.src = canvas.toDataURL("image/png");
       await image.decode();
+      if (!live) return;
       node.geometry = RM.picture(image, pw, ph, w, h);
       pictures.push(node.geometry);
+      list.push({ key, canvas });
     };
-    // One picture at a time, each decode a pause, so the island keeps its frames while they paint.
-    const blocks = reader.value("recent");
-    for (let i = 0; i < built.screens.length; i++) await paint(built.screens[i], L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, (g) => CH.PANELS[i].paint(g, reader, now));
-    for (let i = 0; i < built.cards.length; i++) await paint(built.cards[i], L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, (g) => i ? CH.card(g, blocks && blocks[i - 1], now) : CH.ribbonLabel(g, reader.status("recent")));
-    for (let i = 0; i < 2; i++) built.doors[i].visible = false;
+    const ready = (async () => {
+      const now = Date.now(), blocks = reader.value("recent");
+      for (let i = 0; i < built.screens.length && live; i++) await paint(built.screens[i], screens, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, screenKey(reader, i), (g) => CH.PANELS[i].paint(g, reader, now));
+      for (let i = 0; i < built.cards.length && live; i++) await paint(built.cards[i], cards, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, cardKey(reader, i), (g) => i ? CH.card(g, blocks && blocks[i - 1], now) : CH.ribbonLabel(g, reader.status("recent")));
+      for (const [node, w, h, pw, ph, words, size] of signsOf(built, room)) if (live) await paint(node, signs, w, h, pw, ph, "", (g) => CH.sign(g, pw, ph, words, size));
+    })();
     const lights = { ...RENDER_OPTS, lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: built.lights.length, shadowExtent: L.radius * 1.2 };
     built.lights.forEach((l, i) => lights.lights.set([l[0], l[1], l[2], l[3], l[4], l[5], l[6], 0], i * 8));
-    const release = () => {
-      for (const geometry of [...RM.geometries(room.scale), ...pictures]) renderer.releaseGeometry(geometry);
-    };
+    const shot = createCamera({ fov: 50, near: 0.12, far: L.radius * 3 + 20 });
     return {
-      // A picture `w` by `h` (metres, for its proportions): the view just inside the doorway, PREVIEW_FOV high.
-      take: (canvas, w, h) => {
-        if (!renderer.ready || !canvas.clientWidth || !canvas.clientHeight) return null;
-        const W = canvas.width, H = canvas.height, aspect = W / H, up = Math.tan(PREVIEW_FOV / 2), across = up * w / h, t = Math.max(up, across / aspect);
-        const shot = createCamera({ fov: 2 * Math.atan(t) * 180 / Math.PI, near: 0.2, far: L.radius * 3 });
-        Object.assign(shot.position, { x: 0, y: 1.75, z: L.doorZ - 0.2 });
-        Object.assign(shot.target, { x: 0, y: 1.95, z: 0 });
+      room, built, screens, cards, signs, ready,
+      // The room from its handover point (`L.entry`), level and facing the screens through its open doors, the eye
+      // `eye` metres up and the view `fov` high (radians), drawn into the page's canvas before that frame's own render
+      // and copied out: the picture the island hangs at the end of its passage.
+      capture: (canvas, eye, fov) => {
+        if (!live || !renderer.ready || !canvas.width || !canvas.height) return null;
+        built.doors[0].position.x = -DOOR.halfW * 1.5;
+        built.doors[1].position.x = DOOR.halfW * 1.5;
+        shot.fov = fov;
+        shot.position.x = 0; shot.position.y = eye; shot.position.z = L.entry.z;
+        shot.target.x = 0; shot.target.y = eye; shot.target.z = L.entry.z - 1;
         if (!renderer.render(built.root, shot, lights)) return null;
-        const sx = W / 2 * (1 - across / (t * aspect)), sy = H / 2 * (1 - up / t), sw = W - 2 * sx, sh = H - 2 * sy;
-        const pw = 384, ph = Math.round(pw * h / w), out = CH.canvas(pw, ph), g = out.getContext("2d");
+        const k = Math.min(1, 1280 / canvas.width), out = CH.canvas(Math.round(canvas.width * k), Math.round(canvas.height * k)), g = out.getContext("2d");
         g.imageSmoothingQuality = "high";
-        g.drawImage(canvas, sx, sy, sw, sh, 0, 0, pw, ph);
-        release();
-        const image = new Image();
-        image.src = out.toDataURL("image/jpeg", 0.9);
-        return { width: pw, height: ph, load: () => image };
+        g.drawImage(canvas, 0, 0, out.width, out.height);
+        // Both renderers hang a picture once it reads as a loaded image; a canvas is one already.
+        out.complete = true;
+        out.naturalWidth = out.width;
+        return out;
       },
-      dispose: release
+      liveGeometry: (set) => {
+        if (!live) return;
+        for (const geometry of RM.geometries(room.scale)) set.add(geometry);
+        for (const geometry of pictures) set.add(geometry);
+      },
+      dispose: () => {
+        if (!live) return;
+        live = false;
+        for (const geometry of [...RM.geometries(room.scale), ...pictures]) renderer.releaseGeometry(geometry);
+      }
     };
   };
-  BL.timechainInterior = { create, preview };
+  BL.timechainInterior = { create, prepare };
 })();

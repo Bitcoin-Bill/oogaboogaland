@@ -48,11 +48,13 @@ Room → client:
 
 ## What the page does with it (`timechain-gate.js`)
 
+- Space beside the keypad (or a click on one of its buttons) glides the view into the Ooga's own first person as the Ooga turns to face the physical keypad; nothing loads. Back or Escape glides the view back to the camera the player had.
 - Enter on the keypad needs a resolved account (`net.state.resolved`). Signed in, the visit is shared; signed out, solo; unresolved, pressing the selected room retries (`net.recheck`), Enter continues solo, Back returns to room choice and the client never guesses.
-- Preparation (the room's deferred code and the traveler's picture) is bounded at 15 s and happens before any `ask`. A failure returns to the keypad with the room still chosen.
-- With `state.doorway`, a shared crossing asks and waits; without it (or with no live socket for 6 s), it crosses locally. A lost socket while waiting falls back to the keypad; a grant that expires before the walk starts (a tab that slept) is not resumed.
+- Preparation starts only at Enter and happens before any `ask`, while the Ooga turns to the doors' seam: the room's deferred code, then the room built and painted a slice a frame (`timechain-interior.js` `prepare`), then one picture of it from its handover point and one of the island's passage for the way back. It is bounded at 15 s; a room slower than usual sets the sphere's heartbeat going on the doors. Back cancels it and returns to the keypad with the room still chosen; a failure does the same.
+- With `state.doorway`, a shared crossing asks and waits facing the doors; without it (or with no live socket for 6 s), it crosses locally. A lost socket while waiting falls back to the keypad; a grant that expires before the walk starts (a tab that slept) is not resumed. Once the doors part nothing cancels the crossing.
 - The plug across the doorway (`timechain-models.js`) is lifted only for this page's own guided walk, so nobody tailgates through doors another player opened.
-- On the way out the hub enters with the Ooga hidden behind the curtain in zone `sphere`, waits a beat, asks for `out` when shared, then walks onto the bridge and sends `done` once the doors can close.
+- The walk goes through the doorway onto the passage's axis, and the room's scene takes over without a fade a step past the doors (out of sight from the bridge), from the same eye: the zone goes to `none` there and to the room's once its Ooga stands in it.
+- On the way out the room hands over in its vestibule; the hub enters with the Ooga in the passage in front of the curtain, behind the shut doors, in zone `sphere`, waits a beat, asks for `out` when shared, then walks onto the bridge and sends `done` once the doors can close. The island's ordinary camera returns only after they have.
 
 ## Zones, presence and voice
 

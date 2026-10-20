@@ -110,6 +110,9 @@
       exitReach: 2.2,
       // The walk out stops at the door's foot, square to it, before the doors part.
       doorStep: { x: 0, z: doorZ - 0.9 },
+      // Where the eye stands when a crossing from the island hands over (in the vestibule, facing the room through the
+      // open doors), and the plane at the vestibule's far end where the island's own view hangs for the way back out.
+      entry: { z: doorZ + 1.3 }, veil: doorZ + DOOR.vestibule - 0.03,
       walkRadius: R - 0.35
     });
     layouts.set(scale, value);
@@ -119,7 +122,8 @@
   // of the furniture. `door` opens the doorway and its vestibule to the guided walk alone.
   const clearAt = (L, x, z, radius = BODY, door = false) => {
     const r = radius;
-    if (door && Math.abs(x) < DOOR.halfW - r && z >= L.doorZ - 0.6 && z <= L.doorZ + DOOR.vestibule - r) return true;
+    // Reaching back a body's width, so it overlaps the room's own edge below whatever the walker's size.
+    if (door && Math.abs(x) < DOOR.halfW - r && z >= L.doorZ - 0.6 - r && z <= L.doorZ + DOOR.vestibule - r) return true;
     if (Math.hypot(x, z) > L.walkRadius - r || z > L.doorZ - 0.12 - r) return false;
     for (const o of L.solids) {
       if (o.r !== undefined) { if (Math.hypot(x - o.x, z - o.z) < o.r + r) return false; }
@@ -137,5 +141,15 @@
     }
     return D.crown;
   };
-  BL.timechainRooms = { COUNT, SCALES, ROOMS, EXTERIOR_ZONE, DOOR, SCREENS, RIBBON, FLOOR, parse, get, layout, clearAt, ceilingAt };
+  // A picture that fills the whole view, seen square on from `D` metres at eye height `eye` (camera `fov` high, `aspect`
+  // wide), in a corridor `width` wide between `floor` and `ceiling`, no further than `reach`: the distance and the
+  // picture's size. Both doorways hang one (the room on the island's side, the island in the room's vestibule), and
+  // the crossing hands over where the eye stands `D` in front of it, so the last frame of one side is the first of the
+  // other.
+  const fill = (fov, aspect, eye, width, floor, ceiling, reach) => {
+    const v = Math.tan(fov / 2), h = v * aspect;
+    const D = Math.max(0.3, Math.min(width / (2 * h), (eye - floor) / v, (ceiling - eye) / v, reach));
+    return { D, w: 2 * D * h, h: 2 * D * v };
+  };
+  BL.timechainRooms = { COUNT, SCALES, ROOMS, EXTERIOR_ZONE, DOOR, SCREENS, RIBBON, FLOOR, parse, get, layout, clearAt, ceilingAt, fill };
 })();
