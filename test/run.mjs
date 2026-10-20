@@ -4994,7 +4994,7 @@ const donationClientChecks = async () => {
     note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
-  const popup = K.donationPopup.create({ state: { message: "hello" } }), dialog = elements.get("donation-popup");
+  const popup = K.donationPopup.create({ state: { message: "hello", recentHandles: [] }, rememberHandle() {} }), dialog = elements.get("donation-popup");
   const popupQuote = async () => { popup.open(); for (const key of ["1", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
   await popupQuote();
   const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1 && invoices[0].message === "hello" && invoices[0].handle === "anon";

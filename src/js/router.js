@@ -41,7 +41,8 @@
     // (`/?scene=dsb`) as it came; a Back or Forward arrival finds its entry already there; any other
     // arrival pushes a new one.
     const arrive = (scene, place, boot) => {
-      const entry = at = routeOf(scene, place);
+      const requested = boot ? current() : null;
+      const entry = at = requested && requested.scene === scene && requested.place === place ? requested : routeOf(scene, place);
       document.title = routes.title(entry);
       const state = { scene, place: entry.place };
       if (popped) popped = false;

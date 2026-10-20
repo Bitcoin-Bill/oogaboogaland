@@ -130,8 +130,8 @@
   // what it missed after the last donation it played; a donation already played is skipped. `state.open` is the
   // API's last word on whether donations are open, and `state.network` the network it takes payments on, each null
   // before it has said. `state.tally` is its latest tally, null before the first.
-  const SOCKET_MIN = 1000, SOCKET_MAX = 60000, PLAYED = 64;
-  const state = { open: null, network: null, connected: false, attempts: 0, donations: 0, tally: null, board: null, boardSats: null, limits: null };
+  const SOCKET_MIN = 1000, SOCKET_MAX = 60000, PLAYED = 64, RECENT_MAX = 10;
+  const state = { open: null, network: null, connected: false, attempts: 0, donations: 0, tally: null, board: null, boardSats: null, recent: null, limits: null };
   const limitsOf = (v) => v && Number.isSafeInteger(v.minSats) && v.minSats > 0
     && Number.isSafeInteger(v.maxSats) && v.maxSats >= v.minSats
     && Number.isSafeInteger(v.lightningMaxSats) && v.lightningMaxSats > 0 && v.lightningMaxSats <= v.maxSats
@@ -147,6 +147,20 @@
   const donationOf = (d) => {
     if (!d || typeof d.id !== "string" || !d.id || d.id.length > 64 || !Number.isInteger(d.sats) || d.sats <= 0 || !isNumber(d.at)) return null;
     return { id: d.id, sats: d.sats, handle: sanitize(d.handle, HANDLE_MAX), message: sanitize(d.message, MESSAGE_MAX), at: d.at };
+  };
+  const recentOf = (d) => {
+    const donation = donationOf(d);
+    if (!donation || !isNumber(d.bananas) || d.bananas < 0) return null;
+    return { ...donation, bananas: d.bananas, verified: d.verified === true,
+      seq: Number.isSafeInteger(d.seq) && d.seq > 0 ? d.seq : 0 };
+  };
+  const insertRecent = (list, entry) => {
+    const old = list.findIndex((item) => item.id === entry.id);
+    if (old >= 0) list.splice(old, 1);
+    let at = 0;
+    while (at < list.length && (entry.seq && list[at].seq ? list[at].seq > entry.seq : list[at].at > entry.at)) at++;
+    list.splice(at, 0, entry);
+    if (list.length > RECENT_MAX) list.length = RECENT_MAX;
   };
   const boardOf = (entries) => entries.slice(0, 256)
     .filter((e) => e && typeof e.handle === "string" && isNumber(e.bananas) && e.bananas >= 0)
@@ -172,6 +186,7 @@
     backoff = SOCKET_MIN;
     if (data.type === "status" && typeof data.open === "boolean") {
       state.open = data.open;
+      if (!state.recent) state.recent = [];
       if (NETWORKS.includes(data.network)) state.network = data.network;
       const limits = limitsOf(data.limits);
       if (data.limits === null || limits) state.limits = limits;
@@ -183,8 +198,23 @@
       played[playedAt] = after = donation.id;
       playedAt = (playedAt + 1) % PLAYED;
       state.donations++;
+      const counted = b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: Math.max(0, b.exact), rounded: Math.max(0, b.rounded) } : { exact: 0, rounded: 0 };
+      const recent = (state.recent || []).slice();
+      insertRecent(recent, { ...donation, bananas: counted.exact, verified: data.verified === true,
+        seq: Number.isSafeInteger(data.seq) && data.seq > 0 ? data.seq : 0 });
+      state.recent = recent;
       // A paid invoice with no price counts no bananas; it must never use the simulator's conversion.
-      handlers.donation(donation, b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: Math.max(0, b.exact), rounded: Math.max(0, b.rounded) } : { exact: 0, rounded: 0 });
+      handlers.donation(donation, counted);
+      notify();
+    } else if (data.type === "recent" && Array.isArray(data.entries)) {
+      const recent = [];
+      for (const raw of data.entries.slice(0, RECENT_MAX)) {
+        const entry = recentOf(raw);
+        if (entry) insertRecent(recent, entry);
+      }
+      for (const entry of state.recent || []) insertRecent(recent, entry);
+      state.recent = recent;
+      notify();
     } else if (data.type === "pile" && isNumber(data.bananas) && isNumber(data.eatPerHour)) {
       if (handlers.pile) handlers.pile({ bananas: Math.max(0, data.bananas), eatPerHour: Math.max(0, data.eatPerHour) });
     } else if (data.type === "board" && Array.isArray(data.entries)) {

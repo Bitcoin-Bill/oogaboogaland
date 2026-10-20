@@ -244,6 +244,7 @@
       statSats: $("stat-sats"),
       bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
       bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
+      bananaRecent: $("banana-recent-list"), bananaRecentEmpty: $("banana-recent-empty"),
       bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
       bananaPanel: $("bananas-panel"), bananaRateLabel: $("banana-rate-label"),
       bananaBtcPrice: $("banana-btc-price"), bananaExchange: $("banana-exchange"),
@@ -555,12 +556,12 @@
       if (stopBananaRate) stopBananaRate();
     });
     watchBananaRate();
-    let shownTally, shownBoard, shownReal, shownNetwork, shownOpen;
+    let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen;
     const refreshDonors = (force = false) => {
       const { real, state, testNetwork } = BL.donations;
       showBananaRate();
-      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
-      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownRecent === state.recent && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
+      shownTally = state.tally; shownBoard = state.board; shownRecent = state.recent; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
       const tally = real ? state.tally : donationStats;
       // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
       // donations closed, or the island's live feed.
@@ -591,6 +592,35 @@
       el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
         : real && !entries ? "Loading the donor leaderboard…"
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
+      const recent = real ? state.recent || [] : donationStats?.recentDonations || [];
+      el.bananaRecent.replaceChildren();
+      for (const entry of recent) {
+        const row = document.createElement("li"), name = document.createElement("span"), amount = document.createElement("strong");
+        name.className = "banana-recent-name";
+        name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous";
+        if (!entry.handle) name.dataset.anon = "true";
+        if (real && entry.verified) {
+          const badge = document.createElement("span");
+          badge.className = "banana-verified";
+          badge.textContent = "✓";
+          badge.title = "Signed in with GitHub using this donor name";
+          badge.setAttribute("role", "img");
+          badge.setAttribute("aria-label", "GitHub name confirmed");
+          name.append(badge);
+        }
+        amount.className = "banana-amount";
+        amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
+        row.append(name, amount);
+        if (entry.message) {
+          const message = document.createElement("p");
+          message.className = "banana-recent-message";
+          message.textContent = entry.message;
+          row.append(message);
+        }
+        el.bananaRecent.append(row);
+      }
+      el.bananaRecentEmpty.hidden = recent.length > 0;
+      el.bananaRecentEmpty.textContent = real ? "Recent donations will appear here as they arrive." : "New demo donations will appear here.";
       el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
         : testNetwork ? `Test donations on ${testNetwork}. Leaderboard values are recorded when paid.`
         : "Leaderboard totals use each donation's recorded value.";
@@ -1001,12 +1031,8 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // Real payments use the same invoice flow as the Factory without leaving the current scene.
-    const openFeed = () => {
-      if (BL.donations.real) return BL.donationPopup.open();
-      if (el.feed.open) return;
-      el.feed.showModal();
-    };
+    // Both payment modes use the Factory's kiosk flow without leaving the current scene.
+    const openFeed = () => BL.donationPopup.open(!BL.donations.real);
     const closeFeed = () => {
       if (el.feed.open) el.feed.close();
     };
@@ -2147,6 +2173,7 @@
       if (liveDonors === refreshDonors) liveDonors = null;
       el.roster.replaceChildren();
       el.bananaLeaders.replaceChildren();
+      el.bananaRecent.replaceChildren();
       el.inventory.replaceChildren();
       el.toast.classList.remove("show");
       el.toast.hidden = true;

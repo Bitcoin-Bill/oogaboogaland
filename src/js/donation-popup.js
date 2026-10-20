@@ -1,15 +1,17 @@
-// The real kiosk flow on the mainland, and the name and message fields shared with the Factory's glass. The fields are
+// The kiosk flow on the mainland, real or simulated, and the name and message fields shared with the Factory's glass. The fields are
 // hidden: they only take the typing (and a phone's keyboard), which both kiosks draw on their own screens.
 (() => {
   "use strict";
   const BL = window.BL;
-  const create = (game) => {
+  const create = (game, onDemoPayment) => {
     const dialog = document.getElementById("donation-popup"), canvas = document.getElementById("donation-screen");
     const fields = document.getElementById("donation-fields"), dock = document.getElementById("factory-donation-fields");
     const handle = document.getElementById("donation-handle"), message = document.getElementById("donation-message"), closeButton = document.getElementById("donation-close");
     const status = document.getElementById("donation-details-status");
-    const context = canvas.getContext("2d"), donations = BL.donations;
-    let flow = null, fieldFlow = null, frame = 0, previous = 0, clock = 0, saveTimer = 0;
+    const context = canvas.getContext("2d"), donations = BL.donations, help = dialog.querySelector(".help");
+    let flow = null, fieldFlow = null, frame = 0, previous = 0, clock = 0, saveTimer = 0, simulated = false;
+    let historyOpen = false, historyAll = false;
+    const historyMatches = [];
     // What is typed, for the kiosk to draw: both fields' text, which has the focus, its selection and the message's
     // longest. Updated on the fields' events, never polled.
     const typed = { handle: "", message: "", field: null, start: 0, end: 0, max: message.maxLength };
@@ -38,8 +40,23 @@
       handle: donations.sanitize(handle, donations.HANDLE_MAX).replace(/^@+/, "").trim() || "anon",
       message: donations.sanitize(message, donations.MESSAGE_MAX)
     });
-    const defaults = () => cleanDetails(BL.net.state.me?.login || "anon", game.state.message);
+    const defaults = () => cleanDetails(simulated ? game.state.handle : BL.net.state.me?.login || "anon", game.state.message);
     const details = () => cleanDetails(handle.value, message.value);
+    const refreshHistory = () => {
+      historyMatches.length = 0;
+      if (historyOpen) {
+        const prefix = handle.value.trim().toLowerCase();
+        for (const name of game.state.recentHandles || []) {
+          if (historyAll || name.toLowerCase().startsWith(prefix) && name !== handle.value) historyMatches.push(name);
+        }
+      }
+      if (fieldFlow) fieldFlow.typed();
+    };
+    const hideHistory = () => {
+      if (!historyOpen) return;
+      historyOpen = historyAll = false;
+      refreshHistory();
+    };
     const detailsState = (owner) => {
       if (fieldFlow !== owner) return;
       const paid = owner.state === "paid", hasInvoice = !!owner.invoice;
@@ -50,6 +67,7 @@
     };
     const attachDetails = (owner, value, factory = false) => {
       fieldFlow = owner;
+      hideHistory();
       handle.value = value.handle; message.value = value.message;
       if (factory) dock.append(fields);
       else dialog.insertBefore(fields, dialog.querySelector(".help"));
@@ -59,6 +77,7 @@
     };
     const detachDetails = (owner) => {
       if (fieldFlow !== owner) return;
+      hideHistory();
       if (saveTimer) save();
       fieldFlow = null;
       dock.hidden = true;
@@ -68,6 +87,7 @@
     // takes it out of both.
     const focusDetails = (field = "handle") => {
       if (!field) {
+        hideHistory();
         const active = document.activeElement;
         if (active === handle || active === message) active.blur();
         // The mainland popup keeps the keys: its canvas takes the focus back, as a click on it would.
@@ -75,6 +95,7 @@
         return;
       }
       const input = field === "message" ? message : handle;
+      if (input === message) hideHistory();
       input.focus({ preventScroll: true });
       if (input === handle) input.select();
       else input.setSelectionRange(input.value.length, input.value.length);
@@ -97,9 +118,35 @@
       keepCarried(handle);
       keepCarried(message);
       track();
+      if (document.activeElement === handle && fieldFlow.state === "details") {
+        historyOpen = true; historyAll = false; refreshHistory();
+        if (!historyMatches.length) hideHistory();
+      } else hideHistory();
       fieldFlow.detailsChanged();
       clearTimeout(saveTimer); saveTimer = 0;
       if (fieldFlow.invoice && fieldFlow.state !== "paid") saveTimer = setTimeout(save, 350);
+    };
+    const showHistory = () => hideHistory();
+    const toggleHistory = () => {
+      if (!fieldFlow || fieldFlow.state !== "details") return;
+      historyOpen = !historyOpen || !historyAll;
+      historyAll = historyOpen;
+      refreshHistory();
+      if (historyOpen) {
+        handle.focus({ preventScroll: true });
+        handle.setSelectionRange(handle.value.length, handle.value.length);
+        track();
+      }
+    };
+    const chooseHistory = (index, next = false) => {
+      if (!fieldFlow || fieldFlow.state !== "details" || !historyMatches[index]) return;
+      handle.value = historyMatches[index];
+      handle.focus({ preventScroll: true });
+      handle.setSelectionRange(handle.value.length, handle.value.length);
+      changed();
+      hideHistory();
+      if (next) focusDetails("message");
+      return true;
     };
     // In the fields, Enter goes from the name to the message and, from the message, finishes like the screen's DONE;
     // Escape finishes too, and Tab or Shift+Tab goes between the two. They are out of the page's tab order
@@ -110,7 +157,12 @@
       const editing = !!fieldFlow && fieldFlow.state === "details";
       if (event.key === "Tab" && editing) {
         event.preventDefault();
+        if (event.target === handle && !event.shiftKey && historyOpen && historyMatches.length) return chooseHistory(0, true);
         return focusDetails(event.target === handle ? "message" : "handle");
+      }
+      if (event.key === "Escape" && historyOpen && historyMatches.length) {
+        event.preventDefault();
+        return hideHistory();
       }
       if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
@@ -141,11 +193,15 @@
       flow.animate(context, clock);
       frame = requestAnimationFrame(draw);
     };
-    const open = () => {
+    const open = (demo = false) => {
       if (dialog.open) return;
+      simulated = demo;
+      const link = location.protocol === "file:" ? `${location.href.split("#")[0]}#/donate` : location.origin + "/donate";
+      help.textContent = simulated ? "This is a local simulation. No Bitcoin is sent." : "Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.";
       flow = BL.factoryKiosk.create({
-        real: true, outerClose: true, link: () => location.origin + "/lightning",
-        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails,
+        real: !simulated, demo: simulated, outerClose: true, link: () => link,
+        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails, onState: showHistory,
+        history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory,
         closeDetails: () => detachDetails(flow), detailsState,
         invoice: (sats, value) => donations.invoice({ sats, ...value }),
         note: (request, value, changedHandle) => donations.note(request, value.message, changedHandle ? value.handle : undefined),
@@ -154,8 +210,17 @@
         limits: () => donations.state.limits,
         rate: () => BL.donationRate?.current || donations.state.tally?.rate,
         watchRate: () => BL.donationRate?.watch(),
+        request: () => ({ id: donations.createRequest(details()).id, url: link }),
         bananasFor: BL.game.bananasFor,
+        price: () => BL.chain.snapshot.priceUsd,
         copy: (text) => { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); },
+        pay: (id, sats) => {
+          if (donations.real) return close();
+          const value = details(), donation = { id, sats, ...value, at: Date.now() };
+          if (!flow.receive(id, null, value.handle, sats)) return;
+          game.setIdentity(value);
+          if (onDemoPayment) onDemoPayment(donation);
+        },
         close, watch: close, release: close
       });
       flow.start();
@@ -187,6 +252,7 @@
     canvas.addEventListener("click", tap);
     const receive = (donation, bananas) => {
       if (!flow || !flow.receive(donation.id, bananas, donation.handle, donation.sats)) return false;
+      game.rememberHandle(donation.handle);
       // Show the delivery in the visitor's current scene as soon as the payment settles.
       close();
       return true;
@@ -201,7 +267,8 @@
       for (const type of ["keyup", "select", "focusin", "focusout"]) fields.removeEventListener(type, track);
       closeButton.removeEventListener("click", close); canvas.removeEventListener("click", tap);
     };
-    return { open, close, receive, seen, dispose, defaults, details, typing: () => typed, restoreDetails, focusDetails, attachDetails, detachDetails, detailsState };
+    return { open, close, receive, seen, dispose, defaults, details, typing: () => typed, restoreDetails, focusDetails, attachDetails, detachDetails, detailsState,
+      history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory, showHistory };
   };
   BL.donationPopup = { create };
 })();

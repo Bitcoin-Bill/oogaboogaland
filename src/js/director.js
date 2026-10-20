@@ -70,7 +70,12 @@
   };
   showQuality();
   const game = gameMod.create({ catalog: models.SWAG });
-  window.BL.donationPopup = window.BL.donationPopup.create(game);
+  window.BL.donationPopup = window.BL.donationPopup.create(game, (donation) => {
+    if (donations.real) return;
+    if (active) active.onDonation(donation);
+    else game.recordDonation(donation);
+    window.BL.hud.setDonationStats(game.state);
+  });
   window.BL.hud.setDonationStats(game.state);
   // world survives scene swaps: banana level, equipment ownership, and the Ooga handed from hub to scene.
   const world = { level: START_BANANAS, pilot: null, mirrorBroken: false };
@@ -661,6 +666,7 @@
     }
     const built = performance.now();
     enter(first, place);
+    if (routed?.path === "donate" && active.id === "hub") document.querySelector('[data-action="feed"]').click();
     mark("ready");
     tierFromBoot(performance.now() - built);
     raf = window.requestAnimationFrame(frame);
