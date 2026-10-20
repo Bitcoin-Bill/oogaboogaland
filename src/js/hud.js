@@ -247,6 +247,7 @@
       bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
       bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
       bananaRecent: $("banana-recent-list"), bananaRecentEmpty: $("banana-recent-empty"),
+      bananaRecentBar: $("banana-recent-bar"), bananaRecentBarLabel: $("banana-recent-bar-label"),
       bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
       bananaPanel: $("bananas-panel"), bananaRateLabel: $("banana-rate-label"),
       bananaBtcPrice: $("banana-btc-price"), bananaExchange: $("banana-exchange"),
@@ -574,6 +575,16 @@
       el.bananaRecent.append(li);
       return { li, name, label, badge, amountText, message, messageText };
     });
+    // The recent list's checkbox keeps it to tips at or above the message bar, remembered in this browser.
+    const RECENT_BAR_KEY = "ooga-recent-bar";
+    let recentBarOnly = false;
+    try { recentBarOnly = localStorage.getItem(RECENT_BAR_KEY) === "1"; } catch { /* no storage: shown unfiltered */ }
+    el.bananaRecentBar.checked = recentBarOnly;
+    on(el.bananaRecentBar, "change", () => {
+      recentBarOnly = el.bananaRecentBar.checked;
+      try { localStorage.setItem(RECENT_BAR_KEY, recentBarOnly ? "1" : "0"); } catch { /* kept for this visit alone */ }
+      refreshDonors(true);
+    });
     let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen;
     const refreshDonors = (force = false) => {
       const { real, state, testNetwork } = BL.donations;
@@ -612,7 +623,9 @@
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
       // The recent list: the newest first, its orange check only on the API's word that the donor's GitHub login
       // matched the name, into the fixed rows.
-      const recent = real ? state.recent || [] : donationStats?.recentDonations || [];
+      const bar = BL.donations.messageMinSats, all = real ? state.recent || [] : donationStats?.recentDonations || [];
+      const recent = recentBarOnly ? all.filter((entry) => entry.sats >= bar) : all;
+      el.bananaRecentBarLabel.textContent = `${BANANA_COUNT.format(bar)} sats and up only`;
       for (let i = 0; i < recentRows.length; i++) {
         const row = recentRows[i], entry = recent[i];
         row.li.hidden = !entry;
@@ -625,7 +638,8 @@
         row.messageText.data = entry.message || "";
       }
       el.bananaRecentEmpty.hidden = recent.length > 0;
-      el.bananaRecentEmpty.textContent = real ? "Recent donations will appear here as they arrive." : "New demo donations will appear here.";
+      el.bananaRecentEmpty.textContent = recentBarOnly && all.length ? `None of the latest tips reached ${BANANA_COUNT.format(bar)} sats.`
+        : real ? "Recent donations will appear here as they arrive." : "New demo donations will appear here.";
       el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
         : testNetwork ? `Test donations on ${testNetwork}. Leaderboard values are recorded when paid.`
         : "Leaderboard totals use each donation's recorded value.";

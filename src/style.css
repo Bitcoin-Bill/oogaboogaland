@@ -1004,6 +1004,8 @@ body[data-active-scene="arcade"] .magazine-hud {
 .banana-leaders li:first-child .banana-amount { color: var(--accent-text); }
 
 .banana-recent { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, 0.4); }
+.banana-recent-filter { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: rgba(243, 239, 228, 0.7); cursor: pointer; }
+.banana-recent-filter input { margin: 0; accent-color: var(--accent); }
 .banana-recent-list { margin: 10px 0 0; padding: 0; list-style: none; }
 .banana-recent-list li {
   display: grid;

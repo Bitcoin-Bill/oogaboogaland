@@ -25,8 +25,8 @@
   // GitHub usernames run to 39 characters; the API's copy of the contract holds the same.
   const HANDLE_MAX = 39;
   const MESSAGE_MAX = 280;
-  // The fewest sats a tip needs to carry a message, and to show on the recent list, so a run of tiny tips can neither
-  // speak nor flood it: the page's bar, which the API's status may replace (`messageMinSats`).
+  // The fewest sats a tip needs to carry a message, so a run of tiny tips cannot speak: the page's bar, which the API's
+  // status may replace (`messageMinSats`). The recent list shows every amount, with a checkbox to keep to the bar.
   const MESSAGE_MIN_SATS = 1000;
   const sanitize = (text, max) => String(text || "").replace(/[^\w .,!?'@#:-]/g, "").trim().slice(0, max);
   const randomId = () => {
@@ -200,7 +200,6 @@
       if (NETWORKS.includes(data.network)) state.network = data.network;
       const limits = limitsOf(data.limits);
       if (data.limits === null || limits) state.limits = limits;
-      state.recent = state.recent.filter((entry) => entry.sats >= messageMinSats());
       if (handlers.status) handlers.status(data.open);
       notify();
     } else if (data.type === "donation") {
@@ -211,13 +210,10 @@
       playedAt = (playedAt + 1) % PLAYED;
       state.donations++;
       const counted = b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: Math.max(0, b.exact), rounded: Math.max(0, b.rounded) } : { exact: 0, rounded: 0 };
-      // Only a tip that could carry a message joins the recent list, so tiny ones cannot flood it.
-      if (donation.sats >= messageMinSats()) {
-        const recent = (state.recent || []).slice();
-        insertRecent(recent, { ...donation, bananas: counted.exact, verified: data.verified === true,
-          seq: Number.isSafeInteger(data.seq) && data.seq > 0 ? data.seq : 0 });
-        state.recent = recent;
-      }
+      const recent = (state.recent || []).slice();
+      insertRecent(recent, { ...donation, bananas: counted.exact, verified: data.verified === true,
+        seq: Number.isSafeInteger(data.seq) && data.seq > 0 ? data.seq : 0 });
+      state.recent = recent;
       // A paid invoice with no price counts no bananas; it must never use the simulator's conversion.
       handlers.donation(donation, counted);
       notify();
@@ -225,9 +221,9 @@
       const recent = [];
       for (const raw of data.entries.slice(0, RECENT_MAX)) {
         const entry = recentOf(raw);
-        if (entry && entry.sats >= messageMinSats()) insertRecent(recent, entry);
+        if (entry) insertRecent(recent, entry);
       }
-      for (const entry of state.recent || []) if (entry.sats >= messageMinSats()) insertRecent(recent, entry);
+      for (const entry of state.recent || []) insertRecent(recent, entry);
       state.recent = recent;
       notify();
     } else if (data.type === "pile" && isNumber(data.bananas) && isNumber(data.eatPerHour)) {

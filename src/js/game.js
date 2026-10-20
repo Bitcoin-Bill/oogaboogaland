@@ -102,7 +102,7 @@
         for (const handle of parsed.recentHandles.slice(0, RECENT_HANDLES).reverse()) if (isString(handle, HANDLE_MAX)) addRecentHandle(state.recentHandles, handle);
       } else for (const donor of state.donors.slice(-RECENT_HANDLES)) addRecentHandle(state.recentHandles, donor.handle);
       if (Array.isArray(parsed.recentDonations)) for (const d of parsed.recentDonations.slice(0, RECENT_DONATIONS)) {
-        if (!d || !isString(d.id, 64) || !d.id || !Number.isSafeInteger(d.sats) || d.sats < BL.donations.MESSAGE_MIN_SATS || !isString(d.handle, HANDLE_MAX)
+        if (!d || !isString(d.id, 64) || !d.id || !Number.isSafeInteger(d.sats) || !isString(d.handle, HANDLE_MAX)
           || !isString(d.message, MESSAGE_MAX) || !Number.isFinite(d.at) || d.at < 0 || !Number.isFinite(d.bananas) || d.bananas < 0) continue;
         state.recentDonations.push({ id: d.id, sats: d.sats, handle: BL.donations.sanitize(d.handle, HANDLE_MAX),
           message: BL.donations.sanitize(d.message, MESSAGE_MAX), at: d.at, bananas: d.bananas });
@@ -203,12 +203,10 @@
       // Local demo donors stay separate from the API's authoritative board. Older saves have no donor history.
       if (counted === null) {
         addRecentHandle(state.recentHandles, donation.handle);
-        // Only a tip big enough to carry a message joins the recent list, as on the API's.
-        if (donation.sats >= BL.donations.MESSAGE_MIN_SATS) {
-          state.recentDonations.unshift({ id: donation.id, sats: donation.sats, handle: BL.donations.sanitize(donation.handle, HANDLE_MAX),
-            message: BL.donations.sanitize(donation.message, MESSAGE_MAX), at: donation.at, bananas });
-          if (state.recentDonations.length > RECENT_DONATIONS) state.recentDonations.length = RECENT_DONATIONS;
-        }
+        // A message rides only a tip at or above the bar, whichever path handed the tip in.
+        state.recentDonations.unshift({ id: donation.id, sats: donation.sats, handle: BL.donations.sanitize(donation.handle, HANDLE_MAX),
+          message: donation.sats >= BL.donations.MESSAGE_MIN_SATS ? BL.donations.sanitize(donation.message, MESSAGE_MAX) : "", at: donation.at, bananas });
+        if (state.recentDonations.length > RECENT_DONATIONS) state.recentDonations.length = RECENT_DONATIONS;
         const handle = BL.donations.sanitize(donation.handle, HANDLE_MAX);
         let donor = state.donors.find((entry) => entry.handle.toLowerCase() === handle.toLowerCase());
         if (!donor && state.donors.length < DONOR_MAX) {

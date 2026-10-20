@@ -4733,10 +4733,10 @@ const gameRulesChecks = async () => {
     ];
     store.set("oogaboogaland.v1", JSON.stringify(savedDemo));
     const recentReloaded = make().state.recentDonations;
-    const recentSaved = recentReloaded.length === 1 && recentReloaded[0].id === "eligible";
+    const recentSaved = recentReloaded.length === 2 && recentReloaded[0].id === "old-small" && recentReloaded[1].id === "eligible";
     store.set("oogaboogaland.v1", "{not json");
     const junk = make().state.orbit.best === null;
-    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, and a malformed best, day, a stored sub-bar donation, crash or broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && recentSaved && junk, JSON.stringify({ bests, kept, dropped, tips, recentSaved, junk }));
+    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, the recent list reloads every amount, and a malformed best, day, crash or broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && recentSaved && junk, JSON.stringify({ bests, kept, dropped, tips, recentSaved, junk }));
     // Tickets spent at a machine (the jackpot wheel): refused, spending nothing, when they fall short or the cost is
     // no whole number above nothing; a spend that goes through is saved.
     const wallet = make();
@@ -4801,9 +4801,10 @@ const donationClientChecks = async () => {
     { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1 },
     { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3 }
   ] });
-  const raisedBar = carried && D.state.recent.length === 1 && D.state.recent[0].id === "new";
+  // The recent list keeps every amount, whatever the bar; the bar only silences a message.
+  const raisedBar = carried && D.state.recent.length === 4 && D.state.recent.some((e) => e.id === "old") && D.state.recent.some((e) => e.id === "new");
   message({ ...paid, donation: { ...paid.donation, id: "quiet", sats: 2000, message: "should not speak" } });
-  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 1;
+  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 5 && D.state.recent.some((e) => e.id === "quiet");
   message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
   message({ type: "seen", id: "chain", sats: 400, due: 1000 });
   const heard = seen.length === 1 && seen[0].slice(0, 4).join() === "chain,400,1000,615" && seen[0][4] === null;
