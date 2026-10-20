@@ -10195,7 +10195,9 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
   // Into the Ooga's own eyes, turned to the keypad: the camera at its head, the head hidden, the keypad in mid-view.
   const view = await b.evaluate(`(() => { const B = __ooga; B.advance(1, 1 / 60); const T = BL.scenes.hub.debug.timechainIsland, G = T.gate.debug, c = B.camera.position, a = B.pilot.player, out = {}, k = T.site.keypad.world;
     B.renderer.project(k[12], k[13], k[14], out);
-    return { lens: G.lens, glide: G.glide, atBody: Math.hypot(c.x - a.root.position.x, c.z - a.root.position.z), headHidden: a.parts.head.cameraHidden, kx: out.x / B.renderer.size.width, ky: out.y / B.renderer.size.height }; })()`);
+    const dx = c.x - k[12], dz = c.z - k[14];
+    return { lens: G.lens, glide: G.glide, atBody: Math.hypot(c.x - a.root.position.x, c.z - a.root.position.z), headHidden: a.parts.head.cameraHidden, kx: out.x / B.renderer.size.width, ky: out.y / B.renderer.size.height,
+      faceOn: (dx * k[8] + dz * k[10]) / (Math.hypot(dx, dz) * Math.hypot(k[8], k[10])) }; })()`);
   for (const k of ["1", "3", "3"]) await b.key(k);
   const chosen = await b.evaluate(`(() => { const B = __ooga, T = BL.scenes.hub.debug.timechainIsland, G = T.gate, key = k => T.site.keys.find(v => v.key === k).node; return { selection: G.debug.selection, three: key("3").geometry.faces[0].color, one: key("1").geometry.faces[0].color, enter: key("enter").geometry.faces[0].color, readout: T.site.readout.room, readoutVisible: T.site.readout.visible, slot: B.pilot.player.weapon.selectedSlot === window.__sphereSlot, moved: B.pilot.player.root.position.x }; })()`);
   // Enter while the room's code is held back: the keys lock and the Ooga turns to the doors; Back cancels that and
@@ -10213,8 +10215,8 @@ const sphereKeypad = { name: "timechain keypad", why: "rule: the keypad chooses 
   record("timechain keypad: Space engages the physical panel with no popup; 1 then 3 lights only 3 with black type and arms Enter, and the number keys never reach the Ooga's weapons",
     engaged.state === "keypad" && !engaged.popup && engaged.enter.join() === "90,64,34" && engaged.act && engaged.keys === 11 && engaged.hint.includes("Choose a room")
       && chosen.selection === 3 && chosen.three.join() === "247,147,26" && chosen.one.join() === "58,52,48" && chosen.enter.join() === "255,189,83" && chosen.readout === 3 && chosen.readoutVisible && chosen.slot, JSON.stringify({ engaged, chosen }));
-  record("timechain keypad: engaging moves the view into the Ooga's own first person, head hidden, turned to the keypad, and no detached camera",
-    view.lens === "eyes" && view.glide === 1 && view.atBody < 0.6 && view.headHidden && Math.abs(view.kx - 0.5) < 0.25 && Math.abs(view.ky - 0.5) < 0.3, JSON.stringify(view));
+  record("timechain keypad: engaging moves the view into the Ooga's own first person, head hidden, face-on to the keypad, and no detached camera",
+    view.lens === "eyes" && view.glide === 1 && view.atBody < 0.6 && view.headHidden && view.faceOn > 0.99 && Math.abs(view.kx - 0.5) < 0.25 && Math.abs(view.ky - 0.5) < 0.3, JSON.stringify(view));
   record("timechain keypad: Enter locks the keys while the room prepares, and Back then returns to the keypad in first person with the room still chosen",
     preparing.state === "preparing" && preparing.selection === 3 && preparing.open === 0 && cancelled.state === "keypad" && cancelled.selection === 3 && !cancelled.prepared && cancelled.open === 0 && cancelled.lens === "eyes", JSON.stringify({ preparing, cancelled }));
   record("timechain keypad: Escape lets go with the view back, resets the physical keys, leaves the doors shut and loads no room data",

@@ -12,7 +12,7 @@
   const { createNode, addChild } = BL.scene;
   // The bridge deck meets the portal at its full outer width, so the approach does not pinch down before the doors.
   const PORTAL_WIDTH = 6;
-  const SITE = { bearing: BL.terrain.TIMECHAIN.bearing, radius: 13, depth: 12, span: 18, width: PORTAL_WIDTH };
+  const SITE = { bearing: BL.terrain.TIMECHAIN.bearing, radius: 13, depth: 12, span: 18, width: PORTAL_WIDTH, bridgeFloor: 0.07 };
   const DIR = { x: Math.sin(SITE.bearing), z: -Math.cos(SITE.bearing) };
   const UNIT = 0.5, WOOD = "#795335", PLANK = "#8b6340", POST = "#5e3f27", ORANGE = "#f7931a";
   const SHELL_R = 13, SHELL_SKIN = 0.16, SHELL_CY = 3;
@@ -295,9 +295,9 @@
     geo.collisionGeometry = box({ w: 5.2, h: DOOR_TOP, d: 0.55, color: "#3b2a1c", offset: { y: DOOR_TOP / 2, z: SPOTS.THRESHOLD } });
     return geo;
   });
-  // The keypad on the right-hand post, facing the bridge: an iron plate, a dim display, 1–9 in a 3 by 3 grid with each
-  // number picked out in the signs' pixels, and Back and Enter under them. Each button stays a separate node so the
-  // island can pick the real control. `KEYS` is where each number sits on it.
+  // The keypad flat against the right-hand post: an iron plate, a dim display, 1–9 in a 3 by 3 grid with each number
+  // picked out in the signs' pixels, and Back and Enter under them. Each button stays a separate node so the island
+  // can pick the real control. `KEYS` is where each number sits on it.
   const KEY_PITCH = 0.105, KEYS = Array.from({ length: 9 }, (_, i) => ({ x: (i % 3 - 1) * KEY_PITCH, y: 0.1 - Math.floor(i / 3) * KEY_PITCH }));
   const keypad = cached(() => {
     const parts = [

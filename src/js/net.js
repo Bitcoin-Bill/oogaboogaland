@@ -84,7 +84,7 @@
   let npcFrame = null, inHub = false, hubSent = null;
   let zone = "outside", body = null, muted = false, hpSent = 100, koSent = false, hpAt = 0, poseAt = 0, px = NaN, py = NaN, pz = NaN, pyaw = NaN;
   const gSent = new Float64Array(6);
-  let gKnown = false;
+  let gKnown = false, poseHasG = false;
   let clockOffset = 0, clockKnown = false;
   // A server timestamp minus the arrival time is the true offset less the trip; the largest such
   // sample is the one that travelled fastest, so it is the best estimate yet.
@@ -222,17 +222,23 @@
       if (transit && transit.actor !== state.selfId) doorHeard(transit);
       // A reconnect picks up where the page is: the actor still driven and where it stands, and voice,
       // whose sessions the room forgot with the old socket.
-      sendZone();
       sendBody();
+      // Restore the actor before admitting it to the destination zone. A reconnect therefore cannot briefly
+      // appear, or become voice-eligible, in a room without its last bounded pose.
+      const restoredPose = body && Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz) && Number.isFinite(pyaw);
+      if (restoredPose) {
+        const extra = state.bodyKind === "gorilla" && poseHasG ? `,"g":[${gSent[0]},${gSent[1].toFixed(3)},${gSent[2].toFixed(3)},${gSent[3].toFixed(3)},${gSent[4].toFixed(3)},${gSent[5].toFixed(3)}]` : "";
+        send(`{"t":"pose","x":${px.toFixed(3)},"y":${py.toFixed(3)},"z":${pz.toFixed(3)},"yaw":${pyaw.toFixed(3)}${extra}}`);
+      }
+      sendZone();
       if (muted) sendMute();
       // A fresh room record starts at full health; the next report sends ours if it differs.
       hpSent = 100; koSent = false; hpAt = 0;
       hubSent = null;
       sendHub();
       BL.voice.restart();
-      poseAt = 0;
-      px = NaN;
-      gKnown = false;
+      if (restoredPose) poseAt = performance.now();
+      else { poseAt = 0; px = NaN; gKnown = poseHasG = false; }
     } else if (msg.t === "join") {
       upsert(msg.p);
       setRoom("live");
@@ -284,6 +290,7 @@
       chatHeard(lines, true);
     } else if (msg.t === "door") {
       if (msg.op === "grant" && chatIdValid(msg.cycle) && Number.isFinite(msg.exp)) doorHeard({ t: "door", op: "grant", cycle: msg.cycle, exp: msg.exp });
+      else if (msg.op === "started" && chatIdValid(msg.cycle) && Number.isFinite(msg.exp)) doorHeard({ t: "door", op: "started", cycle: msg.cycle, exp: msg.exp });
       else if (msg.op === "wait") doorHeard({ t: "door", op: "wait", ahead: Number.isSafeInteger(msg.ahead) && msg.ahead >= 0 ? msg.ahead : 0 });
       else if (msg.op === "denied") doorHeard({ t: "door", op: "denied", reason: typeof msg.reason === "string" ? msg.reason.slice(0, 32) : "" });
     } else if (msg.t === "transit") {
@@ -493,7 +500,7 @@
     state.bodyKind = bodyKind(name);
     state.bodyName = bodyName(name);
     poseAt = 0; px = NaN;
-    gKnown = false;
+    gKnown = poseHasG = false;
     sendBody();
     // The room starts another actor at full health.
     hpSent = 100; koSent = false; hpAt = 0;
@@ -532,8 +539,12 @@
 
   // Throttled to POSE_MS and skipped while nothing moved; a changed gorilla pose also earns a report.
   const sendPose = (x, y, z, yaw, g = null) => {
-    if (state.room !== "live") return;
     const now = performance.now();
+    if (state.bodyKind === "gorilla" && g && g.length === 6) {
+      let valid = true;
+      for (let i = 0; i < 6; i++) if (!Number.isFinite(g[i])) { valid = false; break; }
+      if (valid) poseHasG = true;
+    }
     if (now - poseAt < POSE_MS) return;
     // The room drops a pose outside its bounds, which would freeze this Ooga on other pages: hold it at the edge.
     x = Math.max(-BOUND_XZ, Math.min(BOUND_XZ, x));
@@ -543,16 +554,19 @@
     if (g) for (let i = 0; i < 6; i++) if (!Number.isFinite(g[i])) { g = null; break; }
     let changed = !!g && !gKnown;
     if (g && !changed) for (let i = 0; i < 6; i++) if (g[i] !== gSent[i]) { changed = true; break; }
+    // Even when the complete pose is unchanged, remember that its cached locomotion is valid for reconnect.
+    if (g) poseHasG = true;
     if (!changed && Math.abs(x - px) < 0.005 && Math.abs(y - py) < 0.005 && Math.abs(z - pz) < 0.005 && Math.abs(yaw - pyaw) < 0.01) return;
     poseAt = now;
     px = x; py = y; pz = z; pyaw = yaw;
+    poseHasG = !!g;
     let extra = "";
     if (g) {
       for (let i = 0; i < 6; i++) gSent[i] = g[i];
       gKnown = true;
       extra = `,"g":[${g[0]},${g[1].toFixed(3)},${g[2].toFixed(3)},${g[3].toFixed(3)},${g[4].toFixed(3)},${g[5].toFixed(3)}]`;
     }
-    send(`{"t":"pose","x":${x.toFixed(3)},"y":${y.toFixed(3)},"z":${z.toFixed(3)},"yaw":${yaw.toFixed(3)}${extra}}`);
+    if (state.room === "live") send(`{"t":"pose","x":${x.toFixed(3)},"y":${y.toFixed(3)},"z":${z.toFixed(3)},"yaw":${yaw.toFixed(3)}${extra}}`);
   };
 
   // The doorway: each sends only to a live room that knows it, and says whether it did.

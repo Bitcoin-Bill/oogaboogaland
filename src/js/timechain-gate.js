@@ -57,7 +57,7 @@
     // idle, keypad, account, preparing, waiting, opening, crossing, gone, arriving, leaving.
     const g = {
       state: "idle", selection: 0, room: null, mode: null, prep: 0, stage: null, prepared: null, picture: null, t: 0, ask: 0,
-      cycle: null, exp: 0, open: 0, want: 0, remoteUntil: 0, hintAt: -Infinity, jetpack: null, exit: null, failures: 0, login: null,
+      cycle: null, exp: 0, starting: false, dir: null, open: 0, want: 0, remoteUntil: 0, hintAt: -Infinity, jetpack: null, exit: null, failures: 0, login: null,
       // The view: null (the pilot's own), "eyes" (gliding into and held at the Ooga's eyes from engagement until the
       // crossing hands over, and coming back out) or "back" (gliding back to the pilot's, once free). `glide` runs 0
       // to 1 from the pose held in `from`; `pitch` is the eye's, easing toward `pitchTo`.
@@ -71,6 +71,9 @@
     const at = (spot) => ({ x: worldX(spot.x, spot.z), z: worldZ(spot.x, spot.z) });
     // The walk back out ends far enough along the bridge that a camera behind the Ooga stands outside the doors.
     const WAIT = at(S.WAIT), PARK = at(S.PARK), SEAM = at({ x: 0, z: S.THRESHOLD }), OUTSIDE = at({ x: 0, z: S.WAIT.z + 3.8 });
+    // A clear spot on the bridge directly in front of the keypad. The Ooga sidesteps here while keeping its eyes on
+    // the panel, so every valid approach settles at the same readable distance and face-on angle.
+    const KEYPAD_STAND = at({ x: S.KEYPAD.x, z: S.KEYPAD.z + 1.45 });
     const KEYPAD = { x: worldX(S.KEYPAD.x, S.KEYPAD.z), y: place.y + S.KEYPAD.y, z: worldZ(S.KEYPAD.x, S.KEYPAD.z) };
     // Facing the doors from the bridge, and out of them.
     const IN_HEADING = place.ry + Math.PI, OUT_HEADING = place.ry;
@@ -120,6 +123,12 @@
       return Math.abs(off) < SETTLED;
     };
     const facing = (x, z) => { const p = crew.player.root.position; return Math.atan2(x - p.x, z - p.z); };
+    const settleAtKeypad = (dt) => {
+      const p = crew.player.root.position, dx = KEYPAD_STAND.x - p.x, dz = KEYPAD_STAND.z - p.z, d = Math.hypot(dx, dz);
+      turnTo(facing(KEYPAD.x, KEYPAD.z), dt);
+      if (d > 0.1) crew.steer(dx / d, dz / d, 1, 0, 1, WALK_SPEED);
+      else crew.steer(0, 0, 0, 0, 0);
+    };
     const hold = (on) => {
       pilot.setExternalControl(on);
       if (on) { crew.steer(0, 0, 0, 0, 0); crew.thrust(false); hud.el.act.hidden = true; }
@@ -268,7 +277,7 @@
     const fallBack = (words) => {
       dropPrepared();
       if (g.cycle !== null || g.ask) BL.net.cancelDoor();
-      g.cycle = null; g.ask = 0;
+      g.cycle = null; g.ask = 0; g.starting = false;
       g.want = 0;
       site.plug.visible = true;
       g.state = "keypad";
@@ -293,22 +302,34 @@
         g.cycle = event.cycle;
         g.exp = event.exp;
         granted();
-      } else if (event.op === "lost" && g.ask) {
+      } else if (event.op === "started") {
+        if (!g.starting || event.cycle !== g.cycle) return;
+        g.starting = false;
+        g.exp = event.exp;
+        if (g.state === "waiting" && crew.player) startOpening();
+        else if (g.state === "arriving" && crew.player) startLeaving();
+        else { BL.net.cancelDoor(); g.cycle = null; }
+      } else if (event.op === "denied" && (g.ask || g.cycle !== null)) {
+        g.ask = 0; g.cycle = null; g.starting = false;
+        if (g.state === "waiting") fallBack("The doorway was not available · press Enter to try again");
+        else if (g.state === "arriving") g.t = 0;
+      } else if (event.op === "lost" && (g.ask || g.starting)) {
         if (g.state === "waiting") fallBack("Connection lost · press Enter to try again");
-        else g.ask = 0;
+        else { g.ask = 0; g.cycle = null; g.starting = false; }
       }
     };
     const unsubscribeDoor = BL.net.subscribeDoor(onDoor);
     // Whether this crossing should wait its turn: shared, with a room that knows the doorway.
     const reserving = () => g.mode === "shared" && BL.net.state.doorway;
     const askDoor = (dir) => {
+      g.dir = dir;
       g.ask = BL.net.askDoor(dir, g.room.id) ? performance.now() : 0;
       return !!g.ask;
     };
-    // A grant: still ready and facing the doors, or it goes back unused.
+    // A grant is only permission to ask the room to begin. The doors wait for `started`, whose fresh expiry covers
+    // the full animation; a rejected or lapsed grant never opens them on one page alone.
     const granted = () => {
-      if (g.state === "waiting" && crew.player) { BL.net.goDoor(g.cycle); startOpening(); }
-      else if (g.state === "arriving" && crew.player) { BL.net.goDoor(g.cycle); startLeaving(); }
+      if ((g.state === "waiting" || g.state === "arriving") && crew.player && BL.net.goDoor(g.cycle)) g.starting = true;
       else { BL.net.cancelDoor(); g.cycle = null; }
     };
     // Committed from here on: the doors part as the view settles on them.
@@ -395,7 +416,7 @@
       g.state = "idle";
       g.want = 0;
       if (g.cycle !== null) BL.net.doneDoor(g.cycle);
-      g.cycle = null;
+      g.cycle = null; g.starting = false;
       hideHead(cave, false);
       lens("back");
       hold(false);
@@ -417,8 +438,9 @@
         else if (g.state === "preparing" || g.state === "waiting") { fallBack("Walk an Ooga up to the keypad"); disengage(); }
       }
       if (g.state === "keypad" || g.state === "account") {
-        if (cave) turnTo(facing(KEYPAD.x, KEYPAD.z), dt);
+        if (cave) { settleAtKeypad(dt); g.pitchTo = keypadPitch(); }
       } else if (g.state === "preparing" || g.state === "waiting") {
+        if (g.starting && BL.net.serverNow() > g.exp) { fallBack("The doorway grant expired · press Enter to try again"); return; }
         // Facing the doors' seam while the room readies; a room slower than usual sets the heartbeat going on them.
         const settled = turnTo(facing(SEAM.x, SEAM.z), dt) && Math.abs(g.pitch) < SETTLED;
         if (g.stage === "failed" || g.t > PREPARE_LIMIT) { g.failures++; fallBack(`Room ${g.room.id} could not be opened · press Enter to try again`); return; }
@@ -432,7 +454,7 @@
           if (reserving()) { askDoor("in"); show("Waiting for the door…"); }
           else if (g.mode === "shared" && BL.net.state.room !== "live") show("Connecting to the island…");
           else startOpening();
-        } else if (!g.ask && g.cycle === null) {
+        } else if (!g.ask && g.cycle === null && !g.starting) {
           // A shared crossing with no room to reserve from goes ahead after a grace; one whose request vanished asks again.
           if (reserving()) askDoor("in");
           else if (g.mode !== "shared" || BL.net.state.room === "live" || g.t > CONNECT_GRACE) startOpening();
@@ -462,7 +484,8 @@
         // Standing a beat facing the shut doors (the room's hand over built the island on a still frame; a frame's
         // clamped step after it moves nothing), then they part.
         if (cave) crew.steer(0, 0, 0, 0, 0);
-        if (g.t > 0.15 && !g.ask && g.cycle === null && !(reserving() && askDoor("out"))) startLeaving();
+        if (g.starting && BL.net.serverNow() > g.exp) { BL.net.cancelDoor(); g.cycle = null; g.starting = false; g.t = 0; }
+        if (g.t > 0.15 && !g.ask && g.cycle === null && !g.starting && !(reserving() && askDoor("out"))) startLeaving();
       } else if (g.state === "leaving") {
         // The walk goes on once the doors are open enough and on while they close behind it.
         if (cave && (g.open > 0.55 || g.want === 0)) {
@@ -556,6 +579,7 @@
       // Through the passage the crossing is done; anything short of that gives the doorway back.
       if (g.state === "gone" && g.cycle !== null) BL.net.doneDoor(g.cycle);
       else if (g.cycle !== null || g.ask) BL.net.cancelDoor();
+      g.starting = false;
       dropPrepared();
       if (crew.player) hideHead(crew.player, false);
       g.state = "idle";

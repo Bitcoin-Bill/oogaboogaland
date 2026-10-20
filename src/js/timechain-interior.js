@@ -410,6 +410,11 @@
     // Presence: a shared room is its own zone, published once the Ooga stands in it, and a guided arrival opens the
     // doors for whoever is already here; a solo copy publishes nothing at all.
     if (shared) {
+      BL.net.setBody(avatar ? avatar.traits.name : null);
+      if (avatar) {
+        const p = avatar.root.position;
+        BL.net.sendPose(p.x, p.y - avatar.baseY, p.z, avatar.root.rotation.y);
+      }
       BL.net.setZone(room.zone);
       if (guide.stage) BL.net.passDoor(room.zone, "in");
     } else { BL.net.setBody(null); BL.net.setZone("none"); }
