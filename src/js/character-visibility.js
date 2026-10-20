@@ -192,8 +192,9 @@
     const visit = (node) => {
       if (!node.visible || node.cameraHidden) return;
       const geometry = node.geometry;
-      // Smoke and phase fields are translucent; their effects do not cover UI.
-      if (geometry && geometry.faces && geometry.faces.length && !geometry.matrixGlyph
+      // Smoke and phase fields are translucent; their effects do not cover UI. Surface overlays (`depthOffset`: the
+      // path's 25k tiles, banner marks) lie on a backing that already covers whatever they would.
+      if (geometry && geometry.faces && geometry.faces.length && !geometry.matrixGlyph && !geometry.depthOffset
         && !geometry.mirrorRippleOnly && !node.mirrorRippleOnly && !node.mirrorPortal
         && !(node.smokeOpacity < 1) && !(renderOpts?.birdsEyeCutaway && geometry.cutawayHide)) {
         if (node.instanceData) {
