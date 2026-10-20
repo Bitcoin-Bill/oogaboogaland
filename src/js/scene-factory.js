@@ -856,7 +856,7 @@
       limits: () => donations.state.limits,
       rate: () => BL.donationRate.current || donations.state.tally?.rate,
       watchRate: () => BL.donationRate.watch(),
-      request: () => donations.createRequest(BL.donationPopup.details()),
+      request: (value) => donations.createRequest(value),
       bananasFor: gameMod.bananasFor,
       price: () => BL.chain.snapshot.priceUsd,
       copy: (text, what = "Invoice") => {

@@ -44,7 +44,7 @@
   const RATE = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // An amount's bounds, an invoice's life, a simulated payment's settling, and how long the paid screen holds the
   // visitor's bananas back from the cooker before it cooks them anyway.
-  const MIN = 400, MAX = 1000000, EXPIRY = 300, SETTLE = 2.4, HOLD = 12;
+  const MIN = 69, MAX = 1000000, EXPIRY = 300, SETTLE = 2.4, HOLD = 12;
   // The fewest sats a tip needs to carry a message, when the page gives no bar of its own (`hooks.messageMinSats`).
   const MESSAGE_MIN = 1000;
   const INK = {
@@ -411,7 +411,7 @@
     const limits = () => real && hooks.limits ? hooks.limits() : null;
     const overLightning = () => real && limits() && flow.sats > limits().lightningMaxSats;
     const canLightning = () => !!flow.invoice?.bolt && !overLightning();
-    const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= (limits()?.minSats || 1)
+    const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= Math.max(MIN, limits()?.minSats || MIN)
       && flow.sats <= (limits()?.maxSats || Number.MAX_SAFE_INTEGER) : flow.sats >= MIN && flow.sats <= MAX;
     const closed = () => real && hooks.open() === false;
     // The fewest sats a tip needs to carry a message. Below it the details screen offers the name alone, and every
@@ -424,8 +424,8 @@
       return value;
     };
     const invoice = () => {
-      const r = hooks.request(), id = r.id.replace(/[^0-9a-z]/gi, "");
-      if (hooks.details) flow.savedDetails = taken();
+      const value = taken(), r = hooks.request(value), id = r.id.replace(/[^0-9a-z]/gi, "");
+      if (hooks.details) flow.savedDetails = value;
       flow.invoice = { id: r.id, url: r.url, code: BL.qr.encode(r.url), bolt: `lnbc${flow.sats * 10}n1p${id}` };
       flow.left = EXPIRY;
       shown = -1;
@@ -782,7 +782,7 @@
         if (real) rateLine(W / 2, 106, 320);
         if (flow.error === "amount") write(g, "THAT AMOUNT ISN'T ACCEPTED. TRY ANOTHER.", W / 2, 332, 1, INK.red, "center");
         else if (flow.digits && !valid()) {
-          const min = real ? limits()?.minSats || 1 : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
+          const min = real ? Math.max(MIN, limits()?.minSats || MIN) : MIN, max = real ? limits()?.maxSats || Number.MAX_SAFE_INTEGER : MAX;
           writeFit(g, flow.sats < min ? `MIN ${sats(min)} SATS` : `MAX ${sats(max)} SATS`, W / 2, 332, 1, INK.red, 320, "center");
         }
         else if (overLightning()) write(g, "OVER LIGHTNING LIMIT · ON-CHAIN ONLY", W / 2, 332, 1, INK.amber, "center");

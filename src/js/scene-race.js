@@ -848,8 +848,6 @@
       else if (action === "leave") go(home);
       else if (action === "item") useItem();
       else if (action === "mute") toggleMute();
-      else if (action === "tip") demoTip(1200);
-      else if (action === "tip-legendary") demoTip(120000);
       else if (action === "clear-loot") {
         game.clearLoot();
         onLootCleared();

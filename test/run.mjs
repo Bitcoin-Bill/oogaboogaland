@@ -4726,9 +4726,17 @@ const gameRulesChecks = async () => {
     store.set("oogaboogaland.v1", JSON.stringify(raw));
     const tallied = tips.today[0] === 8200 && tips.today[1] === 13.25 && tips.week[0] === 9000 && tips.week[1] === 15.25 && tips.bananas === 15.25 && tips.last === 2000
       && make().state.tipDays.length === 2;
+    const savedDemo = JSON.parse(store.get("oogaboogaland.v1"));
+    savedDemo.recentDonations = [
+      { id: "old-small", sats: 800, handle: "Old", message: "old message", at: now, bananas: 2 },
+      { id: "eligible", sats: 1000, handle: "New", message: "kept", at: now, bananas: 3 }
+    ];
+    store.set("oogaboogaland.v1", JSON.stringify(savedDemo));
+    const recentReloaded = make().state.recentDonations;
+    const recentSaved = recentReloaded.length === 1 && recentReloaded[0].id === "eligible";
     store.set("oogaboogaland.v1", "{not json");
     const junk = make().state.orbit.best === null;
-    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, and a malformed best, day, a stored crash or a broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && junk, JSON.stringify({ bests, kept, dropped, tips, junk }));
+    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, and a malformed best, day, a stored sub-bar donation, crash or broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && recentSaved && junk, JSON.stringify({ bests, kept, dropped, tips, recentSaved, junk }));
     // Tickets spent at a machine (the jackpot wheel): refused, spending nothing, when they fall short or the cost is
     // no whole number above nothing; a spend that goes through is saved.
     const wallet = make();
@@ -4786,15 +4794,26 @@ const donationClientChecks = async () => {
   const replay = sockets[1].url.endsWith("?after=paid");
   message(paid);
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
+  message({ type: "recent", entries: [] });
+  const carried = D.state.recent.length === 2;
+  message({ type: "status", open: true, limits: { minSats: 69, maxSats: 4000, lightningMaxSats: 1000, messageMinSats: 2500 } });
+  message({ type: "recent", entries: [
+    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1 },
+    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3 }
+  ] });
+  const raisedBar = carried && D.state.recent.length === 1 && D.state.recent[0].id === "new";
+  message({ ...paid, donation: { ...paid.donation, id: "quiet", sats: 2000, message: "should not speak" } });
+  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 1;
   message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
   message({ type: "seen", id: "chain", sats: 400, due: 1000 });
   const heard = seen.length === 1 && seen[0].slice(0, 4).join() === "chain,400,1000,615" && seen[0][4] === null;
   const fallback = await D.invoice({ sats: 1000 });
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
+  const owned = D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("other");
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
-    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
+  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a raised message bar drops carried recent entries and silences sub-bar events, an issued invoice is remembered once, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
+    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && raisedBar && quiet && owned && heard && unlit && received.length === 3 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, raisedBar, quiet, owned, heard, unlit, received }));
 
   let now = Date.now(), detailsOpen = false;
   const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
@@ -4804,7 +4823,7 @@ const donationClientChecks = async () => {
     invoice: async () => ({ request: "request", invoice: { id: "invoice", bolt11: "lntbs1", expires: now / 1000 + 10 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
     open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {},
     editDetails: (field) => { detailsOpen = !!field; }, closeDetails: () => { detailsOpen = false; } });
-  const quote = async () => { F.start(); for (const key of ["Enter", "1", "Enter"]) F.key({ key }); await Promise.resolve(); };
+  const quote = async () => { F.start(); for (const key of ["Enter", "6", "9", "Enter"]) F.key({ key }); await Promise.resolve(); };
   F.start(); F.key({ key: "Enter" }); F.key({ key: "A" }); F.update(0.1);
   const fromAmount = F.state === "details" && detailsOpen;
   F.key({ key: "Escape" });
@@ -4828,7 +4847,7 @@ const donationClientChecks = async () => {
     invoice: async () => ({ request: "request", invoice: { id: "unlit", bolt11: null, expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: (id) => waits.push(id),
     open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {} });
-  G.start(); for (const key of ["Enter", "1", "Enter"]) G.key({ key }); await Promise.resolve();
+  G.start(); for (const key of ["Enter", "6", "9", "Enter"]) G.key({ key }); await Promise.resolve();
   G.key({ key: "Enter" }); await Promise.resolve(); await Promise.resolve();
   const chainOnly = G.state === "chain";
   const short = G.seen("unlit", 400, 1000, 615) && G.state === "chain" && G.rest === 615;
@@ -4840,6 +4859,17 @@ const donationClientChecks = async () => {
   G.stop();
   const waited = waits.join() === "unlit";
   record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
+
+  const demoRequests = [];
+  const demo = kioskContext.window.BL.factoryKiosk.create({ link: () => "/donate", bananasFor: () => 1,
+    details: () => ({ handle: "Casey", message: "visible above the bar" }),
+    request: value => { demoRequests.push({ ...value }); return { id: `demo${demoRequests.length}`, url: "/donate" }; } });
+  demo.start(); for (const key of ["Enter", "6", "9", "Enter", "Enter"]) demo.key({ key });
+  const quietDemo = demo.state === "invoice" && demoRequests[0]?.message === "";
+  demo.stop(); demo.start(); for (const key of ["Enter", "1", "0", "0", "0", "Enter", "Enter"]) demo.key({ key });
+  const speakingDemo = demo.state === "invoice" && demoRequests[1]?.message === "visible above the bar";
+  record("donation kiosk: a simulated invoice QR omits a message under the bar and carries one at the bar", quietDemo && speakingDemo,
+    JSON.stringify({ quietDemo, speakingDemo, demoRequests }));
 
   // A DONE reply may outlive the editor that requested it: the factory reuses its flow between visits,
   // and a short on-chain payment can leave and reopen the editor without replacing the invoice.
@@ -5061,8 +5091,10 @@ const donationClientChecks = async () => {
   const completed = suggested && elements.get("donation-handle").value === "Ooga-Dev" && elements.get("donation-message").focused && popup.history() === null;
   kioskContext.document.activeElement = null;
   elements.get("donation-close").listeners.get("click")();
-  popup.open(); for (const key of ["5", "Enter"]) popupFlow.key({ key }); await settle();
-  const smallInvoice = popupFlow.state === "quote" && invoices.at(-1).sats === 5 && invoices.at(-1).message === "";
+  popup.open(); for (const key of ["6", "8", "Enter"]) popupFlow.key({ key }); await settle();
+  const belowMinimum = popupFlow.state === "amount";
+  for (const key of ["Delete", "6", "9", "Enter"]) popupFlow.key({ key }); await settle();
+  const smallInvoice = belowMinimum && popupFlow.state === "quote" && invoices.at(-1).sats === 69 && invoices.at(-1).message === "";
   popupFlow.key({ key: "A" });
   elements.get("donation-message").focused = false;
   fieldKey("Tab", elements.get("donation-handle"));

@@ -213,7 +213,7 @@
         messageMinSats: () => donations.messageMinSats,
         rate: () => BL.donationRate?.current || donations.state.tally?.rate,
         watchRate: () => BL.donationRate?.watch(),
-        request: () => ({ id: donations.createRequest(details()).id, url: link }),
+        request: value => ({ id: donations.createRequest(value).id, url: link }),
         bananasFor: BL.game.bananasFor,
         price: () => BL.chain.snapshot.priceUsd,
         copy: (text) => { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); },
@@ -255,7 +255,6 @@
     canvas.addEventListener("click", tap);
     const receive = (donation, bananas) => {
       if (!flow || !flow.receive(donation.id, bananas, donation.handle, donation.sats)) return false;
-      game.rememberHandle(donation.handle);
       // Show the delivery in the visitor's current scene as soon as the payment settles.
       close();
       return true;

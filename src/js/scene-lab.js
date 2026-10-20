@@ -458,9 +458,7 @@
     }
     hud.onPreset(pilot.goPreset);
     hud.onAction((action, value) => {
-      if (action === "tip") demoTip(1200);
-      else if (action === "tip-legendary") demoTip(120000);
-      else if (action === "clear-loot") clearLoot();
+      if (action === "clear-loot") clearLoot();
       else if (action === "reset") resetDemo();
       else if (action === "act") pilot.action();
       else if (action === "mode-preset") {

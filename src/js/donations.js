@@ -15,6 +15,7 @@
   const BL = window.BL = window.BL || {};
   const NETWORKS = ["mainnet", "testnet", "signet", "regtest"];
   let real = false, invoiceMessageMax = 80;
+  const OWN_MAX = 64, ownInvoices = new Set();
   const config = {
     serverUrl: "https://btcpay.example.org",
     storeId: "REPLACE_WITH_STORE_ID",
@@ -93,6 +94,8 @@
     const inv = r.invoice, b = r.bananas, rate = r.rate;
     if (typeof r.request !== "string" || !inv || typeof inv.id !== "string" || typeof inv.bolt11 !== "string" && inv.bolt11 != null || !isNumber(inv.expires)) return { error: "invalid" };
     invoiceMessageMax = body.handle === undefined ? 80 : MESSAGE_MAX;
+    ownInvoices.add(inv.id);
+    if (ownInvoices.size > OWN_MAX) ownInvoices.delete(ownInvoices.values().next().value);
     return {
       request: r.request,
       invoice: { id: inv.id, bolt11: inv.bolt11 || null, expires: inv.expires },
@@ -128,6 +131,8 @@
   };
   const waitingOn = (id) => waiting.has(id);
   const waited = (id) => waiting.delete(id);
+  // Only this page's own paid invoices enter its remembered-name suggestions, even after leaving a kiosk.
+  const receivedOwnInvoice = (id) => ownInvoices.delete(id);
 
   // The socket. It sends nothing (a page that does is closed), comes back with backoff, and on a reconnect asks for
   // what it missed after the last donation it played; a donation already played is skipped. `state.open` is the
@@ -195,11 +200,13 @@
       if (NETWORKS.includes(data.network)) state.network = data.network;
       const limits = limitsOf(data.limits);
       if (data.limits === null || limits) state.limits = limits;
+      state.recent = state.recent.filter((entry) => entry.sats >= messageMinSats());
       if (handlers.status) handlers.status(data.open);
       notify();
     } else if (data.type === "donation") {
       const donation = donationOf(data.donation), b = data.bananas;
       if (!donation || played.includes(donation.id)) return;
+      if (donation.sats < messageMinSats()) donation.message = "";
       played[playedAt] = after = donation.id;
       playedAt = (playedAt + 1) % PLAYED;
       state.donations++;
@@ -220,7 +227,7 @@
         const entry = recentOf(raw);
         if (entry && entry.sats >= messageMinSats()) insertRecent(recent, entry);
       }
-      for (const entry of state.recent || []) insertRecent(recent, entry);
+      for (const entry of state.recent || []) if (entry.sats >= messageMinSats()) insertRecent(recent, entry);
       state.recent = recent;
       notify();
     } else if (data.type === "pile" && isNumber(data.bananas) && isNumber(data.eatPerHour)) {
@@ -344,5 +351,5 @@
   // The test network real donations are paid on (signet on staging), or "" for mainnet, before the API has said, and
   // when simulated.
   const testNetwork = () => real && state.network && state.network !== "mainnet" ? state.network : "";
-  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, get messageMinSats() { return messageMinSats(); }, state, useOrigin, createRequest, invoice, note, onchain, waitFor, waitingOn, waited, subscribe, subscribeState, sanitize, HANDLE_MAX, MESSAGE_MAX, MESSAGE_MIN_SATS };
+  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, get messageMinSats() { return messageMinSats(); }, state, useOrigin, createRequest, invoice, note, onchain, waitFor, waitingOn, waited, receivedOwnInvoice, subscribe, subscribeState, sanitize, HANDLE_MAX, MESSAGE_MAX, MESSAGE_MIN_SATS };
 })();

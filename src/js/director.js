@@ -567,6 +567,7 @@
     if (destroyed) return;
     if (net.state.donations) donations.useOrigin();
     unsubscribeDonations = donations.subscribe((donation, bananas) => {
+      if (donations.receivedOwnInvoice(donation.id)) game.rememberHandle(donation.handle);
       window.BL.donationPopup.receive(donation, bananas);
       if (active) active.onDonation(donation, bananas);
       else game.recordDonation(donation, bananas && bananas.exact);
