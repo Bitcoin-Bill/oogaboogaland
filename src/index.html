@@ -157,6 +157,7 @@
         <p data-scene="lab" hidden>EntropyLab cave</p>
         <p data-scene="factory" hidden>Lightning Factory</p>
         <p data-scene="bifrost" hidden>₿IFRÖST</p>
+        <p data-scene="timechain" id="sphere-subtitle" hidden>Timechain Sphere</p>
         <p data-scene="arcade" hidden>Ooga Arcade</p>
         <p data-scene="skee" hidden>Ooga Arcade · Thro-ball</p>
         <p data-scene="hoops" hidden>Ooga Arcade · Hoop Shot</p>
@@ -285,6 +286,10 @@
       <nav class="presets" aria-label="DSB Land" data-scene="dsb" hidden>
         <button type="button" data-action="dsb-lookout" title="Camera viewpoint · releases character control">Island overview</button>
         <button type="button" data-action="dsb-mute" id="dsb-mute" aria-pressed="false">Mute</button>
+      </nav>
+      <nav class="presets" aria-label="Timechain Sphere room" data-scene="timechain" hidden>
+        <span class="sphere-mode" id="sphere-mode" role="status"></span>
+        <button type="button" class="leave" data-action="leave">Leave<span> room</span></button>
       </nav>
       <nav class="presets" aria-label="₿IFRÖST" data-scene="bifrost" hidden>
         <button type="button" data-preset="core">Core</button>
@@ -1730,10 +1735,10 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/pool-water.js"></script>
   <script src="js/pool-paintings.js"></script>
   <script src="js/pool-wildlife.js"></script>
+  <script src="js/timechain-rooms.js"></script>
+  <script src="js/deferred.js"></script>
   <script src="js/timechain-models.js"></script>
-  <script src="js/timechain-beer.js"></script>
-  <script src="js/timechain-data.js"></script>
-  <script src="js/timechain-boards.js"></script>
+  <script src="js/timechain-gate.js"></script>
   <script src="js/solid-props.js"></script>
   <script src="js/breakables.js"></script>
   <script src="js/agent.js"></script>
@@ -1855,6 +1860,13 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/bifrost-heimdall.js"></script>
   <script src="js/bifrost-window.js"></script>
   <script src="js/scene-bifrost.js"></script>
+  <script src="js/scene-timechain.js"></script>
+  <script src="js/timechain-beer.js" data-defer="timechain"></script>
+  <script src="js/timechain-data.js" data-defer="timechain"></script>
+  <script src="js/timechain-blocks.js" data-defer="timechain"></script>
+  <script src="js/timechain-charts.js" data-defer="timechain"></script>
+  <script src="js/timechain-room-models.js" data-defer="timechain"></script>
+  <script src="js/timechain-interior.js" data-defer="timechain"></script>
   <script src="js/routes.js"></script>
   <script src="js/router.js"></script>
   <script src="js/poker-rules.js"></script>

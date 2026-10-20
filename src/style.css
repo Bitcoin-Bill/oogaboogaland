@@ -8564,3 +8564,16 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .sheet-toggle-loot { top: -39px; left: 144px; height: 42px; }
   .sheet-toggle-chat { top: -39px; left: var(--sheet-chat-left); height: 42px; }
 }
+
+.sphere-mode {
+  align-self: center;
+  padding: 0 10px;
+  color: #f2a33a;
+  font: 700 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .sphere-mode { white-space: normal; max-width: 46vw; overflow-wrap: anywhere; }
+}
