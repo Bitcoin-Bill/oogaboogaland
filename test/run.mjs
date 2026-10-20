@@ -9956,7 +9956,7 @@ const timechainDataChecks = async () => {
   record("timechain API: late sibling metadata fills and repaints the holder view without changing its fetch time", gotHeight && gotBoth && changed.filter(i => i === 5).length >= 3 && late.boards.every(b => b.asof === "2026-09-23 / BLOCK 968330"));
 };
 // Rule: a room id is validated at every boundary, and the three sizes are one design whose doorway, arrival, button and
-// furniture keep human size while the architecture scales.
+// chairs keep human size while the architecture scales and the table grows to seat 4, 8 and 12.
 const timechainRoomChecks = async () => {
   const context = { window: { BL: {} } };
   runInNewContext(await readFile(new URL("../src/js/timechain-rooms.js", import.meta.url), "utf8"), context);
@@ -9972,19 +9972,22 @@ const timechainRoomChecks = async () => {
     const guided = Array.from({ length: 40 }, (_, i) => L.threshold.z + (L.arrival.z - L.threshold.z) * i / 39).every(z => R.clearAt(L, 0, z, 0.45, true));
     return {
       s, radius: L.radius, wall: L.wall, door: [L.door.halfW, L.door.height], arrival: along(L.arrival), heading: L.arrival.heading, button: [L.exitButton.y, L.doorZ - L.exitButton.z, L.exitButton.x],
-      table: [L.table.x, L.table.z, L.table.r], chairs: L.chairs.map(c => +Math.hypot(c.x, c.z).toFixed(3)).join(), screenW: L.screens[0].w,
+      table: [L.table.x, L.table.z, L.table.top], seats: L.chairs.length, screenW: L.screens[0].w,
+      // Evenly round the table and clear of it, far enough apart for the widest Ooga to pass between two, the aisle from
+      // the door between two of them.
+      chairs: L.chairs.every((c, i, all) => { const n = all[(i + 1) % all.length]; return Math.hypot(c.x, c.z) - 0.48 > L.table.r + 0.05 && Math.hypot(c.x - n.x, c.z - n.z) > 2.55 && !(c.z > 0 && Math.abs(c.x) < 0.43); }),
       symmetric: Math.abs(L.screens.reduce((sum, p) => sum + p.x, 0)) < 1e-9 && Math.abs(L.ribbon.reduce((sum, p) => sum + p.x, 0)) < 1e-9 && L.screens.every((p, i) => Math.abs(p.x + L.screens[5 - i].x) < 1e-9),
       front: L.screens.every(p => p.z < -L.radius * 0.5), doorBehind: L.doorZ > L.radius * 0.9, screensReach: Math.max(...L.screens.map(p => Math.abs(p.angle))),
       arrivalClear: R.clearAt(L, L.arrival.x, L.arrival.z), buttonReach: R.clearAt(L, L.exitButton.x + 0.4, L.doorZ - 0.6) && Math.hypot(0.4, L.exitButton.z - L.doorZ + 0.6) < L.exitReach,
-      tableSolid: !R.clearAt(L, 0, 0), doorShut: !R.clearAt(L, 0, L.doorZ + 1), doorGuided: R.clearAt(L, 0, L.doorZ + 1, 0.35, true), wallSolid: !R.clearAt(L, L.radius - 0.2, 0), guided,
+      tableSolid: !R.clearAt(L, 0, 0) && R.clearAt(L, 0, 0, 0.35, false, L.table.top), doorShut: !R.clearAt(L, 0, L.doorZ + 1), doorGuided: R.clearAt(L, 0, L.doorZ + 1, 0.35, true), wallSolid: !R.clearAt(L, L.radius - 0.2, 0), guided,
       gear: L.solids.slice(-3).every(o => Math.hypot(o.x, o.z) > L.radius - 2.2 && Math.hypot(o.x, o.z) < L.radius - 0.5)
     };
   });
   const same = (k) => rows.every(r => JSON.stringify(r[k]) === JSON.stringify(rows[0][k]));
-  record("timechain rooms: rooms scale 1×, 1.5× and 2× around one centred doorway opposite the screens, with arrival, Exit button and furniture kept at human size and every walk clear",
+  record("timechain rooms: rooms scale 1×, 1.5× and 2× around one centred doorway opposite the screens, with arrival, Exit button and chairs kept at human size, a table for 4, 8 and 12 that can be stood on, and every walk clear",
     rows.every(r => r.radius === 9 * r.s && Math.abs(r.wall - 5.4 * r.s) < 1e-9 && Math.abs(r.screenW - 3 * r.s) < 1e-9 && r.heading === Math.PI && r.symmetric && r.front && r.doorBehind && r.screensReach < 1.4
-      && r.arrivalClear && r.buttonReach && r.tableSolid && r.doorShut && r.doorGuided && r.wallSolid && r.guided && r.gear)
-      && ["door", "arrival", "button", "table", "chairs"].every(same), JSON.stringify(rows));
+      && r.arrivalClear && r.buttonReach && r.tableSolid && r.doorShut && r.doorGuided && r.wallSolid && r.guided && r.gear && r.chairs)
+      && rows.map(r => r.seats).join() === "4,8,12" && ["door", "arrival", "button", "table"].every(same), JSON.stringify(rows));
 };
 // Rule: block and mining readings keep their units and windows, refuse what does not parse or chain, and the reader keeps
 // one request a dataset, backs off, honours Retry-After, keeps its last reading as STALE and cleans up.
@@ -10298,17 +10301,17 @@ const timechainRoom = { name: "timechain room", why: "playthrough: a signed-out 
   const shut = await b.evaluate(`(() => { const B = __ooga, L = B.timechain.layout, p = B.pilot.player.root.position; return { z: p.z, door: L.doorZ, scene: B.scene, open: B.timechain.doors.open }; })()`);
   record("timechain room: walking into the closed doors does nothing", shut.scene === "timechain" && shut.z < shut.door - 0.3 && shut.open === 0, JSON.stringify(shut));
 } };
-const timechainSizes = { name: "timechain sizes", why: "rule: rooms 4–6 and 7–9 are the same design at 1.5× and 2×, with the doorway, arrival, Exit button and furniture at human size, each its own address", run: async (b) => {
+const timechainSizes = { name: "timechain sizes", why: "rule: rooms 4–6 and 7–9 are the same design at 1.5× and 2×, with the doorway, arrival and Exit button at human size and a table for 8 and 12, each its own address", run: async (b) => {
   const rows = [];
   for (const room of [4, 7, 3]) {
     await b.evaluate(roomGo(room));
     rows.push(await b.evaluate(`(() => { const B = __ooga, D = B.timechain, L = D.layout, a = B.pilot.player.root.position, w = B.pilot.player;
       return { room: D.room.id, scale: D.room.scale, radius: L.radius, door: L.door.halfW, arrivalGap: +(L.doorZ - L.arrival.z).toFixed(6), at: +Math.hypot(a.x - L.arrival.x, a.z - L.arrival.z).toFixed(3),
-        button: [L.exitButton.y, +(L.doorZ - L.exitButton.z).toFixed(6), L.exitButton.x], table: B.timechain.built.table.position.z, screenW: L.screens[0].w, mode: D.visit.mode, hash: location.hash, view: B.pilot.mode, height: w.traits.height }; })()`));
+        button: [L.exitButton.y, +(L.doorZ - L.exitButton.z).toFixed(6), L.exitButton.x], table: B.timechain.built.table.position.z, chairs: B.timechain.built.chairs.length, screenW: L.screens[0].w, mode: D.visit.mode, hash: location.hash, view: B.pilot.mode, height: w.traits.height }; })()`));
   }
   const same = (k) => rows.every(r => JSON.stringify(r[k]) === JSON.stringify(rows[0][k]));
-  record("timechain sizes: Rooms 4 and 7 build at 1.5× and 2× around the same doorway, arrival, Exit button, table and Ooga, solo and first person, each at its own address",
-    rows[0].scale === 1.5 && rows[1].scale === 2 && rows[2].scale === 1 && rows.every(r => r.radius === 9 * r.scale && Math.abs(r.screenW - 3 * r.scale) < 1e-9 && r.at < 0.4 && r.mode === "solo" && r.view === "first-person" && r.hash === "#/sphere-" + r.room)
+  record("timechain sizes: Rooms 4 and 7 build at 1.5× and 2× around the same doorway, arrival, Exit button, table and Ooga, seating 8 and 12, solo and first person, each at its own address",
+    rows[0].scale === 1.5 && rows[1].scale === 2 && rows[2].scale === 1 && rows.map(r => r.chairs).join() === "8,12,4" && rows.every(r => r.radius === 9 * r.scale && Math.abs(r.screenW - 3 * r.scale) < 1e-9 && r.at < 0.4 && r.mode === "solo" && r.view === "first-person" && r.hash === "#/sphere-" + r.room)
       && ["door", "arrivalGap", "button", "table", "height"].every(same), JSON.stringify(rows));
 } };
 const timechainSani = { name: "timechain sani", why: "regression: Sani's recliner spins with his laptop independently of frame rate, and his half-litre refills, spills and is cleaned up in every room", run: async (b) => {

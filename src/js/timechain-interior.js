@@ -131,12 +131,6 @@
     return b ? `${b.id}|${b.pool}|${Math.floor((Date.now() / 1000 - b.time) / 60)}` : `none|${reader.status("recent")}`;
   };
 
-  const signsOf = (built, room) => [
-    [built.exitSign, 1.1, 0.34, 330, 102, "EXIT", 64],
-    [built.useSign, 0.9, 0.2, 360, 80, COARSE ? "TAP · EXIT" : "SPACE · EXIT", 38],
-    [built.roomSign, 0.9, 0.3, 300, 100, room.name.toUpperCase(), 54]
-  ];
-
   const TIPS = {
     exit: "Exit · press Space beside it to walk out",
     screen: "Timechain display · tap for a close-up",
@@ -146,8 +140,13 @@
     beer: "500 ml beer · tap to chug",
     recliner: "Sani's recliner · tap to spin and spill the glass",
     door: "The way out · use the Exit button",
-    table: "Meeting table"
+    table: "Meeting table · jump up on it",
+    chair: COARSE ? "Chair · tap SIT beside it" : "Chair · Space beside it sits"
   };
+  // How close to a chair an Ooga reaches to sit in it (past its own body and the chair's) and how squarely the view
+  // must face it (the cosine of the angle off), so Space by the table between two chairs still jumps; how high it sits
+  // (the crew's `sitPlayer`), and how far behind the chair's middle it stands up, room enough for the widest Ooga.
+  const SIT_REACH = 0.45, SIT_FACING = Math.cos(0.7), SEAT_Y = 0.5, SEAT_BACK = 1.35, CHAIR_R = 0.48;
 
   // The visit. `shell` is the scene object the director knows (scene-timechain.js), `visit` what the shell resolved.
   const create = (shell, ctx, visit) => {
@@ -170,14 +169,18 @@
     for (const l of built.lights) { RENDER_OPTS.lights.set([l[0], l[1], l[2], l[3], l[4], l[5], l[6], 0], n * 8); n++; }
     RENDER_OPTS.lightCount = n;
 
-    // Walking: inside the round wall, short of the closed doors and clear of the furniture; the doorway and the
-    // vestibule open to the guided walk alone.
+    // Walking: inside the round wall, short of the closed doors and clear of the furniture, which the table is only
+    // for feet below its top; the doorway and the vestibule open to the guided walk alone.
     let guided = false;
     const walkable = (ax, az, bx, bz, y, height, actor) => {
       const r = actor && actor.bodyRadius || 0.35, steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2));
-      for (let i = 1; i <= steps; i++) if (!ROOMS.clearAt(L, ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, r, guided)) return false;
+      for (let i = 1; i <= steps; i++) if (!ROOMS.clearAt(L, ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, r, guided, y)) return false;
       return true;
     };
+    // What a body stands on: the floor, or the table's top once its feet are up there, as far out as the table stands
+    // in its way below, so stepping off the edge lands it clear of the table.
+    const T = L.table, tableSolid = L.solids.find((o) => o.top !== undefined);
+    const groundAt = (x, z, feet, _, actor) => feet >= T.top - 0.02 && Math.hypot(x - T.x, z - T.z) < tableSolid.r + (actor ? actor.bodyRadius : 0.35) ? T.top : 0;
     // Under the dome: the ceiling `margin` lower than it stands over (x, z), read that far further out too, so a
     // point keeps clear of the curve above and the cornice beside it. The vestibule's flat ceiling is the doorway's.
     const roof = (x, z, margin) => {
@@ -206,32 +209,30 @@
       follow: { y: 0.9, min: 3, max: 6, pitch: [0.2, 0.7] }, fly: { speed: 4, perDist: 0.4, climb: 2, yMax: L.wall - 1 },
       clampTarget, clampCamera, ceilingAt: (x, z) => roof(x, z, 0), coarse: COARSE, mayPossess: (cave) => BL.net.mayDrive(cave.traits.name),
       jetpackStatus: () => NO_JETPACK,
-      close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: () => 0, only: true }
+      close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt, only: true }
     });
     const fx = fxMod.create({ root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 4, z: 0 } });
     const targets = [];
     const target = (node, owner, radius = 0) => { input.add(node, owner, { radius }); targets.push(node); return owner; };
 
-    // The screens, the ribbon, the terminal and the signs, each a picture slot.
+    // The screens, the ribbon and the terminal, each a picture slot.
     // The block and mining readings repaint a slot through its key (what it would print), never by callback.
     const reader = BL.timechainBlocks.create();
     const screens = built.screens.map((node, i) => slot(node, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, prepared && prepared.screens[i]));
     const cards = built.cards.map((node, i) => slot(node, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, prepared && prepared.cards[i]));
     const terminal = slot(built.terminal, RM.DESK_SCREEN.w, RM.DESK_SCREEN.h, CH.PANEL_W, CH.PANEL_H);
-    // The signs on the doorway's bay, painted once (a prepared room has them already).
-    const signs = signsOf(built, room).map(([node, w, h, pw, ph, words, size], i) => {
-      if (prepared) return slot(node, w, h, pw, ph, prepared.signs[i]);
-      const s = slot(node, w, h, pw, ph);
-      CH.sign(s.canvas.getContext("2d"), pw, ph, words, size);
-      hang(renderer, s);
-      return s;
-    });
-    const all = [...screens, ...cards, terminal, ...signs];
+    const all = [...screens, ...cards, terminal];
     screens.forEach((s, i) => { const owner = target(s.node, { kind: "screen", index: i }); owner.pickRay = rectPick(s.node, s.w, s.h); });
     cards.forEach((s, i) => { const owner = target(s.node, { kind: "card", index: i }); owner.pickRay = rectPick(s.node, s.w, s.h); });
     target(built.desk, { kind: "terminal" }, 1.3);
     target(built.exitButton, { kind: "exit" }, 0.45);
-    target(built.table, { kind: "table" }, 1.2);
+    target(built.table, { kind: "table" }, T.r + 0.05);
+    built.chairs.forEach((node, i) => target(node, { kind: "chair", index: i }, 0.6));
+    // Each chair a seat for the visitor's Ooga, facing the table; standing up leaves it to the chair's back.
+    const seats = L.chairs.map((c) => {
+      const k = (Math.hypot(c.x, c.z) + SEAT_BACK) / Math.hypot(c.x, c.z);
+      return { kind: "chair", x: c.x, y: SEAT_Y, z: c.z, floor: 0, ry: c.heading, sitter: null, walkAt: { x: c.x * k, z: c.z * k } };
+    });
     for (const leaf of built.doors) target(leaf, { kind: "door" }, 1.6);
     // The holdings readings the old sphere's walls showed, one canvas each; the terminal shows the one chosen.
     const holdingsCanvases = BL.timechainData.TITLES.map(() => CH.canvas(CH.PANEL_W, CH.PANEL_H));
@@ -305,7 +306,7 @@
 
     // Sani in his recliner with his beer, in every room, unless the visitor drives him in.
     const lounge = built.lounge, beer = BL.timechainBeer.create(lounge);
-    const seat = { x: lounge.place.x, z: lounge.place.z + 1.8, angle: Math.PI, speed: 0, phase: 0, active: true };
+    const seat = { x: lounge.spots.chair.x, z: lounge.spots.chair.z, angle: Math.PI, speed: 0, phase: 0, active: true };
     target(lounge.chair, { kind: "recliner" }, 1.2);
     target(beer.mug, { kind: "beer" }, 0.3);
     let sani = null;
@@ -333,19 +334,31 @@
       if (sani && sani.root.visible) actors.push(saniActor);
       return actors.length ? actors : NO_ACTORS;
     };
-    // Space beside the Exit button walks out; anywhere else it jumps.
+    // Space beside the Exit button walks out, beside a free chair and facing it (standing on the floor) sits in it;
+    // anywhere else it jumps. Seated, Space or a step stands up (the crew's own).
     const nearExit = () => {
       if (!avatar) return false;
       const p = avatar.root.position, E = L.exitButton;
       return Math.hypot(p.x - E.x, p.z - E.z) < L.exitReach;
     };
+    const nearChair = () => {
+      if (!avatar || avatar.camp.seat || avatar.hop > 0 || avatar.root.position.y - avatar.baseY > 0.1) return null;
+      const p = avatar.root.position, c = camera.position, t = camera.target, fx = t.x - c.x, fz = t.z - c.z, f = Math.hypot(fx, fz) || 1;
+      let near = null, best = CHAIR_R + avatar.bodyRadius + SIT_REACH;
+      for (const s of seats) {
+        const dx = s.x - p.x, dz = s.z - p.z, d = Math.hypot(dx, dz);
+        if (!s.sitter && d < best && (dx * fx + dz * fz) / (d * f) > SIT_FACING) { near = s; best = d; }
+      }
+      return near;
+    };
     const useNear = () => {
-      if (!nearExit() || guide.stage) return false;
-      walkOut();
-      return true;
+      if (guide.stage) return false;
+      if (nearExit()) { walkOut(); return true; }
+      const chair = nearChair();
+      return !!chair && people.sitPlayer(chair);
     };
     if (playerName) {
-      const sharedCtx = { root, input, hud, game, world: playerWorld, playerName, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: () => 0, walkable, useNear, jetpackAllowed: () => false };
+      const sharedCtx = { root, input, hud, game, world: playerWorld, playerName, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt, walkable, useNear, jetpackAllowed: () => false };
       people = sharedCtx.crew = BL.crew.create(sharedCtx);
       pilot.bind(sharedCtx);
       avatar = people.cavemen.get(playerName);
@@ -476,7 +489,10 @@
         else if (o.kind === "sani" || o.kind === "recliner") beer.act("spin", seat);
         else if (o.kind === "beer") beer.act("chug", seat);
         else if (o.kind === "door") hud.toast(COARSE ? "Tap EXIT beside the doors to walk out" : "Press Space at the Exit button to walk out");
-        else if (o.kind === "table") hud.toast(`${room.name} · ${room.scale}× · ${shared ? "shared with whoever chose it" : "a solo copy, just for you"}`);
+        else if (o.kind === "chair") {
+          const s = seats[o.index], p = avatar && avatar.root.position;
+          if (!p || s.sitter || nearChair() !== s || !people.sitPlayer(s)) hud.toast(COARSE ? "Walk up to a free chair, then tap SIT" : "Walk up to a free chair and press Space to sit");
+        } else if (o.kind === "table") hud.toast(`${room.name} · ${room.scale}× · ${shared ? "shared with whoever chose it" : "a solo copy, just for you"}`);
       },
       ...pilot.hooks
     });
@@ -599,8 +615,14 @@
       footsteps.update(driven);
       poseSani(dt);
       if (avatar && !guide.stage) {
-        const near = nearExit();
-        if (near !== guide.near) { guide.near = near; if (near) { hud.setAct("EXIT"); hud.hint(COARSE ? "Tap EXIT to walk out" : "Space · Exit"); } else pilot.showAct(); }
+        const near = avatar.camp.seat ? "stand" : nearExit() ? "exit" : nearChair() ? "sit" : null;
+        if (near !== guide.near) {
+          guide.near = near;
+          if (near === "exit") { hud.setAct("EXIT"); hud.hint(COARSE ? "Tap EXIT to walk out" : "Space · Exit"); }
+          else if (near === "sit") { hud.setAct("SIT"); hud.hint(COARSE ? "Tap SIT to take the chair" : "Space · Sit"); }
+          else if (near === "stand") { hud.setAct("STAND UP!"); hud.hint(COARSE ? "Move or tap STAND UP! to get up" : "Move or press Space to stand up"); }
+          else pilot.showAct();
+        }
       }
       if ((modeWait -= dt) <= 0) { modeWait = 1; showMode(); }
       paintNext();
@@ -631,7 +653,7 @@
     shell.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
       timechain: {
-        room, visit, layout: L, built, reader, holdings, guide, doors, beer, seat,
+        room, visit, layout: L, built, reader, holdings, guide, doors, beer, seat, seats,
         get avatar() { return avatar; }, get sani() { return sani; }, get remotes() { return remotes; }, get sound() { return sound.stats; },
         get slots() { return all.map((s) => ({ key: s.key, shown: !!s.node.geometry })); }, get exitEye() { return exitEye; },
         exit: walkOut, chartBoard, holdingsBoard
@@ -696,7 +718,7 @@
   // uploads it, and kept on the GPU (`liveGeometry`) until the visit takes it (`create`) or it is let go (`dispose`).
   const prepare = (roomId, renderer) => {
     const room = ROOMS.get(roomId), L = ROOMS.layout(room.scale), built = RM.build(room.scale), reader = BL.timechainBlocks.create();
-    const screens = [], cards = [], signs = [], pictures = [];
+    const screens = [], cards = [], pictures = [];
     let live = true;
     const paint = async (node, list, w, h, pw, ph, key, draw) => {
       const canvas = CH.canvas(pw, ph);
@@ -713,13 +735,12 @@
       const now = Date.now(), blocks = reader.value("recent");
       for (let i = 0; i < built.screens.length && live; i++) await paint(built.screens[i], screens, L.screens[i].w, L.screens[i].h, CH.PANEL_W, CH.PANEL_H, screenKey(reader, i), (g) => CH.PANELS[i].paint(g, reader, now));
       for (let i = 0; i < built.cards.length && live; i++) await paint(built.cards[i], cards, L.ribbon[i].w, L.ribbon[i].h, CH.CARD_W, CH.CARD_H, cardKey(reader, i), (g) => i ? CH.card(g, blocks && blocks[i - 1], now) : CH.ribbonLabel(g, reader.status("recent")));
-      for (const [node, w, h, pw, ph, words, size] of signsOf(built, room)) if (live) await paint(node, signs, w, h, pw, ph, "", (g) => CH.sign(g, pw, ph, words, size));
     })();
     const lights = { ...RENDER_OPTS, lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: built.lights.length, shadowExtent: L.radius * 1.2 };
     built.lights.forEach((l, i) => lights.lights.set([l[0], l[1], l[2], l[3], l[4], l[5], l[6], 0], i * 8));
     const shot = createCamera({ fov: 50, near: 0.12, far: L.radius * 3 + 20 });
     return {
-      room, built, screens, cards, signs, ready,
+      room, built, screens, cards, ready,
       // The room from its handover point (`L.entry`), level and facing the screens through its open doors, the eye
       // `eye` metres up and the view `fov` high (radians), drawn into the page's canvas before that frame's own render
       // and copied out: the picture the island hangs at the end of its passage.

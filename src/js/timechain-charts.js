@@ -1,6 +1,6 @@
 // The Timechain Sphere's screens, painted natively in the Timechain Index Blocks look: charcoal panels, fine amber
 // borders and labels, white values, green mining data. Six chart panels (`PANELS`), the latest-blocks ribbon's cards,
-// the holdings readings that came with the old sphere (`holdings`) and the room's small signs. A painter draws one
+// and the holdings readings that came with the old sphere (`holdings`). A painter draws one
 // canvas from what a reader holds (timechain-blocks.js, timechain-data.js) and never fetches; the room repaints a
 // canvas only when what it prints has changed. Every panel names its source, its window and how current it is
 // (LIVE, STALE with its age, LOADING, NO READING, PAUSED), keeps units apart (sat/vB, BTC, MvB, H/s, difficulty) and
@@ -308,16 +308,6 @@
     write(ctx, board.status === "LIVE API" ? "LIVE" : board.status, w - 26, h - 22, board.status === "LIVE API" ? INK.green : INK.label, 17, 700, "right");
   };
 
-  // Small signs: a word in amber on charcoal, `w` by `h` pixels.
-  const sign = (ctx, w, h, words, size, ink = INK.label) => {
-    ctx.fillStyle = INK.ground;
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = INK.amber;
-    ctx.lineWidth = 3;
-    ctx.strokeRect(4, 4, w - 8, h - 8);
-    write(ctx, words, w / 2, h / 2 + size * 0.36, ink, size, 700, "center");
-  };
-
   // A canvas of the given size, for a painter to draw.
   const canvas = (w, h) => {
     const c = document.createElement("canvas");
@@ -325,5 +315,5 @@
     c.height = h;
     return c;
   };
-  BL.timechainCharts = { PANELS, PANEL_W, PANEL_H, CARD_W, CARD_H, INK, card, ribbonLabel, holdings, sign, canvas, freshness, format: { group, btc, rate, minutes, ago, hashrate, diff } };
+  BL.timechainCharts = { PANELS, PANEL_W, PANEL_H, CARD_W, CARD_H, INK, card, ribbonLabel, holdings, canvas, freshness, format: { group, btc, rate, minutes, ago, hashrate, diff } };
 })();
