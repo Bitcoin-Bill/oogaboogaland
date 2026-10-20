@@ -10585,9 +10585,10 @@
     }
     context.restore();
   };
-  // Walking recomputes the sight guides at most this often in game time; the lines are world-anchored, so a
-  // frame of lag never shows, and it is the difference between 42 and 59 fps behind cave rock at 4K.
-  const SIGHT_RECOMPUTE_HZ = 30;
+  // Walking recomputes the sight guides at most this often in game time. The lines are world-anchored, so a few
+  // frames of lag only show as an outline catching up. Behind cave rock at 1920x1080 and DPR 2, 15 Hz is a 25 ms
+  // frame becoming 19 ms; 30 Hz spent about 19 ms on every other frame.
+  const SIGHT_RECOMPUTE_HZ = 15;
   const overlay = (dt) => {
     if (poolBlockHovered) showPoolBlockTooltip();
     else if (pileHovered) showPileTooltip();
