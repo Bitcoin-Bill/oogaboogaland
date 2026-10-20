@@ -666,7 +666,6 @@
     }
     const built = performance.now();
     enter(first, place);
-    if (routed?.path === "donate" && active.id === "hub") document.querySelector('[data-action="feed"]').click();
     mark("ready");
     tierFromBoot(performance.now() - built);
     raf = window.requestAnimationFrame(frame);

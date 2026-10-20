@@ -67,5 +67,5 @@
     };
     return { current, arrive, abandon, dispose };
   };
-  BL.router = { create };
+  BL.router = { create, served: SERVED };
 })();

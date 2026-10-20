@@ -36,7 +36,7 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, donations, qr, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
+  const { math, models, contributors, donations, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
   const FM = BL.factoryModels;
   const { clamp, mat4 } = math;
   const { createNode, addChild, removeChild, createCamera, stepTweens, tweenCount, traverseVisible } = BL.scene;
@@ -843,7 +843,8 @@
       historyCount: () => BL.donationPopup.historyCount(),
       toggleHistory: () => BL.donationPopup.toggleHistory(),
       chooseHistory: (index) => BL.donationPopup.chooseHistory(index),
-      onState: (state) => BL.donationPopup.showHistory(state),
+      onState: () => BL.donationPopup.closeHistory(),
+      messageMinSats: () => donations.messageMinSats,
       restoreDetails: (value) => BL.donationPopup.restoreDetails(value),
       detailsState: (flow) => BL.donationPopup.detailsState(flow),
       invoice: (sats, value) => donations.invoice({ sats, ...value }),
@@ -862,7 +863,7 @@
         if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
         hud.toast(real ? `${what} copied` : `${what} copied · payments are simulated in this build`);
       },
-      pay: (id, sats) => onDonation({ ...tipEvent(id, sats), ...BL.donationPopup.details() }),
+      pay: (id, sats) => { const value = BL.donationPopup.details(); onDonation({ ...tipEvent(id, sats), ...value, message: b.flow.messageOk() ? value.message : "" }); },
       release: () => releaseTip(s),
       watch: () => watchBooth(s),
       close: () => leaveBooth(s)
@@ -1588,15 +1589,8 @@
       pilot.goPreset(name);
     });
     hud.onAction((action) => {
-      // A tip from the dialog closes it and turns the view to the show, so the tipper watches it cook.
-      if (action === "tip" || action === "tip-legendary") {
-        demoTip(action === "tip" ? 1200 : 120000);
-        hud.closeFeed();
-        endBooth(scene);
-        pilot.goPreset("show");
-      }
       // In real mode the dialog sends the tip to the kiosk: the view glides on to its glass from wherever it is.
-      else if (action === "kiosk" && scene.corner && scene.booth.mode !== AT_KIOSK) {
+      if (action === "kiosk" && scene.corner && scene.booth.mode !== AT_KIOSK) {
         endBooth(scene);
         openBooth(scene);
       }
@@ -1607,15 +1601,8 @@
       else if (action.startsWith("mode-")) pilot.modeAction(action);
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);
     });
-    // Tips from the hall: the island's donation dialog, its link and the visitor's name and message.
+    // The simulated kiosk's donation link, with the visitor's name and message.
     const donationRequest = donations.createRequest(game.state);
-    qr.drawTo(hud.el.qr, donationRequest.url, { quiet: 3, dark: "#000000", light: "#f3efe4" });
-    hud.setDonationUrl(donationRequest.url);
-    hud.setIdentity(game.state);
-    hud.onIdentityChange(({ handle, message }) => {
-      game.setIdentity({ handle: donations.sanitize(handle, donations.HANDLE_MAX), message: donations.sanitize(message, donations.MESSAGE_MAX) });
-      hud.setIdentity(game.state);
-    });
     hud.setStats(game.state);
     fx = fxMod.create({ root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 14, z: -4 } });
     dust = BL.dressing.motes({ count: 240, span: 22, low: 0.5, high: 16 });

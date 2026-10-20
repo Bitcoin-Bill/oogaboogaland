@@ -203,9 +203,12 @@
       // Local demo donors stay separate from the API's authoritative board. Older saves have no donor history.
       if (counted === null) {
         addRecentHandle(state.recentHandles, donation.handle);
-        state.recentDonations.unshift({ id: donation.id, sats: donation.sats, handle: BL.donations.sanitize(donation.handle, HANDLE_MAX),
-          message: BL.donations.sanitize(donation.message, MESSAGE_MAX), at: donation.at, bananas });
-        if (state.recentDonations.length > RECENT_DONATIONS) state.recentDonations.length = RECENT_DONATIONS;
+        // Only a tip big enough to carry a message joins the recent list, as on the API's.
+        if (donation.sats >= BL.donations.MESSAGE_MIN_SATS) {
+          state.recentDonations.unshift({ id: donation.id, sats: donation.sats, handle: BL.donations.sanitize(donation.handle, HANDLE_MAX),
+            message: BL.donations.sanitize(donation.message, MESSAGE_MAX), at: donation.at, bananas });
+          if (state.recentDonations.length > RECENT_DONATIONS) state.recentDonations.length = RECENT_DONATIONS;
+        }
         const handle = BL.donations.sanitize(donation.handle, HANDLE_MAX);
         let donor = state.donors.find((entry) => entry.handle.toLowerCase() === handle.toLowerCase());
         if (!donor && state.donors.length < DONOR_MAX) {

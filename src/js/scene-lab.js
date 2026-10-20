@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, donations, qr, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod } = BL;
+  const { math, models, contributors, donations, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod } = BL;
   const { clamp, lerp, ease, fnv1a, randomInt } = math;
   const { createNode, addChild, removeChild, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { DROP_HEIGHT } = pileMod;
@@ -434,15 +434,6 @@
       game.unassign(name);
       crew.applyAllSwag();
       crew.renderLocker();
-    });
-    const donationRequest = donations.createRequest(game.state);
-    qr.drawTo(hud.el.qr, donationRequest.url, { quiet: 3, dark: "#000000", light: "#f3efe4" });
-    mark("qr");
-    hud.setDonationUrl(donationRequest.url);
-    hud.setIdentity(game.state);
-    hud.onIdentityChange(({ handle, message }) => {
-      game.setIdentity({ handle: donations.sanitize(handle, donations.HANDLE_MAX), message: donations.sanitize(message, donations.MESSAGE_MAX) });
-      hud.setIdentity(game.state);
     });
 
     Object.assign(hooks, {

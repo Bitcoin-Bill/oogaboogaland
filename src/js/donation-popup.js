@@ -94,6 +94,8 @@
         if (flow && fieldFlow === flow && dialog.open) canvas.focus({ preventScroll: true });
         return;
       }
+      // Below the message bar the details screen offers the name alone.
+      if (field === "message" && fieldFlow && !fieldFlow.messageOk()) return;
       const input = field === "message" ? message : handle;
       if (input === message) hideHistory();
       input.focus({ preventScroll: true });
@@ -126,7 +128,6 @@
       clearTimeout(saveTimer); saveTimer = 0;
       if (fieldFlow.invoice && fieldFlow.state !== "paid") saveTimer = setTimeout(save, 350);
     };
-    const showHistory = () => hideHistory();
     const toggleHistory = () => {
       if (!fieldFlow || fieldFlow.state !== "details") return;
       historyOpen = !historyOpen || !historyAll;
@@ -167,7 +168,7 @@
       if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
       if (!editing) save();
-      else if (event.key === "Enter" && event.target === handle) focusDetails("message");
+      else if (event.key === "Enter" && event.target === handle && fieldFlow.messageOk()) focusDetails("message");
       else fieldFlow.key({ key: event.key });
     };
     fields.addEventListener("input", changed);
@@ -196,11 +197,12 @@
     const open = (demo = false) => {
       if (dialog.open) return;
       simulated = demo;
-      const link = location.protocol === "file:" ? `${location.href.split("#")[0]}#/donate` : location.origin + "/donate";
+      // The page's own /donate address: a path where the router serves paths, a hash from disk or a named file.
+      const link = BL.router && !BL.router.served ? `${location.href.split("#")[0]}#/donate` : `${location.origin}/donate`;
       help.textContent = simulated ? "This is a local simulation. No Bitcoin is sent." : "Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.";
       flow = BL.factoryKiosk.create({
         real: !simulated, demo: simulated, outerClose: true, link: () => link,
-        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails, onState: showHistory,
+        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails, onState: hideHistory,
         history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory,
         closeDetails: () => detachDetails(flow), detailsState,
         invoice: (sats, value) => donations.invoice({ sats, ...value }),
@@ -208,6 +210,7 @@
         onchain: (request) => donations.onchain(request), waitFor: donations.waitFor,
         open: () => donations.state.open, testNetwork: () => donations.testNetwork,
         limits: () => donations.state.limits,
+        messageMinSats: () => donations.messageMinSats,
         rate: () => BL.donationRate?.current || donations.state.tally?.rate,
         watchRate: () => BL.donationRate?.watch(),
         request: () => ({ id: donations.createRequest(details()).id, url: link }),
@@ -216,7 +219,7 @@
         copy: (text) => { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); },
         pay: (id, sats) => {
           if (donations.real) return close();
-          const value = details(), donation = { id, sats, ...value, at: Date.now() };
+          const value = details(), donation = { id, sats, ...value, message: flow.messageOk() ? value.message : "", at: Date.now() };
           if (!flow.receive(id, null, value.handle, sats)) return;
           game.setIdentity(value);
           if (onDemoPayment) onDemoPayment(donation);
@@ -268,7 +271,7 @@
       closeButton.removeEventListener("click", close); canvas.removeEventListener("click", tap);
     };
     return { open, close, receive, seen, dispose, defaults, details, typing: () => typed, restoreDetails, focusDetails, attachDetails, detachDetails, detailsState,
-      history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory, showHistory };
+      history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory, closeHistory: hideHistory };
   };
   BL.donationPopup = { create };
 })();

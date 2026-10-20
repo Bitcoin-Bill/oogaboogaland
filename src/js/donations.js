@@ -24,6 +24,9 @@
   // GitHub usernames run to 39 characters; the API's copy of the contract holds the same.
   const HANDLE_MAX = 39;
   const MESSAGE_MAX = 280;
+  // The fewest sats a tip needs to carry a message, and to show on the recent list, so a run of tiny tips can neither
+  // speak nor flood it: the page's bar, which the API's status may replace (`messageMinSats`).
+  const MESSAGE_MIN_SATS = 1000;
   const sanitize = (text, max) => String(text || "").replace(/[^\w .,!?'@#:-]/g, "").trim().slice(0, max);
   const randomId = () => {
     const bytes = new Uint8Array(6);
@@ -135,7 +138,9 @@
   const limitsOf = (v) => v && Number.isSafeInteger(v.minSats) && v.minSats > 0
     && Number.isSafeInteger(v.maxSats) && v.maxSats >= v.minSats
     && Number.isSafeInteger(v.lightningMaxSats) && v.lightningMaxSats > 0 && v.lightningMaxSats <= v.maxSats
-    ? { minSats: v.minSats, maxSats: v.maxSats, lightningMaxSats: v.lightningMaxSats } : null;
+    && (v.messageMinSats === undefined || Number.isSafeInteger(v.messageMinSats) && v.messageMinSats >= 0)
+    ? { minSats: v.minSats, maxSats: v.maxSats, lightningMaxSats: v.lightningMaxSats, messageMinSats: v.messageMinSats ?? MESSAGE_MIN_SATS } : null;
+  const messageMinSats = () => state.limits?.messageMinSats ?? MESSAGE_MIN_SATS;
   const readers = new Set();
   const notify = () => { for (const reader of readers) reader(); };
   const subscribeState = (reader) => {
@@ -199,10 +204,13 @@
       playedAt = (playedAt + 1) % PLAYED;
       state.donations++;
       const counted = b && isNumber(b.exact) && isNumber(b.rounded) ? { exact: Math.max(0, b.exact), rounded: Math.max(0, b.rounded) } : { exact: 0, rounded: 0 };
-      const recent = (state.recent || []).slice();
-      insertRecent(recent, { ...donation, bananas: counted.exact, verified: data.verified === true,
-        seq: Number.isSafeInteger(data.seq) && data.seq > 0 ? data.seq : 0 });
-      state.recent = recent;
+      // Only a tip that could carry a message joins the recent list, so tiny ones cannot flood it.
+      if (donation.sats >= messageMinSats()) {
+        const recent = (state.recent || []).slice();
+        insertRecent(recent, { ...donation, bananas: counted.exact, verified: data.verified === true,
+          seq: Number.isSafeInteger(data.seq) && data.seq > 0 ? data.seq : 0 });
+        state.recent = recent;
+      }
       // A paid invoice with no price counts no bananas; it must never use the simulator's conversion.
       handlers.donation(donation, counted);
       notify();
@@ -210,7 +218,7 @@
       const recent = [];
       for (const raw of data.entries.slice(0, RECENT_MAX)) {
         const entry = recentOf(raw);
-        if (entry) insertRecent(recent, entry);
+        if (entry && entry.sats >= messageMinSats()) insertRecent(recent, entry);
       }
       for (const entry of state.recent || []) insertRecent(recent, entry);
       state.recent = recent;
@@ -279,12 +287,12 @@
   let simTimer = 0, identity = () => ({}), subscribed = false;
   const simulate = (delayMs) => {
     simTimer = window.setTimeout(() => {
-      const who = identity();
+      const who = identity(), sats = pickAmount();
       handlers.donation({
         id: `sim-${randomId()}`,
-        sats: pickAmount(),
+        sats,
         handle: sanitize(who.handle, HANDLE_MAX),
-        message: sanitize(who.message, MESSAGE_MAX),
+        message: sats >= MESSAGE_MIN_SATS ? sanitize(who.message, MESSAGE_MAX) : "",
         at: Date.now()
       }, null);
       simulate(15e3 + Math.random() * 20e3);
@@ -336,5 +344,5 @@
   // The test network real donations are paid on (signet on staging), or "" for mainnet, before the API has said, and
   // when simulated.
   const testNetwork = () => real && state.network && state.network !== "mainnet" ? state.network : "";
-  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, state, useOrigin, createRequest, invoice, note, onchain, waitFor, waitingOn, waited, subscribe, subscribeState, sanitize, HANDLE_MAX, MESSAGE_MAX };
+  BL.donations = { config, get real() { return real; }, get testNetwork() { return testNetwork(); }, get messageMinSats() { return messageMinSats(); }, state, useOrigin, createRequest, invoice, note, onchain, waitFor, waitingOn, waited, subscribe, subscribeState, sanitize, HANDLE_MAX, MESSAGE_MAX, MESSAGE_MIN_SATS };
 })();

@@ -22,6 +22,8 @@
   const DONATED_COUNT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const DONOR_BANANAS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let donorUnit = "bananas";
+  // How many rows the Bananas panel's recent list holds: a fixed pool, so the DOM never grows with donations.
+  const RECENT_ROWS = 10;
   let donationStats = null, liveDonors = null;
   const setDonationStats = (stats) => {
     donationStats = stats;
@@ -251,7 +253,6 @@
       donorUnits: [...document.querySelectorAll("[data-donor-unit]")],
       lootTab: $("loot-tab"),
       lootCount: $("loot-count"),
-      crateHelp: $("crate-help"),
       worldLootHint: $("world-loot-hint"),
       subtitle: $("subtitle"),
       actions: [...document.querySelectorAll("[data-action]")],
@@ -316,11 +317,6 @@
       presets: [...document.querySelectorAll("[data-preset]")],
       inventory: $("inventory"),
       inventoryEmpty: $("inventory-empty"),
-      handle: $("handle"),
-      message: $("message"),
-      qr: $("qr"),
-      qrUrl: $("qr-url"),
-      feed: $("feed"),
       recipe: $("recipe"),
       recipeText: $("recipe-text")
     };
@@ -343,7 +339,6 @@
     };
     favicon.src = document.querySelector('link[rel="icon"][sizes="64x64"]').href;
     el.lootTab.hidden = !lootEnabled;
-    el.crateHelp.hidden = !lootEnabled;
     el.worldLootHint.hidden = !lootEnabled;
     const savedSheet = readSheetState();
     let sheetHeight = Number.isFinite(savedSheet?.height) && savedSheet.height >= 1 && savedSheet.height <= 10000 ? savedSheet.height : null;
@@ -556,6 +551,29 @@
       if (stopBananaRate) stopBananaRate();
     });
     watchBananaRate();
+    const recentRows = Array.from({ length: RECENT_ROWS }, () => {
+      const li = document.createElement("li"), name = document.createElement("span"), label = document.createTextNode("");
+      const badge = document.createElement("span"), amount = document.createElement("strong"), message = document.createElement("p");
+      // Every text node exists from the start, so filling a row later adds nothing to the DOM.
+      const amountText = document.createTextNode(""), messageText = document.createTextNode("");
+      name.className = "banana-recent-name";
+      badge.className = "banana-verified";
+      badge.textContent = "✓";
+      badge.title = "Signed in with GitHub using this donor name";
+      badge.setAttribute("role", "img");
+      badge.setAttribute("aria-label", "GitHub name confirmed");
+      badge.hidden = true;
+      amount.className = "banana-amount";
+      message.className = "banana-recent-message";
+      message.hidden = true;
+      name.append(label, badge);
+      amount.append(amountText);
+      message.append(messageText);
+      li.append(name, amount, message);
+      li.hidden = true;
+      el.bananaRecent.append(li);
+      return { li, name, label, badge, amountText, message, messageText };
+    });
     let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen;
     const refreshDonors = (force = false) => {
       const { real, state, testNetwork } = BL.donations;
@@ -592,32 +610,19 @@
       el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
         : real && !entries ? "Loading the donor leaderboard…"
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
+      // The recent list: the newest first, its orange check only on the API's word that the donor's GitHub login
+      // matched the name, into the fixed rows.
       const recent = real ? state.recent || [] : donationStats?.recentDonations || [];
-      el.bananaRecent.replaceChildren();
-      for (const entry of recent) {
-        const row = document.createElement("li"), name = document.createElement("span"), amount = document.createElement("strong");
-        name.className = "banana-recent-name";
-        name.textContent = entry.handle ? `@${entry.handle}` : "Anonymous";
-        if (!entry.handle) name.dataset.anon = "true";
-        if (real && entry.verified) {
-          const badge = document.createElement("span");
-          badge.className = "banana-verified";
-          badge.textContent = "✓";
-          badge.title = "Signed in with GitHub using this donor name";
-          badge.setAttribute("role", "img");
-          badge.setAttribute("aria-label", "GitHub name confirmed");
-          name.append(badge);
-        }
-        amount.className = "banana-amount";
-        amount.textContent = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
-        row.append(name, amount);
-        if (entry.message) {
-          const message = document.createElement("p");
-          message.className = "banana-recent-message";
-          message.textContent = entry.message;
-          row.append(message);
-        }
-        el.bananaRecent.append(row);
+      for (let i = 0; i < recentRows.length; i++) {
+        const row = recentRows[i], entry = recent[i];
+        row.li.hidden = !entry;
+        if (!entry) continue;
+        row.label.data = entry.handle ? `@${entry.handle}` : "Anonymous";
+        row.name.dataset.anon = String(!entry.handle);
+        row.badge.hidden = !(real && entry.verified);
+        row.amountText.data = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
+        row.message.hidden = !entry.message;
+        row.messageText.data = entry.message || "";
       }
       el.bananaRecentEmpty.hidden = recent.length > 0;
       el.bananaRecentEmpty.textContent = real ? "Recent donations will appear here as they arrive." : "New demo donations will appear here.";
@@ -1031,16 +1036,8 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // Both payment modes use the Factory's kiosk flow without leaving the current scene.
+    // Both payment modes use the Factory's kiosk flow in the donation popup, without leaving the current scene.
     const openFeed = () => BL.donationPopup.open(!BL.donations.real);
-    const closeFeed = () => {
-      if (el.feed.open) el.feed.close();
-    };
-    on(el.feed, "keydown", (e) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      closeFeed();
-    });
     const floatingBoards = [];
     const stackBoards = () => {
       for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].setLayer(20 + i);
@@ -1640,7 +1637,6 @@
         entry.close();
       }
     }, true);
-    dismissOutside(el.feed, closeFeed);
     dismissOutside(el.recipe, closeRecipe);
     dismissOutside(el.board, () => mainBoard.close());
     // The prompt is written to be pasted, so it leaves in one click.
@@ -1743,7 +1739,6 @@
       if (b === el.mode && e.detail !== 0) return;
       b.blur();
       if (b.dataset.action === "feed") openFeed();
-      else if (b.dataset.action === "feed-close") closeFeed();
       else if (b.dataset.action === "recipe-close") closeRecipe();
       else if (b.dataset.action === "recipe-copy") copyRecipe(b);
       else if (b.dataset.action === "intro-go") b.closest("[data-intro]").hidden = true;
@@ -2036,20 +2031,6 @@
     const onPreset = (fn) => {
       presetHandler = fn;
     };
-    let identityHandler = null;
-    const onIdentityChange = (fn) => {
-      identityHandler = fn;
-    };
-    const emitIdentity = () => identityHandler && identityHandler({ handle: el.handle.value, message: el.message.value });
-    on(el.handle, "change", emitIdentity);
-    on(el.message, "change", emitIdentity);
-    const setIdentity = ({ handle, message }) => {
-      el.handle.value = handle || "";
-      el.message.value = message || "";
-    };
-    const setDonationUrl = (url) => {
-      el.qrUrl.textContent = url;
-    };
     let assignHandler = null, unassignHandler = null;
     const onAssign = (fn) => {
       assignHandler = fn;
@@ -2194,7 +2175,6 @@
       setWeapon(false, false, 0);
       setMagazine(0, 0, 0, false);
       setJetpack(false, false, 0);
-      closeFeed();
       closeRecipe();
       closeBoard(true);
       destinationNames = [];
@@ -2203,7 +2183,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.

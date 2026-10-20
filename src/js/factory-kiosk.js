@@ -45,6 +45,8 @@
   // An amount's bounds, an invoice's life, a simulated payment's settling, and how long the paid screen holds the
   // visitor's bananas back from the cooker before it cooks them anyway.
   const MIN = 400, MAX = 1000000, EXPIRY = 300, SETTLE = 2.4, HOLD = 12;
+  // The fewest sats a tip needs to carry a message, when the page gives no bar of its own (`hooks.messageMinSats`).
+  const MESSAGE_MIN = 1000;
   const INK = {
     bg: "#090c10", panel: "#121a22", line: "#2b3440", gold: "#ffd24a", amber: "#ffb81c", white: "#f3efe4", dim: "#8d96a3",
     green: "#7fe83a", paid: "#07160c", red: "#ff6a4a", dark: "#1b1206", off: "#262c34", coin: "#f7931a", coinDk: "#b8650c"
@@ -341,14 +343,14 @@
     // with them, so an older invoice (the visitor came back from its quote) is left alone.
     const onInvoice = () => flow.state !== "amount" && !(flow.state === "details" && detailsFrom === "amount");
     flow.detailsChanged = () => {
-      flow.detailsDirty = !!flow.savedDetails && !sameDetails(hooks.details(), flow.savedDetails);
+      flow.detailsDirty = !!flow.savedDetails && !sameDetails(taken(), flow.savedDetails);
       flow.detailsError = "";
       detailsState();
     };
     flow.saveDetails = () => {
       if (!flow.open || !flow.invoice || !flow.savedDetails || flow.state === "paid" || !onInvoice()) return Promise.resolve({});
       if (saving) { saveQueued = true; return saving; }
-      const value = hooks.details(), previous = flow.savedDetails, invoice = flow.invoice;
+      const value = taken(), previous = flow.savedDetails, invoice = flow.invoice;
       if (sameDetails(value, previous)) { flow.detailsChanged(); return Promise.resolve({}); }
       if (!real) { flow.savedDetails = value; flow.detailsChanged(); return Promise.resolve({}); }
       flow.detailsSaving = true; flow.detailsError = "";
@@ -365,7 +367,7 @@
           saveQueued = false;
         } else {
           flow.savedDetails = value;
-          flow.detailsDirty = !sameDetails(hooks.details(), value);
+          flow.detailsDirty = !sameDetails(taken(), value);
         }
         detailsState();
         if (saveQueued && flow.detailsDirty && !reply.error) {
@@ -412,9 +414,18 @@
     const valid = () => real ? Number.isSafeInteger(flow.sats) && flow.sats >= (limits()?.minSats || 1)
       && flow.sats <= (limits()?.maxSats || Number.MAX_SAFE_INTEGER) : flow.sats >= MIN && flow.sats <= MAX;
     const closed = () => real && hooks.open() === false;
+    // The fewest sats a tip needs to carry a message. Below it the details screen offers the name alone, and every
+    // request goes out without a message, as the API would drop it.
+    const messageMin = () => hooks.messageMinSats ? hooks.messageMinSats() : MESSAGE_MIN;
+    flow.messageOk = () => flow.sats >= messageMin();
+    const taken = () => {
+      const value = hooks.details ? hooks.details() : { handle: "", message: "" };
+      if (!flow.messageOk()) value.message = "";
+      return value;
+    };
     const invoice = () => {
       const r = hooks.request(), id = r.id.replace(/[^0-9a-z]/gi, "");
-      if (hooks.details) flow.savedDetails = hooks.details();
+      if (hooks.details) flow.savedDetails = taken();
       flow.invoice = { id: r.id, url: r.url, code: BL.qr.encode(r.url), bolt: `lnbc${flow.sats * 10}n1p${id}` };
       flow.left = EXPIRY;
       shown = -1;
@@ -428,7 +439,7 @@
     };
     // Real mode: the API's invoice for this amount, then `next`. A reply that finds the visitor gone on is dropped.
     const ask = (next) => {
-      const t = ++ticket, value = hooks.details ? hooks.details() : { handle: "", message: "" };
+      const t = ++ticket, value = hooks.details ? taken() : { handle: "", message: "" };
       saving = null; saveQueued = false;
       flow.detailsSaving = false;
       flow.error = "";
@@ -495,7 +506,7 @@
       if (s === "details") {
         if (a === "history" && hooks.toggleHistory) return hooks.toggleHistory();
         if (a.startsWith("history-") && hooks.chooseHistory) return hooks.chooseHistory(Number(a.slice(8)));
-        if (a === "name" || a === "message") return hooks.editDetails(a === "name" ? "handle" : "message");
+        if (a === "name" || a === "message" && flow.messageOk()) return hooks.editDetails(a === "name" ? "handle" : "message");
         // Edits to an invoice are saved before the screen that opened them shows them: a failed save keeps this one,
         // its error up, for the visitor to retry (Enter, or DONE) before paying.
         // Back after a failed save gives up on the edits: the fields take the details the invoice holds again.
@@ -713,12 +724,12 @@
     // The amount's and the quote's row, as wide as the panels around it: who the tip is from and its message, as one
     // button that opens them. A name too long for the big size drops to the small one.
     const detailsRow = (y, x = 30, w = 340, h = 34) => {
-      const room = w - 16 - width("EDIT", 1) - 10, value = hooks.details();
+      const room = w - 16 - width("EDIT", 1) - 10, value = taken();
       panel(g, x, y, w, h, INK.amber);
       buttons.push({ x, y, w, h, act: "details" });
       const name = `FROM @${value.handle || "anon"}`, s = width(name, 2) <= room ? 2 : 1;
       write(g, clip(name, s, room), x + 8, y + 4, s, INK.gold);
-      write(g, value.message ? clip(value.message, 1, room) : "NO MESSAGE", x + 8, y + h - 12, 1, value.message ? INK.white : INK.dim);
+      write(g, value.message ? clip(value.message, 1, room) : flow.messageOk() ? "NO MESSAGE" : `ADD A MESSAGE FROM ${sats(messageMin())} SATS`, x + 8, y + h - 12, 1, value.message ? INK.white : INK.dim);
       write(g, "EDIT", x + w - 8, y + Math.round((h - GH) / 2), 1, INK.amber, "right");
     };
     // The details screen's message, wrapped at word breaks into MSG_COLS columns (hard breaks when that would need
@@ -873,14 +884,16 @@
           g.closePath(); g.fill();
           if (hasHistory) buttons.unshift({ x: 334, y: 58, w: 36, h: 40, act: "history" });
         }
+        const withMessage = flow.messageOk();
         write(g, "MESSAGE (OPTIONAL)", 30, 110, 1, INK.dim);
-        write(g, `${t.message.length}/${t.max}`, 370, 110, 1, INK.dim, "right");
+        if (withMessage) write(g, `${t.message.length}/${t.max}`, 370, 110, 1, INK.dim, "right");
         panel(g, 30, 122, 340, 90, noted ? INK.amber : INK.line);
-        buttons.push({ x: 30, y: 122, w: 340, h: 90, act: "message" });
-        const lines = wrap(t.message);
-        if (t.message) for (let i = 0; i < lines; i++) write(g, t.message.slice(MSG_STARTS[i], MSG_STARTS[i + 1]).trimEnd(), 38, 130 + i * 11, 1, INK.white);
+        if (withMessage) buttons.push({ x: 30, y: 122, w: 340, h: 90, act: "message" });
+        const lines = withMessage ? wrap(t.message) : 0;
+        if (!withMessage) write(g, `MESSAGES COME WITH TIPS OF ${sats(messageMin())} SATS OR MORE`, 38, 130, 1, INK.dim);
+        else if (t.message) for (let i = 0; i < lines; i++) write(g, t.message.slice(MSG_STARTS[i], MSG_STARTS[i + 1]).trimEnd(), 38, 130 + i * 11, 1, INK.white);
         else if (!noted) write(g, "TAP TO ADD A MESSAGE", 38, 130, 1, INK.dim);
-        if (noted) {
+        if (noted && withMessage) {
           let line = lines - 1;
           while (line > 0 && t.start < MSG_STARTS[line]) line--;
           CARET.x = 38 + (t.start - MSG_STARTS[line]) * (GW + TR) - 1; CARET.y = 129 + line * 11; CARET.h = GH + 2;

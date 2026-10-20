@@ -4849,7 +4849,7 @@ const donationClientChecks = async () => {
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor() {},
     note: () => new Promise(resolve => { finishNote = resolve; }), details: () => ({ ...deferredDetails }), editDetails() {},
     open: () => true, testNetwork: () => "signet" });
-  const deferredQuote = async () => { deferred.start(); for (const key of ["Enter", "1", "Enter"]) deferred.key({ key }); await Promise.resolve(); };
+  const deferredQuote = async () => { deferred.start(); for (const key of ["Enter", "1", "0", "0", "0", "Enter"]) deferred.key({ key }); await Promise.resolve(); };
   await deferredQuote();
   deferred.key({ key: "A" });
   deferredDetails.message = "old visit"; deferred.detailsChanged();
@@ -4989,15 +4989,15 @@ const donationClientChecks = async () => {
   K.factoryKiosk.create = hooks => (popupFlow = factoryCreate(hooks));
   K.game = { bananasFor: () => 1 };
   K.net = { state: { backend: true, me: null }, login() {} };
-  K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX,
+  K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX, MESSAGE_MIN_SATS: 1000, messageMinSats: 1000,
     invoice: async options => { invoices.push(options); return { request: "request", invoice: { id: "popup", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }; },
     note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
-  const popup = K.donationPopup.create({ state: { message: "hello", recentHandles: [] }, rememberHandle() {} }), dialog = elements.get("donation-popup");
-  const popupQuote = async () => { popup.open(); for (const key of ["1", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
+  const popup = K.donationPopup.create({ state: { message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {} }), dialog = elements.get("donation-popup");
+  const popupQuote = async () => { popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
   await popupQuote();
-  const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1 && invoices[0].message === "hello" && invoices[0].handle === "anon";
+  const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1000 && invoices[0].message === "hello" && invoices[0].handle === "anon";
   const other = !popup.receive({ id: "other", handle: "someone" }, { exact: 1, rounded: 1 }) && dialog.open;
   const settled = popup.receive({ id: "popup", handle: "" }, { exact: 0.25, rounded: 0 }) && !dialog.open && frames.size === 0;
   K.net.state.me = { login: "tester" };
@@ -5047,6 +5047,32 @@ const donationClientChecks = async () => {
   const popupSeen = popup.seen("popup", 1000, 1000, 0) && popupFlow.state === "confirming";
   elements.get("donation-close").listeners.get("click")();
   const leftWaiting = popupWaits.join() === "popup" && !dialog.open && frames.size === 0;
+  // A remembered name completes on Tab; a tip under the message bar goes out without a message, and its details
+  // screen offers the name alone: Tab stays on it and Enter finishes.
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await settle();
+  popupFlow.key({ key: "A" });
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  const suggested = popupFlow.state === "details" && popup.history()?.join() === "Ooga-Dev";
+  elements.get("donation-message").focused = false;
+  fieldKey("Tab", elements.get("donation-handle"));
+  const completed = suggested && elements.get("donation-handle").value === "Ooga-Dev" && elements.get("donation-message").focused && popup.history() === null;
+  kioskContext.document.activeElement = null;
+  elements.get("donation-close").listeners.get("click")();
+  popup.open(); for (const key of ["5", "Enter"]) popupFlow.key({ key }); await settle();
+  const smallInvoice = popupFlow.state === "quote" && invoices.at(-1).sats === 5 && invoices.at(-1).message === "";
+  popupFlow.key({ key: "A" });
+  elements.get("donation-message").focused = false;
+  fieldKey("Tab", elements.get("donation-handle"));
+  const nameAlone = smallInvoice && popupFlow.state === "details" && !elements.get("donation-message").focused;
+  fieldKey("Enter", elements.get("donation-handle"));
+  await settle();
+  const nameDone = nameAlone && popupFlow.state === "quote";
+  elements.get("donation-close").listeners.get("click")();
+  record("donation popup: a remembered name completes on Tab, and a tip under the message bar goes out without a message while its details screen offers the name alone",
+    completed && nameDone, JSON.stringify({ suggested, completed, smallInvoice, nameAlone, nameDone }));
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
@@ -9452,7 +9478,9 @@ const donationDetails = { name: "donation details", why: "regression: clicking K
     K.create = probe.create;
   })()`);
   try {
-    await b.key("1"); await b.key("Enter");
+    // A message rides only a tip of at least the message bar.
+    for (const key of ["1", "0", "0", "0"]) await b.key(key);
+    await b.key("Enter");
     await untilPage(b, 'window.__donationDetails.flow.state === "quote"');
     await b.key("A"); await b.key("Tab");
     await b.send("Input.insertText", { text: "discard this edit" });
@@ -9494,7 +9522,7 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
   const at = await b.evaluate(`(() => { const B = window.__ooga; ${FACTORY_EVENT} const s = X.scene, q = s.sats;
     for (let t = 0; t < 10 && q.bay.some((v) => v >= 0); t += 0.25) B.advance(0.25, 1 / 20);
     s.gate.hum = Infinity;
-    for (const [id, value] of [["handle", "tester"], ["message", "zebra 12:34"]]) { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event("change")); }
+    B.game.setIdentity({ handle: "tester", message: "zebra 12:34" });
     B.pilot.release(true);
     const w = s.kioskScreen.world, p = { x: w[12], y: w[13], z: w[14] };
     B.pilot.navigate({ position: p, target: p, yaw: s.kiosk.rotation.y, pitch: 0.2, dist: 4 }); B.advance(0.6, 1 / 60);
