@@ -46,7 +46,8 @@
 // room's own doors, which nobody reserves. `subscribeDoor` hears all of it, and `{ t: "door", op: "lost" }` when the
 // socket goes. Without the feature these send nothing and return false, and the sphere crosses on this page alone.
 // `recheck` looks at /api/me again after a look that went unanswered (the keypad's Retry), bounded as the first.
-// Exports start, recheck, subscribe, subscribeRoster, subscribeChat, subscribeDoor, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setHub,
+// `setPokerVoice(table)` scopes Ember Den voice to one table, or the floor when null, without moving the body.
+// Exports start, recheck, subscribe, subscribeRoster, subscribeChat, subscribeDoor, dispose, login, logout, setDisplay, rejoin, setBody, setZone, setPokerVoice, setHub,
 // setMuted, setHealth, sendNpc, sendChat, npcFrame, sendPose, askDoor, goDoor, doneDoor, cancelDoor, passDoor, mayDrive, mayDriveGorilla,
 // ownCharacter, characterOf, gorillaBody, bodyName, bodyKind, serverNow, remotes, state, CHAT_MAX and CHAT_KEEP.
 (() => {
