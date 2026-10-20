@@ -126,6 +126,7 @@ test("SFU stays unavailable without secrets and uses bounded upstream calls with
 const studioRoom = () => {
   const Room = roomClass(), room = Object.create(Room.prototype);
   room.players = new Map(); room.chatBuckets = new Map(); room.studio = studio.studioState(1000); room.env = { STUDIO_HOST_IDS: "1,3" }; room.cleanupJobs = [];
+  room.doorQueue = []; room.doorActive = null; room.doorPasses = new Map(); room.sweepAt = 0;
   const pending = [], storage = new Map();
   room.ctx = { waitUntil: p => pending.push(p), storage: { put: async (k, v) => storage.set(k, structuredClone(v)), getAlarm: async () => null, setAlarm: async () => {} } };
   room.sfu = { closeTracks: async (_session, mids) => ({ tracks: mids.map(mid => ({ mid })) }), getSession: async () => ({ tracks: [] }) };
@@ -439,4 +440,134 @@ test("Studio wake migrates old snapshots, clamps catalogue edits and rechecks co
   assert.deepEqual([...qa.studio.hands], []); assert.deepEqual([...qa.studio.invited], [2]); assert.equal(studio.studioCanSpeak(qa.studio, qa.players.get(2)), true);
   const removed = await wake({ ...legacy, source: "removed-video", playing: true }, "1");
   assert.equal(removed.studio.source, studio.STUDIO_SOURCES[0].id); assert.equal(removed.studio.playing, false); assert.equal(removed.studio.position, 0);
+});
+
+// Regression: a table voice choice survives hibernation, but never a scene change.
+test("room scopes poker voice to Ember Den and clears it on departure", () => {
+  const Room = roomClass(), room = Object.create(Room.prototype);
+  room.players = new Map(); room.chatBuckets = new Map(); room.sfu = {};
+  let attachment;
+  const ws = { deserializeAttachment: () => ({ id: 1 }), serializeAttachment: value => { attachment = value; }, send() {} };
+  const player = room.record(ws, { id: 1, login: "YellowBrokeIt", display: "Fixture", body: "YellowBrokeIt", zone: "outside" });
+  room.players.set(1, player);
+  const send = message => room.webSocketMessage(ws, JSON.stringify(message));
+  send({ t: "poker-voice", table: 2 }); assert.equal(player.pokerVoice, null);
+  send({ t: "zone", name: "ember-den" }); send({ t: "poker-voice", table: 2 });
+  assert.equal(attachment.pokerVoice, 2);
+  assert.equal(room.record(ws, attachment).pokerVoice, 2);
+  assert.equal(room.view(player).zone, "ember-den");
+  send({ t: "zone", name: "outside" });
+  assert.equal(attachment.pokerVoice, null);
+  send({ t: "zone", name: "ember-den" }); assert.equal(player.pokerVoice, null);
+});
+
+// The merged rules: the Studio's bodiless listeners and permitted speakers, and Ember Den table voice, hold together.
+test("voicePeers keeps Studio listener and speaker rules and Ember Den table isolation together", () => {
+  const s = { ...studio.studioState(1000), hostId: 1, mode: "presentation" };
+  const voice = (track = "mic") => ({ sub: "receive", pub: "publish", track });
+  const players = [
+    { id: 1, zone: studio.STUDIO_ZONE, body: "ooga-1", voice: voice() },
+    { id: 2, zone: studio.STUDIO_ZONE, body: null, voice: voice(null) },
+    { id: 3, zone: studio.STUDIO_ZONE, body: "ooga-3", studioSeat: 0, voice: voice() },
+    { id: 4, zone: "ember-den", body: "ooga-4", pokerVoice: 1, voice: voice() },
+    { id: 5, zone: "ember-den", body: "ooga-5", pokerVoice: 2, voice: voice() },
+    { id: 6, zone: "ember-den", body: "ooga-6", pokerVoice: 1, voice: voice() },
+    { id: 7, zone: "ember-den", body: "ooga-7", pokerVoice: null, voice: voice() },
+    { id: 8, zone: "ember-den", body: null, pokerVoice: 1, voice: voice() },
+  ];
+  const peers = protocol.voicePeers(players, s);
+  assert.deepEqual(peers.get(2), [1], "a bodiless Studio listener hears the host only, not an unpermitted attendee");
+  assert.deepEqual(peers.get(3), [1]);
+  assert.deepEqual(peers.get(1), [], "a presentation attendee microphone is not heard");
+  assert.deepEqual(peers.get(4), [6], "same table hears each other");
+  assert.deepEqual(peers.get(5), [], "a player at another table is not heard");
+  assert.deepEqual(peers.get(7), [], "the walking floor does not hear the tables");
+  assert.deepEqual(peers.get(8), [], "outside the Studio a bodiless page hears nobody");
+  assert.ok(!peers.get(6).includes(8));
+  s.mode = "discussion";
+  assert.deepEqual(protocol.voicePeers(players, s).get(2), [1, 3], "a seated attendee is heard once discussion permits it");
+  players[2].zone = "ember-den"; players[2].pokerVoice = 2;
+  assert.deepEqual(protocol.voicePeers(players, s).get(5), [3], "Studio permission never widens Ember Den table voice");
+});
+
+test("a pull keeps still-eligible tracks, closes the rest through cleanup and records only kept MIDs", async () => {
+  const { room, add, call, pending } = studioRoom();
+  const listener = add(2, { zone: "ember-den", pokerVoice: 1 }), a = add(1, { zone: "ember-den", pokerVoice: 1 }), b = add(3, { zone: "ember-den", pokerVoice: 1 }), c = add(4, { zone: "ember-den", pokerVoice: 1 });
+  listener.voice = { ...listener.voice, sub: "receive" };
+  a.voice = { ...a.voice, pub: "pub-a", track: "mic", gen: 1 };
+  b.voice = { ...b.voice, pub: "pub-b", track: "mic", gen: 1 };
+  c.voice = { ...c.voice, pub: "pub-c", track: "mic", gen: 1 };
+  let answer; room.sfu.newTracks = () => new Promise(resolve => { answer = resolve; });
+  const closed = []; room.sfu.closeTracks = async (session, mids) => { closed.push([session, [...mids]]); return { tracks: mids.map(mid => ({ mid })) }; };
+  const request = call(listener, "pull", { ids: [1, 3, 4, 3] });
+  await new Promise(resolve => setImmediate(resolve));
+  b.pokerVoice = 2; // moved to another table while the SFU answered
+  c.voice.pub = "pub-c2"; // published again
+  answer({ tracks: [{ sessionId: "pub-a", mid: "a" }, { sessionId: "pub-b", mid: "b" }, { sessionId: "pub-c", mid: "c" }], sessionDescription: { type: "answer", sdp: "x" }, requiresImmediateRenegotiation: true });
+  const response = await request, body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.tracks.map(t => [t.id, t.mid]), [[1, "a"]]);
+  assert.equal(body.requiresImmediateRenegotiation, true);
+  assert.deepEqual({ ...listener.voice.mids }, { a: 1 }, "only kept tracks occupy the receiver's slots");
+  await Promise.all(pending);
+  assert.deepEqual(closed, [["receive", ["b", "c"]]]);
+  assert.equal(room.cleanupJobs.length, 0);
+  // A receiver replaced mid-flight gets the whole request refused and every allocated track closed.
+  room.sfu.newTracks = () => new Promise(resolve => { answer = resolve; });
+  const replaced = call(listener, "pull", { ids: [1] });
+  await new Promise(resolve => setImmediate(resolve));
+  listener.voice.sub = "another"; listener.voice.version = (listener.voice.version || 0) + 1;
+  answer({ tracks: [{ sessionId: "pub-a", mid: "z" }] });
+  assert.equal((await replaced).status, 409);
+  assert.deepEqual(closed.at(-1), ["receive", ["z"]]);
+});
+
+test("a Studio pull drops a microphone the host stopped permitting mid-flight", async () => {
+  const { room, add, call } = studioRoom(), host = add(1), speaker = add(3, { studioSeat: 0 }), listener = add(2, { body: null });
+  room.studio.hostId = 1; room.studio.mode = "discussion";
+  host.voice = { ...host.voice, pub: "pub-host", track: "mic", gen: 1 };
+  speaker.voice = { ...speaker.voice, pub: "pub-seat", track: "mic", gen: 1 };
+  listener.voice = { ...listener.voice, sub: "receive" };
+  let answer; room.sfu.newTracks = () => new Promise(resolve => { answer = resolve; });
+  const closed = []; room.sfu.closeTracks = async (session, mids) => { closed.push([session, [...mids]]); return { tracks: mids.map(mid => ({ mid })) }; };
+  const request = call(listener, "pull", { ids: [1, 3] });
+  await new Promise(resolve => setImmediate(resolve));
+  room.studioCommand(host, { action: "mode", mode: "presentation" });
+  answer({ tracks: [{ sessionId: "pub-host", mid: "h" }, { sessionId: "pub-seat", mid: "s" }] });
+  const body = await (await request).json();
+  assert.deepEqual(body.tracks.map(t => t.id), [1]);
+  assert.deepEqual({ ...listener.voice.mids }, { h: 1 });
+  assert.ok(closed.some(([session, mids]) => session === "receive" && mids.includes("s")));
+});
+
+test("the alarm wakes at the earliest of sweep, door expiry and cleanup retry, and retries cleanup on every wake", async () => {
+  const { room, add } = studioRoom(); add(1);
+  const now = Date.now(), alarms = [];
+  room.ctx.storage.setAlarm = async at => alarms.push(at);
+  room.ctx.getWebSocketAutoResponseTimestamp = () => null;
+  room.sweepAt = now + 60000;
+  assert.equal(room.nextAlarm(now), now + 60000);
+  room.doorPasses.set("cycle", { cycle: "cycle", door: "sphere-1", exp: now + 30000, id: 1 });
+  assert.equal(room.nextAlarm(now), now + 30000);
+  room.cleanupJobs = [{ session: "s", revision: 0, mids: ["0"], midVersions: { 0: 0 }, inspect: false, inspectUntil: 0 }];
+  room.cleanupAt = now + 5000;
+  assert.equal(room.nextAlarm(now), now + 5000);
+  // Cleanup that outlives every player still schedules its retry.
+  const players = room.players; room.players = new Map();
+  assert.equal(room.nextAlarm(now), now + 5000);
+  room.cleanupJobs = []; assert.equal(room.nextAlarm(now), null);
+  room.players = players;
+  // An early wake (sweep not due) still retries cleanup, and failures keep a retry scheduled.
+  let attempts = 0; room.sfu.closeTracks = async () => { attempts++; throw new Error("upstream"); };
+  room.cleanupJobs = [{ session: "s", revision: 0, mids: ["0"], midVersions: { 0: 0 }, inspect: false, inspectUntil: 0 }];
+  room.cleanupAt = 0;
+  await room.alarm();
+  assert.equal(attempts, 1);
+  assert.equal(room.sweepAt, now + 60000, "an early wake does not run the account sweep");
+  assert.equal(room.cleanupJobs.length, 1);
+  assert.ok(alarms.at(-1) <= room.cleanupAt && alarms.at(-1) <= now + 30000);
+  room.doorPasses.clear(); room.sfu.closeTracks = async (_s, mids) => ({ tracks: mids.map(mid => ({ mid })) });
+  await room.alarm();
+  assert.equal(attempts, 1); assert.equal(room.cleanupJobs.length, 0); assert.equal(room.cleanupAt, 0);
+  assert.equal(alarms.at(-1), room.sweepAt);
 });

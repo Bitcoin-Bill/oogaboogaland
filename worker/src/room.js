@@ -21,7 +21,9 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   CLOSE_KICK, CLOSE_PROTOCOL, MAX_PLAYERS, MOVE_HZ, STALE_MS, SWEEP_MS, TICK_HZ,
-  NPC_FRAME_MAX, NPC_HZ, OUTSIDE, HP_HZ, VOICE_TRACK, CHAT_HZ, CHAT_BURST, CHAT_BUCKET_KEEP, CHAT_RETRY_KEEP, chatLog, castIndex, bodyName, ownedBody, electHost, npcFollowers, claimRefusal, parseClientMessage, playerFromHeaders, spawnPoint, takeToken, voicePeers,
+  NPC_FRAME_MAX, NPC_HZ, OUTSIDE, HP_HZ, VOICE_TRACK, CHAT_HZ, CHAT_BURST, CHAT_BUCKET_KEEP, CHAT_RETRY_KEEP,
+  DOOR_ZONE, DOOR_ROOM, DOOR_GRANT_MS, DOOR_TRANSIT_MS, DOOR_PASS_MS, DOOR_HZ, DOOR_BURST,
+  chatLog, castIndex, bodyName, ownedBody, electHost, npcFollowers, claimRefusal, parseClientMessage, playerFromHeaders, spawnPoint, takeToken, voicePeers,
 } from "./protocol.js";
 import { sha256Hex } from "./crypto.js";
 import { getPlayer } from "./db.js";
@@ -48,6 +50,12 @@ export class Room extends DurableObject {
     this.chatId = 0;
     this.chatAccepted = new Map();
     this.chatBuckets = new Map();
+    this.doorQueue = [];
+    this.doorActive = null;
+    this.doorPasses = new Map();
+    this.doorId = 0;
+    this.sweepAt = 0;
+    this.cleanupAt = 0;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
     // The pile's sound loop started once, for good: every page plays it at (now - loopEpoch), so all
     // hear the same crackle at the same moment. Stored, so a woken or redeployed room keeps the phase.
@@ -60,8 +68,11 @@ export class Room extends DurableObject {
       this.studio.hands = [...new Set((Array.isArray(this.studio.hands) ? this.studio.hands : []).filter(seated))].slice(0, MAX_PLAYERS);
       this.studio.invited = this.studio.mode === "qa" ? [...new Set((Array.isArray(this.studio.invited) ? this.studio.invited : []).filter(seated))].slice(0, MAX_PLAYERS) : [];
       this.cleanupJobs = (await ctx.storage.get("voiceCleanup")) || [];
-      this.loopEpoch = (await ctx.storage.get("loopEpoch")) || Date.now();
+      const stored = await ctx.storage.get(["loopEpoch", "sweepAt"]);
+      this.loopEpoch = stored && stored.loopEpoch || Date.now();
+      this.sweepAt = stored && stored.sweepAt || Date.now() + SWEEP_MS;
       await ctx.storage.put("loopEpoch", this.loopEpoch);
+      await ctx.storage.put("sweepAt", this.sweepAt);
       if (this.studio.hostId && (!this.players.has(this.studio.hostId) || this.players.get(this.studio.hostId).zone !== STUDIO_ZONE || !studioHostAllowed(env, this.studio.hostId))) this.suspendStudio();
       await this.retryCleanup();
     });
@@ -73,12 +84,13 @@ export class Room extends DurableObject {
     // Old guest sockets can survive a deployment in hibernated attachments.
     // Use the ordinary departure path so peers drop their presence and voice.
     for (const p of this.players.values()) if (!ownedBody(CAST, p.login, p.contributor)) this.evict(p, "revoked");
+    this.restoreDoor();
     this.hostId = electHost(this.players.values());
     this.followers = npcFollowers(this.players.values(), this.hostId);
   }
 
   record(ws, a) {
-    return { ws, voice: { pub: null, sub: null, track: null, gen: 0, mids: {}, pubMid: null }, muted: false, hp: 100, ko: false, g: null, sent: null, zone: OUTSIDE, inHub: false, joinedAt: Date.now(), ...a, bucket: { tokens: MOVE_HZ, at: Date.now() }, npcBucket: { tokens: NPC_HZ, at: Date.now() }, hpBucket: { tokens: HP_HZ, at: Date.now() }, chatBucket: this.chatBucketFor(a.id, Date.now()), seenAt: Date.now() };
+    return { ws, voice: { pub: null, sub: null, track: null, gen: 0, mids: {}, pubMid: null }, muted: false, hp: 100, ko: false, g: null, sent: null, zone: OUTSIDE, pokerVoice: null, inHub: false, joinedAt: Date.now(), door: null, passes: [], ...a, bucket: { tokens: MOVE_HZ, at: Date.now() }, npcBucket: { tokens: NPC_HZ, at: Date.now() }, hpBucket: { tokens: HP_HZ, at: Date.now() }, doorBucket: { tokens: DOOR_BURST, at: Date.now() }, chatBucket: this.chatBucketFor(a.id, Date.now()), seenAt: Date.now() };
   }
 
   // Retain account debt across socket records, only while awake. Reclaim fully replenished
@@ -96,7 +108,7 @@ export class Room extends DurableObject {
   }
 
   attachment(p) {
-    return { id: p.id, login: p.login, display: p.display, contributor: p.contributor, body: p.body, connectionToken: p.connectionToken, studioSeat: p.studioSeat, studioRevoked: !!p.studioRevoked, studioResults: p.studioResults, x: p.x, y: p.y, z: p.z, yaw: p.yaw, g: p.g, voice: p.voice, muted: p.muted, hp: p.hp, ko: p.ko, sent: p.sent, zone: p.zone, inHub: p.inHub, joinedAt: p.joinedAt };
+    return { id: p.id, login: p.login, display: p.display, contributor: p.contributor, body: p.body, connectionToken: p.connectionToken, studioSeat: p.studioSeat, studioRevoked: !!p.studioRevoked, studioResults: p.studioResults, x: p.x, y: p.y, z: p.z, yaw: p.yaw, g: p.g, voice: p.voice, muted: p.muted, hp: p.hp, ko: p.ko, sent: p.sent, zone: p.zone, pokerVoice: p.pokerVoice, inHub: p.inHub, joinedAt: p.joinedAt, door: p.door, passes: p.passes };
   }
 
   view(p) {
@@ -114,6 +126,143 @@ export class Room extends DurableObject {
   broadcast(msg, except = null) {
     const text = JSON.stringify(msg);
     for (const p of this.players.values()) if (p.ws !== except) this.send(p.ws, text);
+  }
+
+  broadcastZone(zone, msg) {
+    const text = JSON.stringify(msg);
+    for (const p of this.players.values()) if (p.zone === zone) this.send(p.ws, text);
+  }
+
+  restoreDoor() {
+    const now = Date.now(), queued = [], active = [];
+    for (const p of this.players.values()) {
+      if (p.door && p.body && p.zone === DOOR_ZONE && p.door.exp > now) {
+        if (p.door.phase === "queued") queued.push(p);
+        else if (p.door.phase === "grant" || p.door.phase === "active") active.push(p);
+        else p.door = null;
+      } else p.door = null;
+      p.passes = Array.isArray(p.passes) ? p.passes.filter((x) => x && DOOR_ROOM.test(x.door) && x.exp > now && p.body && p.zone === x.door) : [];
+      for (const pass of p.passes) this.doorPasses.set(pass.cycle, { ...pass, id: p.id });
+    }
+    queued.sort((a, b) => a.door.at - b.door.at || a.id - b.id);
+    active.sort((a, b) => a.door.at - b.door.at || a.id - b.id);
+    this.doorQueue = queued.map((p) => p.id);
+    if (active.length) {
+      const p = active.shift();
+      this.doorActive = { ...p.door, id: p.id };
+      for (const extra of active) {
+        extra.door = { phase: "queued", dir: extra.door.dir, room: extra.door.room, at: extra.door.at, exp: Number.MAX_SAFE_INTEGER };
+        this.doorQueue.push(extra.id);
+      }
+    }
+    for (const p of this.players.values()) {
+      p.ws.serializeAttachment(this.attachment(p));
+      this.replayDoor(p);
+    }
+  }
+
+  doorCycle(p) {
+    this.doorId = (this.doorId + 1) % 0x100000;
+    return `${Date.now().toString(36)}_${p.id.toString(36)}_${this.doorId.toString(36)}`;
+  }
+
+  replayDoor(p) {
+    const now = Date.now();
+    if (p.zone === DOOR_ZONE && this.doorActive && this.doorActive.phase === "active" && this.doorActive.exp > now && this.doorActive.id !== p.id) {
+      const a = this.doorActive;
+      this.send(p.ws, { t: "transit", cycle: a.cycle, actor: a.id, door: DOOR_ZONE, dir: a.dir, at: a.startedAt, exp: a.exp });
+    }
+    if (DOOR_ROOM.test(p.zone)) for (const pass of this.doorPasses.values()) {
+      if (pass.door === p.zone && pass.exp > now && pass.id !== p.id) this.send(p.ws, { t: "transit", cycle: pass.cycle, actor: pass.id, door: pass.door, dir: pass.dir, at: pass.at, exp: pass.exp });
+    }
+  }
+
+  async doorMessage(p, msg) {
+    const now = Date.now();
+    if (!takeToken(p.doorBucket, DOOR_HZ, now, DOOR_BURST)) {
+      this.send(p.ws, { t: "door", op: "denied", reason: "rate" });
+      return;
+    }
+    if (msg.op === "ask") {
+      if (!p.body || p.zone !== DOOR_ZONE) { this.send(p.ws, { t: "door", op: "denied", reason: "not-at-door" }); return; }
+      if (p.door) { this.send(p.ws, { t: "door", op: "denied", reason: "already-waiting" }); return; }
+      if (this.doorQueue.length >= MAX_PLAYERS) { this.send(p.ws, { t: "door", op: "denied", reason: "full" }); return; }
+      p.door = { phase: "queued", dir: msg.dir, room: msg.room, at: now, exp: Number.MAX_SAFE_INTEGER };
+      this.doorQueue.push(p.id);
+      p.ws.serializeAttachment(this.attachment(p));
+      if (!this.doorActive) this.grantDoor(now);
+      else this.send(p.ws, { t: "door", op: "wait", ahead: Math.max(0, this.doorQueue.indexOf(p.id)) });
+    } else if (msg.op === "go") {
+      const a = this.doorActive;
+      if (!a || a.id !== p.id || a.cycle !== msg.cycle || a.phase !== "grant" || a.exp <= now || !p.body || p.zone !== DOOR_ZONE) {
+        this.send(p.ws, { t: "door", op: "denied", reason: "stale-grant" });
+        return;
+      }
+      a.phase = p.door.phase = "active";
+      a.startedAt = p.door.startedAt = now;
+      a.exp = p.door.exp = now + DOOR_TRANSIT_MS;
+      p.ws.serializeAttachment(this.attachment(p));
+      this.send(p.ws, { t: "door", op: "started", cycle: a.cycle, exp: a.exp });
+      this.broadcastZone(DOOR_ZONE, { t: "transit", cycle: a.cycle, actor: p.id, door: DOOR_ZONE, dir: a.dir, at: now, exp: a.exp });
+    } else if (msg.op === "done") {
+      if (this.doorActive && this.doorActive.id === p.id && this.doorActive.cycle === msg.cycle) this.finishDoor(now);
+    } else if (msg.op === "cancel") {
+      this.cancelDoor(p, now);
+    } else if (msg.op === "pass") {
+      if (!p.body || p.zone !== msg.door) { this.send(p.ws, { t: "door", op: "denied", reason: "wrong-room" }); return; }
+      for (const pass of p.passes) this.doorPasses.delete(pass.cycle);
+      const pass = { cycle: this.doorCycle(p), door: msg.door, dir: msg.dir, at: now, exp: now + DOOR_PASS_MS };
+      p.passes = [pass];
+      this.doorPasses.set(pass.cycle, { ...pass, id: p.id });
+      p.ws.serializeAttachment(this.attachment(p));
+      this.broadcastZone(msg.door, { t: "transit", cycle: pass.cycle, actor: p.id, door: pass.door, dir: pass.dir, at: pass.at, exp: pass.exp });
+    }
+    await this.scheduleAlarm();
+  }
+
+  grantDoor(now = Date.now()) {
+    while (!this.doorActive && this.doorQueue.length) {
+      const p = this.players.get(this.doorQueue.shift());
+      if (!p || !p.body || p.zone !== DOOR_ZONE || !p.door || p.door.phase !== "queued") continue;
+      const cycle = this.doorCycle(p), exp = now + DOOR_GRANT_MS;
+      p.door = { ...p.door, phase: "grant", cycle, exp };
+      this.doorActive = { ...p.door, id: p.id };
+      p.ws.serializeAttachment(this.attachment(p));
+      this.send(p.ws, { t: "door", op: "grant", cycle, exp });
+    }
+    for (let i = 0; i < this.doorQueue.length; i++) {
+      const p = this.players.get(this.doorQueue[i]);
+      if (p) this.send(p.ws, { t: "door", op: "wait", ahead: i });
+    }
+  }
+
+  finishDoor(now = Date.now()) {
+    const a = this.doorActive;
+    if (!a) return;
+    if (a.phase === "active") this.broadcastZone(DOOR_ZONE, { t: "transit-end", cycle: a.cycle });
+    const p = this.players.get(a.id);
+    if (p) { p.door = null; p.ws.serializeAttachment(this.attachment(p)); }
+    this.doorActive = null;
+    this.grantDoor(now);
+  }
+
+  cancelDoor(p, now = Date.now()) {
+    if (!p.door) return;
+    if (this.doorActive && this.doorActive.id === p.id) this.finishDoor(now);
+    else {
+      this.doorQueue = this.doorQueue.filter((id) => id !== p.id);
+      p.door = null;
+      p.ws.serializeAttachment(this.attachment(p));
+      this.grantDoor(now);
+    }
+  }
+
+  clearPasses(p) {
+    for (const pass of p.passes || []) {
+      this.doorPasses.delete(pass.cycle);
+      this.broadcastZone(pass.door, { t: "transit-end", cycle: pass.cycle });
+    }
+    p.passes = [];
   }
 
   async fetch(request) {
@@ -145,7 +294,7 @@ export class Room extends DurableObject {
 
     const others = [];
     for (const o of this.players.values()) if (o !== p) others.push(this.view(o));
-    this.send(server, { t: "welcome", you: this.view(p), players: others, connectionToken: p.connectionToken, tickHz: TICK_HZ, now: Date.now(), loopEpoch: this.loopEpoch, host: this.hostId, followers: this.followers });
+    this.send(server, { t: "welcome", you: this.view(p), players: others, connectionToken: p.connectionToken, tickHz: TICK_HZ, now: Date.now(), loopEpoch: this.loopEpoch, host: this.hostId, followers: this.followers, features: ["door"] });
     // A message of its own after welcome, so a page that does not know chat ignores it; empty after the room slept.
     this.send(server, { t: "chat-history", messages: this.chat.list() });
     this.broadcast({ t: "join", p: this.view(p) }, server);
@@ -194,13 +343,23 @@ export class Room extends DurableObject {
       if (p.inHub && p.id !== this.hostId && this.lastNpc) this.send(p.ws, this.lastNpc);
     } else if (msg.t === "zone") {
       if (msg.name === p.zone) return;
+      if (msg.name !== DOOR_ZONE) this.cancelDoor(p);
+      if (msg.name !== p.zone) this.clearPasses(p);
       const leavingStudio = p.zone === STUDIO_ZONE;
       p.zone = msg.name;
+      p.pokerVoice = null;
       if (leavingStudio) this.leaveStudio(p);
       if (p.zone === STUDIO_ZONE) { this.enforceStudio(); this.sendStudio(p); }
       this.broadcast({ t: "zone", id: p.id, name: p.zone });
       // The page let go of every voice when it moved, so it always hears where it is now, changed list or not.
       p.sent = null;
+      this.enforceStudio(); this.updateVoice();
+      this.replayDoor(p);
+    } else if (msg.t === "poker-voice") {
+      if (p.zone !== "ember-den" || msg.table === p.pokerVoice) return;
+      p.pokerVoice = msg.table;
+      p.sent = null;
+      // Also closes the receiver's tracks for players at the table it left.
       this.enforceStudio(); this.updateVoice();
     } else if (msg.t === "hp") {
       if (msg.v === p.hp && msg.ko === p.ko) return;
@@ -215,6 +374,8 @@ export class Room extends DurableObject {
     } else if (msg.t === "chat") {
       // Nothing in the attachment changes.
       return this.say(p, msg.text, msg.clientId);
+    } else if (msg.t === "door") {
+      return this.doorMessage(p, msg);
     } else if (msg.t === "body") {
       if (msg.name === p.body) return;
       const refusal = claimRefusal(CAST, p.login, msg.name, this.players.values(), p.contributor);
@@ -225,6 +386,7 @@ export class Room extends DurableObject {
       } else {
         p.body = msg.name;
       }
+      if (!p.body) { this.cancelDoor(p); this.clearPasses(p); }
       // Another body, or none: its normalized health is reported afresh.
       p.hp = 100;
       p.ko = false;
@@ -249,6 +411,8 @@ export class Room extends DurableObject {
 
   drop(p, reason) {
     if (this.players.get(p.id) !== p) return;
+    this.cancelDoor(p);
+    this.clearPasses(p);
     this.leaveStudio(p);
     this.background(this.clearVoice(p));
     this.players.delete(p.id);
@@ -262,6 +426,8 @@ export class Room extends DurableObject {
   }
 
   release(p, reason) {
+    this.cancelDoor(p);
+    this.clearPasses(p);
     this.send(p.ws, { t: "release", name: p.body, reason });
     p.body = null;
     p.g = null;
@@ -476,12 +642,12 @@ export class Room extends DurableObject {
         if (!p.voice.sub || !Array.isArray(body.ids)) return json({ error: "bad pull" }, 400);
         const allowed = new Set(voicePeers([...this.players.values()], this.studio).get(p.id) || []);
         if (Object.keys(p.voice.mids || {}).length >= 64) return json({ error: "close old subscriptions first" }, 409);
-        const tracks = [], idOf = new Map();
+        const tracks = [], requested = new Map();
         for (const id of [...new Set(body.ids.slice(0, 64))]) {
           const q = this.players.get(id);
-          if (!allowed.has(id) || !q || !q.voice.pub) continue;
+          if (!allowed.has(id) || !q || !q.voice.pub || !q.voice.track) continue;
           tracks.push({ location: "remote", sessionId: q.voice.pub, trackName: q.voice.track });
-          idOf.set(q.voice.pub, id);
+          requested.set(q.voice.pub, { id, track: q.voice.track });
         }
         if (!tracks.length) return json({ tracks: [], requiresImmediateRenegotiation: false });
         if (Object.keys(p.voice.mids || {}).length + tracks.length > 64) return json({ error: "close old subscriptions first" }, 409);
@@ -492,14 +658,28 @@ export class Room extends DurableObject {
           if (p.voice.sub === receivingSession) { p.voice.sub = null; p.voice.mids = {}; p.sent = null; p.ws.serializeAttachment(this.attachment(p)); }
           await this.queueClose(receivingSession, [], true); throw err;
         }
-        const allowedNow = new Set(voicePeers([...this.players.values()], this.studio).get(p.id) || []);
-        const stale = !current() || tracks.some(t => { const q = this.players.get(idOf.get(t.sessionId)); return !q || q.voice.pub !== t.sessionId || !allowedNow.has(q.id); });
-        if (stale) { await this.queueClose(receivingSession, (res.tracks || []).filter(t => !t.errorCode).map(t => t.mid)); return json({ error: "connection or permission changed" }, 409); }
-        p.voice.mids = p.voice.mids || {};
-        for (const t of res.tracks || []) if (!t.errorCode && typeof t.mid === "string") p.voice.mids[t.mid] = idOf.get(t.sessionId);
-        p.ws.serializeAttachment(this.attachment(p));
+        // A zone, body, socket, permission or publication can change while the SFU request is in flight. Keep
+        // only the tracks still eligible (same publisher session and track) and close every other one, through
+        // the retried cleanup queue, before its descriptor reaches the page.
+        const live = current() && p.voice.sub === receivingSession;
+        const allowedNow = live ? new Set(voicePeers([...this.players.values()], this.studio).get(p.id) || []) : new Set();
+        const kept = [], close = [];
+        for (const t of res.tracks || []) {
+          const asked = requested.get(t.sessionId), q = asked && this.players.get(asked.id);
+          if (live && asked && allowedNow.has(asked.id) && q && q.voice.pub === t.sessionId && q.voice.track === asked.track) {
+            kept.push({ id: asked.id, mid: t.mid, errorCode: t.errorCode });
+          } else if (typeof t.mid === "string" && !t.errorCode) close.push(t.mid);
+        }
+        // Kept MIDs take their receiver slots before any await, so a change during cleanup still closes them.
+        if (live) {
+          p.voice.mids = p.voice.mids || {};
+          for (const t of kept) if (!t.errorCode && typeof t.mid === "string") p.voice.mids[t.mid] = t.id;
+          p.ws.serializeAttachment(this.attachment(p));
+        }
+        if (close.length) await this.queueClose(receivingSession, close);
+        if (!live) return json({ error: "voice membership changed" }, 409);
         return json({
-          tracks: (res.tracks || []).map((t) => ({ id: idOf.get(t.sessionId) ?? null, mid: t.mid, errorCode: t.errorCode })),
+          tracks: kept,
           sessionDescription: res.sessionDescription,
           requiresImmediateRenegotiation: !!res.requiresImmediateRenegotiation,
         });
@@ -718,6 +898,9 @@ export class Room extends DurableObject {
           // Other failures retain ownership for the existing room alarm.
         }
       }
+      // Remaining jobs retry at the next wake: at most a sweep interval away, and sooner if another wake comes first.
+      if (!this.cleanupJobs.length) this.cleanupAt = 0;
+      else if (!this.cleanupAt || this.cleanupAt <= Date.now()) this.cleanupAt = Date.now() + SWEEP_MS;
       if (this.ctx && this.ctx.storage) {
         await this.ctx.storage.put("voiceCleanup", this.cleanupJobs);
         if (this.cleanupJobs.length) await this.ensureSweep();
@@ -737,27 +920,76 @@ export class Room extends DurableObject {
   }
 
   async ensureSweep() {
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + SWEEP_MS);
+    if (!this.sweepAt) {
+      this.sweepAt = Date.now() + SWEEP_MS;
+      await this.ctx.storage.put("sweepAt", this.sweepAt);
+    }
+    await this.scheduleAlarm();
+  }
+
+  nextDoorExpiry() {
+    let at = this.doorActive ? this.doorActive.exp : Infinity;
+    for (const pass of this.doorPasses.values()) at = Math.min(at, pass.exp);
+    return at;
+  }
+
+  // The earliest wake the room needs: the next sweep and door expiry while anyone is here, and the next
+  // retry of pending media cleanup, which still runs after the last player left. null: nothing to wake for.
+  nextAlarm(now = Date.now()) {
+    const here = this.players.size > 0;
+    const cleanup = this.cleanupJobs && this.cleanupJobs.length ? (this.cleanupAt || now + SWEEP_MS) : Infinity;
+    const next = Math.min(here ? this.sweepAt || now + SWEEP_MS : Infinity, here ? this.nextDoorExpiry() : Infinity, cleanup);
+    return Number.isFinite(next) ? next : null;
+  }
+
+  async scheduleAlarm() {
+    const next = this.nextAlarm();
+    if (next === null) return;
+    const set = await this.ctx.storage.getAlarm();
+    if (set === null || set > next) await this.ctx.storage.setAlarm(next);
+  }
+
+  expireDoors(now) {
+    if (this.doorActive && this.doorActive.exp <= now) this.finishDoor(now);
+    for (const [cycle, pass] of [...this.doorPasses]) if (pass.exp <= now) {
+      this.doorPasses.delete(cycle);
+      const p = this.players.get(pass.id);
+      if (p) {
+        p.passes = p.passes.filter((x) => x.cycle !== cycle);
+        p.ws.serializeAttachment(this.attachment(p));
+      }
+      this.broadcastZone(pass.door, { t: "transit-end", cycle });
+    }
   }
 
   // Sockets silent past STALE_MS, auto-answered pings included, are evicted as stale.
   async alarm() {
     const now = Date.now();
+    // Cleanup retries run on every wake, not only at sweep time.
     await this.retryCleanup();
-    for (const p of [...this.players.values()]) {
-      if (!ownedBody(CAST, p.login, p.contributor)) { this.evict(p, "revoked"); continue; }
-      // The existing operator D1 ban also ends active presence at the next successful sweep.
-      // Retry on a later alarm if D1 is unavailable; never infer a ban from a failed read.
-      if (this.env.DB) {
-        let player;
-        try { player = await getPlayer(this.env.DB, p.id); } catch { /* Retry the account check next sweep; stale eviction still applies. */ }
-        if (this.players.get(p.id) !== p) continue;
-        if (player !== undefined && (!player || player.banned_at)) { this.evict(p, "revoked"); continue; }
+    const sweepDue = !this.sweepAt || now >= this.sweepAt;
+    this.expireDoors(now);
+    // A cancelled lease can leave its earlier alarm in place. Before the recorded sweep deadline that wake only
+    // expires door state and reschedules; it must not turn account reads and stale checks into a high-frequency poll.
+    if (sweepDue) {
+      for (const p of [...this.players.values()]) {
+        if (!ownedBody(CAST, p.login, p.contributor)) { this.evict(p, "revoked"); continue; }
+        // The existing operator D1 ban also ends active presence at the next successful sweep.
+        // Retry on a later alarm if D1 is unavailable; never infer a ban from a failed read.
+        if (this.env.DB) {
+          let player;
+          try { player = await getPlayer(this.env.DB, p.id); } catch { /* Retry the account check next sweep; stale eviction still applies. */ }
+          if (this.players.get(p.id) !== p) continue;
+          if (player !== undefined && (!player || player.banned_at)) { this.evict(p, "revoked"); continue; }
+        }
+        const pinged = this.ctx.getWebSocketAutoResponseTimestamp(p.ws);
+        const last = Math.max(p.seenAt, pinged ? pinged.getTime() : 0);
+        if (now - last > STALE_MS) this.evict(p, "stale");
       }
-      const pinged = this.ctx.getWebSocketAutoResponseTimestamp(p.ws);
-      const last = Math.max(p.seenAt, pinged ? pinged.getTime() : 0);
-      if (now - last > STALE_MS) this.evict(p, "stale");
+      this.sweepAt = now + SWEEP_MS;
+      await this.ctx.storage.put("sweepAt", this.sweepAt);
     }
-    if (this.players.size || (this.cleanupJobs && this.cleanupJobs.length)) await this.ctx.storage.setAlarm(now + SWEEP_MS);
+    const next = this.nextAlarm();
+    if (next !== null) await this.ctx.storage.setAlarm(next);
   }
 }
