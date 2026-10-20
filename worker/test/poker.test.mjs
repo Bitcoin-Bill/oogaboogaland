@@ -73,7 +73,8 @@ const startService = async () => {
   await new Promise(resolve => service.server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${service.server.address().port}`;
   const headers = (id = 101, token = "", instance = "") => ({ origin: site, "content-type": "application/json", "x-poker-service-token": env.POKER_SERVICE_TOKEN,
-    "x-player-id": String(id), "x-player-login": "player-" + id, "x-player-display": "Player%20" + id, authorization: "Bearer " + token, "x-poker-instance": instance });
+    "x-player-id": String(id), "x-player-login": "player-" + id, "x-player-display": "Player%20" + id,
+    ...(token ? { authorization: "Bearer " + token } : {}), ...(instance ? { "x-poker-instance": instance } : {}) });
   const post = (path, value, h) => fetch(origin + path, { method: "POST", headers: h, body: JSON.stringify(value) });
   const close = async () => { service.server.closeAllConnections(); await new Promise(resolve => service.server.close(resolve)); };
   return { ...service, origin, headers, post, close, advance: n => { now = n; } };

@@ -124,10 +124,10 @@ test("SFU stays unavailable without secrets and uses bounded upstream calls with
 // Regression: a table voice choice survives hibernation, but never a scene change.
 test("room scopes poker voice to Ember Den and clears it on departure", () => {
   const Room = roomClass(), room = Object.create(Room.prototype);
-  room.players = new Map(); room.sfu = {};
+  room.players = new Map(); room.chatBuckets = new Map(); room.sfu = {};
   let attachment;
   const ws = { deserializeAttachment: () => ({ id: 1 }), serializeAttachment: value => { attachment = value; }, send() {} };
-  const player = room.record(ws, { id: 1, login: "fixture", display: "Fixture", body: "fixture", zone: "outside" });
+  const player = room.record(ws, { id: 1, login: "YellowBrokeIt", display: "Fixture", body: "YellowBrokeIt", zone: "outside" });
   room.players.set(1, player);
   const send = message => room.webSocketMessage(ws, JSON.stringify(message));
   send({ t: "poker-voice", table: 2 }); assert.equal(player.pokerVoice, null);
