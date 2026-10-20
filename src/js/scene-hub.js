@@ -1416,12 +1416,15 @@
     const distance = Math.hypot(dx, dy, dz);
     const outside = Math.max(0, Math.hypot(eye.x, eye.y, eye.z) - Math.hypot(island.radius, island.undersideDepth, terrain.MAX_HEIGHT) - island.unit);
     const start = Math.min(1, outside / Math.max(distance, 1e-7));
+    // The pieces are walked from the sleeper back toward the eye: a mark indoors is usually blocked near it, and the
+    // answer is the same in either order.
     const steps = Math.max(1, Math.ceil(distance * (1 - start) / (island.unit * 0.5)));
-    let px = eye.x + dx * start, py = eye.y + dy * start, pz = eye.z + dz * start;
-    for (let i = 1; i <= steps; i++) {
-      const k = start + (1 - start) * i / steps, nx = eye.x + dx * k, ny = eye.y + dy * k, nz = eye.z + dz * k;
+    const last = start + (1 - start) * steps / steps;
+    let nx = eye.x + dx * last, ny = eye.y + dy * last, nz = eye.z + dz * last;
+    for (let i = steps - 1; i >= 0; i--) {
+      const k = start + (1 - start) * i / steps, px = eye.x + dx * k, py = eye.y + dy * k, pz = eye.z + dz * k;
       if (!island.clearAt(nx, ny, nz, 0.002, 0.004) || !island.voxelSegmentClearAt(px, py, pz, nx, ny, nz, 0.002, 0.004)) return false;
-      px = nx; py = ny; pz = nz;
+      nx = px; ny = py; nz = pz;
     }
     return true;
   };
