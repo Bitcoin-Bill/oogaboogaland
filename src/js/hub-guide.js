@@ -135,9 +135,13 @@
     });
   };
   // A tour is a list of legs, each a stop (-1: where the visitor is) with its title and what she says there: its
-  // lines, each starting a new bubble.
-  const script = (ids) => ids.map((id) => LINES[id]).join("\n");
-  const ISLAND = STOPS.map((stop, i) => ({ stop: i, title: stop.title, text: script(stop.lines) }));
+  // lines, each starting a new bubble, and the line each bubble belongs to (`lineAt`), for her beam.
+  const legOf = (stop, title, ids) => ({ stop, title, text: ids.map((id) => LINES[id]).join("\n"),
+    lineAt: ids.flatMap((id) => BL.fx.beatsOf(LINES[id]).map(() => id)) });
+  const ISLAND = STOPS.map((stop, i) => legOf(i, stop.title, stop.lines));
+  // Lines about something beside a stop's landmark: while she says one she faces the middle of what the place hands
+  // her under that name (`targets`) and points a beam at each of them at once, then goes back to the landmark.
+  const POINT_AT = { totems: "totems", newsTotems: "totems" };
   // What is new after `seen`, the newest entry last answered (its `line` and `date`; null for none yet, which gets the
   // newest few): every entry listed above it, so one added later the same day still counts. If that entry has left the
   // list, every entry dated after it.
@@ -150,10 +154,10 @@
   // newest of its news first.
   const legsOf = (fresh) => {
     const legs = [], here = fresh.filter((n) => !n.at).map((n) => n.line);
-    if (here.length) legs.push({ stop: -1, title: "All over the island", text: script(here) });
+    if (here.length) legs.push(legOf(-1, "All over the island", here));
     STOPS.forEach((stop, i) => {
       const lines = fresh.filter((n) => n.at === stop.id).map((n) => n.line);
-      if (lines.length) legs.push({ stop: i, title: stop.title, text: script(lines) });
+      if (lines.length) legs.push(legOf(i, stop.title, lines));
     });
     return legs;
   };
@@ -193,7 +197,7 @@
     return params.get("debug") === "1" && day && DAY.test(day) ? day : null;
   })();
 
-  const create = ({ parent, input, fx, camera, pilot, visitor, world, hud, busy, coarse, quality, landing }) => {
+  const create = ({ parent, input, fx, camera, pilot, visitor, world, hud, busy, coarse, quality, landing, targets = {} }) => {
     const rig = BL.tess.create({ parent, input, fx, camera, kind: "tess", coarse, quality }), position = rig.position;
     const state = {
       phase: "work", stage: "beam", timer: 3, site: 0, seen: 0, again: false, kind: "island", legs: ISLAND, welcome: null,
@@ -242,10 +246,10 @@
     // What she says at a stop, a bubble at a time: each goes on by itself, Next skips ahead, and the last stays up
     // until the tour moves on.
     const tell = () => { rig.say(state.legs[state.stop].text, true); label(); };
-    // Coming to the visitor she flies at her own pace close by, and faster from far off, so the trip takes about
-    // COME_TIME however far out the view is.
-    const COME_SPEED = 6, COME_TIME = 2.5, COME_MAX = 60;
-    const comeSpeed = () => Math.min(COME_MAX, Math.max(COME_SPEED, Math.hypot(spot.x - position.x, spot.y - position.y, spot.z - position.z) / COME_TIME));
+    // Flying to the visitor or a tour's stop she keeps her own pace `base` close by, and goes faster from far off, so
+    // the trip takes about COME_TIME however far out the view is.
+    const COME_TIME = 2.5, COME_MAX = 60;
+    const pace = (base, x, y, z) => Math.max(base, Math.min(COME_MAX, Math.hypot(x - position.x, y - position.y, z - position.z) / COME_TIME));
     // A flight to (x, y, z) over an arc: up from where she is, over, and down onto it.
     const flyTo = (x, y, z, speed, track = false) => {
       const d = Math.hypot(x - position.x, z - position.z), rise = Math.max(2, Math.min(8, d * 0.25));
@@ -292,7 +296,7 @@
       notice();
     };
     const notice = () => { rig.flare(); show("notice"); state.timer = 1.1; };
-    const approach = () => { placeBy(); flyTo(spot.x, spot.y, spot.z, comeSpeed(), true); show("approach"); };
+    const approach = () => { placeBy(); flyTo(spot.x, spot.y, spot.z, pace(6, spot.x, spot.y, spot.z), true); show("approach"); };
     const offer = (text) => {
       state.timer = OFFER_TIME;
       state.tourGuest = state.kind === "island" && !account();
@@ -338,7 +342,7 @@
       if (leg.stop >= 0) {
         glideTo(VIEWS[leg.stop], GLIDE);
         const s = SPOTS[leg.stop];
-        flyTo(s[0], s[1], s[2], 10);
+        flyTo(s[0], s[1], s[2], pace(10, s[0], s[1], s[2]));
         rig.hush();
       } else glideTo(home, GLIDE);
       show("tour");
@@ -372,7 +376,7 @@
       rig.hush();
       glideTo(home, RETURN);
       state.closing = line; state.arrived = false;
-      placeBy(); flyTo(spot.x, spot.y, spot.z, 10, true);
+      placeBy(); flyTo(spot.x, spot.y, spot.z, pace(10, spot.x, spot.y, spot.z), true);
       show("returning");
     };
     // An answer to her offer, Show me or Not now, counts its news as seen, or the island tour as answered; an offer she
@@ -412,7 +416,7 @@
       world.tessGreeted = true;
       state.kind = "island"; state.legs = ISLAND; state.again = true;
       rig.flare(); rig.nod();
-      placeBy(); flyTo(spot.x, spot.y, spot.z, comeSpeed(), true);
+      placeBy(); flyTo(spot.x, spot.y, spot.z, pace(6, spot.x, spot.y, spot.z), true);
       show("approach");
     };
     const captureKey = (e) => {
@@ -492,7 +496,17 @@
       const working = state.phase === "work" && state.stage === "beam", at = state.phase === "tour" ? state.legs[state.stop].stop : -1;
       rig.mode = working ? 1 : at >= 0 && rig.onLastLeg ? 2 : 0;
       if (working) { const a = WORK[state.site].aim; rig.aim.x = a[0]; rig.aim.y = a[1]; rig.aim.z = a[2]; }
-      else if (rig.mode === 2) { const a = STOPS[at].look; rig.aim.x = a[0]; rig.aim.y = a[1]; rig.aim.z = a[2]; }
+      else if (rig.mode === 2) {
+        // At a stop, the landmark; through a line about something beside it, a beam to each of those at once.
+        const speech = rig.speech, line = state.arrived && speech ? state.legs[state.stop].lineAt[speech.beat] : null;
+        const list = line && POINT_AT[line] ? targets[POINT_AT[line]] : null;
+        rig.aims = list && list.length ? list : null;
+        if (rig.aims) {
+          let x = 0, y = 0, z = 0;
+          for (let i = 0; i < list.length; i++) { x += list[i].x; y += list[i].y; z += list[i].z; }
+          rig.aim.x = x / list.length; rig.aim.y = y / list.length; rig.aim.z = z / list.length;
+        } else { const a = STOPS[at].look; rig.aim.x = a[0]; rig.aim.y = a[1]; rig.aim.z = a[2]; }
+      }
       rig.steady = state.phase === "offer" || state.phase === "tour" && at < 0;
       rig.calm = rig.steady || state.phase === "tour";
       rig.watching = state.phase !== "work";

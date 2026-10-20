@@ -440,5 +440,5 @@
       }
     };
   };
-  BL.fx = { create, CONFETTI };
+  BL.fx = { create, CONFETTI, beatsOf };
 })();

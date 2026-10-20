@@ -386,11 +386,14 @@
   });
   const SPARKS = cached(() => ["#ffc83a", "#ff8a1f", "#fff2b8"].map((c) => models.particleGeometry(c, 0.05, 1)));
   const MOTE = cached(() => models.particleGeometry("#ffb347", 0.04, 1));
+  // Beams she can point at once, one to each of a few things side by side.
+  const BEAMS = 4;
   // Her sparks and motes at once, at most: a working beam keeps about 13 in the air and a fast flight about 10.
   const FLECKS = 24;
   // One Tess for a visit, under `parent`, picked as `kind`. The place she guides moves her through this rig: a flight
   // path she steers along (`clearPath`, `push`, `steer`, the last point following someone while `track`ed), her beam
-  // (`mode` 1 working, 2 pointing, landing on `aim`), whom she watches when she is not flying or beaming (`watching`
+  // (`mode` 1 working, 2 pointing, landing on `aim`, or split to each of up to BEAMS `aims` round the `aim` she
+  // faces), whom she watches when she is not flying or beaming (`watching`
   // and `watch`), and her moods: `calm` while she talks, `steady` while she keeps by someone, so she does not turn to
   // her flight. Outline registries walk past her, as she moves every frame.
   const create = ({ parent, input, fx, camera, kind, coarse, quality = () => "high" }) => {
@@ -424,10 +427,29 @@
       if (node.geometry === meshes[key]) registerDetail(node, key);
     for (const node of optics.children) if (node.geometry === meshes.glints) registerDetail(node, "glints");
     let detailed = false, selectedTier = meshes, priming = fineMeshes ? 2 : 0;
-    // The beam lives in the scene's frame, not hers: it runs from her eye to wherever it lands.
-    const beam = createNode({ geometry: BEAM(), visible: false, sightHidden: true });
-    const glint = createNode({ geometry: GLINT(), visible: false, sightHidden: true });
-    addChild(parent, body); addChild(parent, beam); addChild(parent, glint);
+    // Her beams live in the scene's frame, not hers: each runs from her eye to wherever it lands, a glint there.
+    const beams = [], glints = [];
+    for (let i = 0; i < BEAMS; i++) {
+      beams.push(createNode({ geometry: BEAM(), visible: false, sightHidden: true }));
+      glints.push(createNode({ geometry: GLINT(), visible: false, sightHidden: true }));
+    }
+    addChild(parent, body, ...beams, ...glints);
+    // Beam `i` from her eye at (ex, ey, ez) to (x, y, z), rolled so the ribbon's face turns to the camera: its width
+    // square to the beam and the view.
+    const lay = (i, ex, ey, ez, x, y, z, width, glow, size) => {
+      const beam = beams[i], glint = glints[i], dx = x - ex, dy = y - ey, dz = z - ez;
+      const by = Math.atan2(dx, dz), bx = -Math.atan2(dy, Math.hypot(dx, dz));
+      beam.position.x = ex; beam.position.y = ey; beam.position.z = ez;
+      beam.rotation.y = by; beam.rotation.x = bx;
+      if (camera) {
+        const vx = camera.position.x - ex, vy = camera.position.y - ey, vz = camera.position.z - ez, sx = Math.sin(bx);
+        beam.rotation.z = Math.atan2(-(Math.cos(by) * vx - Math.sin(by) * vz), Math.sin(by) * sx * vx + Math.cos(bx) * vy + Math.cos(by) * sx * vz);
+      }
+      beam.scale.x = width; beam.scale.z = Math.hypot(dx, dy, dz); beam.glow = glow;
+      glint.position.x = x; glint.position.y = y; glint.position.z = z;
+      glint.scale.x = glint.scale.y = glint.scale.z = size;
+      beam.visible = glint.visible = true;
+    };
     // Her sparks and motes come from her own pool, made with her, never the scene's particles: the place's node count
     // stays the same while she works, and its bursts never wait on hers. The ring reuses the one thrown longest ago.
     const flecks = [];
@@ -471,7 +493,7 @@
     };
     const rig = {
       root: body, figure, position, vel,
-      mode: 0, aim: { x: 0, y: 0, z: 0 }, calm: false, steady: false, watching: false, watch: { x: 0, y: 0, z: 0 },
+      mode: 0, aim: { x: 0, y: 0, z: 0 }, aims: null, calm: false, steady: false, watching: false, watch: { x: 0, y: 0, z: 0 },
       clearPath(speed, corner) { pathCount = pathAt = 0; pathSpeed = speed; pathCorner = corner; tracking = false; },
       push(x, y, z) { const o = pathCount++ * 3; path[o] = x; path[o + 1] = y; path[o + 2] = z; },
       // The last point follows someone: she never settles on it, and `steer` never reports arriving.
@@ -561,6 +583,7 @@
 
         // The beam, once she faces where it lands: a working one is bright, throws sparks and carries her light onto
         // what she works; a pointing one is thin and soft. Her own show only: it never touches what it lands on.
+        let laid = 0;
         if (mode) {
           const yaw = body.rotation.y, pitch = head.rotation.x, cp = Math.cos(pitch);
           const fx0 = Math.sin(yaw) * cp, fy0 = -Math.sin(pitch), fz0 = Math.cos(yaw) * cp;
@@ -568,18 +591,10 @@
           const dx = aim.x - ex, dy = aim.y - ey, dz = aim.z - ez, length = Math.hypot(dx, dy, dz);
           if ((fx0 * dx + fy0 * dy + fz0 * dz) / length < 0.95) mode = 0;
           else {
-            beam.position.x = ex; beam.position.y = ey; beam.position.z = ez;
-            const by = Math.atan2(dx, dz), bx = -Math.atan2(dy, Math.hypot(dx, dz));
-            beam.rotation.y = by; beam.rotation.x = bx;
-            // Rolled so the ribbon's face turns to the camera: its width square to the beam and the view.
-            if (camera) {
-              const vx = camera.position.x - ex, vy = camera.position.y - ey, vz = camera.position.z - ez, sx = Math.sin(bx);
-              beam.rotation.z = Math.atan2(-(Math.cos(by) * vx - Math.sin(by) * vz), Math.sin(by) * sx * vx + Math.cos(bx) * vy + Math.cos(by) * sx * vz);
-            }
-            beam.scale.x = mode === 1 ? 0.07 + Math.sin(elapsed * 37) * 0.012 : 0.05; beam.scale.z = length;
-            beam.glow = mode === 1 ? 1.2 + Math.sin(elapsed * 23) * 0.2 : 0.85;
-            glint.position.x = aim.x; glint.position.y = aim.y; glint.position.z = aim.z;
-            glint.scale.x = glint.scale.y = glint.scale.z = mode === 1 ? 0.14 + Math.sin(elapsed * 29) * 0.03 : 0.06;
+            const width = mode === 1 ? 0.07 + Math.sin(elapsed * 37) * 0.012 : 0.05, glow = mode === 1 ? 1.2 + Math.sin(elapsed * 23) * 0.2 : 0.85;
+            const size = mode === 1 ? 0.14 + Math.sin(elapsed * 29) * 0.03 : 0.06, aims = mode === 2 ? rig.aims : null;
+            if (aims) for (let i = 0; i < aims.length && i < BEAMS; i++) lay(laid++, ex, ey, ez, aims[i].x, aims[i].y, aims[i].z, width, glow, size);
+            else lay(laid++, ex, ey, ez, aim.x, aim.y, aim.z, width, glow, size);
             lit.x = aim.x - dx / length * 0.4; lit.y = aim.y - dy / length * 0.4; lit.z = aim.z - dz / length * 0.4;
             litGain = 0.85 + Math.sin(elapsed * 31) * 0.15;
             if (mode === 1 && (sparkT -= dt) <= 0) {
@@ -590,7 +605,7 @@
             }
           }
         }
-        beam.visible = glint.visible = mode > 0;
+        for (let i = laid; i < BEAMS; i++) beams[i].visible = glints[i].visible = false;
         shown = mode;
         // A faint trail of motes behind her in flight.
         if (speed > 1.6 && (trailT -= dt) <= 0) {
@@ -623,7 +638,8 @@
       },
       dispose() {
         input.remove(head);
-        removeChild(parent, body); removeChild(parent, beam); removeChild(parent, glint);
+        removeChild(parent, body);
+        for (let i = 0; i < BEAMS; i++) { removeChild(parent, beams[i]); removeChild(parent, glints[i]); }
         for (let i = 0; i < FLECKS; i++) removeChild(parent, flecks[i].node);
       }
     };
