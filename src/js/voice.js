@@ -415,7 +415,7 @@
     else setMuted(!stats.muted);
   };
 
-  // Leaving voice for good (sign-out, another tab took over): the microphone is released too.
+  // Leaving voice for good (Leave voice, sign-out, another tab took over): the microphone is released too.
   const stop = () => {
     lifecycle++; micGeneration++; abortRequests(); microphoneWanted = stats.micWanted = false;
     const was = stats.enabled || stats.joining || !!pubPc || !!subPc;
