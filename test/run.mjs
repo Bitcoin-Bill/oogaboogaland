@@ -5641,17 +5641,23 @@ const raceBench = { name: "race bench", why: "regression: Oogas never drawn into
 } };
 // A signed-in contributor drives only their own Ooga on the island, so each game holds them to it on entering. The
 // account is set on the page's own `BL.net.state`, as /api/me leaves it before a scene opens; signing out clears it,
-// and the next visit hands the choice back. `read` returns what the game shows; `held` judges it.
-const ownOoga = (id, read, held) => ({ name: `${id} own ooga`, why: "rule: a signed-in visitor with an Ooga plays only it, and signing out hands the choice back", run: async (b) => {
-  const own = await b.evaluate(`(() => { const list = window.BL.contributors.activeRoster, c = window.BL.characters.all().find((c) => c.handle !== list[0].name && list.some((r) => r.name === c.handle)); window.BL.net.state.me = { id: 1, login: c.github || c.handle, display: c.handle }; return { handle: c.handle, display: window.BL.characters.displayOf(c.handle) }; })()`);
+// and the next visit hands the choice back. The signed-in visit comes from the arcade, the other from the island, so
+// the exit names each. `read` returns what the game shows; `held` judges it.
+const ownOoga = (id, read, held) => ({ name: `${id} own ooga`, why: "rule: a signed-in visitor with an Ooga plays only it, signing out hands the choice back, and the exit names where it goes", run: async (b) => {
+  const exit = `document.querySelector('nav[data-scene="${id}"] .leave').textContent`;
+  let own, signedIn, signedOut;
+  try {
+    own = await b.evaluate(`(() => { const list = window.BL.contributors.activeRoster, c = window.BL.characters.all().find((c) => c.handle !== list[0].name && list.some((r) => r.name === c.handle)); window.BL.net.state.me = { id: 1, login: c.github || c.handle, display: c.handle }; return { handle: c.handle, display: window.BL.characters.displayOf(c.handle) }; })()`);
+    await tourGo(b, "arcade");
+    await tourGo(b, id);
+    signedIn = { ...await b.evaluate(read), exit: await b.evaluate(exit) };
+  } finally {
+    await b.evaluate(`window.BL.net.state.me = null`);
+  }
   await tourGo(b, "hub");
   await tourGo(b, id);
-  const signedIn = await b.evaluate(read);
-  await b.evaluate(`window.BL.net.state.me = null`);
-  await tourGo(b, "hub");
-  await tourGo(b, id);
-  const signedOut = await b.evaluate(read);
-  record(`${id} own ooga: a signed-in visitor plays their own Ooga and nothing else, and signing out hands the choice back`, held(own, signedIn, signedOut), JSON.stringify({ own, signedIn, signedOut }));
+  signedOut = { ...await b.evaluate(read), exit: await b.evaluate(exit) };
+  record(`${id} own ooga: a signed-in visitor plays their own Ooga and nothing else, signing out hands the choice back, and the exit says Back to arcade from a cabinet and Back to the island from the island`, held(own, signedIn, signedOut) && signedIn.exit === "Back to arcade" && signedOut.exit === "Back to the island", JSON.stringify({ own, signedIn, signedOut }));
 } });
 const dropOwn = ownOoga("drop", `({ who: document.querySelector('#drop-oogas [aria-pressed="true"]').dataset.racer, rows: [...document.querySelectorAll("#drop-oogas li")].filter((li) => !li.hidden).length, help: !document.getElementById("drop-pick-ooga").hidden })`,
   (own, i, o) => i.who === own.handle && i.rows === 1 && !i.help && o.rows === CAST && o.help);

@@ -1950,7 +1950,6 @@
     rhud.buildPalette();
     rhud.buildMission();
     rhud.setPilot(selection.pilot);
-    rhud.lockPilot(!!own);
     rhud.refreshBest();
     controls = controlsMod.create({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, chord: ctx.canvas, onAction: act });
     orbitScene.agentControls = controls;

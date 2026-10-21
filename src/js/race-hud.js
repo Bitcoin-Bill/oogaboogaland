@@ -59,7 +59,6 @@
       BL.hud.holdRow(el.racers, buttons.racer, name);
       el.pickOoga.hidden = !!name;
       if (!name) return;
-      el.racers.append(buttons.racer.get(name).parentElement);
       selection.racer = name;
       mark("racer");
     };

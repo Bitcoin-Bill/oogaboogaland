@@ -61,9 +61,11 @@
     const setPilot = (name) => {
       el.pilotName.firstChild.data = BL.characters.displayOf(name);
     };
-    // A signed-in visitor with an Ooga flies it, as they drive only it on the island: the pilot stops cycling.
+    // A signed-in visitor with an Ooga flies it, as they drive only it on the island: the pilot stops cycling and
+    // says why.
     const lockPilot = (locked) => {
       el.pilot.disabled = locked;
+      el.pilot.title = locked ? "Signed in, you fly your own Ooga" : "";
     };
     const button = (text, className, fn) => {
       const b = document.createElement("button");
