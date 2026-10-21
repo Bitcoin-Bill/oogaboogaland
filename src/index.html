@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' https://stream.noderunnersradio.com https://hodlerhiq.net; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a0b">
@@ -408,6 +408,12 @@
             <div class="banana-board-labels" aria-hidden="true"><span>#</span><span>Donor</span><span id="banana-board-unit">Bananas</span></div>
             <ol class="banana-leaders" id="banana-leaders" aria-label="Top donors by bananas"></ol>
             <p class="banana-empty" id="banana-empty">No donations yet. Feed the first Ooga!</p>
+          </section>
+          <section class="banana-recent" aria-labelledby="banana-recent-title">
+            <h3 class="slab-head" id="banana-recent-title"><span data-sign>Most recent donations</span></h3>
+            <label class="banana-recent-filter"><input type="checkbox" id="banana-recent-bar"> <span id="banana-recent-bar-label">1,000 sats and up only</span></label>
+            <ol class="banana-recent-list" id="banana-recent-list" aria-label="Most recent donations"></ol>
+            <p class="banana-empty" id="banana-recent-empty">New donations will appear here.</p>
           </section>
           <p class="banana-board-note" id="banana-board-note">Demo donations saved in this browser.</p>
         </div>
@@ -1512,10 +1518,10 @@
         <h2 id="donation-title"><span data-sign>Feed the Ooga Boogas</span></h2>
         <button type="button" class="modal-close" id="donation-close" aria-label="Close donation">&times;</button>
       </div>
-      <canvas id="donation-screen" width="400" height="400" tabindex="0" aria-label="Donation screen. Type an amount, press Enter to continue, A for your name and message, O for on-chain, C to copy, and Escape to go back."></canvas>
+      <canvas id="donation-screen" width="400" height="400" tabindex="0" aria-label="Donation screen. Type an amount, press Enter to continue, A for your name and message. In the name field, the arrow shows previous names; Down Arrow previews a suggestion, Tab or Enter accepts it, and Escape cancels it. O for on-chain, C to copy, and Escape to go back."></canvas>
       <div id="donation-fields">
         <label class="field"><span>Donation handle</span><input id="donation-handle" type="text" maxlength="39" tabindex="-1" autocomplete="off" spellcheck="false" placeholder="anon"></label>
-        <label class="field"><span>Banana message (up to 280 characters)</span><input id="donation-message" type="text" maxlength="280" tabindex="-1" autocomplete="off" placeholder="Optional message"></label>
+        <label class="field"><span id="donation-message-label">Banana message (up to 280 characters)</span><input id="donation-message" type="text" maxlength="280" tabindex="-1" autocomplete="off" placeholder="Optional message"></label>
         <div class="donation-details-actions">
           <span id="donation-details-status" role="status"></span>
         </div>
@@ -1523,24 +1529,6 @@
       <p class="help">Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.</p>
     </dialog>
     <div id="factory-donation-fields" hidden></div>
-    <dialog class="modal" id="feed" aria-label="Feed the Ooga Boogas">
-      <div class="panel-head">
-        <h2><span data-sign>Feed the Ooga Boogas</span></h2>
-        <button type="button" class="modal-close" data-action="feed-close" aria-label="Close the feed">&times;</button>
-      </div>
-      <canvas id="qr" width="0" height="0" aria-label="Donation QR code"></canvas>
-      <p class="qr-url" id="qr-url"></p>
-      <label class="field" id="handle-field"><span>Your handle</span><input id="handle" type="text" maxlength="39"
-          autocomplete="off" spellcheck="false" placeholder="anon" autofocus></label>
-      <label class="field"><span>Banana message (up to 280 characters)</span><input id="message" type="text" maxlength="280" autocomplete="off"
-          placeholder="shown when your banana is eaten"></label>
-      <div class="actions" id="feed-tips">
-        <button type="button" data-action="tip">Tip 1.2K sats</button>
-        <button type="button" data-action="tip-legendary">Tip 120K sats</button>
-      </div>
-      <p class="help" id="feed-help"><span id="feed-simulated">Payments are simulated in this build.</span><span
-          id="crate-help" hidden> Crates drop at 1K, 5K, 21K and 100K sats.</span></p>
-    </dialog>
     <dialog class="modal" id="recipe" aria-label="Add an Ooga">
       <div class="panel-head">
         <h2><span data-sign>Add an Ooga</span></h2>
@@ -1778,10 +1766,10 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/factory-greeter.js"></script>
   <script src="js/scene-factory.js"></script>
   <script src="js/arcade-models.js"></script>
-  <script src="js/arcade-games.js"></script>
-  <script src="js/retro-games.js"></script>
+  <script src="js/arcade-games.js" data-defer="arcade"></script>
+  <script src="js/retro-games.js" data-defer="arcade"></script>
   <script src="js/scene-arcade.js"></script>
-  <script src="js/carnival-audio.js"></script>
+  <script src="js/carnival-audio.js" data-defer="arcade"></script>
   <script src="js/scene-carnival.js"></script>
   <script src="js/race-track.js"></script>
   <script src="js/racers.js"></script>
@@ -1789,9 +1777,9 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/race-hud.js"></script>
   <script src="js/race-audio.js"></script>
   <script src="js/scene-race.js"></script>
-  <script src="js/skydiver.js"></script>
+  <script src="js/skydiver.js" data-defer="drop"></script>
   <script src="js/drop-hud.js"></script>
-  <script src="js/drop-audio.js"></script>
+  <script src="js/drop-audio.js" data-defer="drop"></script>
   <script src="js/scene-drop.js"></script>
   <script src="js/mine-models.js"></script>
   <script src="js/mine-sim.js"></script>
@@ -1802,67 +1790,66 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/rocket-hud.js"></script>
   <script src="js/rocket-audio.js"></script>
   <script src="js/scene-orbit.js"></script>
-  <script src="js/dsb-coast.js"></script>
-  <script src="js/dsb-geography.js"></script>
-  <script src="js/dsb-models.js"></script>
-  <script src="js/dsb-data.js"></script>
+  <script src="js/dsb-coast.js" data-defer="dsb"></script>
+  <script src="js/dsb-geography.js" data-defer="dsb"></script>
+  <script src="js/dsb-models.js" data-defer="dsb"></script>
+  <script src="js/dsb-data.js" data-defer="dsb"></script>
   <script src="js/dsb-audio-data.js"></script>
-  <script src="js/dsb-audio.js"></script>
-  <script src="js/dsb-menu-shell.js"></script>
-  <script src="js/dsb-menu-zones.js"></script>
-  <script src="js/dsb-tv.js"></script>
-  <script src="js/dsb-agent-remote.js"></script>
-  <script src="js/dsb-conversation.js"></script>
-  <script src="js/dsb-agent-brain.js"></script>
-  <script src="js/dsb-agent.js"></script>
-  <script src="js/dsb-weather.js"></script>
-  <script src="js/dsb-nature.js"></script>
-  <script src="js/dressing-chora.js"></script>
-  <script src="js/dressing-coastal.js"></script>
-  <script src="js/dsb-exterior.js"></script>
-  <script src="js/dsb-enrichment.js"></script>
-  <script src="js/dsb-town.js"></script>
-  <script src="js/dsb-atmosphere.js"></script>
-  <script src="js/dsb-entrance.js"></script>
-  <script src="js/dsb-olympus.js"></script>
-  <script src="js/dsb-vacancies.js"></script>
-  <script src="js/dsb-water-interaction.js"></script>
-  <script src="js/dsb-interior-audio.js"></script>
-  <script src="js/dsb-studio.js"></script>
-  <script src="js/maxis-models.js"></script>
-  <script src="js/maxis-club.js"></script>
-  <script src="js/dsb-spaces.js"></script>
-  <script src="js/without-rulers-models.js"></script>
-  <script src="js/without-rulers-shop.js"></script>
-  <script src="js/without-rulers-data.js"></script>
-  <script src="js/without-rulers-menu.js"></script>
-  <script src="js/proof-of-ink-data.js"></script>
-  <script src="js/proof-of-ink-art.js"></script>
-  <script src="js/proof-of-ink-models.js"></script>
-  <script src="js/proof-of-ink-room.js"></script>
-  <script src="js/proof-of-ink-menu.js"></script>
-  <script src="js/big-bitcoin-data.js"></script>
-  <script src="js/big-bitcoin-models.js"></script>
-  <script src="js/big-bitcoin-room.js"></script>
-  <script src="js/big-bitcoin-menu.js"></script>
-  <script src="js/meme-factory-data.js"></script>
-  <script src="js/meme-factory-models.js"></script>
-  <script src="js/meme-factory-room.js"></script>
-  <script src="js/meme-factory-menu.js"></script>
-  <script src="js/stackchain-data.js"></script>
-  <script src="js/stackchain-art.js"></script>
-  <script src="js/stackchain-models.js"></script>
-  <script src="js/stackchain-zones.js"></script>
-  <script src="js/stackchain-room.js"></script>
-  <script src="js/stackchain-menu.js"></script>
-  <script src="js/svrn-data.js"></script>
-  <script src="js/svrn-models.js"></script>
-  <script src="js/svrn-room.js"></script>
-  <script src="js/svrn-menu.js"></script>
-  <script src="js/dsb-interiors.js"></script>
-  <script src="js/dsb-radio.js"></script>
-  <script src="js/dsb-noderunner.js"></script>
-  <script src="js/dsb-collision.js"></script>
+  <script src="js/dsb-audio.js" data-defer="dsb"></script>
+  <script src="js/dsb-menu-shell.js" data-defer="dsb"></script>
+  <script src="js/dsb-menu-zones.js" data-defer="dsb"></script>
+  <script src="js/dsb-tv.js" data-defer="dsb"></script>
+  <script src="js/dsb-agent-remote.js" data-defer="dsb"></script>
+  <script src="js/dsb-conversation.js" data-defer="dsb"></script>
+  <script src="js/dsb-agent-brain.js" data-defer="dsb"></script>
+  <script src="js/dsb-agent.js" data-defer="dsb"></script>
+  <script src="js/dsb-weather.js" data-defer="dsb"></script>
+  <script src="js/dsb-nature.js" data-defer="dsb"></script>
+  <script src="js/dressing-chora.js" data-defer="dsb"></script>
+  <script src="js/dressing-coastal.js" data-defer="dsb"></script>
+  <script src="js/dsb-exterior.js" data-defer="dsb"></script>
+  <script src="js/dsb-enrichment.js" data-defer="dsb"></script>
+  <script src="js/dsb-town.js" data-defer="dsb"></script>
+  <script src="js/dsb-atmosphere.js" data-defer="dsb"></script>
+  <script src="js/dsb-entrance.js" data-defer="dsb"></script>
+  <script src="js/dsb-olympus.js" data-defer="dsb"></script>
+  <script src="js/dsb-vacancies.js" data-defer="dsb"></script>
+  <script src="js/dsb-water-interaction.js" data-defer="dsb"></script>
+  <script src="js/dsb-interior-audio.js" data-defer="dsb"></script>
+  <script src="js/dsb-studio.js" data-defer="dsb"></script>
+  <script src="js/maxis-models.js" data-defer="dsb"></script>
+  <script src="js/maxis-club.js" data-defer="dsb"></script>
+  <script src="js/without-rulers-models.js" data-defer="dsb"></script>
+  <script src="js/without-rulers-shop.js" data-defer="dsb"></script>
+  <script src="js/without-rulers-data.js" data-defer="dsb"></script>
+  <script src="js/without-rulers-menu.js" data-defer="dsb"></script>
+  <script src="js/proof-of-ink-data.js" data-defer="dsb"></script>
+  <script src="js/proof-of-ink-art.js" data-defer="dsb"></script>
+  <script src="js/proof-of-ink-models.js" data-defer="dsb"></script>
+  <script src="js/proof-of-ink-room.js" data-defer="dsb"></script>
+  <script src="js/proof-of-ink-menu.js" data-defer="dsb"></script>
+  <script src="js/big-bitcoin-data.js" data-defer="dsb"></script>
+  <script src="js/big-bitcoin-models.js" data-defer="dsb"></script>
+  <script src="js/big-bitcoin-room.js" data-defer="dsb"></script>
+  <script src="js/big-bitcoin-menu.js" data-defer="dsb"></script>
+  <script src="js/meme-factory-data.js" data-defer="dsb"></script>
+  <script src="js/meme-factory-models.js" data-defer="dsb"></script>
+  <script src="js/meme-factory-room.js" data-defer="dsb"></script>
+  <script src="js/meme-factory-menu.js" data-defer="dsb"></script>
+  <script src="js/stackchain-data.js" data-defer="dsb"></script>
+  <script src="js/stackchain-art.js" data-defer="dsb"></script>
+  <script src="js/stackchain-models.js" data-defer="dsb"></script>
+  <script src="js/stackchain-zones.js" data-defer="dsb"></script>
+  <script src="js/stackchain-room.js" data-defer="dsb"></script>
+  <script src="js/stackchain-menu.js" data-defer="dsb"></script>
+  <script src="js/svrn-data.js" data-defer="dsb"></script>
+  <script src="js/svrn-models.js" data-defer="dsb"></script>
+  <script src="js/svrn-room.js" data-defer="dsb"></script>
+  <script src="js/svrn-menu.js" data-defer="dsb"></script>
+  <script src="js/dsb-interiors.js" data-defer="dsb"></script>
+  <script src="js/dsb-radio.js" data-defer="dsb"></script>
+  <script src="js/dsb-noderunner.js" data-defer="dsb"></script>
+  <script src="js/dsb-collision.js" data-defer="dsb"></script>
   <script src="js/scene-dsb.js"></script>
   <script src="js/bifrost-models.js"></script>
   <script src="js/bifrost-gate.js"></script>
@@ -1881,12 +1868,12 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/timechain-interior.js" data-defer="timechain"></script>
   <script src="js/routes.js"></script>
   <script src="js/router.js"></script>
-  <script src="js/poker-rules.js"></script>
-  <script src="js/poker-live.js"></script>
-  <script src="js/poker-cards.js"></script>
+  <script src="js/poker-rules.js" data-defer="poker"></script>
+  <script src="js/poker-live.js" data-defer="poker"></script>
+  <script src="js/poker-cards.js" data-defer="poker"></script>
   <script src="js/poker-themes.js"></script>
-  <script src="js/poker-models.js"></script>
-  <script src="js/poker-hud.js"></script>
+  <script src="js/poker-models.js" data-defer="poker"></script>
+  <script src="js/poker-hud.js" data-defer="poker"></script>
   <script src="js/scene-poker.js"></script>
   <script src="js/director.js"></script>
 </body>

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, donations, qr, terrain, hubModels, headquartersModels, poolModels, caves, daylight, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod, critters: crittersMod, weather: weatherMod, chain, mempool, oogatronLive } = BL;
+  const { math, models, contributors, donations, terrain, hubModels, headquartersModels, poolModels, caves, daylight, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod, critters: crittersMod, weather: weatherMod, chain, mempool, oogatronLive } = BL;
   const { clamp, lerp, ease, fnv1a, mulberry32 } = math;
   const { createNode, addChild, removeChild, updateWorld, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { JET_SPEED, JET_RISE, JET_FUEL_SECONDS, JET_MOVE_SECONDS } = crewMod;
@@ -405,7 +405,7 @@
   const clankerGroundTarget = (owner) => owner.kind === "prop" && (owner.prop === "crate" || owner.prop === "barrel" || owner.prop === "rock");
   const CLANKER_CAVITY = { floor: 0, ceiling: 0, caveIndex: 0 };
   const JETPACK_HUD_STATE = { owned: false, equipped: false, fuel: 1, blocked: false };
-  let enteringTween = null, factoryDeparting = false, bifrostDeparting = false;
+  let enteringTween = null, factoryDeparting = false, bifrostDeparting = false, bifrostHeld = false;
   // Tess, the island's guide, for the visit (`hub-guide.js`).
   let islandGuide = null;
   let stateTimer = 0, hintTimer = 0, now = 0, hour = 12, unsubscribeActivity = null, unsubscribeAccount = null, ownOogaClaimed = false;
@@ -1416,12 +1416,15 @@
     const distance = Math.hypot(dx, dy, dz);
     const outside = Math.max(0, Math.hypot(eye.x, eye.y, eye.z) - Math.hypot(island.radius, island.undersideDepth, terrain.MAX_HEIGHT) - island.unit);
     const start = Math.min(1, outside / Math.max(distance, 1e-7));
+    // The pieces are walked from the sleeper back toward the eye: a mark indoors is usually blocked near it, and the
+    // answer is the same in either order.
     const steps = Math.max(1, Math.ceil(distance * (1 - start) / (island.unit * 0.5)));
-    let px = eye.x + dx * start, py = eye.y + dy * start, pz = eye.z + dz * start;
-    for (let i = 1; i <= steps; i++) {
-      const k = start + (1 - start) * i / steps, nx = eye.x + dx * k, ny = eye.y + dy * k, nz = eye.z + dz * k;
+    const last = start + (1 - start) * steps / steps;
+    let nx = eye.x + dx * last, ny = eye.y + dy * last, nz = eye.z + dz * last;
+    for (let i = steps - 1; i >= 0; i--) {
+      const k = start + (1 - start) * i / steps, px = eye.x + dx * k, py = eye.y + dy * k, pz = eye.z + dz * k;
       if (!island.clearAt(nx, ny, nz, 0.002, 0.004) || !island.voxelSegmentClearAt(px, py, pz, nx, ny, nz, 0.002, 0.004)) return false;
-      px = nx; py = ny; pz = nz;
+      nx = px; ny = py; nz = pz;
     }
     return true;
   };
@@ -6676,7 +6679,9 @@
     const sr = Math.sin(p.ry), cr = Math.cos(p.ry);
     const along = (at.x - p.x) * sr + (at.z - p.z) * cr, across = (at.x - p.x) * cr - (at.z - p.z) * sr;
     const feet = at.y - player.baseY - p.floorY;
-    if (along > p.fieldZ || along < p.fieldZ - 2 || Math.abs(across) > p.halfW || feet < o.floorY - 0.12 || feet >= o.ceilingY) return;
+    if (along > p.fieldZ || along < p.fieldZ - 2 || Math.abs(across) > p.halfW || feet < o.floorY - 0.12 || feet >= o.ceilingY) { bifrostHeld = false; return; }
+    // A crossing the chamber could not be opened for waits until the Ooga has stepped back out of the field.
+    if (bifrostHeld) return;
     b.phase.ripples.pulse(across, feet + 1, 0);
     entering = bifrostDeparting = true;
     world.pilot = player.traits.name;
@@ -10580,9 +10585,10 @@
     }
     context.restore();
   };
-  // Walking recomputes the sight guides at most this often in game time; the lines are world-anchored, so a
-  // frame of lag never shows, and it is the difference between 42 and 59 fps behind cave rock at 4K.
-  const SIGHT_RECOMPUTE_HZ = 30;
+  // Walking recomputes the sight guides at most this often in game time. The lines are world-anchored, so a few
+  // frames of lag only show as an outline catching up. Behind cave rock at 1920x1080 and DPR 2, 15 Hz is a 25 ms
+  // frame becoming 19 ms; 30 Hz spent about 19 ms on every other frame.
+  const SIGHT_RECOMPUTE_HZ = 15;
   const overlay = (dt) => {
     if (poolBlockHovered) showPoolBlockTooltip();
     else if (pileHovered) showPileTooltip();
@@ -10765,7 +10771,7 @@
   const enter = (ctx) => {
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
     glCanvas = ctx.canvas;
-    factoryDeparting = bifrostDeparting = false;
+    factoryDeparting = bifrostDeparting = bifrostHeld = false;
     overlayCanvas = ctx.overlay;
     magazineState = {
       get owned() { return !!crew && crew.hasMagazine(crew.player); },
@@ -11448,15 +11454,6 @@
       crew.applyAllSwag();
       crew.renderLocker();
     });
-    const donationRequest = donations.createRequest(game.state);
-    qr.drawTo(hud.el.qr, donationRequest.url, { quiet: 3, dark: "#000000", light: "#f3efe4" });
-    mark("qr");
-    hud.setDonationUrl(donationRequest.url);
-    hud.setIdentity(game.state);
-    hud.onIdentityChange(({ handle, message }) => {
-      game.setIdentity({ handle: donations.sanitize(handle, donations.HANDLE_MAX), message: donations.sanitize(message, donations.MESSAGE_MAX) });
-      hud.setIdentity(game.state);
-    });
 
     Object.assign(hooks, {
       onHover: showHoverTooltip,
@@ -11503,9 +11500,7 @@
         return;
       }
       if (clankerPlay.active && clankerPlay.action(action)) return;
-      if (action === "tip") demoTip(1200);
-      else if (action === "tip-legendary") demoTip(120000);
-      else if (action === "clear-loot") clearLoot();
+      if (action === "clear-loot") clearLoot();
       else if (action === "reset") resetDemo();
       else if (action === "act") pilot.action();
       else if (action === "mode-preset") {
@@ -11549,13 +11544,17 @@
     unsubscribeAccount = BL.net.subscribe(onAccountChange);
     const initialFirstPerson = ctx.from === null && preloadedFirstPerson && !initialGorilla && !pilot.loginViewRestored;
     if (initialFirstPerson) pilot.enterClose(true);
+    // The /donate route: the island's own view with the donation popup open. As a routed place it keeps Tess from
+    // greeting over the dialog.
+    const donate = ctx.place === "donate", routedPlace = donate ? null : ctx.place;
     // Out of a Timechain room: behind the Sphere's curtain, to walk out through its doors.
     const sphereExit = ctx.from === "timechain" ? world.sphereExit : null;
     world.sphereExit = null;
     if (returningCharacter && sphereExit && pilot.player) timechainIsland.gate.arrive(sphereExit);
     else if (returningCharacter) navigate(ctx.from === "factory" || ctx.from === "bifrost" || ctx.from === "arcade" ? ctx.from : ctx.from === "timechain" ? "timechain" : "pile", false, false);
-    else if (ctx.from === "bifrost" && !ctx.place) navigate("bifrost", false, false);
-    else if (!pilot.loginViewRestored && !crew.sleeping && !initialGorilla && (ctx.place || preloadedView || initialCharacter || initialFirstPerson)) navigate(ctx.place || preloadedView || "pile", false, false);
+    else if (ctx.from === "bifrost" && !routedPlace) navigate("bifrost", false, false);
+    else if (!pilot.loginViewRestored && !crew.sleeping && !initialGorilla && (routedPlace || preloadedView || initialCharacter || initialFirstPerson)) navigate(routedPlace || preloadedView || "pile", false, false);
+    if (donate) hud.openFeed();
     if (initialCharacter && !initialGorilla && preloadedJetpack) {
       grantJetpack(pilot.player, preloadedJetpackWear);
     }
@@ -11854,6 +11853,15 @@
     mark("covered-view");
     if (DEBUG_GORILLA_MOVE) hud.toast("Gorilla movement debug · click a gorilla, then a destination");
   };
+  // The scene a departure was heading for could not be prepared (its deferred code did not arrive): the visitor stays on
+  // the island, driving again, and nothing is photographed for a crossing that did not happen.
+  const stay = () => {
+    bifrostHeld = bifrostDeparting;
+    entering = factoryDeparting = bifrostDeparting = false;
+    if (factoryMouth) factoryMouth.snap = false;
+    if (bifrostIsle) bifrostIsle.snap = false;
+    pilot.controls.reset(); input.reset(); pilot.setActive(true);
+  };
   const leave = () => {
     actorTransition.sourceRoot = actorTransition.sourceHead = null;
     resetRageThrowMap(false);
@@ -12055,7 +12063,7 @@
     // The island reports its own zone as soon as an Ooga is driven (see `zoneOf`); until then it is nowhere.
     voiceZone: "none",
     micKey: true,
-    id: "hub", enter, update, overlay, onDonation, previewDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, leave, stats, liveGeometry,
+    id: "hub", enter, update, overlay, onDonation, previewDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry,
     root: null, camera: null, input: null, debug: null,
     get inMotion() {
       // A crossing through the Timechain Sphere's doors keeps full rate, so its walk and swoop finish smoothly.
