@@ -9689,7 +9689,7 @@ const bifrostEntrance = { name: "bifrost entrance", why: "playthrough: an Ooga w
   // The first crossing finds the chamber's deferred code refused, as a hosted page's bundle answering 503 would be: the
   // view fades back to the island with the same Ooga driven and walking, and stepping out of the field and in again
   // asks for the code once more and goes through.
-  await b.evaluate(`(() => { const load = BL.deferred.load; window.__loads = 0; BL.deferred.load = (group) => { if (window.__loads++) { BL.deferred.load = load; return load(group); } return Promise.reject(new Error("503")); }; window.__portalStart = { ...__ooga.crew.player.root.position }; })()`);
+  await b.evaluate(`(() => { const load = BL.deferred.load; window.__loads = 0; BL.deferred.load = (group) => { if (group !== "dsb") return load(group); if (window.__loads++) { BL.deferred.load = load; return load(group); } return Promise.reject(new Error("503")); }; window.__portalStart = { ...__ooga.crew.player.root.position }; })()`);
   await walkToward(b, inKey[0], inKey[1], 0.8);
   const refused = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && B.transitioning; i++) B.advance(1 / 30, 1 / 30); const a = B.crew.player; return { scene: B.scene, transitioning: B.transitioning, loads: window.__loads, ooga: a ? a.traits.name : null, at: a ? { x: a.root.position.x, z: a.root.position.z } : null }; })()`);
   await walkToward(b, -inKey[0], -inKey[1], 0.5);
