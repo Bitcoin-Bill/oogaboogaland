@@ -15912,6 +15912,29 @@ const qualityFramebufferChecks = async () => {
   })()`, { ...context, countCreated: () => created, countWrites: () => writes, isLive: handle => live.has(handle), liveCount: () => live.size });
   record("quality framebuffer: capped tiers and repeated resizes preserve identical targets, every changed attachment configuration rebuilds and disposal permits fresh restoration", Object.values(r).every(Boolean), JSON.stringify({ ...r, created, deleted, writes }));
 };
+const tileGpuChecks = async () => {
+  const source = await readFile(new URL("../src/js/gl-renderer.js", import.meta.url), "utf8");
+  const helper = source.slice(source.indexOf("  const APPLE_SILICON ="), source.indexOf("  const isSupported ="));
+  const tileBasedGpu = new Function(`${helper}; return tileBasedGpu;`)();
+  let asked = 0;
+  const unmasked = name => () => { asked++; return name; };
+  const rows = [
+    // Named Apple silicon, through Chrome's extension, ANGLE's older OpenGL form and Firefox's RENDERER.
+    ["WebKit WebGL", unmasked("ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)"), true],
+    ["WebKit WebGL", unmasked("ANGLE (Apple, Apple M2, OpenGL 4.1)"), true],
+    ["Apple M1, or similar", unmasked("unasked"), true],
+    // Intel and AMD, including Chrome's Metal backend, which reports the vendor as Apple.
+    ["WebKit WebGL", unmasked("ANGLE (Intel Inc., Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)"), false],
+    ["WebKit WebGL", unmasked("ANGLE (Apple, ANGLE Metal Renderer: Intel(R) UHD Graphics 630, Unspecified Version)"), false],
+    ["WebKit WebGL", unmasked("ANGLE (ATI Technologies Inc., AMD Radeon Pro 5500M OpenGL Engine, OpenGL 4.1)"), false],
+    ["AMD Radeon Pro 5500M, or similar", unmasked("unasked"), false],
+    // Safari's constant answer names no hardware, and a missing debug extension names nothing.
+    ["WebKit WebGL", unmasked("Apple GPU"), false],
+    ["WebKit WebGL", unmasked(null), false]
+  ].map(([renderer, info, expected]) => ({ renderer, expected, got: tileBasedGpu(renderer, info) }));
+  record("tile-based GPU: only a named Apple silicon GPU skips the depth prepass; Intel, AMD, Safari's generic \"Apple GPU\" and a missing debug extension keep it",
+    rows.every(row => row.got === row.expected) && asked === 7, JSON.stringify(rows.filter(row => row.got !== row.expected)));
+};
 const raceRigChecks = async () => {
   const context = { window: {}, location: { search: "?debug=1&rain=0" }, URLSearchParams, crypto: webcrypto };
   for (const name of ["math", "scene", "models", "caves", "contributor-identities", "activity-repos", "characters"]) runInNewContext(await readFile(new URL(`../src/js/${name}.js`, import.meta.url), "utf8"), context);
@@ -16651,6 +16674,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   record("peer pose previews: certified empty terrain preserves exact poses and peer rejection while omitting vertex probes", emptyPeers.cases === 291 && emptyPeers.failures === 0 && emptyPeers.samples > 0 && emptyPeers.callbacks > 0 && emptyPeers.contact.length === 4 && emptyPeers.arms.length === 8 && emptyPeers.rollback.length === 6, JSON.stringify(emptyPeers));
   await raceRigChecks();
   await qualityFramebufferChecks();
+  await tileGpuChecks();
   const north = await northTrajectoryProof();
   record("birds-eye north: worst shortest arcs stay monotonic below the frame step limit and settle before the replay deadline", north.finite && north.monotonic && north.resets && north.variableSteps && north.maxStep < 0.25 && north.residual < 0.001, JSON.stringify(north));
   const northRebase = await northRebaseProof();
