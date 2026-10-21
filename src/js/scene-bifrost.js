@@ -953,6 +953,8 @@
     voiceZone: "bifrost.chamber",
     micKey: true,
     id: "bifrost", enter, update, overlay, onDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, leave, stats, liveGeometry,
+    // The chamber's window into DSB Land builds its picture from DSB's terrain, deferred on a hosted page.
+    prepare: () => { const loading = BL.deferred.load("dsb"); return loading ? loading.then(() => null) : null; },
     root: null, camera: null, input: null, debug: null, agent: null, agentView: null, agentControls: null, agentHandoff: null,
     get inMotion() {
       return !!scene;

@@ -16424,7 +16424,8 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   globalThis.removeEventListener = () => {};
   if (!globalThis.crypto) Object.defineProperty(globalThis, "crypto", { value: { getRandomValues: (a) => a.fill(1) } });
 
-  const order = [...readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="js\/([^"]+)"><\/script>/g)].map((m) => m[1]);
+  // Every module the source page loads, deferred groups included: they are inline in the source tree and portable page.
+  const order = [...readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="js\/([^"]+)"(?: data-defer="[a-z-]+")?><\/script>/g)].map((m) => m[1]);
   const skipped = [];
   for (const file of order) {
     try {
