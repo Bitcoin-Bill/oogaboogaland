@@ -5037,7 +5037,7 @@ const donationClientChecks = async () => {
     "donation-fields", "factory-donation-fields", "donation-details-status"]) elements.set(id, {
     listeners: new Map(), open: false, value: "", disabled: false,
     addEventListener(type, fn) { this.listeners.set(type, fn); }, removeEventListener(type) { this.listeners.delete(type); },
-    showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; },
+    showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; }, blur() { this.focused = false; },
     select() { this.selected = true; }, setSelectionRange() {}, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
   });
   Object.assign(kioskContext, { location: { origin: "https://site.test" }, navigator: {}, performance: { now: () => now },
@@ -5057,7 +5057,8 @@ const donationClientChecks = async () => {
     note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
-  const popupGame = { state: { handle: "", message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {}, setIdentity(value) { Object.assign(this.state, value); } };
+  let identityWrites = 0;
+  const popupGame = { state: { handle: "", message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {}, setIdentity(value) { identityWrites++; Object.assign(this.state, value); } };
   const popup = K.donationPopup.create(popupGame), dialog = elements.get("donation-popup");
   let closedCount = 0;
   popup.onClose(() => closedCount++);
@@ -5093,10 +5094,11 @@ const donationClientChecks = async () => {
   elements.get("donation-message").value = "never saved";
   elements.get("donation-fields").listeners.get("input")();
   await popupFlow.key({ key: "Enter" });
-  const failedAgain = popupFlow.state === "details" && !!popupFlow.detailsError;
+  const failedAgain = popupFlow.state === "details" && !!popupFlow.detailsError && popupGame.state.message === "kept until saved";
   popupFlow.key({ key: "Escape" });
   const keptSaved = failedAgain && popupFlow.state === "quote" && !popupFlow.detailsError
-    && elements.get("donation-message").value === "kept until saved" && popup.details().message === "kept until saved";
+    && elements.get("donation-message").value === "kept until saved" && popup.details().message === "kept until saved"
+    && popupGame.state.message === "kept until saved";
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
   elements.get("donation-fields").listeners.get("input")();
@@ -5116,12 +5118,18 @@ const donationClientChecks = async () => {
   popup.open();
   popup.closeOutside();
   const realOutside = dialog.open;
+  for (const key of ["1", "0", "0", "0"]) popupFlow.key({ key });
   popupFlow.key({ key: "A" });
   popup.focusDetails("message");
   const messageInput = elements.get("donation-message");
+  const writesBeforeInput = identityWrites, previousDefault = popupGame.state.message;
+  messageInput.value = "draft";
+  elements.get("donation-fields").listeners.get("input")({ target: messageInput });
   messageInput.value = "";
   elements.get("donation-fields").listeners.get("input")({ target: messageInput });
-  const clearedDefault = popupGame.state.message === "";
+  const deferredWrite = identityWrites === writesBeforeInput && popupGame.state.message === previousDefault;
+  elements.get("donation-fields").listeners.get("change")({ target: messageInput });
+  const clearedDefault = deferredWrite && popupGame.state.message === "" && identityWrites === writesBeforeInput + 1;
   popup.close();
   K.donations.real = false;
   popup.open(true);
@@ -5131,7 +5139,7 @@ const donationClientChecks = async () => {
   const demoOutside = !dialog.open && closedCount === beforeDemoClose + 1;
   K.donations.real = true;
   const realAfterDemo = popup.defaults().handle === "tester" && popup.defaults().message === "";
-  record("donation popup: real invoices ignore backdrop dismissal, a cleared real message updates the saved default, demo anonymous stays empty, demo backdrop dismissal closes once, and the next real default uses the signed-in login",
+  record("donation popup: real invoices ignore backdrop dismissal, message typing defers the local save until change, a cleared real message updates the saved default, demo anonymous stays empty, demo backdrop dismissal closes once, and the next real default uses the signed-in login",
     realOutside && clearedDefault && demoAnonymous && demoOutside && realAfterDemo,
     JSON.stringify({ realOutside, clearedDefault, demoAnonymous, demoOutside, realAfterDemo }));
   // A saved name completes after an explicit preview; a typed prefix survives plain Tab. A tip under the message
@@ -5153,22 +5161,43 @@ const donationClientChecks = async () => {
   fieldKey("ArrowDown", elements.get("donation-handle"));
   fieldKey("Tab", elements.get("donation-handle"));
   const completed = preserved && elements.get("donation-handle").value === "Ooga-Dev" && popup.history() === null;
+  popup.focusDetails("handle");
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Escape", elements.get("donation-handle"));
+  const previewCanceled = elements.get("donation-handle").value === "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Enter", elements.get("donation-handle"));
+  const previewMoved = elements.get("donation-handle").value === "Ooga-Dev" && elements.get("donation-message").focused;
+  fieldKey("Enter", elements.get("donation-message"));
+  await settle();
+  const previewSaved = popupFlow.state === "quote" && popup.details().handle === "Ooga-Dev" && notes.at(-1).handle === "Ooga-Dev";
   kioskContext.document.activeElement = null;
   elements.get("donation-close").listeners.get("click")();
+  popupGame.setIdentity({ handle: popupGame.state.handle, message: "larger-tip note" });
   popup.open(); for (const key of ["6", "8", "Enter"]) popupFlow.key({ key }); await settle();
   const belowMinimum = popupFlow.state === "amount";
   for (const key of ["Delete", "6", "9", "Enter"]) popupFlow.key({ key }); await settle();
-  const smallInvoice = belowMinimum && popupFlow.state === "quote" && invoices.at(-1).sats === 69 && invoices.at(-1).message === "";
+  const smallInvoice = belowMinimum && popupFlow.state === "quote" && invoices.at(-1).sats === 69 && invoices.at(-1).message === ""
+    && popupGame.state.message === "larger-tip note";
   popupFlow.key({ key: "A" });
   elements.get("donation-message").focused = false;
   fieldKey("Tab", elements.get("donation-handle"));
   const nameAlone = smallInvoice && popupFlow.state === "details" && !elements.get("donation-message").focused;
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
   fieldKey("Enter", elements.get("donation-handle"));
   await settle();
-  const nameDone = nameAlone && popupFlow.state === "quote";
+  const nameDone = nameAlone && popupFlow.state === "quote" && elements.get("donation-handle").value === "Ooga-Dev"
+    && popup.details().handle === "Ooga-Dev" && notes.at(-1).handle === "Ooga-Dev";
   elements.get("donation-close").listeners.get("click")();
-  record("donation popup: a typed prefix survives Tab, a previewed saved name completes with Tab, and a tip under the message bar has no message field or carried text",
-    completed && nameDone, JSON.stringify({ suggested, preserved, completed, smallInvoice, nameAlone, nameDone }));
+  record("donation popup: a typed prefix survives Tab, a preview completes with Tab or Enter, Escape cancels a preview, and a tip under the message bar has no message field or carried text",
+    completed && previewCanceled && previewMoved && previewSaved && nameDone, JSON.stringify({ suggested, preserved, completed, previewCanceled, previewMoved, previewSaved, smallInvoice, nameAlone, nameDone }));
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);

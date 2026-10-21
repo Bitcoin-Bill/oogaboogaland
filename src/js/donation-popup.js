@@ -46,6 +46,17 @@
       if (!simulated && donations.real && !value.handle) value.handle = "anon";
       return value;
     };
+    const rememberMessage = (value) => {
+      // Factory fields can outlive a simulated mainland popup, so use the field's owner to decide its mode.
+      if (donations.real && (fieldFlow !== flow || !simulated) && game.state.message !== value)
+        game.setIdentity({ handle: game.state.handle, message: value });
+    };
+    const rememberFinishedMessage = (owner) => {
+      if (!owner || !owner.messageOk()) return;
+      if (owner.invoice) {
+        if (owner.savedDetails) rememberMessage(owner.savedDetails.message);
+      } else rememberMessage(message.value);
+    };
     const refreshHistory = () => {
       historyMatches.length = 0;
       if (historyOpen) {
@@ -56,9 +67,10 @@
       }
       if (fieldFlow) fieldFlow.typed();
     };
-    const hideHistory = () => {
+    const hideHistory = (undo = false) => {
       if (!historyOpen) return;
-      if (historyIndex >= 0) {
+      const previewed = historyIndex >= 0;
+      if (previewed && undo) {
         handle.value = historyPrefix;
         handle.setSelectionRange(handle.value.length, handle.value.length);
         track();
@@ -66,6 +78,11 @@
       historyIndex = -1; historyPrefix = "";
       historyOpen = historyAll = false;
       refreshHistory();
+      if (previewed && fieldFlow && fieldFlow.state === "details") {
+        fieldFlow.detailsChanged();
+        clearTimeout(saveTimer); saveTimer = 0;
+        if (fieldFlow.invoice) saveTimer = setTimeout(save, 350);
+      }
     };
     const detailsState = (owner) => {
       if (fieldFlow !== owner) return;
@@ -74,6 +91,8 @@
       if (paid) { clearTimeout(saveTimer); saveTimer = 0; }
       status.textContent = owner.detailsSaving ? "Saving changes…" : owner.detailsError
         || (owner.detailsDirty ? "Changes save automatically…" : hasInvoice ? "Details saved" : "");
+      if (hasInvoice && owner.savedDetails && !owner.detailsSaving && !owner.detailsError && owner.messageOk())
+        rememberMessage(owner.savedDetails.message);
     };
     const attachDetails = (owner, value, factory = false) => {
       fieldFlow = owner;
@@ -88,6 +107,7 @@
     const detachDetails = (owner) => {
       if (fieldFlow !== owner) return;
       hideHistory();
+      rememberFinishedMessage(owner);
       if (saveTimer) save();
       fieldFlow = null;
       dock.hidden = true;
@@ -98,6 +118,7 @@
     const focusDetails = (field = "handle") => {
       if (!field) {
         hideHistory();
+        rememberFinishedMessage(fieldFlow);
         const active = document.activeElement;
         if (active === handle || active === message) active.blur();
         // The mainland popup keeps the keys: its canvas takes the focus back, as a click on it would.
@@ -117,6 +138,7 @@
     const restoreDetails = (value) => {
       clearTimeout(saveTimer); saveTimer = 0;
       handle.value = value.handle; message.value = value.message;
+      if (fieldFlow?.messageOk()) rememberMessage(value.message);
       track();
       if (fieldFlow) fieldFlow.detailsChanged();
     };
@@ -125,15 +147,12 @@
       // A blur on the way to KEEP SAVED must not retry first. Only a new edit or an explicit retry clears an error.
       return fieldFlow && !fieldFlow.detailsError ? fieldFlow.saveDetails() : Promise.resolve({});
     };
-    const changed = (event) => {
+    const changed = () => {
       if (!fieldFlow) return;
       historyIndex = -1; historyPrefix = "";
       keepCarried(handle);
       keepCarried(message);
       track();
-      // The browser's default message follows real-mode edits, including clearing it before any invoice exists.
-      if (event?.target === message && !simulated && donations.real && game.state.message !== message.value)
-        game.setIdentity({ handle: game.state.handle, message: message.value });
       if (document.activeElement === handle && fieldFlow.state === "details") {
         historyOpen = true; historyAll = false; refreshHistory();
         if (!historyMatches.length) hideHistory();
@@ -166,6 +185,8 @@
     };
     const previewHistory = (direction) => {
       if (!historyOpen || !historyMatches.length) return;
+      // A preview is not an edit until it is accepted; the typed prefix must not be saved as the previewed name.
+      clearTimeout(saveTimer); saveTimer = 0;
       if (historyIndex < 0) historyPrefix = handle.value;
       historyIndex = historyIndex < 0 ? direction > 0 ? 0 : historyMatches.length - 1
         : (historyIndex + direction + historyMatches.length) % historyMatches.length;
@@ -192,7 +213,7 @@
       }
       if (event.key === "Escape" && historyOpen && historyMatches.length) {
         event.preventDefault();
-        return hideHistory();
+        return hideHistory(true);
       }
       if (event.key !== "Enter" && event.key !== "Escape") return;
       event.preventDefault();
@@ -201,7 +222,8 @@
       else fieldFlow.key({ key: event.key });
     };
     fields.addEventListener("input", changed);
-    fields.addEventListener("change", save);
+    const finishEdit = () => { if (fieldFlow && !fieldFlow.invoice) rememberFinishedMessage(fieldFlow); return save(); };
+    fields.addEventListener("change", finishEdit);
     fields.addEventListener("keydown", fieldsKey);
     // The caret and the focus move without input: the screen follows them.
     for (const type of ["keyup", "select", "focusin", "focusout"]) fields.addEventListener(type, track);
@@ -232,7 +254,7 @@
       help.textContent = simulated ? "This is a local simulation. No Bitcoin is sent." : "Pay with Lightning or on-chain. Your bananas arrive from the Factory when the payment confirms.";
       flow = BL.factoryKiosk.create({
         real: !simulated, demo: simulated, outerClose: true, link: () => link,
-        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails, onState: hideHistory,
+        startDetails: () => attachDetails(flow, defaults()), details, editDetails: focusDetails, typing: () => typed, restoreDetails, onState: () => hideHistory(),
         history: () => historyOpen ? historyMatches : null, historyCount: () => game.state.recentHandles.length, toggleHistory, chooseHistory,
         closeDetails: () => detachDetails(flow), detailsState,
         invoice: (sats, value) => donations.invoice({ sats, ...value }),
@@ -295,7 +317,7 @@
       close();
       if (fieldFlow) detachDetails(fieldFlow);
       dialog.removeEventListener("keydown", key); dialog.removeEventListener("cancel", cancel);
-      fields.removeEventListener("input", changed); fields.removeEventListener("change", save);
+      fields.removeEventListener("input", changed); fields.removeEventListener("change", finishEdit);
       fields.removeEventListener("keydown", fieldsKey);
       for (const type of ["keyup", "select", "focusin", "focusout"]) fields.removeEventListener(type, track);
       closeButton.removeEventListener("click", close); canvas.removeEventListener("click", tap);

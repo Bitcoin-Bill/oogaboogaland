@@ -1053,11 +1053,10 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // A failed account lookup on the Worker's own site must never turn a real donation into a demo tip.
-    const workerHost = location.origin === BL.routes.site
-      || /^oogaboogaland-(?:staging|production)\./.test(location.hostname) && location.hostname.endsWith(".workers.dev");
+    // The Worker build marks its pages so a failed account lookup cannot turn a real tip into a demo.
+    const workerPage = document.documentElement.dataset.workerPage === "1";
     const openFeed = () => {
-      if (!BL.donations.real && (workerHost || BL.net.state.backend)) {
+      if (!BL.donations.real && (workerPage || BL.net.state.backend)) {
         toast("Donations are unavailable right now. Try again shortly.");
         return;
       }
