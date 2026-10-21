@@ -52,7 +52,8 @@
     renderOpts.lightCount=count;
     atmosphere?.lights(renderOpts);
   };
-  const scene={id:"dsb",renderOpts};
+  // DSB Land's code is deferred on a hosted page and arrives before the visit is built, while the screen holds dark.
+  const scene={id:"dsb",renderOpts,prepare:()=>{const loading=BL.deferred.load("dsb");return loading?loading.then(()=>null):null;}};
   let atmosphere=null,town=null,entrance=null,olympus=null,vacancies=null,collision=null;
   let root,camera,land,pilot,crew,avatar,hud,input,fx,gate,game,world,go,overlayCanvas,panel,context,leaving=false,overview=false;
   let jetpackBeforeInterior=false,detachedExit=false;
