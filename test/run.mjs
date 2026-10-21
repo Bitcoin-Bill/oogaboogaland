@@ -8818,13 +8818,28 @@ const hubBirdsEyeProjection = { name: "birds-eye projection", why: "rule: overhe
       roof.geometry = decoratedRoof; rows.push(sample("render-only foliage")); roof.geometry = roofGeometry;
       roof.matrixCloud = true; roofGeometry.cutawayPreserve = true; opts.cutawayCloudY = -4; opts.cutawayCloudMix = 1;
       rows.push({ ...sample("lowered cloud"), physicalY: roof.position.y, worldY: roof.world[13] });
-      return rows;
+      // The ₿IFRÖST arch's stone carries a depth offset for its joins, yet stands free: its lintel and towers hide a
+      // speaker behind them, while one seen through the opening stays visible.
+      roof.visible = false; roof.matrixCloud = false; opts.birdsEyeCutaway = false; opts.cutawayRegionCount = 0;
+      camera.orthoMix = 0; camera.up = { x: 0, y: 1, z: 0 };
+      const landmark = BL.bifrostGate.landmark(), arch = S.createNode({ geometry: landmark.stone }); S.addChild(root, arch);
+      const small = BL.models.box({ w: 0.3, h: 0.3, d: 0.3, color: "#ffffff" }), speaker = S.createNode({ sightHidden: true }), mouth = S.createNode({ geometry: small });
+      S.addChild(speaker, mouth); S.addChild(root, speaker); actor.visible = false;
+      const archRows = [];
+      for (const [name, x, y, shown] of [["lintel", 0.75, 5.5, false], ["tower", landmark.opening.half + 0.6, 2, false], ["opening", 0, landmark.opening.spring / 2, true], ["opening off centre", 0.75, landmark.opening.spring / 2, true]]) {
+        Object.assign(camera.position, { x, y, z: 8 }); Object.assign(camera.target, { x, y, z: -3 }); Object.assign(speaker.position, { x, y, z: -3 });
+        B.renderer.render(root, camera, opts); visibility.begin();
+        archRows.push({ name, shown, visible: visibility.anchor({ root: speaker, parts: { head: mouth } }, {}) });
+      }
+      B.renderer.releaseGeometry(small);
+      return { rows, archRows };
     } finally { visibility.dispose(); for (const geometry of [bodyGeometry, headGeometry, roofGeometry]) B.renderer.releaseGeometry(geometry); B.renderer.render(BL.scenes.hub.root, B.camera, B.renderOpts); }
   })()`);
-  record("birds-eye projection: speech anchors follow the rendered head through the transition, ignore cut roofs and weather, and retain a sliver exposed through a local cut", anchors.length === 15 && anchors.every(r => {
+  record("birds-eye projection: speech anchors follow the rendered head through the transition, ignore cut roofs and weather, and retain a sliver exposed through a local cut", anchors.rows.length === 15 && anchors.rows.every(r => {
     const expected = r.name !== "covered" && r.name !== "preserved roof";
     return r.visible === expected && (!expected || r.error < 0.002) && (r.name !== "lowered cloud" || r.physicalY === 6 && r.worldY === 6);
-  }), JSON.stringify(anchors));
+  }), JSON.stringify(anchors.rows));
+  record("speech anchors: the ₿IFRÖST arch's offset stone hides a speaker behind its lintel and towers, and one seen through the opening stays visible", anchors.archRows.length === 4 && anchors.archRows.every(r => r.visible === r.shown), JSON.stringify(anchors.archRows));
 } };
 
 const hubCombatReplay = { name: "birds-eye combat replay", why: "contract: replay links preserve north-up intent and legacy combat orbit poses still migrate", run: async (b) => {
