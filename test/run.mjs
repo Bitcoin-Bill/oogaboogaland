@@ -5252,18 +5252,22 @@ const orbitHosted = { name: "orbit hosted", why: "regression: Ooga Orbit read Oo
   record("orbit hosted: a cold /oogaorbit on the hosted page boots and draws with Drop's diver still unloaded, and Orbit opens again after a Drop visit", cold.scene === "orbit" && cold.frames > 2 && cold.models && !cold.diver
     && drop && orbit && after.scene === "orbit" && site.fetched.filter(p => p.startsWith("/js/drop-")).length === 1, JSON.stringify({ cold, drop, orbit, after, fetched: site.fetched }));
 } };
-const arcadeHostedDrop = { name: "arcade hosted drop cabinet", why: "regression: a refused Ooga Drop download left the arcade's departure flags set, so no cabinet opened again and its Leave did nothing until a reload", run: async (b, site) => {
+const arcadeHostedDrop = { name: "arcade hosted drop cabinet", why: "regression: a refused Ooga Drop download left the arcade's departure flags set, so no cabinet opened again and its Leave did nothing until a reload, also when Leave was pressed during the fade back", run: async (b, site) => {
   await b.evaluate(`(() => { const B = window.__ooga, a = B.cavemen.get("portlandhodl"), s = window.BL.arcadeModels.CABINETS[1].play; if (B.crew.player !== a) B.pilot.possess(a); a.root.position.x = s.x; a.root.position.z = s.z; B.advance(0.2, 1 / 60); })()`);
   site.refused.push("/js/drop-");
   await b.key(" ");
   for (let t = 0; t < 15000 && !site.fetched.some(p => p.startsWith("/js/drop-")); t += 50) await b.sleep(50);
+  // Leave, pressed while the view fades back in (after the refusal's toast), is refused with the transition still running.
+  const pressed = await b.evaluate(`new Promise(resolve => { const t0 = performance.now(), tick = () => {
+    if (__ooga.transitioning && document.getElementById("toast").textContent.includes("could not be opened")) { document.querySelector('nav[data-scene="arcade"] .leave').click(); resolve(__ooga.transitioning); }
+    else if (performance.now() - t0 > 10000) resolve(null); else requestAnimationFrame(tick); }; tick(); })`);
   const refused = await untilPage(b, 'B.scene === "arcade" && !B.transitioning', 15000);
   site.refused.length = 0;
   dropRefusals(b);
   await b.key(" ");
   const opened = await untilPage(b, 'B.scene === "drop" && !B.transitioning', 15000);
   const asked = site.fetched.filter(p => p.startsWith("/js/drop-")).length;
-  record("arcade hosted: a refused Ooga Drop download fades back to the arcade, and Space at the same cabinet asks again and opens the game", refused && opened && asked === 2, JSON.stringify({ refused, opened, asked, fetched: site.fetched }));
+  record("arcade hosted: a refused Ooga Drop download fades back to the arcade, Leave pressed during that fade is refused without locking the hall, and Space at the same cabinet asks again and opens the game", pressed === true && refused && opened && asked === 2, JSON.stringify({ pressed, refused, opened, asked, fetched: site.fetched }));
 } };
 for (const [id, step, path] of [["orbit", orbitHosted, "/oogaorbit"], ["arcade", arcadeHostedDrop, "/oogaarcade"]]) {
   if (ONLY && !onlyMatches(step.name)) continue;

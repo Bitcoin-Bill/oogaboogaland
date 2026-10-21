@@ -134,16 +134,15 @@
     return set.build();
   });
 
+  // Each way out holds only once the director has taken it: `go` refuses while another transition runs.
   const leaveCave = () => {
     if (leaving) return;
-    leaving = true;
-    go("hub");
+    leaving = go("hub");
   };
   // Into a game; a carnival machine names which of its kind (`place`), and the game comes back to it.
   const open = (id, place = null) => {
     if (leaving) return;
-    leaving = openingGame = true;
-    go(id, place);
+    if (go(id, place)) leaving = openingGame = true;
   };
   const play = (i) => open(GAMES[i].id);
   // The game's deferred code did not arrive: the visitor stays in the hall, and its cabinets and way out work again.
