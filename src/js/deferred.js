@@ -1,7 +1,8 @@
 // Code a hosted page fetches only once it is needed: the Timechain rooms; DSB Land (its terrain, town, interiors, menus
 // and their art, ~0.9 MB gzipped), which ₿IFRÖST's chamber also builds a picture of; the arcade's games (their rules,
 // the retro cabinets and the hall's sound), loaded by the arcade and every game in it; the poker room (all but its
-// themes, which tint the island's ₿IFRÖST window), loaded by the room and ₿IFRÖST; and Ooga Drop's plane and diver. `npm run site` moves each group's modules out of the page into
+// themes, which tint the island's ₿IFRÖST window), loaded by the room and ₿IFRÖST; and Ooga Drop's diver and sound (not its
+// models, whose canopy Ooga Orbit's capsule lands under). `npm run site` moves each group's modules out of the page into
 // js/<group>-<hash>.js and names the file here (`BL.deferredScripts`, written ahead of every module); the portable
 // single-file page and the source tree carry the modules already, so `load` finds them present and answers at once
 // with null, with no request. Otherwise it adds one same-origin script (the page's policy allows 'self'), bounded by

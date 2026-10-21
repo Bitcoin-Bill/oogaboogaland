@@ -19,8 +19,8 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  // The plane, the diver and the drop's sound are deferred on a hosted page and arrive in `prepare`.
-  const { math, models, contributors, donations, qr, terrain, hubModels, daylight, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, controls: controlsMod, fx: fxMod, dropHud } = BL;
+  // The diver and the drop's sound are deferred on a hosted page and arrive in `prepare`.
+  const { math, models, contributors, donations, qr, terrain, hubModels, dropModels, daylight, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, controls: controlsMod, fx: fxMod, dropHud } = BL;
   const { clamp, lerp, damp, quat, mulberry32 } = math;
   const { createNode, addChild, removeChild, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { CONFETTI } = fxMod;
@@ -168,7 +168,7 @@
     const s = planeState;
     s.t = 0;
     s.speed = s.roll = 0;
-    s.pitch = BL.dropModels.PARK_PITCH;
+    s.pitch = dropModels.PARK_PITCH;
     s.yaw = roof.ry;
     s.vx = s.vy = s.vz = 0;
     s.angle = planeAngle(0);
@@ -887,21 +887,21 @@
         n++;
       }
     }
-    BL.dropModels.roofSpot(island, mouth, roof);
-    plane = BL.dropModels.plane();
+    dropModels.roofSpot(island, mouth, roof);
+    plane = dropModels.plane();
     plane.node.quaternion = quat.create();
     place(plane.node);
-    place(createNode({ position: { x: roof.x + Math.cos(roof.ry) * 3.2 + roof.ax * 0.6, y: roof.y, z: roof.z - Math.sin(roof.ry) * 3.2 + roof.az * 0.6 }, geometry: BL.dropModels.windsock() }));
-    const signX = mouth.x + roof.ax * BL.dropModels.SIGN_AT.z + Math.cos(roof.ry) * BL.dropModels.SIGN_AT.x, signZ = mouth.z + roof.az * BL.dropModels.SIGN_AT.z - Math.sin(roof.ry) * BL.dropModels.SIGN_AT.x;
-    place(createNode({ position: { x: signX, y: island.surfaceAt(signX, signZ), z: signZ }, rotation: { x: 0, y: roof.ry, z: 0 }, geometry: BL.dropModels.roofSign() }));
+    place(createNode({ position: { x: roof.x + Math.cos(roof.ry) * 3.2 + roof.ax * 0.6, y: roof.y, z: roof.z - Math.sin(roof.ry) * 3.2 + roof.az * 0.6 }, geometry: dropModels.windsock() }));
+    const signX = mouth.x + roof.ax * dropModels.SIGN_AT.z + Math.cos(roof.ry) * dropModels.SIGN_AT.x, signZ = mouth.z + roof.az * dropModels.SIGN_AT.z - Math.sin(roof.ry) * dropModels.SIGN_AT.x;
+    place(createNode({ position: { x: signX, y: island.surfaceAt(signX, signZ), z: signZ }, rotation: { x: 0, y: roof.ry, z: 0 }, geometry: dropModels.roofSign() }));
     for (let i = 0; i < RING_COUNT; i++) {
-      const node = place(createNode({ geometry: BL.dropModels.hoop() }));
+      const node = place(createNode({ geometry: dropModels.hoop() }));
       rings.push({ node, x: 0, y: 0, z: 0, r: 1, hit: false });
     }
-    const targetNode = place(createNode({ geometry: BL.dropModels.target() }));
-    marker = place(createNode({ geometry: BL.dropModels.hoop(), scale: { x: MARKER_SCALE, y: MARKER_SCALE, z: MARKER_SCALE }, glow: 1.8, visible: false }));
-    hole = place(createNode({ geometry: BL.dropModels.hole(), visible: false }));
-    streaks = { node: place(createNode({ geometry: BL.dropModels.streak(), instanceData: new Float32Array(STREAKS * 20), instanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true, visible: false })), x: new Float32Array(STREAKS), y: new Float32Array(STREAKS), z: new Float32Array(STREAKS) };
+    const targetNode = place(createNode({ geometry: dropModels.target() }));
+    marker = place(createNode({ geometry: dropModels.hoop(), scale: { x: MARKER_SCALE, y: MARKER_SCALE, z: MARKER_SCALE }, glow: 1.8, visible: false }));
+    hole = place(createNode({ geometry: dropModels.hole(), visible: false }));
+    streaks = { node: place(createNode({ geometry: dropModels.streak(), instanceData: new Float32Array(STREAKS * 20), instanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true, visible: false })), x: new Float32Array(STREAKS), y: new Float32Array(STREAKS), z: new Float32Array(STREAKS) };
     mark("drop world");
     // world.pilot: the Ooga an arcade cabinet sent in flies the plane, and is consumed on the way in.
     if (world.pilot) {

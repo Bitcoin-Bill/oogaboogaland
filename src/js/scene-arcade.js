@@ -146,6 +146,8 @@
     go(id, place);
   };
   const play = (i) => open(GAMES[i].id);
+  // The game's deferred code did not arrive: the visitor stays in the hall, and its cabinets and way out work again.
+  const stay = () => { leaving = openingGame = false; };
 
   // The line under each loop: the visitor's best in that game, or a call to play. A retro game's best is an arcade one.
   const bestOf = (id) => {
@@ -1982,7 +1984,7 @@
   const arcadeScene = {
     // Voice zone: the Arcade group, which its mouth on the island shares (`arcade`).
     voiceZone: "arcade.hall",
-    id: "arcade", enter, update, overlay, onDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, leave, stats, liveGeometry,
+    id: "arcade", enter, update, overlay, onDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry,
     root: null, camera: null, input: null, debug: null, agent: null, agentView: null, agentControls: null, agentHandoff: null,
     get inMotion() {
       return false;

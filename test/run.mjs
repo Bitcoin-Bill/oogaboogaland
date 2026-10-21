@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createHash, webcrypto } from "node:crypto";
 import { externalizeAudio } from "../scripts/distribution-audio.mjs";
+import { externalizeModules } from "../scripts/distribution-modules.mjs";
 import { launch, acquire, dispose, driverError } from "./browser.mjs";
 import { writeCharacters } from "../scripts/characters.mjs";
 const emptyPeerPreviewProof = async () => {
@@ -5215,6 +5216,61 @@ for (const id of ["hub", "lab", "factory"]) {
     } finally {
       await new Promise(resolve => server.close(resolve));
     }
+  } });
+}
+// The hosted page as `npm run site` stages it: each `data-defer` group leaves the built page for its own same-origin file,
+// served here behind a switch (`refused`, path prefixes) that answers 503, as a deploy mid-flight can. The source and
+// portable pages keep every group inline, so only this page can show what a scene reads before its code arrives.
+const hostedSite = async () => {
+  const html = readFileSync(join(root, "oogaboogaland.html"), "utf8"), out = mkdtempSync(join(tmpdir(), "ooga-hosted-"));
+  const deferred = new Map();
+  for (const [, src, group] of readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="([^"]+)" data-defer="([a-z-]+)"><\/script>/g)) deferred.set(group, [...(deferred.get(group) || []), src]);
+  // A module's block in the built page runs from its marker to the next module's.
+  const block = (src) => { const start = html.indexOf(`// ---- ${src} ----\n`); return html.slice(start, html.indexOf("\n\n// ---- ", start + 1)); };
+  const page = externalizeModules(html, out, deferred, block), refused = [], fetched = [];
+  const server = createServer((req, res) => {
+    const path = req.url.split("?")[0];
+    if (!path.startsWith("/js/")) { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
+    fetched.push(path);
+    if (refused.some(prefix => path.startsWith(prefix))) { res.writeHead(503); return res.end(); }
+    res.setHeader("content-type", "text/javascript");
+    res.end(readFileSync(join(out, path)));
+  });
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  return { origin: `http://127.0.0.1:${server.address().port}`, refused, fetched,
+    close: async () => { await new Promise(resolve => server.close(resolve)); rmSync(out, { recursive: true, force: true }); } };
+};
+// A refused bundle is logged by the browser as a failed resource; that line is the fixture's, not the page's.
+const dropRefusals = (b) => { for (let i = b.logs.length - 1; i >= 0; i--) if (b.logs[i].includes("status of 503")) b.logs.splice(i, 1); };
+const orbitHosted = { name: "orbit hosted", why: "regression: Ooga Orbit read Ooga Drop's models at load, which a hosted page had deferred, so it threw on entry, cold and after a Drop visit", run: async (b, site) => {
+  const cold = await b.evaluate(`({ scene: __ooga.scene, frames: __ooga.renderedFrames, models: !!BL.dropModels, diver: !!BL.skydiver })`);
+  await b.evaluate(`__ooga.go("drop")`);
+  const drop = await untilPage(b, 'B.scene === "drop" && !B.transitioning', 15000);
+  await b.evaluate(`__ooga.go("orbit")`);
+  const orbit = await untilPage(b, 'B.scene === "orbit" && !B.transitioning', 15000);
+  const after = await b.evaluate(`({ scene: __ooga.scene, frames: __ooga.renderedFrames })`);
+  record("orbit hosted: a cold /oogaorbit on the hosted page boots and draws with Drop's diver still unloaded, and Orbit opens again after a Drop visit", cold.scene === "orbit" && cold.frames > 2 && cold.models && !cold.diver
+    && drop && orbit && after.scene === "orbit" && site.fetched.filter(p => p.startsWith("/js/drop-")).length === 1, JSON.stringify({ cold, drop, orbit, after, fetched: site.fetched }));
+} };
+const arcadeHostedDrop = { name: "arcade hosted drop cabinet", why: "regression: a refused Ooga Drop download left the arcade's departure flags set, so no cabinet opened again and its Leave did nothing until a reload", run: async (b, site) => {
+  await b.evaluate(`(() => { const B = window.__ooga, a = B.cavemen.get("portlandhodl"), s = window.BL.arcadeModels.CABINETS[1].play; if (B.crew.player !== a) B.pilot.possess(a); a.root.position.x = s.x; a.root.position.z = s.z; B.advance(0.2, 1 / 60); })()`);
+  site.refused.push("/js/drop-");
+  await b.key(" ");
+  for (let t = 0; t < 15000 && !site.fetched.some(p => p.startsWith("/js/drop-")); t += 50) await b.sleep(50);
+  const refused = await untilPage(b, 'B.scene === "arcade" && !B.transitioning', 15000);
+  site.refused.length = 0;
+  dropRefusals(b);
+  await b.key(" ");
+  const opened = await untilPage(b, 'B.scene === "drop" && !B.transitioning', 15000);
+  const asked = site.fetched.filter(p => p.startsWith("/js/drop-")).length;
+  record("arcade hosted: a refused Ooga Drop download fades back to the arcade, and Space at the same cabinet asks again and opens the game", refused && opened && asked === 2, JSON.stringify({ refused, opened, asked, fetched: site.fetched }));
+} };
+for (const [id, step, path] of [["orbit", orbitHosted, "/oogaorbit"], ["arcade", arcadeHostedDrop, "/oogaarcade"]]) {
+  if (ONLY && !onlyMatches(step.name)) continue;
+  tasks.push({ name: `${id} hosted`, scene: id, perf: false, run: async () => {
+    const site = await hostedSite();
+    try { await fold(`${site.origin}${path}?debug=1&nosim=1&net=0&hour=12&day=80&character=portlandhodl`, [[step.name, (b) => step.run(b, site)]]); }
+    finally { await site.close(); }
   } });
 }
 // `stat` names the scene's count of bananas delivered, read from stats(): drops landed on the pile, or the bananas the
