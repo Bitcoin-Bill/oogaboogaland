@@ -192,9 +192,10 @@
     const visit = (node) => {
       if (!node.visible || node.cameraHidden) return;
       const geometry = node.geometry;
-      // Smoke and phase fields are translucent; their effects do not cover UI. Surface overlays (`depthOffset`: the
-      // path's 25k tiles, banner marks) lie on a backing that already covers whatever they would.
-      if (geometry && geometry.faces && geometry.faces.length && !geometry.matrixGlyph && !geometry.depthOffset
+      // Smoke and phase fields are translucent; their effects do not cover UI. Surface overlays (`surfaceOverlay`: the
+      // path's 25k tiles, banner marks, totem paint) lie on a backing that already covers whatever they would. Not every
+      // `depthOffset` geometry is one: the ₿IFRÖST arch's stone takes the offset only to win its joins with the ridge.
+      if (geometry && geometry.faces && geometry.faces.length && !geometry.matrixGlyph && !geometry.surfaceOverlay
         && !geometry.mirrorRippleOnly && !node.mirrorRippleOnly && !node.mirrorPortal
         && !(node.smokeOpacity < 1) && !(renderOpts?.birdsEyeCutaway && geometry.cutawayHide)) {
         if (node.instanceData) {
