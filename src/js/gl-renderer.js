@@ -1557,6 +1557,17 @@ void main() {
     const DRAW_BOTH = [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1];
     let settings = QUALITY[quality] || QUALITY.high;
     let qualityName = QUALITY[quality] ? quality : "high";
+    // Apple's tile-based GPUs remove hidden surfaces in hardware, so the depth prepass only adds a second
+    // submission of every opaque draw: on an M1 Pro, skipping it raised every tier 10-20% (low 64 to 77 fps,
+    // medium 55 to 62, high 45 to 51 at the landing view). Firefox names the GPU in RENDERER (and warns about the
+    // debug extension); Chrome and Safari mask it there and answer through the extension: "ANGLE (Apple, ...)", "Apple GPU".
+    const gpuName = (() => {
+      const named = String(gl.getParameter(gl.RENDERER));
+      if (named !== "WebKit WebGL") return named;
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : named;
+    })();
+    const tileBased = /\bApple\b/.test(gpuName);
     let width = 0, height = 0, dpr = 1, pw = 0, ph = 0;
     let lost = false;
     const size = { width: 0, height: 0 };
@@ -3795,7 +3806,7 @@ void main() {
       // Depth first, then the opaque pass shades under EQUAL with depth writes off: the same vertex shader, invariant,
       // so the depths match, and with no write a shader that may discard keeps the early depth test (written, the
       // driver tests late and shades every hidden fragment). Each pixel is shaded once. Rigs keep their own programs.
-      const prepass = settings.prepass && !rigMode;
+      const prepass = settings.prepass && !rigMode && !tileBased;
       if (prepass) {
         const dp = pg.depth;
         gl.useProgram(dp.prog);
@@ -3991,6 +4002,7 @@ void main() {
     init();
     return {
       kind: "webgl2",
+      tileBased,
       render,
       resize,
       project,
