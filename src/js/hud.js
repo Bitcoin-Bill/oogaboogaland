@@ -1726,6 +1726,7 @@
       else if (b.dataset.action === "account-logout") BL.net.logout();
       else if (b.dataset.action === "account-rejoin") BL.net.rejoin();
       else if (b.dataset.action === "account-voice") BL.voice.toggle();
+      else if (b.dataset.action === "account-voice-leave") BL.voice.stop();
       else actionHandler && actionHandler(b.dataset.action);
     });
     // A game's side panels fold away and come back from a tab on the screen's edge: a `data-fold`
@@ -2183,7 +2184,7 @@
   // Net and voice emits re-run this several times a second with the same outcome; last-written
   // records keep an unchanged textContent from re-invalidating the line.
   let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
-  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
+  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null, accountLeaveHidden = null;
   const showAccount = ({ backend, me, room, online }) => {
     const hasMe = !!me;
     if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
@@ -2204,7 +2205,8 @@
     if (wordsHidden !== accountWordsHidden) { accountWordsHidden = wordsHidden; $("account-room").hidden = wordsHidden; }
     const rejoinHidden = !me || !ROOM_WORDS[room];
     if (rejoinHidden !== accountRejoinHidden) { accountRejoinHidden = rejoinHidden; $("account-rejoin").hidden = rejoinHidden; }
-    // Voice: join, then mute and unmute; a failure says why on the button until the next try.
+    // Voice: join, then mute and unmute beside Leave voice, which hangs up and releases the microphone without
+    // signing out; a failure says why on the button until the next try. Leave waits out a join in progress.
     const voice = BL.voice.stats, voiceButton = $("account-voice");
     const voiceHidden = room !== "live";
     if (voiceHidden !== accountVoiceHidden) { accountVoiceHidden = voiceHidden; voiceButton.hidden = voiceHidden; }
@@ -2212,6 +2214,8 @@
     if (voiceWords !== accountVoiceWords) { accountVoiceWords = voiceWords; voiceButton.textContent = voiceWords; }
     const pressed = String(voice.enabled && !voice.muted);
     if (pressed !== accountVoicePressed) { accountVoicePressed = pressed; voiceButton.setAttribute("aria-pressed", pressed); }
+    const leaveHidden = voiceHidden || !voice.enabled;
+    if (leaveHidden !== accountLeaveHidden) { accountLeaveHidden = leaveHidden; $("account-voice-leave").hidden = leaveHidden; }
   };
   // The microphone's note (#181), page-level as the account line is: muted in voice, it stays until unmuted;
   // alone in voice (nobody here to hear, so the microphone is held off), it says so until someone comes;
