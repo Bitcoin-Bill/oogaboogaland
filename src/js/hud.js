@@ -22,8 +22,6 @@
   const DONATED_COUNT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const DONOR_BANANAS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let donorUnit = "bananas";
-  // How many rows the Bananas panel's recent list holds: a fixed pool, so the DOM never grows with donations.
-  const RECENT_ROWS = 10;
   let donationStats = null, liveDonors = null;
   const setDonationStats = (stats) => {
     donationStats = stats;
@@ -248,6 +246,7 @@
       bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
       bananaRecent: $("banana-recent-list"), bananaRecentEmpty: $("banana-recent-empty"),
       bananaRecentBar: $("banana-recent-bar"), bananaRecentBarLabel: $("banana-recent-bar-label"),
+      donationMessageLabel: $("donation-message-label"),
       bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
       bananaPanel: $("bananas-panel"), bananaRateLabel: $("banana-rate-label"),
       bananaBtcPrice: $("banana-btc-price"), bananaExchange: $("banana-exchange"),
@@ -552,7 +551,8 @@
       if (stopBananaRate) stopBananaRate();
     });
     watchBananaRate();
-    const recentRows = Array.from({ length: RECENT_ROWS }, () => {
+    // A fixed pool, so the DOM never grows with donations.
+    const recentRows = Array.from({ length: BL.donations.RECENT_MAX }, () => {
       const li = document.createElement("li"), name = document.createElement("span"), label = document.createTextNode("");
       const badge = document.createElement("span"), amount = document.createElement("strong"), message = document.createElement("p");
       // Every text node exists from the start, so filling a row later adds nothing to the DOM.
@@ -584,13 +584,14 @@
       recentBarOnly = el.bananaRecentBar.checked;
       try { localStorage.setItem(RECENT_BAR_KEY, recentBarOnly ? "1" : "0"); } catch { /* kept for this visit alone */ }
       refreshDonors(true);
+      el.bananaRecentBar.blur();
     });
-    let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen;
+    let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen, shownBar;
     const refreshDonors = (force = false) => {
-      const { real, state, testNetwork } = BL.donations;
+      const { real, state, testNetwork, messageMinSats: bar } = BL.donations;
       showBananaRate();
-      if (!force && shownTally === state.tally && shownBoard === state.board && shownRecent === state.recent && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
-      shownTally = state.tally; shownBoard = state.board; shownRecent = state.recent; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownRecent === state.recent && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open && shownBar === bar) return;
+      shownTally = state.tally; shownBoard = state.board; shownRecent = state.recent; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open; shownBar = bar;
       const tally = real ? state.tally : donationStats;
       // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
       // donations closed, or the island's live feed.
@@ -623,9 +624,10 @@
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
       // The recent list: the newest first, its orange check only on the API's word that the donor's GitHub login
       // matched the name, into the fixed rows.
-      const bar = BL.donations.messageMinSats, all = real ? state.recent || [] : donationStats?.recentDonations || [];
+      const all = real ? state.recent || [] : donationStats?.recentDonations || [];
       const recent = recentBarOnly ? all.filter((entry) => entry.sats >= bar) : all;
       el.bananaRecentBarLabel.textContent = `${BANANA_COUNT.format(bar)} sats and up only`;
+      el.donationMessageLabel.textContent = `Banana message (up to 280 characters, with a tip of ${BANANA_COUNT.format(bar)} sats or more)`;
       for (let i = 0; i < recentRows.length; i++) {
         const row = recentRows[i], entry = recent[i];
         row.li.hidden = !entry;
@@ -634,8 +636,9 @@
         row.name.dataset.anon = String(!entry.handle);
         row.badge.hidden = !(real && entry.verified);
         row.amountText.data = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
-        row.message.hidden = !entry.message;
-        row.messageText.data = entry.message || "";
+        const message = BL.donations.carried(entry.sats, entry.message);
+        row.message.hidden = !message;
+        row.messageText.data = message;
       }
       el.bananaRecentEmpty.hidden = recent.length > 0;
       el.bananaRecentEmpty.textContent = recentBarOnly && all.length ? `None of the latest tips reached ${BANANA_COUNT.format(bar)} sats.`
@@ -1050,8 +1053,16 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // Both payment modes use the Factory's kiosk flow in the donation popup, without leaving the current scene.
-    const openFeed = () => BL.donationPopup.open(!BL.donations.real);
+    // A failed account lookup on the Worker's own site must never turn a real donation into a demo tip.
+    const workerHost = location.origin === BL.routes.site
+      || /^oogaboogaland-(?:staging|production)\./.test(location.hostname) && location.hostname.endsWith(".workers.dev");
+    const openFeed = () => {
+      if (!BL.donations.real && (workerHost || BL.net.state.backend)) {
+        toast("Donations are unavailable right now. Try again shortly.");
+        return;
+      }
+      BL.donationPopup.open(!BL.donations.real);
+    };
     const floatingBoards = [];
     const stackBoards = () => {
       for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].setLayer(20 + i);
@@ -1653,6 +1664,7 @@
     }, true);
     dismissOutside(el.recipe, closeRecipe);
     dismissOutside(el.board, () => mainBoard.close());
+    dismissOutside($("donation-popup"), () => BL.donationPopup.closeOutside());
     // The prompt is written to be pasted, so it leaves in one click.
     const copyRecipe = (button) => {
       const text = el.recipeText.textContent;

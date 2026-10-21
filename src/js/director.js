@@ -203,6 +203,7 @@
     return true;
   };
   const router = routerMod.create(scenes, window.BL.routes, go);
+  window.BL.donationPopup.onClose(() => router.dismissPlace("hub", "donate"));
   // The logo is the site's home link: from any scene it goes back to the island, as a website's logo goes home.
   document.querySelector(".home-link").addEventListener("click", (e) => {
     e.preventDefault();

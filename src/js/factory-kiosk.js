@@ -45,8 +45,6 @@
   // An amount's bounds, an invoice's life, a simulated payment's settling, and how long the paid screen holds the
   // visitor's bananas back from the cooker before it cooks them anyway.
   const MIN = 69, MAX = 1000000, EXPIRY = 300, SETTLE = 2.4, HOLD = 12;
-  // The fewest sats a tip needs to carry a message, when the page gives no bar of its own (`hooks.messageMinSats`).
-  const MESSAGE_MIN = 1000;
   const INK = {
     bg: "#090c10", panel: "#121a22", line: "#2b3440", gold: "#ffd24a", amber: "#ffb81c", white: "#f3efe4", dim: "#8d96a3",
     green: "#7fe83a", paid: "#07160c", red: "#ff6a4a", dark: "#1b1206", off: "#262c34", coin: "#f7931a", coinDk: "#b8650c"
@@ -416,11 +414,11 @@
     const closed = () => real && hooks.open() === false;
     // The fewest sats a tip needs to carry a message. Below it the details screen offers the name alone, and every
     // request goes out without a message, as the API would drop it.
-    const messageMin = () => hooks.messageMinSats ? hooks.messageMinSats() : MESSAGE_MIN;
+    const messageMin = () => hooks.messageMinSats ? hooks.messageMinSats() : BL.donations.MESSAGE_MIN_SATS;
     flow.messageOk = () => flow.sats >= messageMin();
     const taken = () => {
       const value = hooks.details ? hooks.details() : { handle: "", message: "" };
-      if (!flow.messageOk()) value.message = "";
+      value.message = BL.donations.carried(flow.sats, value.message, messageMin());
       return value;
     };
     const invoice = () => {
@@ -861,7 +859,7 @@
         face(g, "NAME AND MESSAGE");
         const names = hooks.history ? hooks.history() : null, hasHistory = hooks.historyCount && hooks.historyCount();
         write(g, "NAME", 30, 46, 1, INK.dim);
-        if (names?.length) write(g, "TAB TO COMPLETE", 370, 46, 1, INK.dim, "right");
+        if (names?.length) write(g, "DOWN THEN TAB", 370, 46, 1, INK.dim, "right");
         panel(g, 30, 58, 340, 40, named ? INK.amber : INK.line);
         buttons.push({ x: 30, y: 58, w: 340, h: 40, act: "name" });
         const name = `@${t.handle}`, ns = width(name, 2) <= 288 ? 2 : 1, ny = 58 + Math.round((40 - GH * ns) / 2), step = (GW + TR) * ns;

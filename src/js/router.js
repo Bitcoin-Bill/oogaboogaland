@@ -41,13 +41,19 @@
     // (`/?scene=dsb`) as it came; a Back or Forward arrival finds its entry already there; any other
     // arrival pushes a new one.
     const arrive = (scene, place, boot) => {
-      const requested = boot ? current() : null;
-      const entry = at = requested && requested.scene === scene && requested.place === place ? requested : routeOf(scene, place);
+      const entry = at = routeOf(scene, place);
       document.title = routes.title(entry);
       const state = { scene, place: entry.place };
       if (popped) popped = false;
       else if (boot) history.replaceState(state, "", entry.path || current() ? urlOf(entry) : location.href);
       else history.pushState(state, "", urlOf(entry));
+    };
+    // Closing a place's popup leaves its scene in place and makes a reload stay there.
+    const dismissPlace = (scene, place) => {
+      if (at.scene !== scene || at.place !== place) return;
+      at = routeOf(scene, null);
+      document.title = routes.title(at);
+      history.replaceState({ scene, place: at.place }, "", urlOf(at));
     };
     // Back and Forward travel through `go`, so they fade and keep the leave contract like any other trip.
     // Our entries always change scene; a hash edited by hand to another place in the same scene (only from
@@ -65,7 +71,7 @@
       popped = false;
       history.replaceState({ scene: at.scene, place: at.place }, "", urlOf(at));
     };
-    return { current, arrive, abandon, dispose };
+    return { current, arrive, dismissPlace, abandon, dispose };
   };
   BL.router = { create, served: SERVED };
 })();

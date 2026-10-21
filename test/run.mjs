@@ -4717,7 +4717,8 @@ const gameRulesChecks = async () => {
     // The donations board's tally: two tips today and one the day before, kept through a reload, the week holding all
     // three; a malformed day is dropped alone.
     const day = 864e5, now = Date.now();
-    for (const [sats, ago] of [[4000, 0], [1200, 0], [800, 1]]) g.recordDonation({ id: `t${sats}`, sats, handle: "", message: "", at: now - ago * day });
+    for (const [sats, ago] of [[4000, 0], [1200, 0], [800, 1]]) g.recordDonation({ id: `t${sats}`, sats, handle: "", message: "sub-bar must clear", at: now - ago * day });
+    const newDemoQuiet = g.state.recentDonations.find((entry) => entry.id === "t800")?.message === "";
     g.recordDonation({ id: "fractional", sats: 1000, handle: "", message: "", at: now }, 0.25);
     g.recordDonation({ id: "unpriced", sats: 2000, handle: "", message: "", at: now }, 0);
     const tally = make(), tips = { today: tally.tipsWithin(1), week: tally.tipsWithin(7), bananas: tally.state.bananas, last: tally.state.lastTip };
@@ -4733,7 +4734,8 @@ const gameRulesChecks = async () => {
     ];
     store.set("oogaboogaland.v1", JSON.stringify(savedDemo));
     const recentReloaded = make().state.recentDonations;
-    const recentSaved = recentReloaded.length === 2 && recentReloaded[0].id === "old-small" && recentReloaded[1].id === "eligible";
+    const recentSaved = newDemoQuiet && recentReloaded.length === 2 && recentReloaded[0].id === "old-small"
+      && recentReloaded[0].message === "" && recentReloaded[1].id === "eligible" && recentReloaded[1].message === "kept";
     store.set("oogaboogaland.v1", "{not json");
     const junk = make().state.orbit.best === null;
     record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, the recent list reloads every amount, and a malformed best, day, crash or broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && recentSaved && junk, JSON.stringify({ bests, kept, dropped, tips, recentSaved, junk }));
@@ -4762,10 +4764,11 @@ const gameRulesChecks = async () => {
   }
 };
 const donationClientChecks = async () => {
-  const sockets = [], timers = [], received = [], seen = [];
+  const sockets = [], timers = [], received = [], seen = [], requests = [];
   const context = { window: { setTimeout: fn => { const t = { fn }; timers.push(t); return t; }, clearTimeout: () => {} },
     location: { protocol: "https:", origin: "https://site.test" },
-    fetch: async () => ({ status: 200, ok: true, json: async () => ({ request: "request", invoice: { id: "invoice", expires: 1 }, bananas: null, rate: null, lightning: "unavailable" }) }),
+    fetch: async (path, options) => { requests.push({ path, body: JSON.parse(options.body) }); return { status: 200, ok: true,
+      json: async () => ({ request: "request", invoice: { id: "invoice", expires: 1 }, bananas: null, rate: null, lightning: "unavailable" }) }; },
     WebSocket: class { constructor(url) { this.url = url; sockets.push(this); } close() { this.closed = true; } } };
   runInNewContext(await readFile(new URL("../src/js/donations.js", import.meta.url), "utf8"), context);
   const D = context.window.BL.donations;
@@ -4795,29 +4798,48 @@ const donationClientChecks = async () => {
   message(paid);
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
   message({ type: "recent", entries: [] });
-  const carried = D.state.recent.length === 2;
+  const cleared = D.state.recent.length === 0;
   message({ type: "status", open: true, limits: { minSats: 69, maxSats: 4000, lightningMaxSats: 1000, messageMinSats: 2500 } });
   message({ type: "recent", entries: [
-    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1 },
-    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3 }
+    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1, seq: 8 },
+    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3, seq: 9 }
   ] });
   // The recent list keeps every amount, whatever the bar; the bar only silences a message.
-  const raisedBar = carried && D.state.recent.length === 4 && D.state.recent.some((e) => e.id === "old") && D.state.recent.some((e) => e.id === "new");
+  const raisedBar = cleared && D.state.recent.length === 2 && D.state.recent.find((e) => e.id === "old")?.message === ""
+    && D.state.recent.find((e) => e.id === "new")?.message === "new message";
+  message({ ...paid, donation: { ...paid.donation, id: "corrected", sats: 3000, message: "local", handle: "Local" }, seq: 11 });
+  message({ type: "recent", entries: [
+    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1, seq: 8 },
+    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3, seq: 9 },
+    { id: "corrected", sats: 3000, handle: "Server", message: "server", at: Date.now(), bananas: 4, verified: true, seq: 11 }
+  ] });
+  const snapshot = D.state.recent.length === 3 && D.state.recent.find((e) => e.id === "corrected")?.handle === "Server"
+    && D.state.recent.find((e) => e.id === "corrected")?.message === "server"
+    && D.state.recent.find((e) => e.id === "corrected")?.verified === true;
   message({ ...paid, donation: { ...paid.donation, id: "quiet", sats: 2000, message: "should not speak" } });
-  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 5 && D.state.recent.some((e) => e.id === "quiet");
+  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 4 && D.state.recent.some((e) => e.id === "quiet");
+  message({ type: "status", open: true, limits: { minSats: 69, maxSats: 4000, lightningMaxSats: 1000, messageMinSats: 3500 } });
+  const raisedLater = D.state.recent.every((e) => !e.message);
   message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
   message({ type: "seen", id: "chain", sats: 400, due: 1000 });
   const heard = seen.length === 1 && seen[0].slice(0, 4).join() === "chain,400,1000,615" && seen[0][4] === null;
   const fallback = await D.invoice({ sats: 1000 });
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
+  await D.invoice({ sats: 2000, message: "too small" });
+  await D.note("request", "edited under bar");
+  const subBarRequest = requests.at(-2).path === "/donations/invoice" && !Object.hasOwn(requests.at(-2).body, "message")
+    && requests.at(-1).path === "/donations/note" && requests.at(-1).body.message === "";
+  await D.invoice({ sats: 4000, message: "allowed" });
+  await D.note("request", "edited above bar");
+  const overBarRequest = requests.at(-2).body.message === "allowed" && requests.at(-1).body.message === "edited above bar";
   const owned = D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("other");
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a raised message bar drops carried recent entries and silences sub-bar events, an issued invoice is remembered once, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
-    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && raisedBar && quiet && owned && heard && unlit && received.length === 3 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, raisedBar, quiet, owned, heard, unlit, received }));
+  record("donation socket: snapshots replace stale rows and correct same-id details, a raised message bar silences live and held entries, invoice and note requests obey the bar, and replay, tally, board, on-chain and unsubscribe contracts hold",
+    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && raisedBar && snapshot && quiet && raisedLater && subBarRequest && overBarRequest && owned && heard && unlit && received.length === 4 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, raisedBar, snapshot, quiet, raisedLater, subBarRequest, overBarRequest, owned, heard, unlit, received }));
 
   let now = Date.now(), detailsOpen = false;
-  const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
+  const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) }, donations: D } },
     document: { createElement: () => ({ getContext: () => ({}) }) }, Date: class extends Date { static now() { return now; } } };
   runInNewContext(await readFile(new URL("../src/js/factory-kiosk.js", import.meta.url), "utf8"), kioskContext);
   const F = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
@@ -5026,13 +5048,19 @@ const donationClientChecks = async () => {
   let popupFlow;
   K.factoryKiosk.create = hooks => (popupFlow = factoryCreate(hooks));
   K.game = { bananasFor: () => 1 };
+  K.chain = { snapshot: { priceUsd: 100000 } };
   K.net = { state: { backend: true, me: null }, login() {} };
-  K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX, MESSAGE_MIN_SATS: 1000, messageMinSats: 1000,
+  K.donations = { real: true, state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, carried: (sats, message, bar = 1000) => D.carried(sats, message, bar),
+    HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX, MESSAGE_MIN_SATS: 1000, messageMinSats: 1000,
     invoice: async options => { invoices.push(options); return { request: "request", invoice: { id: "popup", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }; },
+    createRequest: () => ({ id: "demo", url: "/donate" }),
     note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
-  const popup = K.donationPopup.create({ state: { message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {} }), dialog = elements.get("donation-popup");
+  const popupGame = { state: { handle: "", message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {}, setIdentity(value) { Object.assign(this.state, value); } };
+  const popup = K.donationPopup.create(popupGame), dialog = elements.get("donation-popup");
+  let closedCount = 0;
+  popup.onClose(() => closedCount++);
   const popupQuote = async () => { popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
   await popupQuote();
   const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1000 && invoices[0].message === "hello" && invoices[0].handle === "anon";
@@ -5085,8 +5113,29 @@ const donationClientChecks = async () => {
   const popupSeen = popup.seen("popup", 1000, 1000, 0) && popupFlow.state === "confirming";
   elements.get("donation-close").listeners.get("click")();
   const leftWaiting = popupWaits.join() === "popup" && !dialog.open && frames.size === 0;
-  // A remembered name completes on Tab; a tip under the message bar goes out without a message, and its details
-  // screen offers the name alone: Tab stays on it and Enter finishes.
+  popup.open();
+  popup.closeOutside();
+  const realOutside = dialog.open;
+  popupFlow.key({ key: "A" });
+  popup.focusDetails("message");
+  const messageInput = elements.get("donation-message");
+  messageInput.value = "";
+  elements.get("donation-fields").listeners.get("input")({ target: messageInput });
+  const clearedDefault = popupGame.state.message === "";
+  popup.close();
+  K.donations.real = false;
+  popup.open(true);
+  const demoAnonymous = popup.defaults().handle === "" && popup.details().handle === "";
+  const beforeDemoClose = closedCount;
+  popup.closeOutside();
+  const demoOutside = !dialog.open && closedCount === beforeDemoClose + 1;
+  K.donations.real = true;
+  const realAfterDemo = popup.defaults().handle === "tester" && popup.defaults().message === "";
+  record("donation popup: real invoices ignore backdrop dismissal, a cleared real message updates the saved default, demo anonymous stays empty, demo backdrop dismissal closes once, and the next real default uses the signed-in login",
+    realOutside && clearedDefault && demoAnonymous && demoOutside && realAfterDemo,
+    JSON.stringify({ realOutside, clearedDefault, demoAnonymous, demoOutside, realAfterDemo }));
+  // A saved name completes after an explicit preview; a typed prefix survives plain Tab. A tip under the message
+  // bar goes out without a message, and its details screen offers the name alone.
   const settle = () => new Promise((resolve) => setImmediate(resolve));
   popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await settle();
   popupFlow.key({ key: "A" });
@@ -5096,7 +5145,14 @@ const donationClientChecks = async () => {
   const suggested = popupFlow.state === "details" && popup.history()?.join() === "Ooga-Dev";
   elements.get("donation-message").focused = false;
   fieldKey("Tab", elements.get("donation-handle"));
-  const completed = suggested && elements.get("donation-handle").value === "Ooga-Dev" && elements.get("donation-message").focused && popup.history() === null;
+  const preserved = suggested && elements.get("donation-handle").value === "oo" && elements.get("donation-message").focused;
+  popup.focusDetails("handle");
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Tab", elements.get("donation-handle"));
+  const completed = preserved && elements.get("donation-handle").value === "Ooga-Dev" && popup.history() === null;
   kioskContext.document.activeElement = null;
   elements.get("donation-close").listeners.get("click")();
   popup.open(); for (const key of ["6", "8", "Enter"]) popupFlow.key({ key }); await settle();
@@ -5111,13 +5167,30 @@ const donationClientChecks = async () => {
   await settle();
   const nameDone = nameAlone && popupFlow.state === "quote";
   elements.get("donation-close").listeners.get("click")();
-  record("donation popup: a remembered name completes on Tab, and a tip under the message bar goes out without a message while its details screen offers the name alone",
-    completed && nameDone, JSON.stringify({ suggested, completed, smallInvoice, nameAlone, nameDone }));
+  record("donation popup: a typed prefix survives Tab, a previewed saved name completes with Tab, and a tip under the message bar has no message field or carried text",
+    completed && nameDone, JSON.stringify({ suggested, preserved, completed, smallInvoice, nameAlone, nameDone }));
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
   record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice, Tab goes between its fields, a failed save keeps the screen with its error until it is tried again or given up on for the details the invoice holds, and a saved one goes back to the quote with the keys on the popup's screen, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
     anonymous && signedIn && edited && detailsDone && keptSaved && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, keptSaved, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
+
+  const routeLocation = { protocol: "https:", pathname: "/donate", search: "", hash: "" }, routeDocument = { title: "" };
+  const routeHistory = { state: null, url: "", replaceState(state, _title, url) {
+    this.state = state; this.url = url; routeLocation.pathname = url;
+  }, pushState() {} };
+  const routeContext = { window: { BL: {}, addEventListener() {}, removeEventListener() {} }, location: routeLocation,
+    document: routeDocument, history: routeHistory, URLSearchParams };
+  runInNewContext(await readFile(new URL("../src/js/router.js", import.meta.url), "utf8"), routeContext);
+  const routes = { list: [{ path: "", scene: "hub", place: null, title: "Home" },
+    { path: "donate", scene: "hub", place: "donate", title: "Donate" }], title: entry => entry.title };
+  const routed = routeContext.window.BL.router.create({ hub: {} }, routes, () => true);
+  routed.arrive("hub", "donate", true);
+  const enteredDonate = routeHistory.url === "/donate" && routeDocument.title === "Donate";
+  routed.dismissPlace("hub", "donate");
+  const closedDonate = routeHistory.url === "/" && routeDocument.title === "Home" && routeHistory.state.place === null;
+  record("donate route: closing its popup replaces the place with hub home, including URL, title and history state",
+    enteredDonate && closedDonate, JSON.stringify({ enteredDonate, closedDonate, url: routeHistory.url, title: routeDocument.title }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });

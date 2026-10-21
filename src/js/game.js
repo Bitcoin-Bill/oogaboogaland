@@ -27,7 +27,7 @@
   };
   const bananasFor = (sats) => Math.max(1, Math.min(12, Math.round(sats / SATS_PER_BANANA)));
   // The donations board's tally keeps the sats and bananas of each of the last TIP_DAYS local days, by day number.
-  const TIP_DAYS = 7, DAY_MS = 864e5, DONOR_MAX = 256, RECENT_HANDLES = 12, RECENT_DONATIONS = 10;
+  const TIP_DAYS = 7, DAY_MS = 864e5, DONOR_MAX = 256, RECENT_HANDLES = 12;
   const dayOf = (at) => Math.floor((at - new Date(at).getTimezoneOffset() * 6e4) / DAY_MS);
   const LARGE_UNITS = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]];
   const formatLarge = (n) => {
@@ -101,11 +101,11 @@
       if (Array.isArray(parsed.recentHandles)) {
         for (const handle of parsed.recentHandles.slice(0, RECENT_HANDLES).reverse()) if (isString(handle, HANDLE_MAX)) addRecentHandle(state.recentHandles, handle);
       } else for (const donor of state.donors.slice(-RECENT_HANDLES)) addRecentHandle(state.recentHandles, donor.handle);
-      if (Array.isArray(parsed.recentDonations)) for (const d of parsed.recentDonations.slice(0, RECENT_DONATIONS)) {
+      if (Array.isArray(parsed.recentDonations)) for (const d of parsed.recentDonations.slice(0, BL.donations.RECENT_MAX)) {
         if (!d || !isString(d.id, 64) || !d.id || !Number.isSafeInteger(d.sats) || !isString(d.handle, HANDLE_MAX)
           || !isString(d.message, MESSAGE_MAX) || !Number.isFinite(d.at) || d.at < 0 || !Number.isFinite(d.bananas) || d.bananas < 0) continue;
         state.recentDonations.push({ id: d.id, sats: d.sats, handle: BL.donations.sanitize(d.handle, HANDLE_MAX),
-          message: BL.donations.sanitize(d.message, MESSAGE_MAX), at: d.at, bananas: d.bananas });
+          message: BL.donations.carried(d.sats, d.message), at: d.at, bananas: d.bananas });
       }
       // Each day's tally is [day, sats, bananas], the days rising; a malformed one is dropped alone.
       if (Array.isArray(parsed.tipDays)) {
@@ -205,8 +205,8 @@
         addRecentHandle(state.recentHandles, donation.handle);
         // A message rides only a tip at or above the bar, whichever path handed the tip in.
         state.recentDonations.unshift({ id: donation.id, sats: donation.sats, handle: BL.donations.sanitize(donation.handle, HANDLE_MAX),
-          message: donation.sats >= BL.donations.MESSAGE_MIN_SATS ? BL.donations.sanitize(donation.message, MESSAGE_MAX) : "", at: donation.at, bananas });
-        if (state.recentDonations.length > RECENT_DONATIONS) state.recentDonations.length = RECENT_DONATIONS;
+          message: BL.donations.carried(donation.sats, donation.message), at: donation.at, bananas });
+        if (state.recentDonations.length > BL.donations.RECENT_MAX) state.recentDonations.length = BL.donations.RECENT_MAX;
         const handle = BL.donations.sanitize(donation.handle, HANDLE_MAX);
         let donor = state.donors.find((entry) => entry.handle.toLowerCase() === handle.toLowerCase());
         if (!donor && state.donors.length < DONOR_MAX) {

@@ -1589,12 +1589,7 @@
       pilot.goPreset(name);
     });
     hud.onAction((action) => {
-      // In real mode the dialog sends the tip to the kiosk: the view glides on to its glass from wherever it is.
-      if (action === "kiosk" && scene.corner && scene.booth.mode !== AT_KIOSK) {
-        endBooth(scene);
-        openBooth(scene);
-      }
-      else if (action === "reset") { game.resetAll(); location.reload(); }
+      if (action === "reset") { game.resetAll(); location.reload(); }
       else if (action === "leave") leaveCave();
       else if (action === "reset-view") pilot.resetCamera();
       else if (action === "act") { if (!greeter || !greeter.act()) pilot.action(); }
