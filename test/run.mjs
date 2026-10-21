@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createHash, webcrypto } from "node:crypto";
 import { externalizeAudio } from "../scripts/distribution-audio.mjs";
+import { externalizeModules } from "../scripts/distribution-modules.mjs";
 import { launch, acquire, dispose, driverError } from "./browser.mjs";
 import { writeCharacters } from "../scripts/characters.mjs";
 const emptyPeerPreviewProof = async () => {
@@ -3637,9 +3638,6 @@ const session = (url, steps, opts, final) => output.run({ lines: [], results: []
       window.__dsbFeedFixture = { requests: 0, sockets: 0, closed: 0 };
       window.fetch = async (url, options) => {
         if (window.__gateDormancy) __gateDormancy.fetch++;
-        // Menu/layout gates must not depend on the live public archive. Studio
-        // still installs its playback fixture and counts requests independently.
-        if (String(url).startsWith("https://hodlerhiq.net/index.php?rest_route=/wp/v2/pages/")) return new Response(JSON.stringify({content:{rendered:[1,2,3].map(i=>'<div data-mediafile="https://hodlerhiq.net/wp-content/uploads/2026/fixture-'+i+'.mp3"><span class="player_song_name" data-albumname="2026-01-0'+i+'">Space '+i+'</span></div>').join("")}}));
         if (String(url).startsWith("https://noderunnersradio.com/")) {
           window.__dsbTvFixture = window.__dsbTvFixture || { invoices: 0, searches: 0 }; let value;
           if (url.includes("/api/search")) { __dsbTvFixture.searches++; value = { results: [{ title: "Banana Beats", artist: "Ooga", source: "library", sats: 21 }] }; }
@@ -4717,7 +4715,8 @@ const gameRulesChecks = async () => {
     // The donations board's tally: two tips today and one the day before, kept through a reload, the week holding all
     // three; a malformed day is dropped alone.
     const day = 864e5, now = Date.now();
-    for (const [sats, ago] of [[4000, 0], [1200, 0], [800, 1]]) g.recordDonation({ id: `t${sats}`, sats, handle: "", message: "", at: now - ago * day });
+    for (const [sats, ago] of [[4000, 0], [1200, 0], [800, 1]]) g.recordDonation({ id: `t${sats}`, sats, handle: "", message: "sub-bar must clear", at: now - ago * day });
+    const newDemoQuiet = g.state.recentDonations.find((entry) => entry.id === "t800")?.message === "";
     g.recordDonation({ id: "fractional", sats: 1000, handle: "", message: "", at: now }, 0.25);
     g.recordDonation({ id: "unpriced", sats: 2000, handle: "", message: "", at: now }, 0);
     const tally = make(), tips = { today: tally.tipsWithin(1), week: tally.tipsWithin(7), bananas: tally.state.bananas, last: tally.state.lastTip };
@@ -4726,9 +4725,18 @@ const gameRulesChecks = async () => {
     store.set("oogaboogaland.v1", JSON.stringify(raw));
     const tallied = tips.today[0] === 8200 && tips.today[1] === 13.25 && tips.week[0] === 9000 && tips.week[1] === 15.25 && tips.bananas === 15.25 && tips.last === 2000
       && make().state.tipDays.length === 2;
+    const savedDemo = JSON.parse(store.get("oogaboogaland.v1"));
+    savedDemo.recentDonations = [
+      { id: "old-small", sats: 800, handle: "Old", message: "old message", at: now, bananas: 2 },
+      { id: "eligible", sats: 1000, handle: "New", message: "kept", at: now, bananas: 3 }
+    ];
+    store.set("oogaboogaland.v1", JSON.stringify(savedDemo));
+    const recentReloaded = make().state.recentDonations;
+    const recentSaved = newDemoQuiet && recentReloaded.length === 2 && recentReloaded[0].id === "old-small"
+      && recentReloaded[0].message === "" && recentReloaded[1].id === "eligible" && recentReloaded[1].message === "kept";
     store.set("oogaboogaland.v1", "{not json");
     const junk = make().state.orbit.best === null;
-    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, and a malformed best, day, a stored crash or a broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && junk, JSON.stringify({ bests, kept, dropped, tips, junk }));
+    record("saves: every game's best and the donations board's tally survive a reload, a worse result or a crash landing never replaces a best, the recent list reloads every amount, and a malformed best, day, crash or broken file is dropped alone", Object.values(bests).flat().every(Boolean) && kept && dropped && tallied && recentSaved && junk, JSON.stringify({ bests, kept, dropped, tips, recentSaved, junk }));
     // Tickets spent at a machine (the jackpot wheel): refused, spending nothing, when they fall short or the cost is
     // no whole number above nothing; a spend that goes through is saved.
     const wallet = make();
@@ -4754,10 +4762,11 @@ const gameRulesChecks = async () => {
   }
 };
 const donationClientChecks = async () => {
-  const sockets = [], timers = [], received = [], seen = [];
+  const sockets = [], timers = [], received = [], seen = [], requests = [];
   const context = { window: { setTimeout: fn => { const t = { fn }; timers.push(t); return t; }, clearTimeout: () => {} },
     location: { protocol: "https:", origin: "https://site.test" },
-    fetch: async () => ({ status: 200, ok: true, json: async () => ({ request: "request", invoice: { id: "invoice", expires: 1 }, bananas: null, rate: null, lightning: "unavailable" }) }),
+    fetch: async (path, options) => { requests.push({ path, body: JSON.parse(options.body) }); return { status: 200, ok: true,
+      json: async () => ({ request: "request", invoice: { id: "invoice", expires: 1 }, bananas: null, rate: null, lightning: "unavailable" }) }; },
     WebSocket: class { constructor(url) { this.url = url; sockets.push(this); } close() { this.closed = true; } } };
   runInNewContext(await readFile(new URL("../src/js/donations.js", import.meta.url), "utf8"), context);
   const D = context.window.BL.donations;
@@ -4786,25 +4795,56 @@ const donationClientChecks = async () => {
   const replay = sockets[1].url.endsWith("?after=paid");
   message(paid);
   message({ ...paid, donation: { ...paid.donation, id: "unpriced" }, bananas: null });
+  message({ type: "recent", entries: [] });
+  const cleared = D.state.recent.length === 0;
+  message({ type: "status", open: true, limits: { minSats: 69, maxSats: 4000, lightningMaxSats: 1000, messageMinSats: 2500 } });
+  message({ type: "recent", entries: [
+    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1, seq: 8 },
+    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3, seq: 9 }
+  ] });
+  // The recent list keeps every amount, whatever the bar; the bar only silences a message.
+  const raisedBar = cleared && D.state.recent.length === 2 && D.state.recent.find((e) => e.id === "old")?.message === ""
+    && D.state.recent.find((e) => e.id === "new")?.message === "new message";
+  message({ ...paid, donation: { ...paid.donation, id: "corrected", sats: 3000, message: "local", handle: "Local" }, seq: 11 });
+  message({ type: "recent", entries: [
+    { id: "old", sats: 1200, handle: "Old", message: "old message", at: Date.now(), bananas: 1, seq: 8 },
+    { id: "new", sats: 3000, handle: "New", message: "new message", at: Date.now(), bananas: 3, seq: 9 },
+    { id: "corrected", sats: 3000, handle: "Server", message: "server", at: Date.now(), bananas: 4, verified: true, seq: 11 }
+  ] });
+  const snapshot = D.state.recent.length === 3 && D.state.recent.find((e) => e.id === "corrected")?.handle === "Server"
+    && D.state.recent.find((e) => e.id === "corrected")?.message === "server"
+    && D.state.recent.find((e) => e.id === "corrected")?.verified === true;
+  message({ ...paid, donation: { ...paid.donation, id: "quiet", sats: 2000, message: "should not speak" } });
+  const quiet = received.at(-1).d.message === "" && D.state.recent.length === 4 && D.state.recent.some((e) => e.id === "quiet");
+  message({ type: "status", open: true, limits: { minSats: 69, maxSats: 4000, lightningMaxSats: 1000, messageMinSats: 3500 } });
+  const raisedLater = D.state.recent.every((e) => !e.message);
   message({ type: "seen", id: "chain", sats: 400, due: 1000, left: 615 });
   message({ type: "seen", id: "chain", sats: 400, due: 1000 });
   const heard = seen.length === 1 && seen[0].slice(0, 4).join() === "chain,400,1000,615" && seen[0][4] === null;
   const fallback = await D.invoice({ sats: 1000 });
   const unlit = fallback.invoice?.id === "invoice" && fallback.invoice.bolt11 === null;
+  await D.invoice({ sats: 2000, message: "too small" });
+  await D.note("request", "edited under bar");
+  const subBarRequest = requests.at(-2).path === "/donations/invoice" && !Object.hasOwn(requests.at(-2).body, "message")
+    && requests.at(-1).path === "/donations/note" && requests.at(-1).body.message === "";
+  await D.invoice({ sats: 4000, message: "allowed" });
+  await D.note("request", "edited above bar");
+  const overBarRequest = requests.at(-2).body.message === "allowed" && requests.at(-1).body.message === "edited above bar";
+  const owned = D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("invoice") && !D.receivedOwnInvoice("other");
   stop();
-  record("donation socket: empty and fractional tallies are accepted, malformed tallies keep the last reading, banana and sat rankings stay independent, older boards never invent sats, replay counts a payment once, an unpriced payment counts no bananas, a seen on-chain payment is passed on and a malformed one isn't, an invoice without its Lightning half is accepted, and unsubscribe closes the socket",
-    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && heard && unlit && received.length === 2 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
-    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, heard, unlit, received }));
+  record("donation socket: snapshots replace stale rows and correct same-id details, a raised message bar silences live and held entries, invoice and note requests obey the bar, and replay, tally, board, on-chain and unsubscribe contracts hold",
+    advertisedLimits && validatedLimits && empty && tally && boards && legacyBoard && replay && raisedBar && snapshot && quiet && raisedLater && subBarRequest && overBarRequest && owned && heard && unlit && received.length === 4 && received[0].bananas.exact === 0.25 && received[1].bananas.exact === 0 && received[1].bananas.rounded === 0 && sockets[1].closed && !D.state.connected,
+    JSON.stringify({ advertisedLimits, validatedLimits, empty, tally, boards, legacyBoard, replay, raisedBar, snapshot, quiet, raisedLater, subBarRequest, overBarRequest, owned, heard, unlit, received }));
 
   let now = Date.now(), detailsOpen = false;
-  const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) } } },
+  const kioskContext = { window: { BL: { jumbotron: { text: { GLYPH_W: 5, GLYPH_H: 7, TRACKING: 1 } }, qr: { encode: () => ({ size: 1, modules: [1] }) }, donations: D } },
     document: { createElement: () => ({ getContext: () => ({}) }) }, Date: class extends Date { static now() { return now; } } };
   runInNewContext(await readFile(new URL("../src/js/factory-kiosk.js", import.meta.url), "utf8"), kioskContext);
   const F = kioskContext.window.BL.factoryKiosk.create({ real: true, link: () => "/lightning", bananasFor: () => 1,
     invoice: async () => ({ request: "request", invoice: { id: "invoice", bolt11: "lntbs1", expires: now / 1000 + 10 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
     open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {},
     editDetails: (field) => { detailsOpen = !!field; }, closeDetails: () => { detailsOpen = false; } });
-  const quote = async () => { F.start(); for (const key of ["Enter", "1", "Enter"]) F.key({ key }); await Promise.resolve(); };
+  const quote = async () => { F.start(); for (const key of ["Enter", "6", "9", "Enter"]) F.key({ key }); await Promise.resolve(); };
   F.start(); F.key({ key: "Enter" }); F.key({ key: "A" }); F.update(0.1);
   const fromAmount = F.state === "details" && detailsOpen;
   F.key({ key: "Escape" });
@@ -4828,7 +4868,7 @@ const donationClientChecks = async () => {
     invoice: async () => ({ request: "request", invoice: { id: "unlit", bolt11: null, expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }),
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: (id) => waits.push(id),
     open: () => true, testNetwork: () => "signet", account: () => ({ backend: true, me: null }), release: () => {} });
-  G.start(); for (const key of ["Enter", "1", "Enter"]) G.key({ key }); await Promise.resolve();
+  G.start(); for (const key of ["Enter", "6", "9", "Enter"]) G.key({ key }); await Promise.resolve();
   G.key({ key: "Enter" }); await Promise.resolve(); await Promise.resolve();
   const chainOnly = G.state === "chain";
   const short = G.seen("unlit", 400, 1000, 615) && G.state === "chain" && G.rest === 615;
@@ -4841,6 +4881,17 @@ const donationClientChecks = async () => {
   const waited = waits.join() === "unlit";
   record("donation kiosk: an invoice without its Lightning half pays on-chain from the quote, a seen payment short of it asks for what is left and a whole one waits for its block without offering payment again, and leaving waits on the invoice", chainOnly && short && whole && noRepay && waited, JSON.stringify({ chainOnly, short, whole, noRepay, waited, state: G.state }));
 
+  const demoRequests = [];
+  const demo = kioskContext.window.BL.factoryKiosk.create({ link: () => "/donate", bananasFor: () => 1,
+    details: () => ({ handle: "Casey", message: "visible above the bar" }),
+    request: value => { demoRequests.push({ ...value }); return { id: `demo${demoRequests.length}`, url: "/donate" }; } });
+  demo.start(); for (const key of ["Enter", "6", "9", "Enter", "Enter"]) demo.key({ key });
+  const quietDemo = demo.state === "invoice" && demoRequests[0]?.message === "";
+  demo.stop(); demo.start(); for (const key of ["Enter", "1", "0", "0", "0", "Enter", "Enter"]) demo.key({ key });
+  const speakingDemo = demo.state === "invoice" && demoRequests[1]?.message === "visible above the bar";
+  record("donation kiosk: a simulated invoice QR omits a message under the bar and carries one at the bar", quietDemo && speakingDemo,
+    JSON.stringify({ quietDemo, speakingDemo, demoRequests }));
+
   // A DONE reply may outlive the editor that requested it: the factory reuses its flow between visits,
   // and a short on-chain payment can leave and reopen the editor without replacing the invoice.
   let deferredDetails = { handle: "tester", message: "saved" }, finishNote;
@@ -4849,7 +4900,7 @@ const donationClientChecks = async () => {
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor() {},
     note: () => new Promise(resolve => { finishNote = resolve; }), details: () => ({ ...deferredDetails }), editDetails() {},
     open: () => true, testNetwork: () => "signet" });
-  const deferredQuote = async () => { deferred.start(); for (const key of ["Enter", "1", "Enter"]) deferred.key({ key }); await Promise.resolve(); };
+  const deferredQuote = async () => { deferred.start(); for (const key of ["Enter", "1", "0", "0", "0", "Enter"]) deferred.key({ key }); await Promise.resolve(); };
   await deferredQuote();
   deferred.key({ key: "A" });
   deferredDetails.message = "old visit"; deferred.detailsChanged();
@@ -4968,8 +5019,15 @@ const donationClientChecks = async () => {
   capped.key({ key: "Enter" });
   const overallCap = capped.state === "amount" && capCalls === 1;
   capped.stop();
-  record("donation limits: amounts above Lightning warn before Continue, keep on-chain available, disable the Lightning button, and still reject invalid Bitcoin amounts",
-    capWarning && capContinue && lightningDisabled && capOnchain && overallCap, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap }));
+  capped.start(); for (const key of ["Enter", "1", "Enter"]) capped.key({ key });
+  await Promise.resolve();
+  const configuredMinimum = capped.state === "quote" && capCalls === 2;
+  capped.stop(); caps.minSats = 10;
+  capped.start(); for (const key of ["Enter", "9", "Enter"]) capped.key({ key });
+  const belowConfiguredMinimum = capped.state === "amount" && capCalls === 2;
+  capped.stop();
+  record("donation limits: real amounts follow the advertised minimum, warn above Lightning, keep on-chain available, disable the Lightning button, and reject invalid Bitcoin amounts",
+    capWarning && capContinue && lightningDisabled && capOnchain && overallCap && configuredMinimum && belowConfiguredMinimum, JSON.stringify({ capWarning, capContinue, lightningDisabled, capOnchain, overallCap, configuredMinimum, belowConfiguredMinimum }));
 
   const elements = new Map(), frames = new Map(), detailTimers = new Map(), invoices = [], notes = [], popupWaits = [];
   let noteFails = 0;
@@ -4977,7 +5035,7 @@ const donationClientChecks = async () => {
     "donation-fields", "factory-donation-fields", "donation-details-status"]) elements.set(id, {
     listeners: new Map(), open: false, value: "", disabled: false,
     addEventListener(type, fn) { this.listeners.set(type, fn); }, removeEventListener(type) { this.listeners.delete(type); },
-    showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; },
+    showModal() { this.open = true; }, close() { this.open = false; }, focus() { this.focused = true; }, blur() { this.focused = false; },
     select() { this.selected = true; }, setSelectionRange() {}, scrollIntoView() {}, append() {}, insertBefore() {}, querySelector: () => ({}), getContext: () => ({})
   });
   Object.assign(kioskContext, { location: { origin: "https://site.test" }, navigator: {}, performance: { now: () => now },
@@ -4988,16 +5046,23 @@ const donationClientChecks = async () => {
   let popupFlow;
   K.factoryKiosk.create = hooks => (popupFlow = factoryCreate(hooks));
   K.game = { bananasFor: () => 1 };
+  K.chain = { snapshot: { priceUsd: 100000 } };
   K.net = { state: { backend: true, me: null }, login() {} };
-  K.donations = { state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX,
+  K.donations = { real: true, state: { open: true }, testNetwork: "signet", sanitize: D.sanitize, carried: (sats, message, bar = 1000) => D.carried(sats, message, bar),
+    HANDLE_MAX: D.HANDLE_MAX, MESSAGE_MAX: D.MESSAGE_MAX, MESSAGE_MIN_SATS: 1000, messageMinSats: 1000,
     invoice: async options => { invoices.push(options); return { request: "request", invoice: { id: "popup", bolt11: "lntbs1", expires: now / 1000 + 900 }, bananas: { exact: 0.25, rounded: 0 }, rate: null }; },
+    createRequest: () => ({ id: "demo", url: "/donate" }),
     note: async (request, message, handle) => { notes.push({ request, message, handle }); return noteFails-- > 0 ? { error: "busy" } : {}; },
     onchain: async () => ({ address: "tb1qexampleaddress0000", sats: 1000 }), waitFor: id => popupWaits.push(id) };
   runInNewContext(await readFile(new URL("../src/js/donation-popup.js", import.meta.url), "utf8"), kioskContext);
-  const popup = K.donationPopup.create({ state: { message: "hello" } }), dialog = elements.get("donation-popup");
-  const popupQuote = async () => { popup.open(); for (const key of ["1", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
+  let identityWrites = 0;
+  const popupGame = { state: { handle: "", message: "hello", recentHandles: ["Ooga-Dev"] }, rememberHandle() {}, setIdentity(value) { identityWrites++; Object.assign(this.state, value); } };
+  const popup = K.donationPopup.create(popupGame), dialog = elements.get("donation-popup");
+  let closedCount = 0;
+  popup.onClose(() => closedCount++);
+  const popupQuote = async () => { popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await Promise.resolve(); };
   await popupQuote();
-  const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1 && invoices[0].message === "hello" && invoices[0].handle === "anon";
+  const anonymous = dialog.open && popupFlow.state === "quote" && invoices[0].sats === 1000 && invoices[0].message === "hello" && invoices[0].handle === "anon";
   const other = !popup.receive({ id: "other", handle: "someone" }, { exact: 1, rounded: 1 }) && dialog.open;
   const settled = popup.receive({ id: "popup", handle: "" }, { exact: 0.25, rounded: 0 }) && !dialog.open && frames.size === 0;
   K.net.state.me = { login: "tester" };
@@ -5027,10 +5092,11 @@ const donationClientChecks = async () => {
   elements.get("donation-message").value = "never saved";
   elements.get("donation-fields").listeners.get("input")();
   await popupFlow.key({ key: "Enter" });
-  const failedAgain = popupFlow.state === "details" && !!popupFlow.detailsError;
+  const failedAgain = popupFlow.state === "details" && !!popupFlow.detailsError && popupGame.state.message === "kept until saved";
   popupFlow.key({ key: "Escape" });
   const keptSaved = failedAgain && popupFlow.state === "quote" && !popupFlow.detailsError
-    && elements.get("donation-message").value === "kept until saved" && popup.details().message === "kept until saved";
+    && elements.get("donation-message").value === "kept until saved" && popup.details().message === "kept until saved"
+    && popupGame.state.message === "kept until saved";
   popupFlow.key({ key: "Enter" });
   elements.get("donation-message").value = "updated while the QR is shown";
   elements.get("donation-fields").listeners.get("input")();
@@ -5047,11 +5113,111 @@ const donationClientChecks = async () => {
   const popupSeen = popup.seen("popup", 1000, 1000, 0) && popupFlow.state === "confirming";
   elements.get("donation-close").listeners.get("click")();
   const leftWaiting = popupWaits.join() === "popup" && !dialog.open && frames.size === 0;
+  popup.open();
+  popup.closeOutside();
+  const realOutside = dialog.open;
+  for (const key of ["1", "0", "0", "0"]) popupFlow.key({ key });
+  popupFlow.key({ key: "A" });
+  popup.focusDetails("message");
+  const messageInput = elements.get("donation-message");
+  const writesBeforeInput = identityWrites, previousDefault = popupGame.state.message;
+  messageInput.value = "draft";
+  elements.get("donation-fields").listeners.get("input")({ target: messageInput });
+  messageInput.value = "";
+  elements.get("donation-fields").listeners.get("input")({ target: messageInput });
+  const deferredWrite = identityWrites === writesBeforeInput && popupGame.state.message === previousDefault;
+  elements.get("donation-fields").listeners.get("change")({ target: messageInput });
+  const clearedDefault = deferredWrite && popupGame.state.message === "" && identityWrites === writesBeforeInput + 1;
+  popup.close();
+  K.donations.real = false;
+  popup.open(true);
+  const demoAnonymous = popup.defaults().handle === "" && popup.details().handle === "";
+  const beforeDemoClose = closedCount;
+  popup.closeOutside();
+  const demoOutside = !dialog.open && closedCount === beforeDemoClose + 1;
+  K.donations.real = true;
+  const realAfterDemo = popup.defaults().handle === "tester" && popup.defaults().message === "";
+  record("donation popup: real invoices ignore backdrop dismissal, message typing defers the local save until change, a cleared real message updates the saved default, demo anonymous stays empty, demo backdrop dismissal closes once, and the next real default uses the signed-in login",
+    realOutside && clearedDefault && demoAnonymous && demoOutside && realAfterDemo,
+    JSON.stringify({ realOutside, clearedDefault, demoAnonymous, demoOutside, realAfterDemo }));
+  // A saved name completes after an explicit preview; a typed prefix survives plain Tab. A tip under the message
+  // bar goes out without a message, and its details screen offers the name alone.
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  popup.open(); for (const key of ["1", "0", "0", "0", "Enter"]) popupFlow.key({ key }); await settle();
+  popupFlow.key({ key: "A" });
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  const suggested = popupFlow.state === "details" && popup.history()?.join() === "Ooga-Dev";
+  elements.get("donation-message").focused = false;
+  fieldKey("Tab", elements.get("donation-handle"));
+  const preserved = suggested && elements.get("donation-handle").value === "oo" && elements.get("donation-message").focused;
+  popup.focusDetails("handle");
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Tab", elements.get("donation-handle"));
+  const completed = preserved && elements.get("donation-handle").value === "Ooga-Dev" && popup.history() === null;
+  popup.focusDetails("handle");
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Escape", elements.get("donation-handle"));
+  const previewCanceled = elements.get("donation-handle").value === "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Enter", elements.get("donation-handle"));
+  const previewMoved = elements.get("donation-handle").value === "Ooga-Dev" && elements.get("donation-message").focused;
+  fieldKey("Enter", elements.get("donation-message"));
+  await settle();
+  const previewSaved = popupFlow.state === "quote" && popup.details().handle === "Ooga-Dev" && notes.at(-1).handle === "Ooga-Dev";
+  kioskContext.document.activeElement = null;
+  elements.get("donation-close").listeners.get("click")();
+  popupGame.setIdentity({ handle: popupGame.state.handle, message: "larger-tip note" });
+  popup.open(); for (const key of ["6", "8", "Enter"]) popupFlow.key({ key }); await settle();
+  const belowMinimum = popupFlow.state === "amount";
+  for (const key of ["Delete", "6", "9", "Enter"]) popupFlow.key({ key }); await settle();
+  const smallInvoice = belowMinimum && popupFlow.state === "quote" && invoices.at(-1).sats === 69 && invoices.at(-1).message === ""
+    && popupGame.state.message === "larger-tip note";
+  popupFlow.key({ key: "A" });
+  elements.get("donation-message").focused = false;
+  fieldKey("Tab", elements.get("donation-handle"));
+  const nameAlone = smallInvoice && popupFlow.state === "details" && !elements.get("donation-message").focused;
+  kioskContext.document.activeElement = elements.get("donation-handle");
+  elements.get("donation-handle").value = "oo";
+  elements.get("donation-fields").listeners.get("input")();
+  fieldKey("ArrowDown", elements.get("donation-handle"));
+  fieldKey("Enter", elements.get("donation-handle"));
+  await settle();
+  const nameDone = nameAlone && popupFlow.state === "quote" && elements.get("donation-handle").value === "Ooga-Dev"
+    && popup.details().handle === "Ooga-Dev" && notes.at(-1).handle === "Ooga-Dev";
+  elements.get("donation-close").listeners.get("click")();
+  record("donation popup: a typed prefix survives Tab, a preview completes with Tab or Enter, Escape cancels a preview, and a tip under the message bar has no message field or carried text",
+    completed && previewCanceled && previewMoved && previewSaved && nameDone, JSON.stringify({ suggested, preserved, completed, previewCanceled, previewMoved, previewSaved, smallInvoice, nameAlone, nameDone }));
   popup.open(); popupFlow.key({ key: "1" }); popupFlow.key({ key: "Enter" });
   popup.dispose(); await Promise.resolve();
   const disposed = popupFlow.state === "idle" && !dialog.open && frames.size === 0 && detailTimers.size === 0 && [...elements.values()].every(e => e.listeners.size === 0);
   record("donation popup: signed-out visitors can quote a payment, edits on the details screen save automatically on the same invoice, Tab goes between its fields, a failed save keeps the screen with its error until it is tried again or given up on for the details the invoice holds, and a saved one goes back to the quote with the keys on the popup's screen, Lightning returns to its quote without replacing the invoice, unrelated donations keep its invoice open, its settlement reveals the scene immediately, an on-chain payment can be left waiting, and disposal cancels frames, timers, listeners and late replies",
     anonymous && signedIn && edited && detailsDone && keptSaved && invoiceEdited && lightningBack && sameLightning && other && settled && popupSeen && leftWaiting && disposed, JSON.stringify({ anonymous, signedIn, edited, detailsDone, keptSaved, invoiceEdited, lightningBack, sameLightning, other, settled, popupSeen, leftWaiting, disposed }));
+
+  const routeLocation = { protocol: "https:", pathname: "/donate", search: "", hash: "" }, routeDocument = { title: "" };
+  const routeHistory = { state: null, url: "", replaceState(state, _title, url) {
+    this.state = state; this.url = url; routeLocation.pathname = url;
+  }, pushState() {} };
+  const routeContext = { window: { BL: {}, addEventListener() {}, removeEventListener() {} }, location: routeLocation,
+    document: routeDocument, history: routeHistory, URLSearchParams };
+  runInNewContext(await readFile(new URL("../src/js/router.js", import.meta.url), "utf8"), routeContext);
+  const routes = { list: [{ path: "", scene: "hub", place: null, title: "Home" },
+    { path: "donate", scene: "hub", place: "donate", title: "Donate" }], title: entry => entry.title };
+  const routed = routeContext.window.BL.router.create({ hub: {} }, routes, () => true);
+  routed.arrive("hub", "donate", true);
+  const enteredDonate = routeHistory.url === "/donate" && routeDocument.title === "Donate";
+  routed.dismissPlace("hub", "donate");
+  const closedDonate = routeHistory.url === "/" && routeDocument.title === "Home" && routeHistory.state.place === null;
+  record("donate route: closing its popup replaces the place with hub home, including URL, title and history state",
+    enteredDonate && closedDonate, JSON.stringify({ enteredDonate, closedDonate, url: routeHistory.url, title: routeDocument.title }));
 };
 const wallPerformance = async (b) => {
   await b.send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 2, mobile: false });
@@ -5215,6 +5381,65 @@ for (const id of ["hub", "lab", "factory"]) {
     } finally {
       await new Promise(resolve => server.close(resolve));
     }
+  } });
+}
+// The hosted page as `npm run site` stages it: each `data-defer` group leaves the built page for its own same-origin file,
+// served here behind a switch (`refused`, path prefixes) that answers 503, as a deploy mid-flight can. The source and
+// portable pages keep every group inline, so only this page can show what a scene reads before its code arrives.
+const hostedSite = async () => {
+  const html = readFileSync(join(root, "oogaboogaland.html"), "utf8"), out = mkdtempSync(join(tmpdir(), "ooga-hosted-"));
+  const deferred = new Map();
+  for (const [, src, group] of readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="([^"]+)" data-defer="([a-z-]+)"><\/script>/g)) deferred.set(group, [...(deferred.get(group) || []), src]);
+  // A module's block in the built page runs from its marker to the next module's.
+  const block = (src) => { const start = html.indexOf(`// ---- ${src} ----\n`); return html.slice(start, html.indexOf("\n\n// ---- ", start + 1)); };
+  const page = externalizeModules(html, out, deferred, block), refused = [], fetched = [];
+  const server = createServer((req, res) => {
+    const path = req.url.split("?")[0];
+    if (!path.startsWith("/js/")) { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
+    fetched.push(path);
+    if (refused.some(prefix => path.startsWith(prefix))) { res.writeHead(503); return res.end(); }
+    res.setHeader("content-type", "text/javascript");
+    res.end(readFileSync(join(out, path)));
+  });
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  return { origin: `http://127.0.0.1:${server.address().port}`, refused, fetched,
+    close: async () => { await new Promise(resolve => server.close(resolve)); rmSync(out, { recursive: true, force: true }); } };
+};
+// A refused bundle is logged by the browser as a failed resource; that line is the fixture's, not the page's.
+const dropRefusals = (b) => { for (let i = b.logs.length - 1; i >= 0; i--) if (b.logs[i].includes("status of 503")) b.logs.splice(i, 1); };
+const orbitHosted = { name: "orbit hosted", why: "regression: Ooga Orbit read Ooga Drop's models at load, which a hosted page had deferred, so it threw on entry, cold and after a Drop visit", run: async (b, site) => {
+  const cold = await b.evaluate(`({ scene: __ooga.scene, frames: __ooga.renderedFrames, models: !!BL.dropModels, diver: !!BL.skydiver })`);
+  await b.evaluate(`__ooga.go("drop")`);
+  const drop = await untilPage(b, 'B.scene === "drop" && !B.transitioning', 15000);
+  await b.evaluate(`__ooga.go("orbit")`);
+  const orbit = await untilPage(b, 'B.scene === "orbit" && !B.transitioning', 15000);
+  const after = await b.evaluate(`({ scene: __ooga.scene, frames: __ooga.renderedFrames })`);
+  record("orbit hosted: a cold /oogaorbit on the hosted page boots and draws with Drop's diver still unloaded, and Orbit opens again after a Drop visit", cold.scene === "orbit" && cold.frames > 2 && cold.models && !cold.diver
+    && drop && orbit && after.scene === "orbit" && site.fetched.filter(p => p.startsWith("/js/drop-")).length === 1, JSON.stringify({ cold, drop, orbit, after, fetched: site.fetched }));
+} };
+const arcadeHostedDrop = { name: "arcade hosted drop cabinet", why: "regression: a refused Ooga Drop download left the arcade's departure flags set, so no cabinet opened again and its Leave did nothing until a reload, also when Leave was pressed during the fade back", run: async (b, site) => {
+  await b.evaluate(`(() => { const B = window.__ooga, a = B.cavemen.get("portlandhodl"), s = window.BL.arcadeModels.CABINETS[1].play; if (B.crew.player !== a) B.pilot.possess(a); a.root.position.x = s.x; a.root.position.z = s.z; B.advance(0.2, 1 / 60); })()`);
+  site.refused.push("/js/drop-");
+  await b.key(" ");
+  for (let t = 0; t < 15000 && !site.fetched.some(p => p.startsWith("/js/drop-")); t += 50) await b.sleep(50);
+  // Leave, pressed while the view fades back in (after the refusal's toast), is refused with the transition still running.
+  const pressed = await b.evaluate(`new Promise(resolve => { const t0 = performance.now(), tick = () => {
+    if (__ooga.transitioning && document.getElementById("toast").textContent.includes("could not be opened")) { document.querySelector('nav[data-scene="arcade"] .leave').click(); resolve(__ooga.transitioning); }
+    else if (performance.now() - t0 > 10000) resolve(null); else requestAnimationFrame(tick); }; tick(); })`);
+  const refused = await untilPage(b, 'B.scene === "arcade" && !B.transitioning', 15000);
+  site.refused.length = 0;
+  dropRefusals(b);
+  await b.key(" ");
+  const opened = await untilPage(b, 'B.scene === "drop" && !B.transitioning', 15000);
+  const asked = site.fetched.filter(p => p.startsWith("/js/drop-")).length;
+  record("arcade hosted: a refused Ooga Drop download fades back to the arcade, Leave pressed during that fade is refused without locking the hall, and Space at the same cabinet asks again and opens the game", pressed === true && refused && opened && asked === 2, JSON.stringify({ pressed, refused, opened, asked, fetched: site.fetched }));
+} };
+for (const [id, step, path] of [["orbit", orbitHosted, "/oogaorbit"], ["arcade", arcadeHostedDrop, "/oogaarcade"]]) {
+  if (ONLY && !onlyMatches(step.name)) continue;
+  tasks.push({ name: `${id} hosted`, scene: id, perf: false, run: async () => {
+    const site = await hostedSite();
+    try { await fold(`${site.origin}${path}?debug=1&nosim=1&net=0&hour=12&day=80&character=portlandhodl`, [[step.name, (b) => step.run(b, site)]]); }
+    finally { await site.close(); }
   } });
 }
 // `stat` names the scene's count of bananas delivered, read from stats(): drops landed on the pile, or the bananas the
@@ -8590,13 +8815,28 @@ const hubBirdsEyeProjection = { name: "birds-eye projection", why: "rule: overhe
       roof.geometry = decoratedRoof; rows.push(sample("render-only foliage")); roof.geometry = roofGeometry;
       roof.matrixCloud = true; roofGeometry.cutawayPreserve = true; opts.cutawayCloudY = -4; opts.cutawayCloudMix = 1;
       rows.push({ ...sample("lowered cloud"), physicalY: roof.position.y, worldY: roof.world[13] });
-      return rows;
+      // The ₿IFRÖST arch's stone carries a depth offset for its joins, yet stands free: its lintel and towers hide a
+      // speaker behind them, while one seen through the opening stays visible.
+      roof.visible = false; roof.matrixCloud = false; opts.birdsEyeCutaway = false; opts.cutawayRegionCount = 0;
+      camera.orthoMix = 0; camera.up = { x: 0, y: 1, z: 0 };
+      const landmark = BL.bifrostGate.landmark(), arch = S.createNode({ geometry: landmark.stone }); S.addChild(root, arch);
+      const small = BL.models.box({ w: 0.3, h: 0.3, d: 0.3, color: "#ffffff" }), speaker = S.createNode({ sightHidden: true }), mouth = S.createNode({ geometry: small });
+      S.addChild(speaker, mouth); S.addChild(root, speaker); actor.visible = false;
+      const archRows = [];
+      for (const [name, x, y, shown] of [["lintel", 0.75, 5.5, false], ["tower", landmark.opening.half + 0.6, 2, false], ["opening", 0, landmark.opening.spring / 2, true], ["opening off centre", 0.75, landmark.opening.spring / 2, true]]) {
+        Object.assign(camera.position, { x, y, z: 8 }); Object.assign(camera.target, { x, y, z: -3 }); Object.assign(speaker.position, { x, y, z: -3 });
+        B.renderer.render(root, camera, opts); visibility.begin();
+        archRows.push({ name, shown, visible: visibility.anchor({ root: speaker, parts: { head: mouth } }, {}) });
+      }
+      B.renderer.releaseGeometry(small);
+      return { rows, archRows };
     } finally { visibility.dispose(); for (const geometry of [bodyGeometry, headGeometry, roofGeometry]) B.renderer.releaseGeometry(geometry); B.renderer.render(BL.scenes.hub.root, B.camera, B.renderOpts); }
   })()`);
-  record("birds-eye projection: speech anchors follow the rendered head through the transition, ignore cut roofs and weather, and retain a sliver exposed through a local cut", anchors.length === 15 && anchors.every(r => {
+  record("birds-eye projection: speech anchors follow the rendered head through the transition, ignore cut roofs and weather, and retain a sliver exposed through a local cut", anchors.rows.length === 15 && anchors.rows.every(r => {
     const expected = r.name !== "covered" && r.name !== "preserved roof";
     return r.visible === expected && (!expected || r.error < 0.002) && (r.name !== "lowered cloud" || r.physicalY === 6 && r.worldY === 6);
-  }), JSON.stringify(anchors));
+  }), JSON.stringify(anchors.rows));
+  record("speech anchors: the ₿IFRÖST arch's offset stone hides a speaker behind its lintel and towers, and one seen through the opening stays visible", anchors.archRows.length === 4 && anchors.archRows.every(r => r.visible === r.shown), JSON.stringify(anchors.archRows));
 } };
 
 const hubCombatReplay = { name: "birds-eye combat replay", why: "contract: replay links preserve north-up intent and legacy combat orbit poses still migrate", run: async (b) => {
@@ -9452,7 +9692,9 @@ const donationDetails = { name: "donation details", why: "regression: clicking K
     K.create = probe.create;
   })()`);
   try {
-    await b.key("1"); await b.key("Enter");
+    // A message rides only a tip of at least the message bar.
+    for (const key of ["1", "0", "0", "0"]) await b.key(key);
+    await b.key("Enter");
     await untilPage(b, 'window.__donationDetails.flow.state === "quote"');
     await b.key("A"); await b.key("Tab");
     await b.send("Input.insertText", { text: "discard this edit" });
@@ -9494,7 +9736,7 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
   const at = await b.evaluate(`(() => { const B = window.__ooga; ${FACTORY_EVENT} const s = X.scene, q = s.sats;
     for (let t = 0; t < 10 && q.bay.some((v) => v >= 0); t += 0.25) B.advance(0.25, 1 / 20);
     s.gate.hum = Infinity;
-    for (const [id, value] of [["handle", "tester"], ["message", "zebra 12:34"]]) { const el = document.getElementById(id); el.value = value; el.dispatchEvent(new Event("change")); }
+    B.game.setIdentity({ handle: "tester", message: "zebra 12:34" });
     B.pilot.release(true);
     const w = s.kioskScreen.world, p = { x: w[12], y: w[13], z: w[14] };
     B.pilot.navigate({ position: p, target: p, yaw: s.kiosk.rotation.y, pitch: 0.2, dist: 4 }); B.advance(0.6, 1 / 60);
@@ -9686,9 +9928,20 @@ const bifrostEntrance = { name: "bifrost entrance", why: "playthrough: an Ooga w
   record("bifrost entrance: from the pass stairs the roster's widest Ooga walks through the arch out onto the bridge's deck", arch.onDeck && Math.abs(arch.feet - arch.deck) < 0.3, JSON.stringify(arch));
   await b.evaluate(`(() => { const B = window.__ooga, p = B.bifrost.site.portal, sx = Math.sin(p.ry), sz = Math.cos(p.ry), x = p.x + sx * 0.9, z = p.z + sz * 0.9; B.pilot.navigate({ position: { x, y: p.floorY, z }, target: { x: x - sx * 6, y: p.floorY + 1, z: z - sz * 6 }, yaw: Math.atan2(sx, sz), pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); window.__portal = [-sx, -sz]; })()`);
   const inKey = await b.evaluate(`window.__portal`);
+  // The first crossing finds the chamber's deferred code refused, as a hosted page's bundle answering 503 would be: the
+  // view fades back to the island with the same Ooga driven and walking, and stepping out of the field and in again
+  // asks for the code once more and goes through.
+  await b.evaluate(`(() => { const load = BL.deferred.load; window.__loads = 0; BL.deferred.load = (group) => { if (group !== "dsb") return load(group); if (window.__loads++) { BL.deferred.load = load; return load(group); } return Promise.reject(new Error("503")); }; window.__portalStart = { ...__ooga.crew.player.root.position }; })()`);
   await walkToward(b, inKey[0], inKey[1], 0.8);
-  const arrived = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "bifrost"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const d = B.bifrost; return { scene: B.scene, ooga: B.crew && B.crew.player ? B.crew.player.traits.name : null, pictured: !!(d && d.pictured), outside: !!(d && d.outside) }; })()`);
-  record("bifrost entrance: walking through the portal's field takes the same Ooga into the chamber, which has DSB Land's picture and the island's view back out", arrived.scene === "bifrost" && arrived.ooga === "portlandhodl" && arrived.pictured && arrived.outside, JSON.stringify(arrived));
+  const refused = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && B.transitioning; i++) B.advance(1 / 30, 1 / 30); const a = B.crew.player; return { scene: B.scene, transitioning: B.transitioning, loads: window.__loads, ooga: a ? a.traits.name : null, at: a ? { x: a.root.position.x, z: a.root.position.z } : null }; })()`);
+  await walkToward(b, -inKey[0], -inKey[1], 0.5);
+  const moved = await b.evaluate(`(() => { const a = __ooga.crew.player, p = a && a.root.position; return { loads: window.__loads, scene: __ooga.scene, x: p ? p.x : null, z: p ? p.z : null }; })()`);
+  record("bifrost entrance: a refused chamber download fades back to the island with the same Ooga driven, walking again and not asking twice while it stands in the field", refused.scene === "hub" && !refused.transitioning && refused.loads === 1 && refused.ooga === "portlandhodl"
+    && moved.scene === "hub" && moved.loads === 1 && refused.at && Math.hypot(moved.x - refused.at.x, moved.z - refused.at.z) > 0.3, JSON.stringify({ refused, moved }));
+  await b.evaluate(`(() => { const B = window.__ooga, p = B.bifrost.site.portal, s = window.__portalStart, sx = Math.sin(p.ry), sz = Math.cos(p.ry); B.pilot.navigate({ position: s, target: { x: s.x - sx * 6, y: p.floorY + 1, z: s.z - sz * 6 }, yaw: Math.atan2(sx, sz), pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); })()`);
+  await walkToward(b, inKey[0], inKey[1], 0.8);
+  const arrived = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "bifrost"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const d = B.bifrost; return { scene: B.scene, loads: window.__loads, ooga: B.crew && B.crew.player ? B.crew.player.traits.name : null, pictured: !!(d && d.pictured), outside: !!(d && d.outside) }; })()`);
+  record("bifrost entrance: walking through the portal's field takes the same Ooga into the chamber, which has DSB Land's picture and the island's view back out", arrived.scene === "bifrost" && arrived.loads === 2 && arrived.ooga === "portlandhodl" && arrived.pictured && arrived.outside, JSON.stringify(arrived));
 } };
 const walkingModeControls = async (b, scene) => {
   const state = await b.evaluate(`(() => {
@@ -13469,6 +13722,29 @@ const pokerTrip = (() => {
     }
   } };
 })();
+// A poker room opened on its own (no ₿IFRÖST visit first) whose way out cannot fetch ₿IFRÖST's deferred DSB code: the
+// first refusal comes from the Return button, the second from walking onto the mirror. The room keeps working, the
+// mirror does not ask again while the Ooga stands on it, and stepping off and back on goes through.
+const pokerExitRecovery = { name: "poker exit recovery", why: "regression: a refused way out to ₿IFRÖST left the poker room's leaving flag set, so neither its Return button nor its mirror worked again until a reload", run: async b => {
+  await b.evaluate(`(() => { const go = document.querySelector('[data-intro="poker"] .game-intro-go'); if (go && go.offsetParent) go.click();
+    const load = BL.deferred.load; window.__pokerLoads = 0; BL.deferred.load = group => { if (group !== "dsb") return load(group); if (++window.__pokerLoads > 2) { BL.deferred.load = load; return load(group); } return Promise.reject(new Error("503")); }; })()`);
+  const settle = `(() => { const B = __ooga; for (let i = 0; i < 60 && B.transitioning; i++) B.advance(1 / 30, 1 / 30); return { scene: B.scene, transitioning: B.transitioning, loads: window.__pokerLoads }; })()`;
+  await b.evaluate(`document.querySelector('[data-poker-action="exit"]').click()`);
+  const button = await b.evaluate(settle);
+  const toMirror = await b.evaluate(`(() => { const B = window.__ooga; B.pilot.navigate({ position: { x: 0, y: 0, z: 31 }, target: { x: 0, y: 1, z: 35 }, yaw: Math.PI, pitch: 0.15, dist: 4 }); B.advance(0.5, 1 / 60);
+    const c = BL.scenes.poker.camera, fx = c.target.x - c.position.x, fz = c.target.z - c.position.z, l = Math.hypot(fx, fz), f = [fx / l, fz / l], r = [-f[1], f[0]];
+    const score = { w: f[1], s: -f[1], d: -r[1], a: r[1] }; return Object.entries(score).sort((p, q) => q[1] - p[1])[0][0]; })()`);
+  const back = { w: "s", s: "w", a: "d", d: "a" }[toMirror];
+  await holdKey(b, toMirror, 2.5);
+  await b.evaluate(settle);
+  await b.evaluate(`__ooga.advance(1, 1 / 60)`);
+  const mirror = await b.evaluate(settle);
+  await holdKey(b, back, 1);
+  await holdKey(b, toMirror, 2.5);
+  const out = await b.evaluate(settle);
+  record("poker exit recovery: a cold room's refused way out to ₿IFRÖST from its Return button leaves the mirror working; a refusal there waits for the Ooga to step off, and walking back on goes through",
+    button.scene === "poker" && !button.transitioning && button.loads === 1 && mirror.scene === "poker" && !mirror.transitioning && mirror.loads === 2 && out.scene === "bifrost" && out.loads === 3, JSON.stringify({ button, mirror, out }));
+} };
 scene("poker", { query: "character=portlandhodl", steps: [{ name: "poker floor and play", why: "playthrough: a visitor walks the floor, fills a table, plays to settlement and stands without exposing hidden cards", run: async b => {
   await b.evaluate(`document.querySelector('[data-intro="poker"] .game-intro-go').click()`);
   const walking = await walkKeys(b, "portlandhodl", 0, 18, [0, 1.5], 0.45);
@@ -13499,6 +13775,7 @@ scene("poker", { query: "character=portlandhodl", steps: [{ name: "poker floor a
     await b.screenshot(join(process.env.POKER_SHOTS, "poker-floor.png"));
   }
 } }, pokerTrip] });
+scene("poker", { label: "exit recovery", query: "character=portlandhodl", steps: [pokerExitRecovery] });
 scene("poker", { label: "canvas2d", query: "canvas2d=1", steps: [{ name: "poker canvas2d", why: "rule: the floor and table controls work on the fallback renderer", run: async b => {
   await b.evaluate(`document.querySelector('[data-intro="poker"] .game-intro-go').click()`);
   const r = await b.evaluate(`(() => { const P = BL.scenes.poker.debug.poker; P.action("join"); P.action("bots"); P.action("start"); __ooga.advance(1); return { kind: __ooga.renderer.kind, phase: P.session.tables[0].snapshot().phase, nodes: __ooga.stats().visibleNodes }; })()`);
@@ -13651,7 +13928,7 @@ scene("dsb", { label: "dsb zuzu conversation", url: hubPage(dist), steps: [{ nam
   record("dsb compatibility: built CSP preserves exactly the weather and DSB network permissions", await b.evaluate(`(() => {
     const policy = document.querySelector('meta[http-equiv="Content-Security-Policy"]').content;
     const sources = name => policy.split(";").map(s => s.trim().split(/\\s+/)).find(s => s[0] === name).slice(1).sort().join("|");
-    return sources("connect-src") === ["'self'", "https:", "wss:"].sort().join("|") && sources("worker-src") === "'self'" && sources("media-src") === ["https://stream.noderunnersradio.com", "https://hodlerhiq.net"].sort().join("|") && !policy.includes("unsafe-");
+    return sources("connect-src") === ["'self'", "https:", "wss:"].sort().join("|") && sources("worker-src") === "'self'" && sources("media-src") === "https://stream.noderunnersradio.com" && !policy.includes("unsafe-");
   })()`));
   record("dsb registry: c10 is B.C.A.'s hub office and DSB is internally addressable without a cave", await b.evaluate(`(BL.caves.slots.find(s => s.id === "c10").status === "open" && BL.caves.slots.find(s => s.id === "c10").scene === null && BL.caves.slots.find(s => s.id === "c10").place === "bca") && !BL.caves.slots.some(s => s.scene === "dsb") && !!BL.scenes.dsb`));
   record("dsb compatibility: hub keeps the Agent module without spawning a standalone gorilla", await b.evaluate(`__ooga.scene === "hub" && !__ooga.agent && !!BL.agent && !!BL.characters.get("rules-without-rulers") && Object.hasOwn(__ooga, "agent") && Object.hasOwn(__ooga, "dsb") && !__ooga.dsb`));
@@ -15632,6 +15909,29 @@ const qualityFramebufferChecks = async () => {
   })()`, { ...context, countCreated: () => created, countWrites: () => writes, isLive: handle => live.has(handle), liveCount: () => live.size });
   record("quality framebuffer: capped tiers and repeated resizes preserve identical targets, every changed attachment configuration rebuilds and disposal permits fresh restoration", Object.values(r).every(Boolean), JSON.stringify({ ...r, created, deleted, writes }));
 };
+const tileGpuChecks = async () => {
+  const source = await readFile(new URL("../src/js/gl-renderer.js", import.meta.url), "utf8");
+  const helper = source.slice(source.indexOf("  const APPLE_SILICON ="), source.indexOf("  const isSupported ="));
+  const tileBasedGpu = new Function(`${helper}; return tileBasedGpu;`)();
+  let asked = 0;
+  const unmasked = name => () => { asked++; return name; };
+  const rows = [
+    // Named Apple silicon, through Chrome's extension, ANGLE's older OpenGL form and Firefox's RENDERER.
+    ["WebKit WebGL", unmasked("ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)"), true],
+    ["WebKit WebGL", unmasked("ANGLE (Apple, Apple M2, OpenGL 4.1)"), true],
+    ["Apple M1, or similar", unmasked("unasked"), true],
+    // Intel and AMD, including Chrome's Metal backend, which reports the vendor as Apple.
+    ["WebKit WebGL", unmasked("ANGLE (Intel Inc., Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)"), false],
+    ["WebKit WebGL", unmasked("ANGLE (Apple, ANGLE Metal Renderer: Intel(R) UHD Graphics 630, Unspecified Version)"), false],
+    ["WebKit WebGL", unmasked("ANGLE (ATI Technologies Inc., AMD Radeon Pro 5500M OpenGL Engine, OpenGL 4.1)"), false],
+    ["AMD Radeon Pro 5500M, or similar", unmasked("unasked"), false],
+    // Safari's constant answer names no hardware, and a missing debug extension names nothing.
+    ["WebKit WebGL", unmasked("Apple GPU"), false],
+    ["WebKit WebGL", unmasked(null), false]
+  ].map(([renderer, info, expected]) => ({ renderer, expected, got: tileBasedGpu(renderer, info) }));
+  record("tile-based GPU: only a named Apple silicon GPU skips the depth prepass; Intel, AMD, Safari's generic \"Apple GPU\" and a missing debug extension keep it",
+    rows.every(row => row.got === row.expected) && asked === 7, JSON.stringify(rows.filter(row => row.got !== row.expected)));
+};
 const raceRigChecks = async () => {
   const context = { window: {}, location: { search: "?debug=1&rain=0" }, URLSearchParams, crypto: webcrypto };
   for (const name of ["math", "scene", "models", "caves", "contributor-identities", "activity-repos", "characters"]) runInNewContext(await readFile(new URL(`../src/js/${name}.js`, import.meta.url), "utf8"), context);
@@ -16371,6 +16671,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   record("peer pose previews: certified empty terrain preserves exact poses and peer rejection while omitting vertex probes", emptyPeers.cases === 291 && emptyPeers.failures === 0 && emptyPeers.samples > 0 && emptyPeers.callbacks > 0 && emptyPeers.contact.length === 4 && emptyPeers.arms.length === 8 && emptyPeers.rollback.length === 6, JSON.stringify(emptyPeers));
   await raceRigChecks();
   await qualityFramebufferChecks();
+  await tileGpuChecks();
   const north = await northTrajectoryProof();
   record("birds-eye north: worst shortest arcs stay monotonic below the frame step limit and settle before the replay deadline", north.finite && north.monotonic && north.resets && north.variableSteps && north.maxStep < 0.25 && north.residual < 0.001, JSON.stringify(north));
   const northRebase = await northRebaseProof();
@@ -16424,7 +16725,8 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   globalThis.removeEventListener = () => {};
   if (!globalThis.crypto) Object.defineProperty(globalThis, "crypto", { value: { getRandomValues: (a) => a.fill(1) } });
 
-  const order = [...readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="js\/([^"]+)"><\/script>/g)].map((m) => m[1]);
+  // Every module the source page loads, deferred groups included: they are inline in the source tree and portable page.
+  const order = [...readFileSync(join(root, "src/index.html"), "utf8").matchAll(/<script src="js\/([^"]+)"(?: data-defer="[a-z-]+")?><\/script>/g)].map((m) => m[1]);
   const skipped = [];
   for (const file of order) {
     try {
@@ -18085,22 +18387,7 @@ const dsbVenueMenusCheckpoint={name:"dsb venue menus checkpoint",why:"rule: spat
     record(`DSB menus ${id}: exit and fresh entrance discard stale route`,await b.evaluate(`(()=>{const s=__ooga.dsb[${JSON.stringify(controller)}].stats;return (s.route||s.section||s.category)===${JSON.stringify(fallback)};})()`));
     await b.evaluate(`__ooga.dsb[${JSON.stringify(controller)}].close()`);
   }
-  await b.evaluate('(()=>{const D=__ooga.dsb,I=D.interiors;I.request(I.active.room.exit);I.update(.4);I.review("dsb-studio",true);I.update(.4);__ooga.pilot.navigate({position:I.active.room.jukeboxAt,yaw:Math.PI/2,pitch:.12,dist:3});})()');await step();
-  await b.key(" ");await step();
-  record("DSB Spaces: physical jukebox opens shared centered dialog",await b.evaluate('__ooga.dsb.spaces.isOpen&&document.querySelector(".dsb-spaces").classList.contains("dsb-menu-engaged")'));
-  const spacesLayouts=[];
-  for(const [w,h] of [[1440,900],[390,844],[844,390]]){
-    await b.send("Emulation.setDeviceMetricsOverride",{width:w,height:h,deviceScaleFactor:1,mobile:w!==1440});await step();
-    // Unlike the other venue fixtures, Spaces stays open across resizes. Game
-    // simulation does not deliver browser resize events to the shared shell.
-    // Wait for its viewport inputs, not for the layout assertion to become true.
-    const resized=await b.evaluate('new Promise(resolve=>{const p=document.querySelector(".dsb-spaces"),start=performance.now();const tick=()=>{const v=visualViewport,s=p.style,ready=Math.abs(parseFloat(s.getPropertyValue("--menu-w"))-v.width)<.01&&Math.abs(parseFloat(s.getPropertyValue("--menu-h"))-v.height)<.01&&Math.abs(parseFloat(s.getPropertyValue("--menu-x"))-v.offsetLeft-v.width/2)<.01&&Math.abs(parseFloat(s.getPropertyValue("--menu-y"))-v.offsetTop-v.height/2)<.01;if(ready||performance.now()-start>5000)resolve(ready);else requestAnimationFrame(tick);};requestAnimationFrame(tick);})');
-    const r=await b.evaluate('(()=>{const p=document.querySelector(".dsb-spaces"),r=p.getBoundingClientRect(),v=visualViewport,s=getComputedStyle(p),top=p.scrollTop;p.scrollTop=1;const scrolls=p.scrollHeight<=p.clientHeight||p.scrollTop>0;p.scrollTop=top;return {rect:{x:r.x,y:r.y,width:r.width,height:r.height},viewport:{x:v.offsetLeft,y:v.offsetTop,width:v.width,height:v.height},cx:Math.abs(r.x+r.width/2-v.offsetLeft-v.width/2),cy:Math.abs(r.y+r.height/2-v.offsetTop-v.height/2),margins:[r.x-v.offsetLeft,r.y-v.offsetTop,v.offsetLeft+v.width-r.right,v.offsetTop+v.height-r.bottom],maxHeight:parseFloat(s.maxHeight),scrollHeight:p.scrollHeight,clientHeight:p.clientHeight,scrolls,width:p.scrollWidth<=p.clientWidth+1,overflow:s.overflowY,bodyOverflow:getComputedStyle(document.body).overflowY,isolated:p.open&&document.body.classList.contains("dsb-menu-open")&&BL.dsbMenuShell.count===1&&getComputedStyle(document.getElementById("dsb-context")).visibility==="hidden"};})()');
-    spacesLayouts.push({w,h,resized,...r});
-    record(`DSB Spaces ${w}x${h}: centered and internally scrollable`,resized&&r.cx<1&&r.cy<1&&r.margins.every(n=>n>=11.5)&&r.rect.height<=r.maxHeight+.5&&r.width&&r.scrolls&&r.overflow==="auto"&&r.bodyOverflow==="hidden"&&r.isolated,JSON.stringify(spacesLayouts.at(-1)));
-  }
-  writeFileSync(join(paths,"spaces-layout.json"),JSON.stringify(spacesLayouts,null,2));
-  await b.evaluate('__ooga.dsb.spaces.close();__ooga.dsb.interiors.request(__ooga.dsb.interiors.active.room.exit);__ooga.dsb.interiors.update(.4)');
+  await b.evaluate('__ooga.dsb.interiors.request(__ooga.dsb.interiors.active.room.exit);__ooga.dsb.interiors.update(.4)');
   for(const route of ["main","radio","jukebox"])for(const [w,h] of [[1440,900],[390,844],[844,390]]){
     await b.send("Emulation.setDeviceMetricsOverride",{width:w,height:h,deviceScaleFactor:1,mobile:w!==1440});
     // Keep all simulation ticks and layout assertions together so a slow exterior
@@ -18203,14 +18490,6 @@ const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Stud
   await tap("#act");await step();await step();
   const cues=await b.evaluate('__ooga.dsb.interiors.audio.stats');
   record("Studio: walking and jumping add no Studio-specific audio sources",cues.sources===3&&cues.contexts===1&&!cues.cues,JSON.stringify(cues));
-  // Playback is deterministic here; a separate live smoke checks the real public source and media.
-  await b.evaluate(`(()=>{
-    window.__studioCheck={fetch:window.fetch,play:HTMLMediaElement.prototype.play,pause:HTMLMediaElement.prototype.pause,requests:0,plays:0,active:new Set()};
-    const check=window.__studioCheck;
-    window.fetch=(url,opts)=>{if(String(url).startsWith("https://hodlerhiq.net/")){check.requests++;return Promise.resolve(new Response(JSON.stringify({content:{rendered:[1,2,3].map(i=>'<div data-mediafile="https://hodlerhiq.net/wp-content/uploads/2026/fixture-'+i+'.mp3"><span class="player_song_name" data-albumname="2026-01-0'+i+'">Space '+i+'</span></div>').join("")}})));}return check.fetch(url,opts);};
-    HTMLMediaElement.prototype.play=function(){Object.defineProperty(this,"paused",{configurable:true,value:false});check.plays++;check.active.add(this);this.dispatchEvent(new Event("play"));return Promise.resolve();};
-    HTMLMediaElement.prototype.pause=function(){Object.defineProperty(this,"paused",{configurable:true,value:true});check.active.delete(this);this.dispatchEvent(new Event("pause"));};
-  })()`);
   const listeners=async()=>{const a=await b.send("Runtime.evaluate",{expression:"document"}),r=await b.send("DOMDebugger.getEventListeners",{objectId:a.result.result.objectId});await b.send("Runtime.releaseObject",{objectId:a.result.result.objectId});return r.result.listeners.length;};
   const startListeners=await listeners();
   // Draw the shared tomato-splat geometry once before the records baseline: pooled effects upload on first visibility, not per visit.
@@ -18234,25 +18513,16 @@ const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Stud
     await tap("#act");
     const stood=await b.evaluate('({seat:!!__ooga.dsb.avatar.camp.seat,close:__ooga.pilot.closeWanted,clear:__ooga.dsb.interiors.walkable(__ooga.dsb.avatar.root.position.x,__ooga.dsb.avatar.root.position.z,__ooga.dsb.avatar.root.position.x,__ooga.dsb.avatar.root.position.z,0,2,__ooga.dsb.avatar)})');
     record("Studio: touch stand "+cycle+" restores clear ground and follow camera",!stood.seat&&!stood.close&&stood.clear,JSON.stringify(stood));
-    await b.evaluate('__ooga.pilot.navigate({position:__ooga.dsb.interiors.active.room.jukeboxAt,yaw:-Math.PI/2,pitch:.12,dist:3})');await step();await tap("#dsb-context");await b.sleep(80);
-    await tap(".spaces-item");await tap(".dsb-spaces [data-next]");await tap(".dsb-spaces [data-prev]");await tap(".dsb-spaces [data-play]");
-    const paused=await b.evaluate('!__ooga.dsb.spaces.stats.playing');await tap(".dsb-spaces [data-play]");await tap(".dsb-spaces [data-close]");
-    await tap("#dsb-context");await tap(".dsb-spaces [data-close]");
-    const audio=await b.evaluate('({stats:__ooga.dsb.spaces.stats,active:__studioCheck.active.size,requests:__studioCheck.requests})');
-    record("Studio: archive "+cycle+" browses, pauses, resumes and reuses one player/cache",paused&&audio.stats.items===3&&audio.stats.playing&&audio.active===1&&audio.requests===cycle+1,JSON.stringify(audio));
-    const localized=await b.evaluate(`(()=>{const B=__ooga,D=B.dsb,R=D.interiors.active.room,plays=__studioCheck.plays,near=D.spaces.stats.gain;B.pilot.navigate({position:{x:0,y:3,z:8.5},yaw:0,pitch:.12,dist:3});BL.scenes.dsb.update(1/60,0);const far=D.spaces.stats;B.pilot.navigate({position:R.jukeboxAt,yaw:Math.PI/2,pitch:.12,dist:3});BL.scenes.dsb.update(1/60,0);return {near,far,back:D.spaces.stats,plays:__studioCheck.plays-plays};})()`);
-    record("Studio: archive "+cycle+" fades to silence in theater and returns without replay",localized.near>.9&&localized.far.gain===0&&localized.far.muted&&localized.far.playing&&localized.back.gain>.9&&!localized.back.muted&&localized.plays===0,JSON.stringify(localized));
     await b.evaluate('__ooga.pilot.navigate({position:__ooga.dsb.interiors.active.room.spawn,yaw:0,pitch:.22,dist:3})');await step();await tap("#dsb-context");
-    const end=await b.evaluate(`(()=>{const B=__ooga,D=B.dsb;return {indoor:!!D.interiors.active,seat:!!D.avatar.camp.seat,spaces:D.spaces.stats,active:__studioCheck.active.size,weather:D.weather.state.exterior,trigger:D.avatar.weapon.triggerHeld,projectiles:B.crew.stats().projectiles,rooms:D.interiors.rooms.size,dom:document.querySelectorAll(".dsb-spaces").length,records:B.renderer.stats.records};})()`);
-    record("Studio: exit "+cycle+" disposes playback, seat, projectiles and restores exterior",!end.indoor&&!end.seat&&end.spaces.media===0&&end.spaces.cached===0&&end.active===0&&end.weather&&!end.trigger&&end.projectiles===0&&end.dom===1,JSON.stringify(end));
+    const end=await b.evaluate(`(()=>{const B=__ooga,D=B.dsb;return {indoor:!!D.interiors.active,seat:!!D.avatar.camp.seat,weather:D.weather.state.exterior,trigger:D.avatar.weapon.triggerHeld,projectiles:B.crew.stats().projectiles,rooms:D.interiors.rooms.size,records:B.renderer.stats.records};})()`);
+    record("Studio: exit "+cycle+" disposes seat and projectiles and restores exterior",!end.indoor&&!end.seat&&end.weather&&!end.trigger&&end.projectiles===0,JSON.stringify(end));
     if(cycle===1)baseline=end;else if(cycle===2)record("Studio: warmed room records remain bounded",end.records<=baseline.records,JSON.stringify({baseline,end}));
   }
   record("Studio: repeated cycles retain one listener set",await listeners()===startListeners);
   const seats=await b.evaluate(`(()=>{const B=__ooga,R=B.dsb.interiors.rooms.get("dsb-studio");return R.seats.every(s=>!s.sitter);})()`);record("Studio: every seat releases occupancy",seats);
-  await b.evaluate('window.fetch=__studioCheck.fetch;HTMLMediaElement.prototype.play=__studioCheck.play;HTMLMediaElement.prototype.pause=__studioCheck.pause;__studioCheck.old=__ooga.dsb.spaces;__ooga.go("bifrost",null,true);__ooga.advance(.05);__ooga.go("dsb",null,true);__ooga.advance(.05)');
-  const fresh=await b.evaluate('({old:__studioCheck.old.stats,dialogs:document.querySelectorAll(".dsb-spaces").length,rooms:__ooga.dsb.interiors.rooms.size,seat:!!__ooga.dsb.avatar.camp.seat})');
-  record("Studio: leaving DSB and reentering creates one clean archive controller",!fresh.old.active&&fresh.old.media===0&&fresh.dialogs===1&&fresh.rooms===0&&!fresh.seat,JSON.stringify(fresh));
-  await b.evaluate('delete window.__studioCheck');
+  await b.evaluate('__ooga.go("bifrost",null,true);__ooga.advance(.05);__ooga.go("dsb",null,true);__ooga.advance(.05)');
+  const fresh=await b.evaluate('({rooms:__ooga.dsb.interiors.rooms.size,seat:!!__ooga.dsb.avatar.camp.seat})');
+  record("Studio: leaving DSB and reentering starts with no room built and no seat held",fresh.rooms===0&&!fresh.seat,JSON.stringify(fresh));
 }};
 scene("dsb",{label:"studio checkpoint",query:"&view=studio-door&weather=storm&time=1200",steps:[dsbStudioCheckpoint]});
 scene("dsb",{label:"studio checkpoint phone",query:"&view=studio-door&weather=storm&time=1200",opts:{w:390,h:844,mobile:true},steps:[dsbStudioCheckpoint]});
