@@ -3,12 +3,12 @@
 // lamps and a trail of paw prints. Immutable shared meshes.
 (() => {
   "use strict";
-  const BL=window.BL,M=BL.models,S=BL.scene,cache=new Map();
+  const BL=window.BL,M=BL.models,S=BL.scene,cache=new Map(),scoped=M.track(()=>cache.clear());
   const ROOFS=["#c8452f","#4f9a38","#2f8c8c","#e0b030","#2f6aa0","#d9822b"];
   const BEDS=["#c8452f","#2f6aa0","#4f9a38","#e0b030"];
   const TOYS=["#e8402f","#2f8cd8","#f2c14e","#6fbf4a"];
   const geometry=(kind,variant=0)=>{
-    const key=kind+":"+variant;if(cache.has(key))return cache.get(key);
+    scoped.use();const key=kind+":"+variant;if(cache.has(key))return cache.get(key);
     const parts=[],b=(c,x,y,z,w,h,d,e=0)=>parts.push(M.box({color:c,w,h,d,emissive:e,offset:{x,y,z}}));
     const plank="#b98552",dark="#2a1d17",bone="#f2e6c8",steel="#9aa3ab",cream="#fff4df";
     // A copy of another of these pieces moved to (x, y, z) and turned by a, to merge into a bigger one.

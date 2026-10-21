@@ -131,9 +131,11 @@
     return Float32Array.from([...lead, ...order.filter((i) => !lead.includes(i))].flatMap((i) => [out[i * 3], out[i * 3 + 1], out[i * 3 + 2]]));
   };
 
+  // Joins the builder caches that are dropped when the scenes that used them are left (`BL.models.track`).
   const geometryOf = (() => {
-    const cache = new Map();
+    const cache = new Map(), scoped = BL.models.track(() => cache.clear());
     return (breed, part) => {
+      scoped.use();
       const key = `${breed}/${part}`;
       let geo = cache.get(key);
       if (!geo) cache.set(key, geo = buildPart(BREEDS[breed], part));
@@ -246,12 +248,9 @@
     // Flat on the ground, a pile casts no shadow worth its pass.
     return BL.models.noShadow(voxelGeometry(v, { unit: 0.032, palette: POOP_INK, origin: { x: 0, y: 0, z: 0 } }));
   };
-  const flyGeometry = (() => {
-    let geo = null;
-    return () => geo || (geo = BL.models.noShadow(BL.models.merge(
-      BL.models.box({ w: 0.028, h: 0.024, d: 0.036, color: "#1d1b1a" }),
-      BL.models.box({ w: 0.05, h: 0.006, d: 0.022, color: "#dfe8f0", offset: { y: 0.016 } }))));
-  })();
+  const flyGeometry = BL.models.cached(() => BL.models.noShadow(BL.models.merge(
+    BL.models.box({ w: 0.028, h: 0.024, d: 0.036, color: "#1d1b1a" }),
+    BL.models.box({ w: 0.05, h: 0.006, d: 0.022, color: "#dfe8f0", offset: { y: 0.016 } }))));
 
   // One instance: rotation Ry(yaw) Rx(pitch), uniformly scaled by s, at (x, y, z).
   const writeInstance = (data, o, yaw, pitch, s, x, y, z) => {

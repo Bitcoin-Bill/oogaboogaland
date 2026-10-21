@@ -15402,6 +15402,9 @@ const rescueChecks = BL => {
     record("Rescue hunger: left empty too long a dog goes back to the rescue and its Ooga is free to adopt again",!sys.hasDog(me)&&toasts.some(t=>t.includes("went back to Free Puppies Rescue")),JSON.stringify(toasts.slice(-3)));
     sys.dispose();const after=W.root.children.length;I.dispose();W.dispose();
     record("Rescue disposal: every batch and pick target leaves with the visit",targets.size===0&&after===children,JSON.stringify({targets:targets.size,after,before:children}));
+    // The kit's meshes join the builder caches that leaving DSB Land drops.
+    const M=BL.models,kit=BL.rescueModels;M.setScope("dsb");const bed=kit.geometry("bed"),bedShared=kit.geometry("bed")===bed;M.release("dsb",["hub"]);const bedRebuilt=kit.geometry("bed")!==bed;M.setScope(null);
+    record("Rescue caches: the kit's meshes are shared within a visit and dropped when DSB Land is left",bedShared&&bedRebuilt);
   }finally{globalThis.localStorage=storage;}
   rescueMenuChecks(BL);
 };
