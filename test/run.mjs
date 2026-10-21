@@ -9686,9 +9686,20 @@ const bifrostEntrance = { name: "bifrost entrance", why: "playthrough: an Ooga w
   record("bifrost entrance: from the pass stairs the roster's widest Ooga walks through the arch out onto the bridge's deck", arch.onDeck && Math.abs(arch.feet - arch.deck) < 0.3, JSON.stringify(arch));
   await b.evaluate(`(() => { const B = window.__ooga, p = B.bifrost.site.portal, sx = Math.sin(p.ry), sz = Math.cos(p.ry), x = p.x + sx * 0.9, z = p.z + sz * 0.9; B.pilot.navigate({ position: { x, y: p.floorY, z }, target: { x: x - sx * 6, y: p.floorY + 1, z: z - sz * 6 }, yaw: Math.atan2(sx, sz), pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); window.__portal = [-sx, -sz]; })()`);
   const inKey = await b.evaluate(`window.__portal`);
+  // The first crossing finds the chamber's deferred code refused, as a hosted page's bundle answering 503 would be: the
+  // view fades back to the island with the same Ooga driven and walking, and stepping out of the field and in again
+  // asks for the code once more and goes through.
+  await b.evaluate(`(() => { const load = BL.deferred.load; window.__loads = 0; BL.deferred.load = (group) => { if (window.__loads++) { BL.deferred.load = load; return load(group); } return Promise.reject(new Error("503")); }; window.__portalStart = { ...__ooga.crew.player.root.position }; })()`);
   await walkToward(b, inKey[0], inKey[1], 0.8);
-  const arrived = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "bifrost"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const d = B.bifrost; return { scene: B.scene, ooga: B.crew && B.crew.player ? B.crew.player.traits.name : null, pictured: !!(d && d.pictured), outside: !!(d && d.outside) }; })()`);
-  record("bifrost entrance: walking through the portal's field takes the same Ooga into the chamber, which has DSB Land's picture and the island's view back out", arrived.scene === "bifrost" && arrived.ooga === "portlandhodl" && arrived.pictured && arrived.outside, JSON.stringify(arrived));
+  const refused = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && B.transitioning; i++) B.advance(1 / 30, 1 / 30); const a = B.crew.player; return { scene: B.scene, transitioning: B.transitioning, loads: window.__loads, ooga: a ? a.traits.name : null, at: a ? { x: a.root.position.x, z: a.root.position.z } : null }; })()`);
+  await walkToward(b, -inKey[0], -inKey[1], 0.5);
+  const moved = await b.evaluate(`(() => { const a = __ooga.crew.player, p = a && a.root.position; return { loads: window.__loads, scene: __ooga.scene, x: p ? p.x : null, z: p ? p.z : null }; })()`);
+  record("bifrost entrance: a refused chamber download fades back to the island with the same Ooga driven, walking again and not asking twice while it stands in the field", refused.scene === "hub" && !refused.transitioning && refused.loads === 1 && refused.ooga === "portlandhodl"
+    && moved.scene === "hub" && moved.loads === 1 && refused.at && Math.hypot(moved.x - refused.at.x, moved.z - refused.at.z) > 0.3, JSON.stringify({ refused, moved }));
+  await b.evaluate(`(() => { const B = window.__ooga, p = B.bifrost.site.portal, s = window.__portalStart, sx = Math.sin(p.ry), sz = Math.cos(p.ry); B.pilot.navigate({ position: s, target: { x: s.x - sx * 6, y: p.floorY + 1, z: s.z - sz * 6 }, yaw: Math.atan2(sx, sz), pitch: 0.2, dist: 5 }); B.advance(0.5, 1 / 60); })()`);
+  await walkToward(b, inKey[0], inKey[1], 0.8);
+  const arrived = await b.evaluate(`(() => { const B = window.__ooga; for (let i = 0; i < 240 && (B.transitioning || B.scene !== "bifrost"); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); const d = B.bifrost; return { scene: B.scene, loads: window.__loads, ooga: B.crew && B.crew.player ? B.crew.player.traits.name : null, pictured: !!(d && d.pictured), outside: !!(d && d.outside) }; })()`);
+  record("bifrost entrance: walking through the portal's field takes the same Ooga into the chamber, which has DSB Land's picture and the island's view back out", arrived.scene === "bifrost" && arrived.loads === 2 && arrived.ooga === "portlandhodl" && arrived.pictured && arrived.outside, JSON.stringify(arrived));
 } };
 const walkingModeControls = async (b, scene) => {
   const state = await b.evaluate(`(() => {

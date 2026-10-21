@@ -178,7 +178,8 @@
   };
   // A scene may `prepare(place, ctx)` before it is built (the Timechain Sphere's rooms: their code, deferred on a
   // hosted page, and whose visit it is). It answers null to go ahead, `{ scene, place }` to arrive there instead, or a
-  // promise of either; the screen holds dark until it settles, and a rejection fades back in where the visitor was.
+  // promise of either; the screen holds dark until it settles, and a rejection fades back in where the visitor was, the
+  // scene there told (`stay`) so it can put back what it set up to leave.
   const settle = (t, answer) => {
     if (answer && typeof answer.then === "function") {
       t.ready = false;
@@ -282,6 +283,7 @@
   const abandon = () => {
     window.BL.hud.toast("That place could not be opened · try again");
     router.abandon();
+    if (active && active.stay) active.stay();
   };
   const stepTransition = (dt) => {
     if (transition.instant) {
