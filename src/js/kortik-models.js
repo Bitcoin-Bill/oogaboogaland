@@ -271,10 +271,7 @@
     active: 7, activeRows: 3,
     cords: 10, cordPitch: 0.15, plugZ: 0.16, keyZ: 0.34, black: [2, 6, 8], patched: 18, cordR: 0.026,
     seat: { y: 0.62, z: FM.KORTIK.seat },
-    sign: { y: 4.35, z: 0.08, height: 1.1 }, hooks: [[-2.6, 5.05, 0.28], [2.6, 5.05, 0.28]],
-    // The lanterns that light the deck from the station itself: on its bracket on the left post, and on the floor by
-    // the cabinet.
-    lights: [[-2.82, 1.85, 0.4], [1.5, 0.38, 1.62]]
+    sign: { y: 4.35, z: 0.08, height: 1.1 }
   };
   const DESK = BOARD.shelf + 0.03;
   // Where the mug stands on the desk, and the logbook lies open.
@@ -470,8 +467,9 @@
     for (const s of [-1, 1]) {
       parts.push(bevelBox({ w: 0.2, h: B.top + 0.1, d: B.depth + 0.1, color: WOOD, offset: { x: s * (half + 0.02), y: (B.top + 0.1) / 2, z: -B.depth / 2 } }));
       parts.push(FM.beam(s * (half + 0.02), B.top, -0.1, s * (half + 0.02), 5.15, -0.1, 0.16, WOOD_DK));
-      parts.push(FM.beam(s * 2.6, 5.05, -0.1, s * 2.6, 5.05, 0.28, 0.07, IRON));
     }
+    // The iron arms the sign's lanterns hang from.
+    for (const [along, up, out] of FM.KORTIK.hooks) parts.push(FM.beam(along, up, -0.1, along, up, out, 0.07, IRON));
     parts.push(FM.beam(-half - 0.1, 5.05, -0.1, half + 0.1, 5.05, -0.1, 0.12, WOOD_DK));
     parts.push(bevelBox({ w: half * 2 + 0.34, h: 0.22, d: B.depth + 0.18, color: WOOD, offset: { y: B.top + 0.11, z: -B.depth / 2 } }));
     parts.push(bevelBox({ w: half * 2 + 0.2, h: 0.08, d: B.depth + 0.1, color: WOOD_LT, offset: { y: B.top + 0.26, z: -B.depth / 2 } }));

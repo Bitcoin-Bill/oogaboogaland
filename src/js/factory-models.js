@@ -40,9 +40,11 @@
   const WALL_CELL = 0.75, WALL_LEAN = 3.5, STATION_BACK = 0.8;
   // Kortik's Switchboard on its deck (LAYOUT.kortik): the patch wall stands along the deck's west edge, its face `face`
   // in from the edge and looking into the hall (+x), `wall` either side of the deck's middle. What stands in front of
-  // it blocks the walkers, as [along the wall, out from it, radius]; along runs toward -z.
+  // it blocks the walkers, as [along the wall, out from it, radius]; along runs toward -z. Its lanterns hang from
+  // `hooks` at the ends of the beam over its sign, and the station's own two light the deck from `lights` (the one on
+  // the bracket by the board and the one on the floor by the cabinet), each [along, up, out].
   const KORTIK = {
-    face: 0.55, wall: 2.8, seat: 0.8,
+    face: 0.55, wall: 2.8, seat: 0.8, hooks: [[-2.6, 5.05, 0.28], [2.6, 5.05, 0.28]], lights: [[-2.82, 1.85, 0.4], [1.5, 0.38, 1.62]],
     blocks: [[-2.45, 0.22, 0.4], [-1.75, 0.22, 0.4], [-1.05, 0.22, 0.4], [-0.35, 0.22, 0.4], [0.35, 0.22, 0.4], [1.05, 0.22, 0.4],
       [1.75, 0.22, 0.4], [2.45, 0.22, 0.4], [-2.5, 0.68, 0.38], [-1.85, 0.68, 0.38], [-1.2, 0.68, 0.38], [1.2, 0.68, 0.38],
       [1.85, 0.68, 0.38], [2.5, 0.68, 0.38], [0, 0.8, 0.42], [2.25, 1.5, 0.5], [1.5, 1.62, 0.25], [-2.5, 1.95, 0.45]]
@@ -3053,6 +3055,20 @@
     }
     return geos;
   };
+  // A point in Kortik's Switchboard's frame ([along, up, out] from the middle of its face) in the hall's, into `out`.
+  const kortikAt = (along, up, out) => {
+    const d = LAYOUT.kortik;
+    return [d.x - d.w / 2 + KORTIK.face + out, d.y + up, d.z - along];
+  };
+  // Kortik's Switchboard's lanterns, as the hall and the window hang them: one from each end of the beam over its sign,
+  // and a post lamp at the deck's two corners on the hall's side, clear of the bridge and the stair. And where the
+  // station's own two lanterns stand, as lights.
+  const kortikLamps = () => {
+    const d = LAYOUT.kortik;
+    return [...KORTIK.hooks.map(([along, up, out]) => ["hang", ...kortikAt(along, up, out)]),
+      ["post", d.x + 1.9, d.y, d.z - d.d / 2 + 0.25, Math.PI], ["post", d.x + d.w / 2 - 0.25, d.y, d.z + d.d / 2 - 0.25, 0]];
+  };
+  const kortikLights = () => KORTIK.lights.map(([along, up, out]) => kortikAt(along, up, out));
   // Where the lanterns hang, by the rules `lighting()` in `scene-factory.js` hangs them: [kind, x, y, z, turn] each,
   // and the strings across the hall [ax, ay, az, bx, by, bz, sag, at]. The mouth's own string is past the shield.
   const windowLamps = () => {
@@ -3071,7 +3087,7 @@
       lamps.push(["hang", t.x + lx * c + lz * sn, t.y + 5.9, t.z - lx * sn + lz * c]);
     }
     for (const [lx, ly, lz] of STUDY.lamps) lamps.push(["hang", L.study.x - lz, L.study.y + ly, L.study.z + lx]);
-    lamps.push(["post", L.switchboard.x + 3.1, L.switchboard.y, L.switchboard.z - 1.9, Math.PI]);
+    lamps.push(["post", L.switchboard.x + 3.1, L.switchboard.y, L.switchboard.z - 1.9, Math.PI], ...kortikLamps());
     for (const [x, z] of SHAFTS) for (const s of [-1, 1]) lamps.push(["hang", x + s * 1.7, 2.76, z - 0.2]);
     for (const [d, spots] of [[L.rebalancer, REB.lamps], [L.treasury, TRE.lamps], [L.cooker, COOK.lamps]]) for (const [x, y, z] of spots) lamps.push(["hang", d.x + x, d.y + y, d.z + z]);
     const [[w0, w1, a0], [s0, , s1]] = L.walk;
@@ -3088,7 +3104,7 @@
     for (const s of [-1, 1]) lamps.push(["chain", s * 6, 12.5, 8], ["chain", s * 13, 16.5, 3]);
     return {
       lamps,
-      strings: [[-14, 16, -12, 14, 16, -12, 1.6, [0.2, 0.4, 0.6, 0.8]], [-18, 13.5, -8, 18, 13.5, -8, 1.4, [0.2, 0.35, 0.65, 0.8]], [-20, 9, 8, -13, 9, 12, 0.6, [0.5]], [20, 9.5, 5, 13.5, 9, 7, 0.6, [0.5]]]
+      strings: [[-14, 16, -12, 14, 16, -12, 1.6, [0.2, 0.4, 0.6, 0.8]], [-18, 13.5, -8, 18, 13.5, -8, 1.4, [0.2, 0.35, 0.65, 0.8]], [20, 9.5, 5, 13.5, 9, 7, 0.6, [0.5]]]
     };
   };
   const hubWindow = cached(() => {
@@ -3102,7 +3118,7 @@
       ...L.bays.map((b) => [stationX(b), b.y + 2.2, b.z + 1.6, 9, 0.33, 0.45, 0.6]),
       [L.switchboard.x, L.switchboard.y + 2.2, L.switchboard.z + 0.8, 9, 0.35, 0.6, 1], [L.rebalancer.x, L.rebalancer.y + 1.6, L.rebalancer.z + 0.6, 9, 0.18, 0.45, 0.5],
       [L.treasury.x, L.treasury.y + 2, L.treasury.z + 1, 9, 1, 0.8, 0.35], [L.lookout.x, L.lookout.y + L.lookout.tower + 1, L.lookout.z, 14, 1, 0.82, 0.45],
-      [L.study.x + 1, L.study.y + 2.8, L.study.z, 6, 1, 0.75, 0.4],
+      [L.study.x + 1, L.study.y + 2.8, L.study.z, 6, 1, 0.75, 0.4], ...kortikLights().map(([x, y, z]) => [x, y, z, 6, 1, 0.66, 0.3]),
       ...L.tunnels.map((t, i) => [t.x + Math.sin(t.turn) * 2, t.y + 2.4, t.z + Math.cos(t.turn) * 2, 8, ...hexToRgb(TUNNEL_THEMES[i].ring).map((k) => k / 255)]),
       [0, e.y + 2.2, e.z - 4, 12, 1, 0.66, 0.3], ...L.galleries.map((g) => [g.x, g.y + 2, g.z + 1, 10, 1, 0.66, 0.3]), [0, e.y + 2.2, EXIT_Z - 0.6, 9, 1.15, 1.1, 1]
     ];
@@ -3193,7 +3209,7 @@
       for (const [ax, ay, az, bx, by, bz, w] of L.stairs) parts.push(board(ax, ay, az, bx, by, bz, w - 0.1, TIMBER));
       for (const [bx0, bz0, bx1, bz1] of RING_BRIDGES) parts.push(board(bx0, M, bz0, bx1, M, bz1, 2, TIMBER));
       for (const [bx0, bz0, bx1, bz1, w] of L.bridges) parts.push(board(bx0 - 0.3, LEVEL.top, bz0, bx1 + 0.3, LEVEL.top, bz1, w, TIMBER));
-      for (const d of [L.switchboard, L.platform, L.landing, ...L.galleries]) parts.push(span(d.x - d.w / 2, d.x + d.w / 2, d.y - 0.3, d.y, d.z - d.d / 2, d.z + d.d / 2, TIMBER));
+      for (const d of [L.switchboard, L.kortik, L.platform, L.landing, ...L.galleries]) parts.push(span(d.x - d.w / 2, d.x + d.w / 2, d.y - 0.3, d.y, d.z - d.d / 2, d.z + d.d / 2, TIMBER));
       for (const t of L.tunnels) { const [p0, p1, q0, q1] = porchOf(t); parts.push(span(p0, p1, t.y - 0.3, t.y, q0, q1, TIMBER)); }
     }
 
@@ -3287,6 +3303,13 @@
       }
       parts.push(moved(lathe({ profile: [[1.85, 0], [1.85, 0.56], [0, 0.56]], segments: 12, color: IRON_DK }), rb.x, rb.y, rb.z + REB.cz), moved(lathe({ profile: [[1.95, 0.42], [1.95, 0.52]], segments: 12, color: "#5fe3ff", emissive: 0.95 }), rb.x, rb.y, rb.z + REB.cz));
       parts.push(span(tr.x - 1.4, tr.x + 1.4, tr.y, tr.y + 1.5, tr.z + TRE.vz - TRE.deep / 2, tr.z + TRE.vz + TRE.deep / 2, "#5a3a22"));
+      // Kortik's Switchboard: its case and cornice, the desk at its foot, a band of lit lamps for each row of jacks,
+      // and the dark sign over it with its light rim.
+      const [fx, fy, fz] = kortikAt(0, 0, 0), half = KORTIK.wall;
+      parts.push(span(fx - 0.45, fx, fy + 0.74, fy + 3.4, fz - half - 0.12, fz + half + 0.12, "#4a2c16"), span(fx - 0.5, fx + 0.12, fy + 3.4, fy + 3.65, fz - half - 0.25, fz + half + 0.25, "#7a4a26"));
+      parts.push(span(fx, fx + 0.95, fy, fy + 0.78, fz - half, fz + half, "#9a6234"));
+      for (let r = 0; r < 10; r++) parts.push(span(fx + 0.08, fx + 0.12, fy + 1.04 + r * 0.22, fy + 1.1 + r * 0.22, fz - 2.5, fz + 2.5, "#ffb21c", 0.8));
+      parts.push(span(fx - 0.05, fx + 0.03, fy + 3.8, fy + 4.9, fz - 1.75, fz + 1.75, "#ffe6b0", 0.7), span(fx + 0.03, fx + 0.13, fy + 3.86, fy + 4.84, fz - 1.69, fz + 1.69, "#1a1410"));
       parts.push(moved(lathe({ profile: [[TRE.dome[0], 0], [0.9, 0.7], [0.5, 1.2], [0, TRE.dome[1]]], segments: 8, color: "#d9a52a", emissive: 0.6 }), tr.x, tr.y + TRE.top, tr.z + TRE.vz));
       // The cooker: its black chest in the orange frame with the jaw shut, the porthole's dim glow on the hall side and
       // the stack behind it.
@@ -3499,7 +3522,7 @@
     LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R,
     forgeSign, forgeWave, forgeLines, forgeTrack, forgeShafts, mintCoin, COILS, teslaCoil, banner, statusLantern, peerPipes, peerMirrors, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, supportAt, stairCeilingAt, clearAt, walkable, resolveFall,
     hall, scaffold, coreBody, coreChamber, conduits, sat, satFailed, stationFrame, capacitor, forge, forgeFire, cart,
-    switchboard, switchScreens, KORTIK, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
+    switchboard, switchScreens, KORTIK, kortikLamps, kortikLights, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
     COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, cookerBody, cookerFixtures, cookerLid, cookerPort, cookerGear, cookerSats, donationKiosk, kioskScreen, kioskIdle, kioskThanks, BOARD, donationBoard, boardFace, boardValues, paintBoard, satCube, flyingBanana, coreRingLime,
     coreRing, teslaArcs, lookoutTower, lookoutLamp, lookoutOptics, lookoutBeam, LOOKOUT_BEAM, STUDY, studyHall, studyNote, studyBoard, tunnels, galleryStation, galleryCaps, label, lanterns, hardHat, hubTunnel, hubWindow, bakeWindow, windowLights, exitTunnel, outsideView,
     beam, moved, turnedY, smoothBolt, smoothBitcoin

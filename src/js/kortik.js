@@ -21,7 +21,7 @@
     "Open channel. Close channel. Open channel...", "WHO moved my liquidity?!", "Another failed payment. Wonderful.",
     "And they call this the future of money!", "Tess! Make yourself useful!", "It worked? That's suspicious.", "Show-off.",
     "Stuck HTLC. Classic.", "ENOUGH!", "Force-closed.", "Now I have to rewire all of it."];
-  const KATANA = 12, FORCED = 13, REWIRE = 14;
+  const KATANA = 12, FORCED = 13, REWIRE = 14, TESS = 8;
   const EMOTES = ["hate", "unbelievable", "rebalance", "slam", "openclose", "liquidity", "clap", "future", "tess", "suspicious", "showoff", "htlc", "katana"];
   // Poked, he gets more irritated a poke, one level to five, and cools a level every CALM seconds he is left alone. What
   // he says at each level, and once he has drawn his sword on you, as he ignores you; the PATIENCE-th poke he ignores is
@@ -77,7 +77,7 @@
     return out;
   };
 
-  const create = ({ fx }) => {
+  const create = ({ fx, onShout = null }) => {
     const B = KM.BOARD, S = KM.station(), L = FM.LAYOUT.kortik, K = KM.KATANA, rand = BL.math.mulberry32(0x6b6f7274);
     const ox = L.x - L.w / 2 + FM.KORTIK.face, oy = L.y, oz = L.z;
     const node = createNode({ position: { x: ox, y: oy, z: oz }, rotation: { x: 0, y: Math.PI / 2, z: 0 } });
@@ -189,6 +189,8 @@
     // is on is one, and whether the visitor's Ooga stands within a poke of him.
     let anger = 0, calmIn = 0, peak = 0, threatened = false, ignored = 0, flinch = 0, glare = 0, retort = 0, steam = 0, steamIn = 0;
     let wantReact = 0, reacting = false, visitorNear = false;
+    // Shouting for Tess, the moment she would hear it and answer (through `onShout`).
+    let hailIn = 0;
     // The sword: drawn or not and how far into his hand, the scabbard's turn ready to draw, the blade's angle and tilt
     // (now, and from and to for the right hand's move), which way it last swung round, whether that move is a cut, and
     // where its point and the left hand's hold are.
@@ -347,7 +349,10 @@
           break;
         case DROP: cordHeld[s.cord] = -1; cordJack[s.cord] = -1; settle(s.cord); break;
         case KEY: keyTarget[s.cord] = s.v; break;
-        case SAY: say(s.v); break;
+        case SAY:
+          say(s.v);
+          if (s.v === TESS) hailIn = 1.6;
+          break;
         case SHAKE: shake = 0; shakeDur = s.dur; break;
         case WAG: wagT[s.arm] = s.v || s.dur; break;
         case THROW: {
@@ -586,7 +591,7 @@
       turnTo(3);
       push(LEAN, 0, 0, 0, -1, -1, -0.12);
       go(2, T_MOUTH, 0.3);
-      push(SAY, 0, 0, 0, -1, -1, 8);
+      push(SAY, 0, 0, 0, -1, -1, TESS);
       push(WAIT, 1.6);
       go(2, T_REST, 0.4);
       push(WAIT, 0.4);
@@ -984,6 +989,7 @@
       visitorNear = !!visitor && Math.abs(feet - oy) < 1.2 && Math.hypot(visitor.x - (ox + seatZ), visitor.z - oz) < POKE_REACH;
       // His temper cools a level at a time while he is left alone; calm again after a proper fit, he says so.
       if (retort > 0) retort -= dt;
+      if (hailIn > 0 && (hailIn -= dt) <= 0 && onShout) onShout();
       if (glare > 0) glare -= dt;
       if (anger > 0 || threatened) {
         calmIn -= dt;

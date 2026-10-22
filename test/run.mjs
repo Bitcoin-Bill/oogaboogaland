@@ -9840,7 +9840,7 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
   record("factory cooker: a burst of tips past the cooker's pools is counted at once, stays inside the pools, adds no nodes, rides no line, and still sends every banana out", burst.level === burst.n && burst.cubes <= burst.cap.cubes && burst.bananas <= burst.cap.bananas && burst.grew === 0 && burst.routed === 0 && burst.out === burst.n, JSON.stringify(burst));
 } };
 // Everywhere the widest Ooga on the roster can walk from the balcony, by the factory's own step rule on a
-// quarter-metre grid: both ends of every stair, every line's deck and its peer tunnel's porch, the switchboard, the
+// quarter-metre grid: both ends of every stair, every line's deck and its peer tunnel's porch, the switchboard, Kortik's deck, the
 // right-wall platform with the rebalancer, treasury and banana cooker, the donation kiosk in the right wall, the
 // watchtower, landing, galleries and the forge floor; and the platform walked end to end on its own deck from the
 // cooker's stair. It runs on the island, where the whole roster is built.
@@ -9871,7 +9871,7 @@ const factoryFloor = { name: "factory floor", why: "regression: stairs landed ag
     const reachedIn = (x0, x1, z0, z1, y) => cells.some(([x, z, h]) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && Math.abs(h - y) < 0.3);
     const near = (x, z, y) => reachedIn(x - 0.6, x + 0.6, z - 0.6, z + 0.6, y), missing = [];
     L.stairs.forEach(([ax, ay, az, bx, by, bz], n) => { if (!near(ax, az, ay)) missing.push("stair " + n + " foot"); if (!near(bx, bz, by)) missing.push("stair " + n + " head"); });
-    const decks = { A: L.bays[0], B: L.bays[1], C: L.bays[2], D: L.bays[3], switchboard: L.switchboard, platform: L.platform, rebalancer: L.rebalancer, treasury: L.treasury, cooker: L.cooker, watchtower: L.lookout, lighthouse: L.lookoutDeck, landing: L.landing, gallery1: L.galleries[0], gallery2: L.galleries[1] };
+    const decks = { A: L.bays[0], B: L.bays[1], C: L.bays[2], D: L.bays[3], switchboard: L.switchboard, kortik: L.kortik, platform: L.platform, rebalancer: L.rebalancer, treasury: L.treasury, cooker: L.cooker, watchtower: L.lookout, lighthouse: L.lookoutDeck, landing: L.landing, gallery1: L.galleries[0], gallery2: L.galleries[1] };
     for (const [name, d] of Object.entries(decks)) if (!reachedIn(d.x - d.w / 2, d.x + d.w / 2, d.z - d.d / 2, d.z + d.d / 2, d.y)) missing.push(name);
     const spots = [["rebalancer operator lane", L.rebalancer, M.REB.operator], ["treasury operator", L.treasury, M.TRE.operator]];
     for (const [name, d, [x, z]] of spots) if (!near(d.x + x, d.z + z, d.y)) missing.push(name);
@@ -9892,7 +9892,7 @@ const factoryFloor = { name: "factory floor", why: "regression: stairs landed ag
     if (!near(L.stairway[0], L.stairway[2] - 1, 0)) missing.push("forge floor");
     return { who, radius: +R.toFixed(2), missing, cells: cells.length, deck: deck.size };
   })()`);
-  record("factory floor: from the balcony the widest Ooga on the roster reaches both ends of every stair, every line's deck, each peer tunnel's shield, the switchboard, the right-wall platform with the rebalancer's operator lane and the treasury (walking the platform's length from the cooker's stair), the donation kiosk in the right wall, the watchtower, landing, galleries and the forge", r.missing.length === 0 && r.radius > 0.6 && r.cells > 20000, JSON.stringify(r));
+  record("factory floor: from the balcony the widest Ooga on the roster reaches both ends of every stair, every line's deck, each peer tunnel's shield, the switchboard, Kortik's deck, the right-wall platform with the rebalancer's operator lane and the treasury (walking the platform's length from the cooker's stair), the donation kiosk in the right wall, the watchtower, landing, galleries and the forge", r.missing.length === 0 && r.radius > 0.6 && r.cells > 20000, JSON.stringify(r));
 } };
 // The way in and out: from the island through the 2 o'clock mouth's shield, back out past the balcony, and Escape.
 const factoryEntrance = { name: "factory entrance", why: "regression: flying above the mouth entered the factory and reaching its front wall away from the doorway exited; real doorway crossings must still keep the same Ooga", run: async (b) => {

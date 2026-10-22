@@ -239,11 +239,8 @@
     for (const [lx, ly, lz] of FM.STUDY.lamps) lamps.push(["hang", L.study.x - lz, L.study.y + ly, L.study.z + lx]);
     if (FM.donationCorner()) for (const [x, y, z] of [...FM.KIOSK.hooks, ...FM.BOARD.hooks]) lamps.push(["hang", x, y, z]);
     lamps.push(["post", L.switchboard.x + 3.1, L.switchboard.y, L.switchboard.z - 1.9, Math.PI]);
-    // Kortik's Switchboard: a lantern from each end of the beam over its sign, and a post lamp at the deck's two
-    // corners on the hall's side, clear of the bridge and the stair.
-    const kd = L.kortik, kx = kd.x - kd.w / 2 + FM.KORTIK.face;
-    for (const [along, y, out] of BL.kortikModels.BOARD.hooks) lamps.push(["hang", kx + out, kd.y + y, kd.z - along]);
-    lamps.push(["post", kd.x + 1.9, kd.y, kd.z - kd.d / 2 + 0.25, Math.PI], ["post", kd.x + kd.w / 2 - 0.25, kd.y, kd.z + kd.d / 2 - 0.25, 0]);
+    // Kortik's Switchboard's: two over its sign and two on posts at the deck's corners.
+    lamps.push(...FM.kortikLamps());
     // Two from the arms at the ends of each forge shaft's header.
     for (const [x, z] of FM.SHAFTS) for (const s of [-1, 1]) lamps.push(["hang", x + s * 1.7, 2.76, z - 0.2]);
     // Two from each of the rebalancer's, the treasury's and the cooker's signs.
@@ -268,7 +265,7 @@
       [-3.05, my + 3.42, mz + 1.1, 3.05, my + 3.42, mz + 1.1, 0.3, [0.3, 0.7]]
     ]);
     // Kortik's station lights its deck with two lanterns of its own, on the bracket by the board and on the floor.
-    for (const [along, y, out] of BL.kortikModels.BOARD.lights) hung.lights.push(kx + out, kd.y + y, kd.z - along, 6);
+    for (const [x, y, z] of FM.kortikLights()) hung.lights.push(x, y, z, 6);
     return hung;
   });
 
@@ -1692,7 +1689,8 @@
     greeter = BL.factoryGreeter.create({ parent: root, input, fx, feed,
       visitor: () => people && people.player === avatar ? avatar : null,
       demoRunning: () => feed.reading.contract === "obl.factory.demo.v1" || feed.reading.contract === null && !!shared.mock, coarse: COARSE, camera, quality: () => renderer.quality });
-    kortik = BL.kortik.create({ fx });
+    // When Kortik shouts for Tess, she answers back if she is at work.
+    kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort() });
     addChild(root, kortik.node);
     // Kortik himself takes pokes; his board frames itself and says what it is, as the stations do.
     for (const part of kortik.figure) { input.add(part, { kind: "kortik", priority: 2, weaponType: "none" }, { radius: 0.6 }); targets.push(part); }
