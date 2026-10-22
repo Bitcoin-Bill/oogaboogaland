@@ -21,6 +21,9 @@
   };
   const PALETTE = ["#d4945a", "#b0703c", "#e6ad78", "#2a2124", "#1b1517", "#3d3134", "#3b3444", "#29232f", "#4b4456", "#d3c3a2", "#aa977a",
     "#1d1a1c", "#8a5a32", "#d3c3a2", "#f4f0e6", "#141212", "#5a2418", "#5c546a", "#17131b", "#5e3c22", "#2a0c08"];
+  // Furious, his face goes red: the same cells under a palette with the skin flushed.
+  const FLUSHED = PALETTE.slice();
+  FLUSHED[C.skin] = "#e2664c"; FLUSHED[C.skinDk] = "#b8412c"; FLUSHED[C.skinLt] = "#f08a6c";
   // A cell's own small variation, hashed from where it is, never drawn from a random stream.
   const hv = (x, y, z) => ((Math.imul(x + 31, 73856093) ^ Math.imul(y + 17, 19349663) ^ Math.imul(z + 7, 83492791)) >>> 0) % 9;
   const skin = (x, y, z) => (hv(x, y, z) === 0 ? C.skinDk : C.skin);
@@ -28,7 +31,7 @@
   // Kimono cloth: folds running down it and a little wear.
   const cloth = (x, y, z) => (x % 4 === 1 ? C.robeDk : hv(x, y, z) === 0 ? C.robeLt : C.robe);
   const pleat = (x, y, z) => (x % 2 ? C.robeDk : hv(x, y, z) === 0 ? C.robe : C.shadow);
-  const vg = (v, ox, oy, oz) => voxelGeometry(v, { unit: U, palette: PALETTE, origin: { x: ox * U, y: oy * U, z: oz * U } });
+  const vg = (v, ox, oy, oz, palette = PALETTE) => voxelGeometry(v, { unit: U, palette, origin: { x: ox * U, y: oy * U, z: oz * U } });
 
   // The head, fourteen cells across, its base on the neck and its face toward +z: a messy black crop with a topknot,
   // heavy brows slanting to a scowl over narrowed eyes, a broad nose, a drooping moustache over a down-turned mouth, a
@@ -218,6 +221,9 @@
     headOpen: vg(headVox(false, false), -7, 0, -6.5),
     headClosed: vg(headVox(true, false), -7, 0, -6.5),
     headTalk: vg(headVox(false, true), -7, 0, -6.5),
+    redOpen: vg(headVox(false, false), -7, 0, -6.5, FLUSHED),
+    redClosed: vg(headVox(true, false), -7, 0, -6.5, FLUSHED),
+    redTalk: vg(headVox(false, true), -7, 0, -6.5, FLUSHED),
     torso: vg(torsoVox(), -8, 0, -5),
     upper: vg(upperVox(), -3.5, -17.5, -3.5),
     fore: vg(foreVox(), -3.5, -8.5, -3.5),
@@ -246,7 +252,7 @@
     addChild(parts.legR, parts.shinR);
     addChild(parts.legL, parts.shinL);
     addChild(root, torso, parts.legR, parts.legL, parts.armR, parts.armL, head, parts.katana, parts.sword);
-    return { root, parts, headOpen: G.headOpen, headClosed: G.headClosed, headTalk: G.headTalk, ARM };
+    return { root, parts, headOpen: G.headOpen, headClosed: G.headClosed, headTalk: G.headTalk, redOpen: G.redOpen, redClosed: G.redClosed, redTalk: G.redTalk, ARM };
   };
 
   // ---- the switchboard ----------------------------------------------------------------------------------------

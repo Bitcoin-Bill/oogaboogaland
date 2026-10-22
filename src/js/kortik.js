@@ -5,8 +5,10 @@
 // board, and when someone is near he acts out what he thinks of Lightning, one emote at a time with a quiet between:
 // hands up, a facepalm, a fist on the desk that makes his mug jump, a slow clap for a failed payment, a shout for Tess,
 // a search for his liquidity under his mug. Now and then he has had ENOUGH: he stands up on his stool, draws his katana
-// and cuts the board until every channel drops, sheathes it and sits back down to rewire. It is comedy, not routing:
-// nothing here reads the node.
+// and cuts the board until every channel drops, sheathes it and sits back down to rewire. Poke him and he flinches and
+// answers back, angrier each time: a glare and a pointed finger, fists and steam from his ears, red-faced up on his
+// stool throwing a plug at you, his sword drawn on you, and then the silent treatment until one poke too many sends him
+// at the board. Left alone he cools down. It is comedy, not routing: nothing here reads the node.
 // His arms bend at the elbow (two-bone reach), so a fist lands where it means to; a plug in it lies along the forearm,
 // the drawn sword along the cut. Everything runs in the wall's frame (kortik-models.js) on a fixed set of nodes;
 // update allocates nothing.
@@ -21,6 +23,19 @@
     "Stuck HTLC. Classic.", "ENOUGH!", "Force-closed.", "Now I have to rewire all of it."];
   const KATANA = 12, FORCED = 13, REWIRE = 14;
   const EMOTES = ["hate", "unbelievable", "rebalance", "slam", "openclose", "liquidity", "clap", "future", "tess", "suspicious", "showoff", "htlc", "katana"];
+  // Poked, he gets more irritated a poke, one level to five, and cools a level every CALM seconds he is left alone. What
+  // he says at each level, and once he has drawn his sword on you, as he ignores you; the PATIENCE-th poke he ignores is
+  // one too many. A poke from the visitor's Ooga reaches him from POKE_REACH away.
+  const POKES = [
+    ["Hm?", "Yes?", "Can I help you?", "Busy."],
+    ["Do you MIND?", "I'm routing here.", "Please don't touch the operator.", "That is not a button."],
+    ["Poke me ONE more time...", "Do I look like a channel to you?!", "I am NOT a public node!", "Every poke costs a sat. Pay up."],
+    ["STOP POKING ME!", "WHAT?! WHAT DO YOU WANT?!", "THIS IS A ROUTING DEPARTMENT, NOT A PETTING ZOO!", "YOU'RE GOING ON MY BLOCKLIST!"],
+    ["Poke me again. I DARE you."]
+  ];
+  const IGNORING = ["Not. Talking.", "La la la, I can't hear you.", "Ticket filed. Expected response: never."];
+  const CALMED = "...Where was I?";
+  const ANGRY = 5, CALM = 7, PATIENCE = 3, POKE_REACH = 2.4, IGNORE = 6, SNAP = 7;
   // How near the view must be for him to act up, and the quiet he keeps between emotes, in seconds.
   const HEAR = 16, QUIET = [12, 22];
   // A plug's place in a jack, how far out a hand lines it up before pushing it home, and how long it takes to settle
@@ -31,10 +46,10 @@
   const SEGMENTS = 10, TAU = Math.PI * 2;
   // A plan's steps, where a hand goes (in the wall's frame, or with his body), and a jack's states.
   const LOOK = 0, MOVE = 1, GRAB = 2, PLUG = 3, DROP = 4, KEY = 5, LEAN = 6, SAY = 7, SHAKE = 8, WAIT = 9, SWIVEL = 10, STAND = 11, ROLL = 12;
-  const THUD = 13, FAIL = 14, WAG = 15, SWORD = 16, FORCE = 17, TILT = 18, SCAB = 19, MUG = 20;
+  const THUD = 13, FAIL = 14, WAG = 15, SWORD = 16, FORCE = 17, TILT = 18, SCAB = 19, MUG = 20, THROW = 21;
   const T_JACK = 0, T_JACK_IN = 1, T_HOME = 2, T_KEY = 3, T_POINT = 4, T_VIEW = 5, T_REST = 6, T_UP = 7, T_FACE = 8, T_CHIN = 9, T_MOUTH = 10;
   const T_CLAP = 11, T_SPREAD = 12, T_CROSS = 13, T_RAISE = 14, T_DESK = 15, T_ACCUSE = 16, T_TAP = 17, T_HILT = 18, T_SCAB = 19, T_SWORD = 20;
-  const T_TWO = 21, T_YANK = 22, T_CONSOLE = 23, T_HALL = 24, T_LAP = 25, T_MUG = 26, T_LIFT = 27, T_MUGSPOT = 28;
+  const T_TWO = 21, T_YANK = 22, T_CONSOLE = 23, T_HALL = 24, T_LAP = 25, T_MUG = 26, T_LIFT = 27, T_MUGSPOT = 28, T_THREAT = 29;
   const IDLE = 0, CALLING = 1, CONNECTED = 2, CLEARING = 3;
   // The drawn sword's poses, each [fist x, y, z in the wall's frame, the blade's angle round the board's face from +x,
   // its tilt toward the board, his body's twist]: on guard, then wound up and cut, three times, and the flick.
@@ -66,7 +81,8 @@
     const B = KM.BOARD, S = KM.station(), L = FM.LAYOUT.kortik, K = KM.KATANA, rand = BL.math.mulberry32(0x6b6f7274);
     const ox = L.x - L.w / 2 + FM.KORTIK.face, oy = L.y, oz = L.z;
     const node = createNode({ position: { x: ox, y: oy, z: oz }, rotation: { x: 0, y: Math.PI / 2, z: 0 } });
-    addChild(node, createNode({ geometry: S.body }), createNode({ geometry: S.glass }));
+    const board = createNode({ geometry: S.body });
+    addChild(node, board, createNode({ geometry: S.glass }));
     const sign = KM.sign(), signNode = createNode({ position: { x: 0, y: B.sign.y, z: B.sign.z } });
     addChild(signNode, createNode({ geometry: sign.back }), createNode({ geometry: sign.face }));
     addChild(node, signNode);
@@ -107,6 +123,8 @@
     const keyThrow = new Float32Array(n), keyTarget = new Float32Array(n);
     const plugPos = new Float32Array(n * 3), plugFrom = new Float32Array(n * 3), plugDir = new Float32Array(n * 3), plugBlend = new Float32Array(n).fill(1);
     const plugSettle = new Float32Array(n).fill(SETTLE), plugArc = new Float32Array(n);
+    // A plug he has thrown: how long it stays out at the end of its cord, and where.
+    const throwT = new Float32Array(n), throwAt = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const black = B.black.includes(i);
       const p = createNode({ position: { x: KM.cordX(i), y: B.shelf + 0.03, z: B.plugZ }, geometry: black ? S.plugs.black : S.plugs.red });
@@ -165,6 +183,12 @@
     const look = new Float32Array(3), viewer = new Float32Array(3);
     let lookKind = T_JACK, lookJack = 4, headYaw = 0, headPitch = 0, headTilt = 0, tiltTarget = 0, shake = 0, shakeDur = 0, time = 0;
     let quiet = 4, eventIn = 1.5, blinkIn = 3, blink = 0, talk = 0, near = false, forced = -1;
+    // His temper: how irritated he is, when he cools a level, the worst since he was calm, whether he has drawn on the
+    // visitor and how many pokes he has ignored since; a poke's flinch, how long he keeps his eyes on the view, the gap
+    // before he answers another, steam from his ears, the reaction waiting for his hands to be free, whether the plan he
+    // is on is one, and whether the visitor's Ooga stands within a poke of him.
+    let anger = 0, calmIn = 0, peak = 0, threatened = false, ignored = 0, flinch = 0, glare = 0, retort = 0, steam = 0, steamIn = 0;
+    let wantReact = 0, reacting = false, visitorNear = false;
     // The sword: drawn or not and how far into his hand, the scabbard's turn ready to draw, the blade's angle and tilt
     // (now, and from and to for the right hand's move), which way it last swung round, whether that move is a cut, and
     // where its point and the left hand's hold are.
@@ -203,6 +227,13 @@
         case T_MUG: set(out, o, KM.MUG.x + HANDLE_X, KM.DESK + HANDLE_Y, KM.MUG.z); return;
         case T_MUGSPOT: set(out, o, KM.MUG.x, KM.DESK, KM.MUG.z); return;
         case T_SWORD: { const p = j * POSE; set(out, o, POSES[p], POSES[p + 1], POSES[p + 2]); return; }
+        case T_THREAT: {
+          // The sword held out at the visitor: the fist most of an arm out from his right shoulder toward the view.
+          toWall(-armX, shoulderY, 0);
+          const sx = OUT[0], sy = OUT[1], sz = OUT[2], dx = viewer[0] - sx, dy = viewer[1] - sy, dz = viewer[2] - sz, l = Math.hypot(dx, dy, dz) || 1;
+          set(out, o, sx + dx / l * 0.62, sy + dy / l * 0.62 - 0.1, sz + dz / l * 0.62);
+          return;
+        }
         case T_TWO: set(out, o, TWO[0], TWO[1], TWO[2]); return;
         case T_HILT: onKatana(out, o, K.hold); return;
         case T_SCAB: onKatana(out, o, K.scab); return;
@@ -236,6 +267,10 @@
       fx.say(k, LINES[which], 3.6);
       talk = Math.min(2.4, 0.4 + LINES[which].length * 0.05);
       quiet = QUIET[0] + rand() * (QUIET[1] - QUIET[0]);
+    };
+    const sayText = (text) => {
+      fx.say(k, text, 2.6);
+      talk = Math.min(2.4, 0.4 + text.length * 0.05);
     };
     // A plug changing hands, jacks or its hole settles there from where it is, over `dur`, rising `arc` on the way.
     const settle = (c, dur = SETTLE, arc = 0) => {
@@ -314,7 +349,18 @@
         case KEY: keyTarget[s.cord] = s.v; break;
         case SAY: say(s.v); break;
         case SHAKE: shake = 0; shakeDur = s.dur; break;
-        case WAG: wagT[s.arm] = s.dur; break;
+        case WAG: wagT[s.arm] = s.v || s.dur; break;
+        case THROW: {
+          // Let fly at the view: out to the end of its cord, where it hangs a moment before the cord yanks it home.
+          const c = s.cord, o = s.arm * 3, dx = viewer[0] - fist[o], dy = viewer[1] - fist[o + 1], dz = viewer[2] - fist[o + 2], l = Math.hypot(dx, dy, dz) || 1;
+          cordHeld[c] = -1;
+          throwAt[c * 3] = fist[o] + dx / l * 1.5;
+          throwAt[c * 3 + 1] = Math.max(KM.DESK + 0.3, fist[o + 1] + dy / l * 1.5 + 0.2);
+          throwAt[c * 3 + 2] = fist[o + 2] + dz / l * 1.5;
+          settle(c, 0.28, 0.25);
+          throwT[c] = 0.45;
+          break;
+        }
         case THUD: {
           mugHop = 0.36; jolt = 0.3; chaos = Math.max(chaos, 0.2);
           const o = s.arm * 3;
@@ -621,6 +667,107 @@
       push(LEAN, 0, 0, 0, -1, -1, 0.1);
       push(WAIT, 0.5);
     };
+    // ---- what a poke works him up to ----
+    // A free cord on his right, the side he throws with.
+    const throwCord = () => {
+      let best = -1;
+      for (let c = 0; c < n; c++) if (cordJack[c] < 0 && cordHeld[c] < 0 && throwT[c] <= 0 && (best < 0 || KM.cordX(c) > KM.cordX(best))) best = c;
+      return best;
+    };
+    // Turned on the visitor with his sword held out at them, a hold, and the sword home again.
+    const threat = () => {
+      threatened = true;
+      ignored = 0;
+      push(STAND, 0.4, 0, 0, -1, -1, 1);
+      turnTo(1);
+      go(1, T_SCAB, 0.3, 0);
+      push(SCAB, 0.3, 0, 0, -1, -1, 1);
+      go(0, T_HILT, 0.28);
+      push(SWORD, 0, 0, 0, -1, -1, 1);
+      go(0, T_THREAT, 0.35);
+      push(SCAB, 0, 0, 0, -1, -1, 0);
+      go(1, T_RAISE, 0.3, 0);
+      push(WAG, 1.9, 1);
+      go(1, T_SCAB, 0.25, 0);
+      push(SCAB, 0.25, 0, 0, -1, -1, 1);
+      push(SWORD, 0, 0, 0, -1, -1, 0);
+      go(0, T_HILT, 0.4, 0.45);
+      push(SCAB, 0, 0, 0, -1, -1, 0);
+      go(0, T_REST, 0.35, 0);
+      go(1, T_REST, 0.35);
+      push(STAND, 0.5, 0, 0, -1, -1, 0);
+      turnBack();
+    };
+    const react = (level) => {
+      reacting = true;
+      if (level === SNAP) return katana();
+      if (level === IGNORE) {
+        // The silent treatment: back to the board, arms folded, chin up and away.
+        push(SWIVEL, 0.4, 0, 0, -1, -1, 0);
+        push(LOOK, 0, 0, T_JACK, -1, Math.floor(rand() * jacks));
+        go(0, T_CROSS, 0.35, 0);
+        go(1, T_CROSS, 0.35, 0.4);
+        push(TILT, 0, 0, 0, -1, -1, -0.18);
+        push(SHAKE, 0.7);
+        push(WAIT, 1.2);
+        push(TILT, 0, 0, 0, -1, -1, 0);
+        go(2, T_REST, 0.4);
+        return;
+      }
+      if (level === 1) {
+        // A look over his shoulder.
+        push(LOOK, 1.0, 0, T_VIEW);
+        push(LOOK, 0, 0, T_JACK, -1, Math.floor(rand() * jacks));
+        push(WAIT, 0.3);
+        return;
+      }
+      if (level === 2) {
+        // Round on his stool to wag a finger at them.
+        turnTo(1);
+        go(0, T_POINT, 0.3);
+        push(WAG, 1.1, 0);
+        go(0, T_REST, 0.4);
+        turnBack();
+        return;
+      }
+      if (level === 3) {
+        // Both fists up and shaking, steam out of his ears.
+        turnTo(1);
+        go(0, T_RAISE, 0.3, 0);
+        go(1, T_RAISE, 0.3);
+        push(WAG, 0, 0, 0, -1, -1, 1.4);
+        push(WAG, 1.4, 1);
+        push(SHAKE, 0.6);
+        go(2, T_REST, 0.4);
+        turnBack();
+        return;
+      }
+      if (level === 4) {
+        // Red in the face: a plug snatched up, up on his stool yelling with it, and thrown at them, and the cord
+        // yanks it straight back.
+        const c = throwCord();
+        if (c >= 0) {
+          push(LOOK, 0, 0, T_HOME, c);
+          go(0, T_HOME, 0.3, 0.3, c);
+          push(GRAB, 0.1, 0, 0, c);
+        }
+        push(STAND, 0.35, 0, 0, -1, -1, 1);
+        turnTo(1);
+        go(0, T_RAISE, 0.25, 0, c);
+        go(1, T_UP, 0.3);
+        push(WAG, 0, 1, 0, -1, -1, 1.2);
+        push(SHAKE, 1.2);
+        if (c >= 0) {
+          go(0, T_POINT, 0.12, 0.12, c);
+          push(THROW, 0.9, 0, 0, c);
+        }
+        go(2, T_REST, 0.4);
+        push(STAND, 0.45, 0, 0, -1, -1, 0);
+        turnBack();
+        return;
+      }
+      threat();
+    };
     const ACTS = [hate, unbelievable, rebalance, slam, openClose, liquidity, clap, future, tess, suspicious, showOff, htlc, katana];
     // The next emote: the katana now and then once he has worked up to it, otherwise the next from a shuffled bag.
     const bag = new Int8Array(KATANA);
@@ -675,8 +822,10 @@
     const plan = () => {
       count = at = 0;
       stepT = 0;
+      reacting = false;
       let j = oldest(CLEARING);
-      if (forced >= 0) { ACTS[forced](); forced = -1; }
+      if (wantReact) { react(wantReact); wantReact = 0; }
+      else if (forced >= 0) { ACTS[forced](); forced = -1; }
       else if (j >= 0) disconnect(j);
       else if ((j = oldest(CALLING)) >= 0) {
         const c = freeCord(j), was = oldest(CONNECTED, sideOf(j));
@@ -762,7 +911,14 @@
         sw.quaternion.set(P.katana.quaternion);
         return;
       }
-      if (kind[0] === T_SWORD) {
+      if (kind[0] === T_THREAT) {
+        // At the visitor, angled up and out to his right, so they see the blade's length rather than its point.
+        const vl = Math.hypot(viewer[0] - fist[0], viewer[1] - fist[1], viewer[2] - fist[2]) || 1;
+        const ax = (viewer[0] - fist[0]) / vl, az = (viewer[2] - fist[2]) / vl, sl = Math.hypot(ax, az) || 1;
+        const vx = ax - az / sl * 0.6, vy = (viewer[1] - fist[1]) / vl + 0.4, vz = az + ax / sl * 0.6, l = Math.hypot(vx, vy, vz) || 1;
+        bladeTh = Math.atan2(vy, vx);
+        bladePh = Math.asin(clamp(-vz / l, -1, 1));
+      } else if (kind[0] === T_SWORD) {
         const e = moveE[0];
         bladeTh = thFrom + (thTo - thFrom) * e;
         bladePh = phFrom + (phTo - phFrom) * e + (strike ? 0.65 * Math.sin(Math.PI * e) : 0);
@@ -820,11 +976,28 @@
       }
     };
 
-    const update = (dt, elapsed, view) => {
+    const update = (dt, elapsed, view, visitor, feet) => {
       time += dt;
       // The view in the wall's frame, and whether it is near enough for him to act up for it.
       viewer[0] = -(view.z - oz); viewer[1] = view.y - oy; viewer[2] = view.x - ox;
       near = Math.hypot(view.x - (ox + seatZ), view.y - (oy + 1), view.z - oz) < HEAR;
+      visitorNear = !!visitor && Math.abs(feet - oy) < 1.2 && Math.hypot(visitor.x - (ox + seatZ), visitor.z - oz) < POKE_REACH;
+      // His temper cools a level at a time while he is left alone; calm again after a proper fit, he says so.
+      if (retort > 0) retort -= dt;
+      if (glare > 0) glare -= dt;
+      if (anger > 0 || threatened) {
+        calmIn -= dt;
+        if (calmIn <= 0) {
+          calmIn = CALM;
+          threatened = false;
+          ignored = 0;
+          if (anger > 0) anger--;
+          if (anger === 0) {
+            if (peak >= 3 && near) sayText(CALMED);
+            peak = 0;
+          }
+        }
+      }
       quiet -= dt;
       eventIn -= dt;
       if (eventIn <= 0) { eventIn = 2.2 + rand() * 3.2; event(); }
@@ -848,9 +1021,12 @@
       roll += (rollTarget - roll) * Math.min(1, dt * 6);
       rise += (riseTarget - rise) * Math.min(1, dt * 6);
       k.root.rotation.y = yaw;
-      k.root.rotation.x = lean;
+      // A poke makes him jump on his stool and jerk back.
+      let jump = 0;
+      if (flinch > 0) { flinch = Math.max(0, flinch - dt); jump = Math.sin(Math.PI * (1 - flinch / 0.35)); }
+      k.root.rotation.x = lean - 0.22 * jump;
       k.root.rotation.z = roll;
-      k.root.position.y = seatY + rise * RISE + 0.008 * Math.sin(time * 1.8);
+      k.root.position.y = seatY + rise * RISE + 0.008 * Math.sin(time * 1.8) + 0.07 * jump;
       P.legR.rotation.x = P.legL.rotation.x = (-1.45 - lean) * (1 - rise) - lean * rise;
       P.shinR.rotation.x = P.shinL.rotation.x = 1.45 * (1 - rise);
       trig();
@@ -877,7 +1053,7 @@
       else if (!swordOn) glint = -1;
       P.sword.glow = 1 + 3 * Math.max(0, glint) + (strike && kind[0] === T_SWORD && moveDur[0] > 0 ? 1.6 : 0);
       // The head turned to what he looks at, tilted, a shake now and then, a blink, and his mouth working as he talks.
-      pointOf(lookKind, 0, -1, lookJack, look, 0);
+      pointOf(glare > 0 ? T_VIEW : lookKind, 0, -1, lookJack, look, 0);
       toWall(0, headY, headZ);
       toBody(look[0] - OUT[0], look[1] - OUT[1], look[2] - OUT[2]);
       headYaw += (clamp(Math.atan2(DIR[0], DIR[2]), -0.9, 0.9) - headYaw) * Math.min(1, dt * 8);
@@ -891,7 +1067,21 @@
       if (blinkIn <= 0) { blink = 0.12; blinkIn = 2.5 + rand() * 3; }
       if (blink > 0) blink -= dt;
       if (talk > 0) talk -= dt;
-      const face = blink > 0 ? k.headClosed : talk > 0 && Math.sin(time * 26) > 0 ? k.headTalk : k.headOpen;
+      // Furious, he goes red in the face, and steam comes out of his ears.
+      const flushed = anger >= 4, mouth = talk > 0 && Math.sin(time * 26) > 0;
+      const face = blink > 0 ? (flushed ? k.redClosed : k.headClosed) : mouth ? (flushed ? k.redTalk : k.headTalk) : flushed ? k.redOpen : k.headOpen;
+      if (steam > 0) {
+        steam -= dt;
+        steamIn -= dt;
+        if (steamIn <= 0) {
+          steamIn = 0.11;
+          const m = P.head.world;
+          for (const side of [-1, 1]) {
+            const ex = side * 7.4 * KM.U, ey = 5 * KM.U;
+            fx.puff(m[0] * ex + m[4] * ey + m[12], m[1] * ex + m[5] * ey + m[13], m[2] * ex + m[6] * ey + m[14], m[0] * side * 0.9, 0.5 + m[1] * side * 0.9, m[2] * side * 0.9, 0.7);
+          }
+        }
+      }
       if (P.head.geometry !== face) P.head.geometry = face;
 
       // His mug: in his hand by the handle, set back down, or jumping when the desk is thumped.
@@ -914,7 +1104,14 @@
       for (let c = 0; c < n; c++) {
         const p = plugs[c], held = cordHeld[c], j = cordJack[c], o = c * 3;
         let ux = 0, uy = 1, uz = 0, tx, ty, tz;
-        if (held >= 0) {
+        const thrown = throwT[c] > 0;
+        if (thrown) {
+          // Out at the end of its cord, its boot back toward its hole; then the cord yanks it home.
+          throwT[c] -= dt;
+          if (throwT[c] <= 0) settle(c, 0.45, 0.3);
+          const bx = KM.cordX(c) - throwAt[o], by = B.shelf - throwAt[o + 1], bz = B.plugZ - throwAt[o + 2], bl = Math.hypot(bx, by, bz) || 1;
+          ux = bx / bl; uy = by / bl; uz = bz / bl;
+        } else if (held >= 0) {
           const h = held * 3, kd = kind[held];
           if (kd === T_JACK || kd === T_JACK_IN) { uy = 0; uz = 1; }
           else if (kd !== T_HOME) { ux = -fore[h]; uy = -fore[h + 1]; uz = -fore[h + 2]; }
@@ -924,7 +1121,8 @@
         const dl = Math.hypot(dx, dy, dz) || 1;
         dx /= dl; dy /= dl; dz /= dl;
         plugDir[o] = dx; plugDir[o + 1] = dy; plugDir[o + 2] = dz;
-        if (held >= 0) { const h = held * 3; tx = fist[h] - dx * KM.GRIP; ty = fist[h + 1] - dy * KM.GRIP; tz = fist[h + 2] - dz * KM.GRIP; }
+        if (throwT[c] > 0) { tx = throwAt[o]; ty = throwAt[o + 1]; tz = throwAt[o + 2]; }
+        else if (held >= 0) { const h = held * 3; tx = fist[h] - dx * KM.GRIP; ty = fist[h + 1] - dy * KM.GRIP; tz = fist[h + 2] - dz * KM.GRIP; }
         else if (j >= 0) { tx = jackX(j); ty = jackY(j); tz = IN_JACK; }
         else { tx = KM.cordX(c); ty = B.shelf + 0.03 + joltY; tz = B.plugZ; }
         plugBlend[c] = Math.min(1, plugBlend[c] + dt / plugSettle[c]);
@@ -935,7 +1133,7 @@
         p.position.x = plugPos[o]; p.position.y = plugPos[o + 1]; p.position.z = plugPos[o + 2];
         p.rotation.x = Math.acos(clamp(dy, -1, 1));
         p.rotation.y = Math.atan2(dx, dz);
-        if (held >= 0 || j >= 0 || plugBlend[c] < 1) drawCord(c, plugPos[o] + dx * KM.PLUG, plugPos[o + 1] + dy * KM.PLUG, plugPos[o + 2] + dz * KM.PLUG);
+        if (held >= 0 || j >= 0 || thrown || plugBlend[c] < 1) drawCord(c, plugPos[o] + dx * KM.PLUG, plugPos[o + 1] + dy * KM.PLUG, plugPos[o + 2] + dz * KM.PLUG);
         else for (let s = 0; s < SEGMENTS; s++) segs[c * SEGMENTS + s].visible = false;
         keyThrow[c] += (keyTarget[c] - keyThrow[c]) * Math.min(1, dt * 14);
         keys[c].rotation.x = keyThrow[c];
@@ -971,21 +1169,60 @@
         if (lamps[i].glow !== g) lamps[i].glow = g;
       }
     };
-    const liveGeometry = (set) => { set.add(k.headOpen).add(k.headClosed).add(k.headTalk).add(S.lamp).add(S.lampRed); };
+    const liveGeometry = (set) => { set.add(k.headOpen).add(k.headClosed).add(k.headTalk).add(k.redOpen).add(k.redClosed).add(k.redTalk).add(S.lamp).add(S.lampRed); };
     const dispose = () => { count = at = 0; };
+    // Whether the plan he is on can be dropped where it stands: his hands free and sitting. Dropped, his body's targets
+    // go back to rest and the next plan starts on the next frame.
+    const free = () => {
+      if (mugHeld || swordOn || swordBlend > 0 || riseTarget > 0 || rise > 0.05) return false;
+      for (let c = 0; c < n; c++) if (cordHeld[c] >= 0 || throwT[c] > 0) return false;
+      return true;
+    };
+    const interrupt = () => {
+      count = at = 0;
+      leanTarget = 0.1; rollTarget = tiltTarget = scabTarget = 0; yawTarget = Math.PI; wagT[0] = wagT[1] = 0;
+    };
+    // A poke: whatever he is doing, he jumps, glares and answers back at once, gets angrier, and acts on it as soon as
+    // his hands are free. Once he has drawn on the visitor he ignores them, until the last poke he will take sends him
+    // at the board.
+    const poke = () => {
+      flinch = 0.35; glare = 1.4; calmIn = CALM;
+      if (threatened) {
+        ignored++;
+        if (ignored >= PATIENCE) { threatened = false; ignored = 0; anger = peak = 0; wantReact = SNAP; }
+        else {
+          if (retort <= 0) { sayText(IGNORING[(ignored - 1) % IGNORING.length]); retort = 0.8; }
+          wantReact = IGNORE;
+        }
+      } else {
+        anger = Math.min(ANGRY, anger + 1);
+        peak = Math.max(peak, anger);
+        if (retort <= 0) { const lines = POKES[anger - 1]; sayText(lines[Math.floor(Math.random() * lines.length)]); retort = 0.8; }
+        if (anger >= 3) steam = 2.4;
+        if (anger >= 4) chaos = Math.max(chaos, 0.25);
+        wantReact = anger;
+      }
+      quiet = Math.max(quiet, 10);
+      if (!reacting && free()) interrupt();
+    };
+    // Space from the visitor's Ooga within reach pokes him too.
+    const useNear = (x, z, reach, feetAt) => {
+      if (Math.abs(feetAt - oy) > 1.2 || Math.hypot(x - (ox + seatZ), z - oz) > Math.max(reach, POKE_REACH)) return false;
+      poke();
+      return true;
+    };
+    const actLabel = () => (visitorNear ? "POKE" : null);
     // For debugging: the named emote next, whoever is near, at once unless his hands are full or he is up on his stool.
     const emote = (name) => {
       forced = EMOTES.indexOf(name);
       quiet = 0;
-      let busy = mugHeld || swordBlend > 0 || riseTarget > 0;
-      for (let c = 0; c < n; c++) if (cordHeld[c] >= 0) busy = true;
-      if (!busy) {
-        count = at = 0;
-        leanTarget = 0.1; rollTarget = tiltTarget = scabTarget = 0; yawTarget = Math.PI; wagT[0] = wagT[1] = 0;
-      }
+      if (free()) interrupt();
       return forced;
     };
-    return { node, kortik: k, update, liveGeometry, dispose, emote, get jacks() { return jack; }, get cords() { return cordJack; }, get held() { return cordHeld; }, get near() { return near; } };
+    return {
+      node, board, figure: [P.head, P.torso], kortik: k, update, liveGeometry, dispose, emote, poke, useNear, actLabel,
+      get jacks() { return jack; }, get cords() { return cordJack; }, get held() { return cordHeld; }, get near() { return near; }, get anger() { return anger; }
+    };
   };
   BL.kortik = { create, LINES, EMOTES };
 })();

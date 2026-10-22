@@ -65,6 +65,7 @@
     lineA: bay(0), lineB: bay(1), lineC: bay(2), lineD: bay(3),
     forge: view(0, 2.2, 1.5, 0.75, 0.22, 10),
     switchboard: view(-12, 4, 6, 0.55, 0.22, 9),
+    kortik: view(-19.4, 3.6, 12.2, Math.PI / 2, 0.22, 7),
     rebalancer: view(14, 4.6, 5, -0.8, 0.3, 10),
     // The nav's Treasury frames the whole platform: the rebalancer, the treasury and the cooker in a row.
     treasury: view(13.2, 3.6, 12.6, -0.7, 0.52, 15.5),
@@ -145,6 +146,7 @@
     shaftIn: ["From the chain · opening channels", "Sats come up this shaft from the Bitcoin chain. Each channel the node opens sends carts of them into the forge, more for a bigger channel."],
     shaftOut: ["To the chain · closing channels", "When a channel closes, its sats go back to the Bitcoin chain: the forge mints them into a coin that rolls down this shaft."],
     switchboard: ["Routing Console · routing", "Every payment the node passes on for someone else is a forward. The screens light as they go through."],
+    kortikBoard: ["Kortik's Switchboard · manual routing", "Before routing was automatic, operators patched every call through by hand. Kortik still does, and he has opinions about it."],
     rebalancer: ["Rebalancer · moving liquidity", "Rebalancing moves sats between channels so lines keep working. It is shown by the hour, never for one line."],
     treasury: ["Treasury · routing fees", "The gold under the glass is the node's public capacity, visible to anyone on the Lightning network. Each forward that earns the demo node a fee sends a nugget up the belt into the crate."],
     cooker: ["Banana cooker · tips into bananas", "Every tip is cooked here: the core throws its sats across, the cooker chomps and churns, and bananas shoot up the ceiling tube to the island's pile."],
@@ -155,6 +157,9 @@
     galleries: ["More channels", "Every line past the featured four stands up in the galleries."],
     exit: ["The way out", "Back to the island."]
   };
+
+  // How Kortik's tooltip reads at each level of his temper.
+  const KORTIK_MOODS = ["the operator", "busy", "irritated", "fuming", "FURIOUS", "armed"];
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
   // The page's one factory node (`world.factoryNode`), and its feed and demo node.
@@ -1548,6 +1553,7 @@
       const o = hit.owner, tip = TIPS[o.kind];
       if (o.kind === "board") return COARSE ? "Banana donation board · tap to read it" : "Banana donation board · click to read it";
       if (o.kind === "greeter") return COARSE ? `${BL.factoryGreeter.NAME} the guide · tap to talk` : `${BL.factoryGreeter.NAME} the guide · Space to talk`;
+      if (o.kind === "kortik") return `Kortik · ${KORTIK_MOODS[kortik.anger]} · ${COARSE ? "tap" : "click"} to poke`;
       if (o.kind === "line" || o.kind === "tunnel") {
         const b = o.place, c = b.line && mock.snapshot.channels.find((ch) => ch.id === b.line);
         return o.kind === "line" ? `Channel ${b.letter}${c ? ` · peer ${c.peer}` : ""}` : `Peer tunnel${c ? ` · ${c.peer}` : ""}`;
@@ -1573,6 +1579,7 @@
         if (o.kind === "kiosk") return openBooth(scene);
         if (o.kind === "board") return hud.openBoard(scene.boardView);
         if (o.kind === "greeter") return greeter.greet();
+        if (o.kind === "kortik") return kortik.poke();
         if (o.preset) pilot.goPreset(o.preset);
         // The kiosk's and the board's words own up to simulated or test payments, asked now: the page's Worker can turn
         // real mode on after the visit has begun.
@@ -1632,9 +1639,10 @@
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
       const shared = { root, input, hud, game, world: playerWorld, playerName, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, ceilingAt: ceilingFor, ladders: LAYOUT.ladders, onBodyMove: resolveLanding, clipProjectileTarget, absorbProjectile, reloadPolicy, useNear: (x, z, reach, feet) => {
         if (nearKiosk(x, z, reach, feet)) return true;
-        // Space talks to the guide when she offers it (she flies, so she judges her reach); on a ladder, or anywhere
-        // else, it stays the visitor's own.
-        return !!greeter && !(avatar && avatar.ladder && avatar.ladder.plane) && greeter.useNear(x, z, reach);
+        // Space talks to the guide when she offers it (she flies, so she judges her reach), or pokes Kortik beside his
+        // stool; on a ladder, or anywhere else, it stays the visitor's own.
+        if (avatar && avatar.ladder && avatar.ladder.plane) return false;
+        return !!greeter && greeter.useNear(x, z, reach) || !!kortik && kortik.useNear(x, z, reach, feet);
       } };
       shared.onModelChange = () => {
         if (!avatar) return;
@@ -1686,6 +1694,10 @@
       demoRunning: () => feed.reading.contract === "obl.factory.demo.v1" || feed.reading.contract === null && !!shared.mock, coarse: COARSE, camera, quality: () => renderer.quality });
     kortik = BL.kortik.create({ fx });
     addChild(root, kortik.node);
+    // Kortik himself takes pokes; his board frames itself and says what it is, as the stations do.
+    for (const part of kortik.figure) { input.add(part, { kind: "kortik", priority: 2, weaponType: "none" }, { radius: 0.6 }); targets.push(part); }
+    input.add(kortik.board, { kind: "kortikBoard", preset: "kortik", weaponType: "none" }, { radius: 3 });
+    targets.push(kortik.board);
     // With no Ooga the visitor cannot talk to the guide: a hint points them to the island to pick one.
     if (!avatar) hud.hint(`${BL.factoryGreeter.NAME} the guide gives tours here — pick an Ooga on the island first`);
     // Sent from the island's dialog to tip: on to the kiosk's glass at the first frame, once the pilot has placed the view.
@@ -2073,11 +2085,11 @@
     }
     greeter.update(dt, elapsed);
     greeter.light(RENDER_OPTS.lights, LIGHT.tess * 8);
-    kortik.update(dt, elapsed, camera.position);
-    // The act button talks to the guide in reach, starts the picked tour or skips a line ahead, or, within the
-    // kiosk's hint reach, donates, the way the hub shows ENTER ARCADE by its door; the pilot's own label returns once
-    // the offer is gone. The guide comes first, as the button tries the guide before the kiosk.
-    const actLabel = avatar && (greeter.actLabel() || (s.booth.near && !s.booth.mode && people.player === avatar ? "DONATE!" : null));
+    kortik.update(dt, elapsed, camera.position, avatar && people.player === avatar ? avatar.root.position : null, feetOf());
+    // The act button talks to the guide in reach, starts the picked tour or skips a line ahead, pokes Kortik from
+    // beside his stool, or, within the kiosk's hint reach, donates, the way the hub shows ENTER ARCADE by its door;
+    // the pilot's own label returns once the offer is gone. The guide comes first, as the button tries the guide first.
+    const actLabel = avatar && (greeter.actLabel() || kortik.actLabel() || (s.booth.near && !s.booth.mode && people.player === avatar ? "DONATE!" : null));
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     stepTweens(dt);
