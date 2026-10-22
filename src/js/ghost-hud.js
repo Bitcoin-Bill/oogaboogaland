@@ -21,15 +21,19 @@
     keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["X"], "Switch to your weapon"]],
     touch: [[["Left stick"], "Move your Ooga"], [["Combat"], "Switch to your weapon"], [["Hold fire"], "Shoot the ghosts"]]
   };
-  /** The HUD; `onGo` when the visitor dismisses how to play. */
-  const create = ({ onGo = null } = {}) => {
+  /** The HUD; `onGo` when the visitor dismisses how to play, `onMusic` when they flip the mini player's switch. */
+  const create = ({ onGo = null, onMusic = null } = {}) => {
     loadFace();
     const el = {
       hud: document.getElementById("ghost-hud"), top: document.getElementById("ghost-top"), lives: document.getElementById("ghost-lives"), health: document.getElementById("ghost-health"),
       banner: document.getElementById("ghost-banner"), title: document.getElementById("ghost-banner-title"), sub: document.getElementById("ghost-banner-sub"),
       boss: document.getElementById("ghost-boss"), bar: document.getElementById("ghost-boss-bar"), flash: document.getElementById("ghost-flash"),
-      intro: document.getElementById("ghost-intro"), introKeys: document.getElementById("ghost-intro-keys"), introGo: document.getElementById("ghost-intro-go")
+      intro: document.getElementById("ghost-intro"), introKeys: document.getElementById("ghost-intro-keys"), introGo: document.getElementById("ghost-intro-go"),
+      player: document.getElementById("ghost-player"), playerTitle: document.getElementById("ghost-player-title"), playerToggle: document.getElementById("ghost-player-toggle")
     };
+    // The switch, let go of after a press so the island's keys keep working.
+    const flip = () => { if (onMusic) onMusic(); el.playerToggle.blur(); };
+    el.playerToggle.addEventListener("click", flip);
     const go = () => { if (onGo) onGo(); };
     // Inside the dialog the island leaves the keys alone, so it takes its own: Enter, Space or Escape go on.
     const introKey = (e) => {
@@ -39,7 +43,7 @@
     };
     el.introGo.addEventListener("click", go);
     el.intro.addEventListener("keydown", introKey);
-    const last = { shown: false, top: null, lives: null, title: null, sub: null, boss: -1, livesState: "", health: -2 };
+    const last = { shown: false, top: null, lives: null, title: null, sub: null, boss: -1, livesState: "", health: -2, player: null, playing: null, on: null };
     const cells = el.health.children;
     const text = (node, key, value) => {
       if (last[key] === value) return;
@@ -50,7 +54,7 @@
       if (last.shown === on) return;
       last.shown = on;
       el.hud.hidden = !on;
-      if (!on) { banner(null); boss(-1); health(-1); intro(false); el.flash.hidden = true; }
+      if (!on) { banner(null); boss(-1); health(-1); intro(false); player(null); el.flash.hidden = true; }
     };
     const top = (value) => text(el.top, "top", value);
     // `state` styles the bar: "", "frozen" or "away".
@@ -86,6 +90,20 @@
       void el.health.offsetWidth;
       el.health.classList.add("healing");
     };
+    // The mini player: shown while the hunt's music runs (`track` its title and maker, null to hide), its switch `on`.
+    const player = (track, on) => {
+      const shown = !!track;
+      if (shown !== last.player) { last.player = shown; el.player.hidden = !shown; }
+      if (!shown) return;
+      const name = on ? `${track.title} · ${track.by}` : "Music off";
+      if (name !== last.playing) { last.playing = name; el.playerTitle.textContent = name; }
+      if (on !== last.on) {
+        last.on = on;
+        el.playerToggle.textContent = on ? "Music on" : "Music off";
+        el.playerToggle.setAttribute("aria-pressed", on ? "true" : "false");
+        el.player.toggleAttribute("data-off", !on);
+      }
+    };
     // How to play, shown (`coarse` for touch words) or put away.
     const intro = (on, coarse = false) => {
       if (!on) { if (!el.intro.hidden) { el.intro.hidden = true; el.introGo.blur(); } return; }
@@ -120,6 +138,7 @@
       else if (el.flash.dataset.kind === "soul" && !el.flash.hidden) el.flash.hidden = true;
     };
     const dispose = () => {
+      el.playerToggle.removeEventListener("click", flip);
       el.introGo.removeEventListener("click", go);
       el.intro.removeEventListener("keydown", introKey);
       el.health.removeEventListener("animationend", healed);
@@ -127,7 +146,7 @@
       show(false);
       el.flash.classList.remove("on");
     };
-    return { show, top, lives, health, heal, intro, banner, boss, flash, soul, dispose };
+    return { show, top, lives, health, heal, intro, player, banner, boss, flash, soul, dispose };
   };
 
   BL.ghostHud = { create };

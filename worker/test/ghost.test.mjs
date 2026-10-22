@@ -13,7 +13,8 @@ test("a ghost start, pause or hit within bounds is read; anything else is ignore
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"start"}'), { t: "ghost", k: "start" });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"pause","g":3}'), { t: "ghost", k: "pause" });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":12,"d":5,"extra":1}'), { t: "ghost", k: "hit", g: 12, d: 5 });
-  for (const bad of [{ k: "hit", g: -1, d: 2 }, { k: "hit", g: 70000, d: 2 }, { k: "hit", g: 1, d: 0 }, { k: "hit", g: 1, d: 21 }, { k: "hit", g: 1.5, d: 2 },
+  assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":7,"d":60}'), { t: "ghost", k: "hit", g: 7, d: 60 }, "a batch of hits on one ghost");
+  for (const bad of [{ k: "hit", g: -1, d: 2 }, { k: "hit", g: 70000, d: 2 }, { k: "hit", g: 1, d: 0 }, { k: "hit", g: 1, d: 61 }, { k: "hit", g: 1.5, d: 2 },
     { k: "hit", g: "1", d: 2 }, { k: "kill", g: 1 }, {}]) {
     assert.equal(parseClientMessage(JSON.stringify({ t: "ghost", ...bad })), null, JSON.stringify(bad));
   }

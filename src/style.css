@@ -2195,6 +2195,66 @@ body[data-active-scene="arcade"] .magazine-hud {
   font-size: 10px;
 }
 
+/* The hunt's mini player, bottom right: what is playing and the music switch. */
+.ghost-player {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + var(--safe-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 6px 8px 6px 10px;
+  background: var(--tablet);
+  border: 2px solid var(--stone-dk);
+  border-radius: 8px;
+  box-shadow: var(--tablet-shadow);
+  color: var(--paper);
+  pointer-events: auto;
+  z-index: 4;
+}
+
+.ghost-player[hidden] {
+  display: none;
+}
+
+.ghost-player-note {
+  color: #ff8a1f;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ghost-player[data-off] .ghost-player-note {
+  color: var(--muted);
+}
+
+.ghost-player-title {
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.ghost-player-toggle {
+  flex: none;
+  padding: 4px 9px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: linear-gradient(#f0b05a, var(--accent));
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ghost-player[data-off] .ghost-player-toggle {
+  background: var(--wood-edge);
+  color: var(--paper);
+}
+
 /* How to play, as round 1 is called: the hunt holds still until it is dismissed. */
 .ghost-intro {
   position: absolute;

@@ -14,14 +14,14 @@
     const unsubscribe = net.subscribeGhost((msg) => {
       if (npcSync.role !== "host" || !Number.isSafeInteger(msg.from) || msg.from <= 0) return;
       if (msg.k === "start" || msg.k === "pause") onMessage({ k: msg.k, from: msg.from, g: 0, d: 0 });
-      else if (msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 20) onMessage({ k: "hit", from: msg.from, g: msg.g, d: msg.d });
+      else if (msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 60) onMessage({ k: "hit", from: msg.from, g: msg.g, d: msg.d });
     });
     const START = { t: "ghost", k: "start" }, PAUSE = { t: "ghost", k: "pause" }, HIT = { t: "ghost", k: "hit", g: 0, d: 0 };
     const start = () => net.sendGhost(START);
     const pause = () => net.sendGhost(PAUSE);
     const hit = (id, damage) => {
       HIT.g = id;
-      HIT.d = Math.max(1, Math.min(20, Math.round(damage)));
+      HIT.d = Math.max(1, Math.min(60, Math.round(damage)));
       net.sendGhost(HIT);
     };
     const dispose = () => {

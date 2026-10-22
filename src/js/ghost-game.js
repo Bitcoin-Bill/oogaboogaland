@@ -121,7 +121,7 @@
     MODELS.prepare();
     const group = createNode({ sightHidden: true });
     addChild(root, group);
-    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ onGo: () => closeIntro(true) });
+    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ onGo: () => closeIntro(true), onMusic: () => audio.toggleMusic() });
     // Every mesh the hunt has shown, kept on the GPU for the visit (`liveGeometry`): frames swap in and out.
     const used = [];
     const keep = (geometry) => {
@@ -174,7 +174,8 @@
       const node = createNode({ geometry: keep(MODELS.wallGeometry(s.width, s.height)), position: { x: s.cx, y: s.base, z: s.cz }, rotation: { x: 0, y: s.yaw, z: 0 }, visible: false });
       addChild(group, node);
       const zone = s.mouth ? { active: false, x: s.mouth.x, z: s.mouth.z, floor: s.mouth.floorY, sr: s.nx, cr: s.nz, half: 2.73, front: MOUTH_ALONG + 0.26 } : null;
-      if (zone) hub.closedZones.push(zone);
+      // The zone joins the hub's closed caves only while its wall stands sealed (`drawWalls`), so a hunt merely loaded
+      // changes nothing about where the island's NPCs may walk.
       return { stop: s, node, zone, up: 0, wisp: (fnv1a(s.name) % 100) / 100, sealed: false, half: s.width / 2 + C.PLAYER_RADIUS, y0: s.base - 1, y1: s.base + 6 };
     });
     // One way: a step from the meadow side of a raised wall to behind it, within its width, is refused at any height.
@@ -337,7 +338,7 @@
         else sim.hit(msg.g, msg.d, msg.from);
       }
     });
-    let skew = 0, heardAt = 0, idleAt = -Infinity, startAskedAt = 0, prevState = ST.IDLE;
+    let skew = 0, heardAt = 0, idleAt = -Infinity, startAskedAt = 0, prevState = ST.IDLE, lastRole = "";
     const clock = () => net.serverNow() + skew;
     // The hunt's own time: held where it stopped while paused (a follower's snapshots move its start on only 4 a second).
     const huntTime = () => S.paused ? S.now : clock() - S.epoch;
@@ -588,9 +589,10 @@
         hub.gameMode(true);
         cackled = beamed = rumbled = introShown = false;
         segShown = -1;
-        // The hunt's music (the lab's boss music) comes with the hunt.
-        if (!BL.ghostBossAudioData) {
-          const loading = BL.deferred.load("halloween-boss");
+        // The hunt's playlist comes with the hunt, in a new random order.
+        audio.newPlaylist();
+        if (!BL.ghostMusicData) {
+          const loading = BL.deferred.load("halloween-music");
           if (loading) loading.catch(() => {});
         }
       }
@@ -945,7 +947,12 @@
         }
         w.up = k;
         w.sealed = st !== ST.IDLE && st !== ST.DAWN && k > 0;
-        if (w.zone) w.zone.active = w.sealed;
+        if (w.zone && w.zone.active !== w.sealed) {
+          w.zone.active = w.sealed;
+          const at = hub.closedZones.indexOf(w.zone);
+          if (w.sealed && at < 0) hub.closedZones.push(w.zone);
+          else if (!w.sealed && at >= 0) hub.closedZones.splice(at, 1);
+        }
         if (w.sealed) sealedCount++;
         const node = w.node;
         node.visible = k > 0;
@@ -1501,14 +1508,21 @@
         localHere = false;
         const cave = crew.player;
         if (S.state !== ST.IDLE && cave && !hub.gorillaActive()) { const p = cave.root.position; localHere = hub.zoneOf(cave) === "outside" && inArena(p.x, p.y - cave.baseY, p.z); }
+        // Just turned follower (a page come back to the island, the host elsewhere): the host's frames get a fair wait.
+        if (role !== lastRole) heardAt = now;
         if (S.state !== ST.IDLE && now - heardAt > LOST_HOST_MS) { sim.clear(); hub.hud.toast("The ghosts drift away"); }
         if (startAskedAt && S.state === ST.IDLE && now - startAskedAt > START_WAIT_MS) { startAskedAt = 0; hub.hud.toast("The ghost slips away"); }
         else if (startAskedAt && S.state !== ST.IDLE) startAskedAt = 0;
       }
+      lastRole = role;
+      if (role === "follow") flushHits(now);
       const t = huntTime();
       if (S.state !== prevState) { onState(S.state, prevState, t); prevState = S.state; }
       nightK = nightOf(t);
-      audio.music(S.state >= ST.NIGHT && S.state <= ST.BOSS || S.state === ST.VICTORY);
+      // The playlist runs from the herald's launch to the victory banner; the mini player shows it meanwhile.
+      const musicTime = S.state >= ST.LAP && S.state <= ST.BOSS || S.state === ST.VICTORY;
+      audio.music(musicTime);
+      hud.player(musicTime ? audio.nowPlaying : null, audio.musicOn);
       jolt = Math.max(0, jolt - dt * 2.2);
       quake = Math.max(quakeOf(t), jolt);
       if (S.state >= ST.LAP && S.state <= ST.DEFEAT) armHunter(crew.player);
@@ -1596,6 +1610,22 @@
         ctx2d.globalAlpha = 1;
       }
     };
+    // A follower's hits go to the host summed per target a tenth of a second at a time (`HIT_BATCH_MS`), so a rifle with
+    // both monkeys (three hits a shot) stays inside the room's budget for one page's reports.
+    const HIT_BATCH_MS = 100, HIT_SLOTS = 16, HIT_MAX = 60;
+    const hitIds = new Float64Array(HIT_SLOTS), hitDamage = new Float64Array(HIT_SLOTS);
+    let hitCount = 0, hitSentAt = 0;
+    const flushHits = (now) => {
+      if (!hitCount || now - hitSentAt < HIT_BATCH_MS) return;
+      hitSentAt = now;
+      for (let i = 0; i < hitCount; i++) sync.hit(hitIds[i], Math.min(HIT_MAX, hitDamage[i]));
+      hitCount = 0;
+    };
+    const queueHit = (id, damage) => {
+      for (let i = 0; i < hitCount; i++) if (hitIds[i] === id) { hitDamage[i] += damage; return; }
+      if (hitCount === HIT_SLOTS) { hitSentAt = 0; flushHits(clock()); }
+      hitIds[hitCount] = id; hitDamage[hitCount++] = damage;
+    };
     /** A weapon landed on the herald, a ghost or the boss (the hub's weaponImpact). */
     const hit = (source, h, power, byPlayer) => {
       const o = h.owner;
@@ -1620,7 +1650,7 @@
       }
       fx.damageNumber(x, y + 0.25, z, damage);
       audio.play("hit");
-      if (npcSync.role === "follow") sync.hit(id, damage);
+      if (npcSync.role === "follow") queueHit(id, damage);
       else sim.hit(id, damage, myId());
     };
     /** The lab's debug keys, with Shift, on a `debug=1` page during a hunt; true when one was used. */

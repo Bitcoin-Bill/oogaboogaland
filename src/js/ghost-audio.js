@@ -1,13 +1,20 @@
 // HALLOWEEN: the ghost hunt's sound, ported from OBL-Audio-lab's sfx.js and wave.js. Synthesized cues on a pool of
 // voices built once (an oscillator with its filter, gain and a wobble, and a filtered slice of one looping noise), so a
-// cue only schedules automation, as the island's other sound does; and the lab's recordings (ghost-audio-data.js, and
-// the lab's boss music, the hunt's music from the deferred `halloween-boss` group) decoded once into buffers, one source a play. One
-// AudioContext, opened only after a gesture the browser has activated; the page-wide mute (`oogaboogaland.audio`);
+// cue only schedules automation, as the island's other sound does; and the lab's recordings (ghost-audio-data.js)
+// decoded once into buffers, one source a play, with the hunt's playlist (the lab's boss music and an original track,
+// from the deferred `halloween-music` group) decoded a track at a time. One AudioContext, opened only after a gesture
+// the browser has activated; the page-wide mute (`oogaboogaland.audio`);
 // suspended while the tab is hidden; `dispose` closes it.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const MASTER = 0.35, LEVEL = 0.5, VOICES = 16, STORAGE_KEY = "oogaboogaland.audio";
+  const MASTER = 0.35, LEVEL = 0.5, VOICES = 16, STORAGE_KEY = "oogaboogaland.audio", MUSIC_KEY = "ooga-ghost-music";
+  // The hunt's playlist: each track's title, who made it, and where its bytes are once the `halloween-music` group has
+  // arrived. Played in a shuffled order from a hunt's start, one after another.
+  const TRACKS = [
+    { title: "Night Shift", by: "original", data: () => BL.ghostMusicData && BL.ghostMusicData.nightShift },
+    { title: "The Boss", by: "OBL Audio Lab", data: () => BL.ghostBossAudioData }
+  ];
   const CLIPS = ["wave", "kaboom", "screech", "freeze", "apples", "double", "banana", "ooga", "landing", "network", "tessZap", "tessScream"];
 
   const decode = (ctx, base64) => {
@@ -17,9 +24,17 @@
   };
 
   const create = () => {
-    let ctx = null, master = null, noise = null, voices = null, next = 0, muted = false, music = null, musicWanted = false;
+    let ctx = null, master = null, noise = null, voices = null, next = 0, muted = false, music = null, musicWanted = false, musicGain = null;
     const clips = {};
-    let bossClip = null, bossDecoding = false;
+    // The playlist's order, where in it we are, the one decoded track it holds at a time (a decoded track is tens of
+    // megabytes) and whether the visitor wants music at all (this browser's choice, the mini player's toggle).
+    const order = TRACKS.map((_, i) => i);
+    let place = 0, loaded = -1, loading = -1, song = null, musicOn = true;
+    try {
+      musicOn = localStorage.getItem(MUSIC_KEY) !== "off";
+    } catch {
+      musicOn = true;
+    }
     try {
       muted = localStorage.getItem(STORAGE_KEY) === "off";
     } catch {
@@ -340,31 +355,55 @@
       if (muted || !live()) return;
       cues[name](a);
     };
-    const startMusic = () => {
-      if (music || !bossClip || !ctx) return;
-      music = ctx.createBufferSource();
-      const g = ctx.createGain();
-      music.buffer = bossClip;
-      music.loop = true;
-      g.gain.value = 0.7;
-      music.connect(g); g.connect(master);
-      music.start();
+    // The track now playing (or about to), from the shuffled order.
+    const current = () => order[place % order.length];
+    const stopMusic = () => {
+      if (music) { music.onended = null; try { music.stop(); } catch { /* already stopped */ } }
+      music = null;
     };
-    /** The hunt's music (the lab's boss music) on or off, asked every frame; it starts once its group has arrived and decoded. */
-    const setMusic = (on) => {
-      if (on === musicWanted && (!on || music)) return;
-      musicWanted = on;
-      if (!on) {
-        if (music) { try { music.stop(); } catch { /* already stopped */ } }
-        music = null;
+    // Plays the current track once its bytes are here and decoded, then moves on to the next when it ends.
+    const startMusic = () => {
+      if (music || !ctx || !musicWanted || !musicOn) return;
+      const k = current();
+      if (loaded !== k) {
+        const bytes = TRACKS[k].data();
+        if (!bytes || loading === k) return;
+        loading = k;
+        song = null; loaded = -1;
+        decode(ctx, bytes).then((b) => { if (loading !== k) return; song = b; loaded = k; loading = -1; startMusic(); }, () => { loading = -1; place++; });
         return;
       }
-      if (muted || !live()) return;
-      if (!bossClip && !bossDecoding && BL.ghostBossAudioData) {
-        bossDecoding = true;
-        decode(ctx, BL.ghostBossAudioData).then((b) => { bossClip = b; if (musicWanted) startMusic(); }, () => {});
+      if (!musicGain) { musicGain = ctx.createGain(); musicGain.gain.value = 0.7; musicGain.connect(master); }
+      music = ctx.createBufferSource();
+      music.buffer = song;
+      music.connect(musicGain);
+      music.onended = () => { music = null; place++; if (place % order.length === 0) shuffle(order[order.length - 1]); startMusic(); };
+      music.start();
+    };
+    // A fresh order, never opening on `last` (the track just heard) when there is a choice.
+    const shuffle = (last = -1) => {
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }
+      if (order.length > 1 && order[0] === last) { const t = order[0]; order[0] = order[1]; order[1] = t; }
+      place = 0;
+    };
+    /** The hunt's music on or off, asked every frame; it starts once its group has arrived and the track has decoded. */
+    const setMusic = (on) => {
+      if (on !== musicWanted) {
+        musicWanted = on;
+        if (!on) { stopMusic(); return; }
       }
+      if (!on || music || loading >= 0 || !musicOn || muted || !live()) return;
       startMusic();
+    };
+    /** A hunt begins: the playlist in a new random order, from its top. */
+    const newPlaylist = () => { stopMusic(); shuffle(); };
+    /** The visitor's music switch (remembered in this browser): off stops it now, on plays from the track's top. */
+    const toggleMusic = () => {
+      musicOn = !musicOn;
+      try { localStorage.setItem(MUSIC_KEY, musicOn ? "on" : "off"); } catch { /* not kept */ }
+      if (!musicOn) stopMusic();
+      else if (musicWanted && !muted && live()) startMusic();
+      return musicOn;
     };
     /** Once a frame: rests the context while the tab is hidden. */
     const update = () => {
@@ -372,12 +411,16 @@
       if (document.hidden && ctx.state === "running") ctx.suspend().catch(() => {});
       else if (!document.hidden && ctx.state === "suspended") ctx.resume().catch(() => {});
     };
+    // The director stops the frame loop the moment the tab hides, so the context rests on the event itself, not a frame.
+    document.addEventListener("visibilitychange", update);
     const dispose = () => {
+      document.removeEventListener("visibilitychange", update);
       setMusic(false);
       if (ctx) ctx.close().catch(() => {});
       ctx = master = noise = voices = null;
     };
-    return { open: () => !muted && live(), play, music: setMusic, update, dispose, get opened() { return !!ctx; } };
+    return { open: () => !muted && live(), play, music: setMusic, newPlaylist, toggleMusic, get musicOn() { return musicOn; },
+      get nowPlaying() { return TRACKS[current()]; }, update, dispose, get opened() { return !!ctx; } };
   };
 
   BL.ghostAudio = { create };

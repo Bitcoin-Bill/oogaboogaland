@@ -1,5 +1,5 @@
-// HALLOWEEN: the ghost boss's music from OBL-Audio-lab (public/audio/boss.mp3), looped through his fight. A deferred group
-// of its own (data-defer="halloween-boss"), fetched when round 5 begins, so the island's hunt never waits on it.
+// HALLOWEEN: the ghost boss's music from OBL-Audio-lab (public/audio/boss.mp3), one of the hunt's playlist. In the
+// deferred `halloween-music` group with ghost-music-data.js, fetched as a hunt starts, so the island never waits on it.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};

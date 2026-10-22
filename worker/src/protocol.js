@@ -88,9 +88,11 @@ export const DOOR_TRANSIT_MS = 12000;
 export const DOOR_PASS_MS = 8000;
 export const DOOR_HZ = 4;
 export const DOOR_BURST = 6;
-// HALLOWEEN: the ghost hunt's reports to the host: a rifle's hits, a dozen a second at most.
-export const GHOST_HZ = 12;
-export const GHOST_BURST = 12;
+// HALLOWEEN: the ghost hunt's reports to the host: a follower's hits, summed per target a tenth of a second at a time
+// (up to 60 damage a report), so a rifle with both monkeys stays near ten a second; room above that for several
+// targets at once, and a start or pause besides.
+export const GHOST_HZ = 20;
+export const GHOST_BURST = 24;
 // The character set of donation messages (`donations.sanitize` in src/js/donations.js), checked against it in worker/test.
 export const CHAT_STRIP = /[^\w .,!?'@#:-]/g;
 export const sanitizeChat = (text) => String(text).replace(CHAT_STRIP, "").trim();
@@ -158,7 +160,7 @@ export const parseClientMessage = (text) => {
   // HALLOWEEN: a follower's word to the ghost hunt's host.
   if (msg.t === "ghost") {
     if (msg.k === "start" || msg.k === "pause") return { t: "ghost", k: msg.k };
-    return msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && msg.g < 65536 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 20
+    return msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && msg.g < 65536 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 60
       ? { t: "ghost", k: "hit", g: msg.g, d: msg.d } : null;
   }
   if (msg.t === "poker-voice") return msg.table === null || Number.isInteger(msg.table) && msg.table >= 0 && msg.table < 10 ? { t: "poker-voice", table: msg.table } : null;
@@ -266,12 +268,18 @@ export const voicePeers = (players) => {
   return out;
 };
 
-// NPC host: one page runs the Ooga crew for everyone and streams its poses; the others follow. The host is
-// the page longest in the room among those showing the island (`inHub`: in the hub scene and visible), so
-// it changes only when that page leaves, hides or closes. 0 when no page qualifies.
-export const electHost = (players) => {
+// NPC host: one page runs the Ooga crew (and the hub's events) for everyone and streams them; the others
+// follow. The sitting host (`incumbent`) keeps the role while it still shows the island (`inHub`: in the hub
+// scene and visible); otherwise it goes to the page longest in the room among those that do. So a page that
+// hides and comes back returns as a follower and catches up from the host's frames, never taking hosting
+// back with its own stale state. 0 when no page qualifies.
+export const electHost = (players, incumbent = 0) => {
   let best = null;
-  for (const p of players) if (p.inHub && (!best || p.joinedAt < best.joinedAt || (p.joinedAt === best.joinedAt && p.id < best.id))) best = p;
+  for (const p of players) {
+    if (!p.inHub) continue;
+    if (p.id === incumbent) return p.id;
+    if (!best || p.joinedAt < best.joinedAt || (p.joinedAt === best.joinedAt && p.id < best.id)) best = p;
+  }
   return best ? best.id : 0;
 };
 

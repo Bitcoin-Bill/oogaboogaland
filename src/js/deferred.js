@@ -14,7 +14,7 @@
   // How each group shows it has arrived: the module that runs last in it.
   const PRESENT = { timechain: () => !!BL.timechainInterior, dsb: () => !!BL.dsbCollision, arcade: () => !!BL.carnivalAudio, poker: () => !!BL.pokerHud, drop: () => !!BL.dropAudio,
     // HALLOWEEN: the hub's ghost hunt, and its boss's music.
-    halloween: () => !!BL.halloween, "halloween-boss": () => !!BL.ghostBossAudioData };
+    halloween: () => !!BL.halloween, "halloween-music": () => !!BL.ghostMusicData };
   const loading = new Map();
   const load = (group) => {
     if (PRESENT[group]()) return null;

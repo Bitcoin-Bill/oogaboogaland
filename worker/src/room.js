@@ -484,7 +484,7 @@ export class Room extends DurableObject {
 
   // Also after any page's `hub` flag changes: the host sends frames only while someone follows.
   electHost() {
-    const id = electHost(this.players.values());
+    const id = electHost(this.players.values(), this.hostId);
     const followers = npcFollowers(this.players.values(), id);
     if (id === this.hostId && followers === this.followers) return;
     this.hostId = id;

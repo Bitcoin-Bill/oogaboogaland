@@ -1625,6 +1625,11 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
     </div>
     <div class="ghost-banner" id="ghost-banner" hidden><strong id="ghost-banner-title"></strong><span id="ghost-banner-sub"></span></div>
     <div class="ghost-flash" id="ghost-flash" hidden></div>
+    <div class="ghost-player" id="ghost-player" hidden>
+      <span class="ghost-player-note" aria-hidden="true">♪</span>
+      <span class="ghost-player-title" id="ghost-player-title"></span>
+      <button type="button" class="ghost-player-toggle" id="ghost-player-toggle" aria-pressed="true">Music on</button>
+    </div>
     <div class="ghost-intro" id="ghost-intro" role="dialog" aria-modal="true" aria-labelledby="ghost-intro-title" hidden>
       <h2 id="ghost-intro-title">Hunt the ghosts</h2>
       <ul class="ghost-intro-keys" id="ghost-intro-keys"></ul>
@@ -1897,7 +1902,8 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/ghost-hud.js" data-defer="halloween"></script>
   <script src="js/ghost-sync.js" data-defer="halloween"></script>
   <script src="js/ghost-game.js" data-defer="halloween"></script>
-  <script src="js/ghost-boss-audio-data.js" data-defer="halloween-boss"></script>
+  <script src="js/ghost-boss-audio-data.js" data-defer="halloween-music"></script>
+  <script src="js/ghost-music-data.js" data-defer="halloween-music"></script>
   <script src="js/director.js"></script>
 </body>
 
