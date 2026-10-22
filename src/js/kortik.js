@@ -1,9 +1,11 @@
-// Kortik at his switchboard. Lamps on the board start flashing as calls come in; he answers each by lifting a cord's
-// plug from the shelf, carrying it to the lit jack and pushing it in, then throws its key, and pulls the cord back when
-// the lamp flickers out. Out of free cords, or just because, he moves a plugged cord from one jack to another. Between
-// calls he leans in to scowl at the board, throws up his hands and shakes his head, and when someone is near he swivels
-// round on his stool to point and tell them what he thinks of Lightning. It is comedy, not routing: nothing here reads
-// the node. Everything runs in the wall's frame (kortik-models.js) on a fixed set of nodes; update allocates nothing.
+// Kortik at his switchboard. Lamps on the board start flashing as calls come in; he answers each by taking a cord's plug
+// from the shelf in his fist, lining it up in front of the lit jack and pushing it home, letting go, and throwing its key;
+// when the lamp flickers out he pulls the plug straight back out and sets it upright in its hole again. Out of free
+// cords, or just because, he moves a plugged cord from one jack to another. Between calls he leans in to scowl at the
+// board, throws up his hands and shakes his head, and when someone is near he swivels round on his stool to point and
+// tell them what he thinks of Lightning. It is comedy, not routing: nothing here reads the node.
+// His arms bend at the elbow (two-bone reach), so a fist lands where it means to; a plug in it lies along the forearm.
+// Everything runs in the wall's frame (kortik-models.js) on a fixed set of nodes; update allocates nothing.
 (() => {
   "use strict";
   const BL = window.BL, KM = BL.kortikModels, FM = BL.factoryModels;
@@ -13,10 +15,13 @@
   const REBALANCING = 3;
   // How near the view must be for him to turn and speak, and the quiet he keeps between lines, in seconds.
   const HEAR = 16, QUIET = [16, 30];
-  const SEGMENTS = 8, CORD_W = 0.03, TAU = Math.PI * 2;
-  // A plan's steps, where a hand goes (the first four in the wall's frame, the rest with his body), and a jack's states.
+  // A plug's place in a jack, how far out a hand lines it up before pushing it home, and how long it takes to settle
+  // into a fist, a jack or its hole.
+  const IN_JACK = 0.012, APPROACH = 0.13, SETTLE = 0.15;
+  const SEGMENTS = 10, TAU = Math.PI * 2;
+  // A plan's steps, where a hand goes (the first five in the wall's frame, the rest with his body), and a jack's states.
   const LOOK = 0, MOVE = 1, GRAB = 2, PLUG = 3, DROP = 4, KEY = 5, LEAN = 6, SAY = 7, SHAKE = 8, WAIT = 9, SWIVEL = 10;
-  const T_JACK = 0, T_JACK_IN = 1, T_HOME = 2, T_KEY = 3, T_REST = 4, T_UP = 5, T_POINT = 6, T_VIEW = 7;
+  const T_JACK = 0, T_JACK_IN = 1, T_HOME = 2, T_KEY = 3, T_POINT = 4, T_VIEW = 5, T_REST = 6, T_UP = 7;
   const IDLE = 0, CALLING = 1, CONNECTED = 2, CLEARING = 3;
   const smooth = (t) => t * t * (3 - 2 * t);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -49,11 +54,15 @@
     KM.ACTIVE.forEach((idx, a) => { activeOf[idx] = a; });
     const jacks = KM.ACTIVE.length, jack = new Uint8Array(jacks), jackCord = new Int8Array(jacks).fill(-1), jackT = new Float32Array(jacks);
     const jackX = (j) => KM.jackX(KM.ACTIVE[j] % B.cols), jackY = (j) => KM.jackY(Math.floor(KM.ACTIVE[j] / B.cols));
+    // The hand that works a jack: his right (0) for the board's +x half, his left (1) for the rest.
+    const sideOf = (j) => (jackX(j) >= 0 ? 0 : 1);
 
-    // The cords: a plug, its key and its cord's segments each, and where each one is.
+    // The cords: a plug, its key and its cord's segments each. A plug's position and the way its boot points ease from
+    // where it was to where it goes whenever it is taken, plugged in or set down.
     const n = B.cords, plugs = [], keys = [], segs = [];
     const cordJack = new Int8Array(n).fill(-1), cordHeld = new Int8Array(n).fill(-1);
     const keyThrow = new Float32Array(n), keyTarget = new Float32Array(n);
+    const plugPos = new Float32Array(n * 3), plugFrom = new Float32Array(n * 3), plugDir = new Float32Array(n * 3), plugBlend = new Float32Array(n).fill(1);
     for (let i = 0; i < n; i++) {
       const black = B.black.includes(i);
       const p = createNode({ position: { x: KM.cordX(i), y: B.shelf + 0.03, z: B.plugZ }, geometry: black ? S.plugs.black : S.plugs.red });
@@ -66,27 +75,33 @@
         segs.push(seg);
         addChild(node, seg);
       }
+      plugPos[i * 3] = KM.cordX(i); plugPos[i * 3 + 1] = B.shelf + 0.03; plugPos[i * 3 + 2] = B.plugZ;
+      plugDir[i * 3 + 1] = 1;
     }
 
-    // Kortik on his stool, facing the board (-z, a yaw of pi); his right hand is on the board's +x side.
-    const k = BL.models.caveman(KM.traits()), P = k.parts, h = k.traits.height;
-    const ARM = 10.5 * h / 16, armX = P.armL.position.x, shoulderY = P.armL.position.y, headY = P.head.position.y, headZ = P.head.position.z;
+    // Kortik on his stool, facing the board (-z, a yaw of pi), his shins hanging from his knees; his right hand is on the
+    // board's +x side.
+    const k = KM.rig(), P = k.parts, L1 = k.ARM.upper, L2 = k.ARM.fore, REACH = L1 + L2 - 0.002;
+    const armX = P.armL.position.x, shoulderY = P.armL.position.y, headY = P.head.position.y, headZ = P.head.position.z;
     const seatY = B.seat.y, seatZ = B.seat.z;
     k.root.position.y = seatY;
     k.root.position.z = seatZ;
     k.root.rotation.y = Math.PI;
-    // A big head on a stocky body, as the character sheet draws him.
-    P.head.scale.x = P.head.scale.y = P.head.scale.z = 1.22;
+    P.shinR.rotation.x = P.shinL.rotation.x = 1.45;
     addChild(node, k.root);
 
-    // His body's turn and lean, and a point turned with them into the wall's frame (into OUT), or a direction turned
-    // back into his body's frame (into DIR).
+    // His body's turn and lean; a point turned with them into the wall's frame (into OUT), a direction likewise, or a
+    // direction turned back into his body's frame (into DIR).
     let yaw = Math.PI, yawTarget = Math.PI, lean = 0.1, leanTarget = 0.1;
     const OUT = new Float32Array(3), DIR = new Float32Array(3);
-    const toWall = (x, y, z) => {
+    const dirToWall = (x, y, z) => {
       const cl = Math.cos(lean), sl = Math.sin(lean), cy = Math.cos(yaw), sy = Math.sin(yaw);
       const ly = y * cl - z * sl, lz = y * sl + z * cl;
-      OUT[0] = x * cy + lz * sy; OUT[1] = k.root.position.y + ly; OUT[2] = seatZ - x * sy + lz * cy;
+      OUT[0] = x * cy + lz * sy; OUT[1] = ly; OUT[2] = -x * sy + lz * cy;
+    };
+    const toWall = (x, y, z) => {
+      dirToWall(x, y, z);
+      OUT[1] += k.root.position.y; OUT[2] += seatZ;
     };
     const toBody = (x, y, z) => {
       const cl = Math.cos(lean), sl = Math.sin(lean), cy = Math.cos(yaw), sy = Math.sin(yaw);
@@ -94,22 +109,23 @@
       DIR[0] = bx; DIR[1] = y * cl + bz * sl; DIR[2] = -y * sl + bz * cl;
     };
 
-    // Each hand: what it is going to (a target kind and its cord and jack), from where, how far along, and where its
-    // arm actually reaches this frame.
-    const hand = new Float32Array(6), from = new Float32Array(6), reach = new Float32Array(6);
+    // Each hand: what it is going to (a target kind and its cord and jack), from where, how far along, where its fist
+    // actually is this frame, and which way its forearm points.
+    const hand = new Float32Array(6), from = new Float32Array(6), fist = new Float32Array(6), fore = new Float32Array(6);
     const kind = new Uint8Array([T_REST, T_REST]), kindCord = new Int8Array(2), kindJack = new Int8Array(2);
     const moveT = new Float32Array(2), moveDur = new Float32Array(2), look = new Float32Array(3), viewer = new Float32Array(3);
-    let lookKind = T_JACK, lookJack = 12, headYaw = 0, headPitch = 0, shake = 0, shakeDur = 0, time = 0;
+    let lookKind = T_JACK, lookJack = 4, headYaw = 0, headPitch = 0, shake = 0, shakeDur = 0, time = 0;
     let quiet = 4, line = 0, eventIn = 1.5, blinkIn = 3, blink = 0, near = false;
-    // Where a target is, in the wall's frame, into `out` at `o`.
+    // Where a target is, in the wall's frame, into `out` at `o`. A fist goes round a plug's sleeve: over the plug in its
+    // hole, over one in a jack, or the same distance out in front of a jack to line a plug up.
     const pointOf = (target, arm, cord, j, out, o) => {
-      if (target === T_JACK || target === T_JACK_IN) { out[o] = jackX(j); out[o + 1] = jackY(j); out[o + 2] = target === T_JACK ? 0.17 : 0.08; return; }
-      if (target === T_HOME) { out[o] = KM.cordX(cord); out[o + 1] = B.shelf + 0.16; out[o + 2] = B.plugZ; return; }
+      if (target === T_JACK || target === T_JACK_IN) { out[o] = jackX(j); out[o + 1] = jackY(j); out[o + 2] = IN_JACK + KM.GRIP + (target === T_JACK ? APPROACH : 0); return; }
+      if (target === T_HOME) { out[o] = KM.cordX(cord); out[o + 1] = B.shelf + 0.03 + KM.GRIP; out[o + 2] = B.plugZ; return; }
       if (target === T_KEY) { out[o] = KM.cordX(cord); out[o + 1] = B.shelf + 0.12; out[o + 2] = B.keyZ; return; }
       if (target === T_POINT || target === T_VIEW) { out[o] = viewer[0]; out[o + 1] = viewer[1]; out[o + 2] = viewer[2]; return; }
       const side = arm === 0 ? -1 : 1;
       if (target === T_UP) toWall(side * 0.45, 2.1 - seatY, 0.08);
-      else toWall(side * 0.34, B.shelf + 0.05 - seatY, 0.52);
+      else toWall(side * 0.3, B.shelf + 0.07 - seatY, 0.5);
       out[o] = OUT[0]; out[o + 1] = OUT[1]; out[o + 2] = OUT[2];
     };
     pointOf(T_REST, 0, -1, -1, hand, 0);
@@ -117,7 +133,7 @@
 
     // A plan is a list of steps from a fixed pool, run one after another.
     const steps = [];
-    for (let i = 0; i < 32; i++) steps.push({ kind: WAIT, dur: 0, arm: 0, target: 0, cord: -1, jack: -1, v: 0 });
+    for (let i = 0; i < 40; i++) steps.push({ kind: WAIT, dur: 0, arm: 0, target: 0, cord: -1, jack: -1, v: 0 });
     let count = 0, at = 0, stepT = 0;
     const push = (what, dur, arm = 0, target = 0, cord = -1, j = -1, v = 0) => {
       const s = steps[count++];
@@ -128,6 +144,11 @@
       if (which < 0) { which = line; line = (line + 1) % LINES.length; }
       fx.say(k, LINES[which], 3.6);
       quiet = QUIET[0] + rand() * (QUIET[1] - QUIET[0]);
+    };
+    // A plug changing hands, jacks or its hole settles there from where it is.
+    const settle = (c) => {
+      for (let i = 0; i < 3; i++) plugFrom[c * 3 + i] = plugPos[c * 3 + i];
+      plugBlend[c] = 0;
     };
     const begin = (s) => {
       if (s.kind === MOVE) {
@@ -143,21 +164,26 @@
       else if (s.kind === GRAB) {
         const j = cordJack[s.cord];
         if (j >= 0) { jack[j] = IDLE; jackCord[j] = -1; jackT[j] = 0; }
-        keyTarget[s.cord] = 0;
         cordJack[s.cord] = -1;
         cordHeld[s.cord] = s.arm;
+        settle(s.cord);
       } else if (s.kind === PLUG) {
         cordHeld[s.cord] = -1;
         cordJack[s.cord] = s.jack;
         jack[s.jack] = CONNECTED; jackCord[s.jack] = s.cord; jackT[s.jack] = 0;
-      } else if (s.kind === DROP) { cordHeld[s.cord] = -1; cordJack[s.cord] = -1; }
+        settle(s.cord);
+      } else if (s.kind === DROP) { cordHeld[s.cord] = -1; cordJack[s.cord] = -1; settle(s.cord); }
       else if (s.kind === KEY) keyTarget[s.cord] = s.v;
       else if (s.kind === SAY) say(s.v);
       else if (s.kind === SHAKE) { shake = 0; shakeDur = s.dur; }
     };
-    const oldest = (state) => {
+    // The jack in a state waiting longest, on one half of the board if `half` is 0 or 1.
+    const oldest = (state, half = -1) => {
       let best = -1;
-      for (let j = 0; j < jacks; j++) if (jack[j] === state && (state === CALLING || jackCord[j] >= 0) && (best < 0 || jackT[j] > jackT[best])) best = j;
+      for (let j = 0; j < jacks; j++) {
+        if (jack[j] !== state || state !== CALLING && jackCord[j] < 0 || half >= 0 && sideOf(j) !== half) continue;
+        if (best < 0 || jackT[j] > jackT[best]) best = j;
+      }
       return best;
     };
     // The free cord whose plug stands nearest the jack across the shelf.
@@ -169,12 +195,32 @@
       }
       return best;
     };
-    const keyFor = (c, j, a) => {
+    // The other hand throws a cord's key (or sets it back).
+    const keyFor = (c, j, a, v) => {
       const o = 1 - a;
       push(LOOK, 0.1, o, T_KEY, c, j);
       push(MOVE, 0.32, o, T_KEY, c, j);
-      push(KEY, 0.18, o, 0, c, j, 0.55);
+      push(KEY, 0.18, o, 0, c, j, v);
       push(MOVE, 0.32, o, T_REST, c, j);
+    };
+    // A plug carried to a jack, lined up in front of it, pushed home and let go of.
+    const plugInto = (c, j, a) => {
+      push(LOOK, 0, a, T_JACK, c, j);
+      push(LEAN, 0, 0, 0, -1, -1, 0.3);
+      push(MOVE, 0.6, a, T_JACK, c, j);
+      push(MOVE, 0.22, a, T_JACK_IN, c, j);
+      push(PLUG, 0.14, a, 0, c, j);
+      push(MOVE, 0.2, a, T_JACK, c, j);
+      push(MOVE, 0.4, a, T_REST, c, j);
+    };
+    // A plug taken out of its jack: the fist goes round it and pulls it straight back out.
+    const pullFrom = (c, j, a) => {
+      push(LOOK, 0.3, a, T_JACK, c, j);
+      push(LEAN, 0, 0, 0, -1, -1, 0.3);
+      push(MOVE, 0.45, a, T_JACK, c, j);
+      push(MOVE, 0.18, a, T_JACK_IN, c, j);
+      push(GRAB, 0.12, a, 0, c, j);
+      push(MOVE, 0.22, a, T_JACK, c, j);
     };
     // His hands in the air and a shake of the head, at the board.
     const fuss = () => {
@@ -206,63 +252,48 @@
       else push(WAIT, 0.4 + rand() * 1.2);
     };
     const connect = (j, c) => {
-      const a = jackX(j) >= 0 ? 0 : 1;
-      push(LOOK, 0.35, a, T_JACK, c, j);
+      const a = sideOf(j);
+      push(LOOK, 0.3, a, T_JACK, c, j);
+      push(LOOK, 0, a, T_HOME, c, j);
       push(LEAN, 0, 0, 0, -1, -1, 0.14);
       push(MOVE, 0.45, a, T_HOME, c, j);
-      push(GRAB, 0.12, a, 0, c, j);
-      push(LEAN, 0, 0, 0, -1, -1, 0.32);
-      push(MOVE, 0.62, a, T_JACK, c, j);
-      push(MOVE, 0.16, a, T_JACK_IN, c, j);
-      push(PLUG, 0.12, a, 0, c, j);
-      push(MOVE, 0.4, a, T_REST, c, j);
-      keyFor(c, j, a);
+      push(GRAB, 0.16, a, 0, c, j);
+      plugInto(c, j, a);
+      keyFor(c, j, a, 0.55);
       push(LEAN, 0, 0, 0, -1, -1, 0.1);
       afterwards(0.35, -1);
     };
-    // A plugged cord pulled from one jack and pushed into another: rebalancing, by hand.
-    const repatch = (from, j) => {
-      const c = jackCord[from], a = jackX(j) >= 0 ? 0 : 1;
-      push(LOOK, 0.3, a, T_JACK, c, from);
-      push(LEAN, 0, 0, 0, -1, -1, 0.3);
-      push(MOVE, 0.5, a, T_JACK_IN, c, from);
-      push(GRAB, 0.1, a, 0, c, from);
-      push(MOVE, 0.18, a, T_JACK, c, from);
-      push(LOOK, 0.05, a, T_JACK, c, j);
-      push(MOVE, 0.62, a, T_JACK, c, j);
-      push(MOVE, 0.16, a, T_JACK_IN, c, j);
-      push(PLUG, 0.12, a, 0, c, j);
-      push(MOVE, 0.4, a, T_REST, c, j);
-      keyFor(c, j, a);
+    // A plugged cord pulled from one jack and pushed into another on the same half: rebalancing, by hand.
+    const repatch = (was, j) => {
+      const c = jackCord[was], a = sideOf(j);
+      pullFrom(c, was, a);
+      plugInto(c, j, a);
       push(LEAN, 0, 0, 0, -1, -1, 0.1);
       afterwards(0.6, REBALANCING);
     };
     const disconnect = (j) => {
-      const c = jackCord[j], a = jackX(j) >= 0 ? 0 : 1;
-      push(LOOK, 0.3, a, T_JACK, c, j);
-      push(LEAN, 0, 0, 0, -1, -1, 0.3);
-      push(MOVE, 0.55, a, T_JACK_IN, c, j);
-      push(GRAB, 0.1, a, 0, c, j);
-      push(MOVE, 0.2, a, T_JACK, c, j);
+      const c = jackCord[j], a = sideOf(j);
+      pullFrom(c, j, a);
       push(LEAN, 0, 0, 0, -1, -1, 0.14);
-      push(LOOK, 0.05, a, T_HOME, c, j);
+      push(LOOK, 0, a, T_HOME, c, j);
       push(MOVE, 0.55, a, T_HOME, c, j);
-      push(DROP, 0.12, a, 0, c, j);
+      push(DROP, 0.14, a, 0, c, j);
       push(MOVE, 0.35, a, T_REST, c, j);
+      keyFor(c, j, a, 0);
       push(LEAN, 0, 0, 0, -1, -1, 0.1);
       push(WAIT, 0.3 + rand());
     };
     // A lamp flickering out is pulled first. A call is answered with a free cord, or now and then (and always when
-    // none is free) by moving one already plugged. Otherwise a moment to himself: scowling at the board up close, a
-    // glance at whoever is near, a word for them, or his hands in the air.
+    // none is free) by moving one already plugged on the same half. Otherwise a moment to himself: scowling at the
+    // board up close, a glance at whoever is near, a word for them, or his hands in the air.
     const plan = () => {
       count = at = 0;
       stepT = 0;
       let j = oldest(CLEARING);
       if (j >= 0) disconnect(j);
       else if ((j = oldest(CALLING)) >= 0) {
-        const c = freeCord(j), moved = oldest(CONNECTED);
-        if (moved >= 0 && (c < 0 || rand() < 0.3)) repatch(moved, j);
+        const c = freeCord(j), was = oldest(CONNECTED, sideOf(j));
+        if (was >= 0 && (c < 0 || rand() < 0.3)) repatch(was, j);
         else if (c >= 0) connect(j, c);
         else push(WAIT, 0.5);
       } else {
@@ -280,11 +311,11 @@
       }
       begin(steps[0]);
     };
-    // Calls come and go on their own: a new one on an idle jack while fewer than six are live, else one clears.
+    // Calls come and go on their own: a new one on an idle jack while fewer than five are live, else one clears.
     const event = () => {
       let live = 0;
       for (let j = 0; j < jacks; j++) if (jack[j] !== IDLE) live++;
-      if (live < 6 && rand() < 0.7) {
+      if (live < 5 && rand() < 0.7) {
         for (let tries = 0; tries < 12; tries++) {
           const j = Math.floor(rand() * jacks);
           if (jack[j] === IDLE) { jack[j] = CALLING; jackT[j] = 0; return; }
@@ -296,25 +327,37 @@
       }
     };
 
-    // Aims an arm from its shoulder at its hand's point and writes where the hand ends up. A far jack stretches the
-    // arm a little; a point far off (at whoever is near) is a gesture at arm's length.
-    const aim = (a) => {
-      const arm = a === 0 ? P.armR : P.armL, o = a * 3;
-      toWall(a === 0 ? -armX : armX, shoulderY, 0);
+    // Two-bone reach: the fist goes to its hand's point, or as far toward it as the arm goes, the elbow bending out
+    // from the body and down, as an arm's does. The upper arm is aimed in the body's frame, the forearm in the upper
+    // arm's; each part hangs along its own -y.
+    const reachFor = (a) => {
+      const upper = a === 0 ? P.armR : P.armL, lower = a === 0 ? P.foreR : P.foreL, side = a === 0 ? -1 : 1, o = a * 3;
+      toWall(side * armX, shoulderY, 0);
       const sx = OUT[0], sy = OUT[1], sz = OUT[2];
-      let dx = hand[o] - sx, dy = hand[o + 1] - sy, dz = hand[o + 2] - sz;
-      const dist = Math.hypot(dx, dy, dz) || 1;
-      dx /= dist; dy /= dist; dz /= dist;
-      toBody(dx, dy, dz);
-      arm.rotation.z = Math.asin(clamp(DIR[0], -1, 1));
-      arm.rotation.x = Math.atan2(-DIR[2], -DIR[1]);
-      arm.rotation.y = 0;
-      const stretch = dist > ARM * 1.6 ? 1 : clamp(dist / ARM, 1, 1.22), r = ARM * stretch;
-      arm.scale.y = stretch;
-      reach[o] = sx + dx * r; reach[o + 1] = sy + dy * r; reach[o + 2] = sz + dz * r;
+      const dx = hand[o] - sx, dy = hand[o + 1] - sy, dz = hand[o + 2] - sz, dist = Math.hypot(dx, dy, dz) || 1e-4, d = clamp(dist, 0.12, REACH);
+      fist[o] = sx + dx / dist * d; fist[o + 1] = sy + dy / dist * d; fist[o + 2] = sz + dz / dist * d;
+      toBody(dx / dist, dy / dist, dz / dist);
+      const nx = DIR[0], ny = DIR[1], nz = DIR[2];
+      let px = side * 0.75, py = -0.55, pz = -0.35;
+      const along = px * nx + py * ny + pz * nz;
+      px -= nx * along; py -= ny * along; pz -= nz * along;
+      const pl = Math.hypot(px, py, pz) || 1;
+      px /= pl; py /= pl; pz /= pl;
+      const ca = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1), sa = Math.sqrt(1 - ca * ca);
+      const ux = nx * ca + px * sa, uy = ny * ca + py * sa, uz = nz * ca + pz * sa;
+      const z1 = Math.asin(clamp(ux, -1, 1)), x1 = Math.atan2(-uz, -uy);
+      upper.rotation.x = x1; upper.rotation.y = 0; upper.rotation.z = z1;
+      let fx = nx * d - ux * L1, fy = ny * d - uy * L1, fz = nz * d - uz * L1;
+      const fl = Math.hypot(fx, fy, fz) || 1;
+      fx /= fl; fy /= fl; fz /= fl;
+      dirToWall(fx, fy, fz);
+      fore[o] = OUT[0]; fore[o + 1] = OUT[1]; fore[o + 2] = OUT[2];
+      const c1 = Math.cos(x1), s1 = Math.sin(x1), c2 = Math.cos(z1), s2 = Math.sin(z1);
+      const ay = fy * c1 + fz * s1, az = -fy * s1 + fz * c1, lx = fx * c2 + ay * s2, ly = -fx * s2 + ay * c2;
+      lower.rotation.x = Math.atan2(-az, -ly); lower.rotation.y = 0; lower.rotation.z = Math.asin(clamp(lx, -1, 1));
     };
-    // Lays a cord's segments along a curve from its hole in the shelf to its plug's far end, sagging and bowing toward
-    // him, and lying on the shelf rather than through it.
+    // Lays a cord's segments along a curve from its hole in the shelf to its plug's boot, sagging and bowing toward him,
+    // and lying on the shelf rather than through it.
     const drawCord = (c, bx, by, bz) => {
       const ax = KM.cordX(c), ay = B.shelf + 0.035, az = B.plugZ;
       const span = Math.hypot(bx - ax, by - ay, bz - az), bow = 0.08 + span * 0.32;
@@ -327,8 +370,8 @@
         seg.position.x = (px + qx) / 2; seg.position.y = (py + qy) / 2; seg.position.z = (pz + qz) / 2;
         seg.rotation.y = Math.atan2(dx, dz);
         seg.rotation.x = -Math.asin(clamp(dy / len, -1, 1));
-        seg.scale.x = seg.scale.y = CORD_W;
-        seg.scale.z = len + 0.008;
+        seg.scale.x = seg.scale.y = B.cordR;
+        seg.scale.z = len + 0.012;
         px = qx; py = qy; pz = qz;
       }
     };
@@ -370,7 +413,7 @@
           for (let i = 0; i < 3; i++) hand[o + i] = from[o + i] + (hand[o + i] - from[o + i]) * e;
           if (moveT[a] >= moveDur[a]) moveDur[a] = 0;
         }
-        aim(a);
+        reachFor(a);
       }
       // The head turned to what he looks at, a shake now and then, and a blink.
       pointOf(lookKind, 0, -1, lookJack, look, 0);
@@ -387,15 +430,35 @@
       const face = blink > 0 ? k.headClosed : k.headOpen;
       if (P.head.geometry !== face) P.head.geometry = face;
 
-      // The plugs: in a hand, in a jack, or standing in the shelf; a cord shows whenever its plug is out.
+      // The plugs. In a fist one lies along the forearm, boot to the elbow, or square to the board while it is lined up
+      // with a jack or pushed in, or upright over its hole while it is set down; otherwise it stands in its jack or its
+      // hole. Its boot turns smoothly, and where it sits settles over a moment after it changes hands. A cord shows
+      // from its hole to the boot whenever its plug is out.
       for (let c = 0; c < n; c++) {
-        const p = plugs[c], held = cordHeld[c], j = cordJack[c];
-        let tilt = 0;
-        if (held >= 0) { p.position.x = reach[held * 3]; p.position.y = reach[held * 3 + 1]; p.position.z = reach[held * 3 + 2]; tilt = 1.1; }
-        else if (j >= 0) { p.position.x = jackX(j); p.position.y = jackY(j); p.position.z = 0.012; tilt = Math.PI / 2; }
-        else { p.position.x = KM.cordX(c); p.position.y = B.shelf + 0.03; p.position.z = B.plugZ; }
-        p.rotation.x = tilt;
-        if (held >= 0 || j >= 0) drawCord(c, p.position.x, p.position.y + KM.PLUG * Math.cos(tilt), p.position.z + KM.PLUG * Math.sin(tilt));
+        const p = plugs[c], held = cordHeld[c], j = cordJack[c], o = c * 3;
+        let ux = 0, uy = 1, uz = 0, tx, ty, tz;
+        if (held >= 0) {
+          const h = held * 3, kd = kind[held];
+          if (kd === T_JACK || kd === T_JACK_IN) { uy = 0; uz = 1; }
+          else if (kd !== T_HOME) { ux = -fore[h]; uy = -fore[h + 1]; uz = -fore[h + 2]; }
+        } else if (j >= 0) { uy = 0; uz = 1; }
+        const e = Math.min(1, dt * 14);
+        let dx = plugDir[o] + (ux - plugDir[o]) * e, dy = plugDir[o + 1] + (uy - plugDir[o + 1]) * e, dz = plugDir[o + 2] + (uz - plugDir[o + 2]) * e;
+        const dl = Math.hypot(dx, dy, dz) || 1;
+        dx /= dl; dy /= dl; dz /= dl;
+        plugDir[o] = dx; plugDir[o + 1] = dy; plugDir[o + 2] = dz;
+        if (held >= 0) { const h = held * 3; tx = fist[h] - dx * KM.GRIP; ty = fist[h + 1] - dy * KM.GRIP; tz = fist[h + 2] - dz * KM.GRIP; }
+        else if (j >= 0) { tx = jackX(j); ty = jackY(j); tz = IN_JACK; }
+        else { tx = KM.cordX(c); ty = B.shelf + 0.03; tz = B.plugZ; }
+        plugBlend[c] = Math.min(1, plugBlend[c] + dt / SETTLE);
+        const b = smooth(plugBlend[c]);
+        plugPos[o] = plugFrom[o] + (tx - plugFrom[o]) * b;
+        plugPos[o + 1] = plugFrom[o + 1] + (ty - plugFrom[o + 1]) * b;
+        plugPos[o + 2] = plugFrom[o + 2] + (tz - plugFrom[o + 2]) * b;
+        p.position.x = plugPos[o]; p.position.y = plugPos[o + 1]; p.position.z = plugPos[o + 2];
+        p.rotation.x = Math.acos(clamp(dy, -1, 1));
+        p.rotation.y = Math.atan2(dx, dz);
+        if (held >= 0 || j >= 0 || plugBlend[c] < 1) drawCord(c, plugPos[o] + dx * KM.PLUG, plugPos[o + 1] + dy * KM.PLUG, plugPos[o + 2] + dz * KM.PLUG);
         else for (let s = 0; s < SEGMENTS; s++) segs[c * SEGMENTS + s].visible = false;
         keyThrow[c] += (keyTarget[c] - keyThrow[c]) * Math.min(1, dt * 14);
         keys[c].rotation.x = keyThrow[c];
@@ -417,7 +480,7 @@
     };
     const liveGeometry = (set) => { set.add(k.headOpen).add(k.headClosed); };
     const dispose = () => { count = at = 0; };
-    return { node, kortik: k, update, liveGeometry, dispose, get jacks() { return jack; }, get cords() { return cordJack; }, get near() { return near; } };
+    return { node, kortik: k, update, liveGeometry, dispose, get jacks() { return jack; }, get cords() { return cordJack; }, get held() { return cordHeld; }, get near() { return near; } };
   };
   BL.kortik = { create, LINES };
 })();

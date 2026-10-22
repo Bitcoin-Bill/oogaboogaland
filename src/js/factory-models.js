@@ -42,9 +42,9 @@
   // in from the edge and looking into the hall (+x), `wall` either side of the deck's middle. What stands in front of
   // it blocks the walkers, as [along the wall, out from it, radius]; along runs toward -z.
   const KORTIK = {
-    face: 0.55, wall: 2.8, seat: 0.9,
+    face: 0.55, wall: 2.8, seat: 0.8,
     blocks: [[-2.45, 0.22, 0.4], [-1.75, 0.22, 0.4], [-1.05, 0.22, 0.4], [-0.35, 0.22, 0.4], [0.35, 0.22, 0.4], [1.05, 0.22, 0.4],
-      [1.75, 0.22, 0.4], [2.45, 0.22, 0.4], [0, 0.9, 0.42], [2.2, 0.85, 0.45], [-2.3, 1.0, 0.5]]
+      [1.75, 0.22, 0.4], [2.45, 0.22, 0.4], [0, 0.8, 0.42], [2.35, 1.0, 0.45], [-2.35, 1.0, 0.5]]
   };
   // Where the glowing water runs down the back wall.
   const FALLS = [-17, -4.5, 4.5, 18];
