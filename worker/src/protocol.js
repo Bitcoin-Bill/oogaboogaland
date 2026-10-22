@@ -88,11 +88,19 @@ export const DOOR_TRANSIT_MS = 12000;
 export const DOOR_PASS_MS = 8000;
 export const DOOR_HZ = 4;
 export const DOOR_BURST = 6;
-// HALLOWEEN: the ghost hunt's reports to the host: a follower's hits, summed per target a tenth of a second at a time
-// (up to 60 damage a report), so a rifle with both monkeys stays near ten a second; room above that for several
-// targets at once, and a start or pause besides.
+// HALLOWEEN: the ghost hunt's reports to the host: a follower's hits, every target's summed damage a tenth of a second
+// at a time in one `hits` report (up to 60 a target), so any mix of rifle and monkey fire stays at ten reports a second;
+// the rest of the budget is for a start or pause.
 export const GHOST_HZ = 20;
 export const GHOST_BURST = 24;
+// A follower's batch: up to GHOST_BATCH targets, each a ghost id (0 the boss) and its summed damage, as one report.
+export const GHOST_BATCH = 16;
+const ghostHit = (g, d) => Number.isInteger(g) && g >= 0 && g < 65536 && Number.isInteger(d) && d >= 1 && d <= 60;
+const ghostHits = (h) => {
+  if (!Array.isArray(h) || h.length < 2 || h.length > GHOST_BATCH * 2 || h.length % 2) return null;
+  for (let i = 0; i < h.length; i += 2) if (!ghostHit(h[i], h[i + 1])) return null;
+  return { t: "ghost", k: "hits", h: h.slice() };
+};
 // The character set of donation messages (`donations.sanitize` in src/js/donations.js), checked against it in worker/test.
 export const CHAT_STRIP = /[^\w .,!?'@#:-]/g;
 export const sanitizeChat = (text) => String(text).replace(CHAT_STRIP, "").trim();
@@ -160,8 +168,8 @@ export const parseClientMessage = (text) => {
   // HALLOWEEN: a follower's word to the ghost hunt's host.
   if (msg.t === "ghost") {
     if (msg.k === "start" || msg.k === "pause") return { t: "ghost", k: msg.k };
-    return msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && msg.g < 65536 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 60
-      ? { t: "ghost", k: "hit", g: msg.g, d: msg.d } : null;
+    if (msg.k === "hits") return ghostHits(msg.h);
+    return msg.k === "hit" && ghostHit(msg.g, msg.d) ? { t: "ghost", k: "hit", g: msg.g, d: msg.d } : null;
   }
   if (msg.t === "poker-voice") return msg.table === null || Number.isInteger(msg.table) && msg.table >= 0 && msg.table < 10 ? { t: "poker-voice", table: msg.table } : null;
   return null;

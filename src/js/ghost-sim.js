@@ -361,7 +361,13 @@
     };
     const SPAWNED = new Int32Array(8);
     /** One spawn event of k ghosts round the crest, golden-angle spread; false when every try met a player. */
+    // Spawns up to `k` ghosts round a fresh bearing, as many as the pool has free slots for (a dying ghost holds its
+    // slot until its fade is done); how many it made, 0 when there was no room or no safe spot.
     const spawnGroup = (k, tierOf) => {
+      let free = 0;
+      for (const g of ghosts) if (!g.on) free++;
+      k = Math.min(k, free);
+      if (k <= 0) return 0;
       for (let tries = 0; tries < C.SPAWN_TRIES; tries++) {
         const theta = s.theta0 + s.seqN++ * C.GOLDEN + (rand() * 2 - 1) * C.JITTER;
         let ok = true;
@@ -371,13 +377,14 @@
           SPAWNED[i] = at;
         }
         if (!ok) continue;
+        let made = 0;
         for (let i = 0; i < k; i++) {
           const at = SPAWNED[i], x = spots[at * 4], y = spots[at * 4 + 1], z = spots[at * 4 + 2], r = Math.hypot(x, z) || 1;
-          addGhost(tierOf(i), x, y, z, x / r * C.LAND_R, z / r * C.LAND_R);
+          if (addGhost(tierOf(i), x, y, z, x / r * C.LAND_R, z / r * C.LAND_R)) made++;
         }
-        return true;
+        return made;
       }
-      return false;
+      return 0;
     };
     const nearestPlayer = (x, z) => {
       let best = null, bd = Infinity;
@@ -502,7 +509,8 @@
         const group = Math.max(0, Math.min(r.group, r.ghosts - s.spawned));
         if (group > 0 && alive() + group <= r.cap && now - s.lastSpawnAt >= r.interval * 1000) {
           const n0 = s.spawned, round = s.round;
-          if (spawnGroup(group, (i) => ghostTier(n0 + i, round))) s.spawned += group;
+          // Only the ghosts that got a slot count; the rest come with a later group.
+          s.spawned += spawnGroup(group, (i) => ghostTier(n0 + i, round));
           s.lastSpawnAt = now;
         }
       }
@@ -563,7 +571,8 @@
         }
         if (s.bossGenerals < C.BOSS.generals && now >= s.bossNextGeneral) {
           const n = Math.min(C.BOSS.generalGroup, C.BOSS.generals - s.bossGenerals);
-          if (spawnGroup(n, () => TIER.GENERAL)) { s.bossGenerals += n; s.bossNextGeneral = now + C.BOSS.generalEvery; }
+          const made = spawnGroup(n, () => TIER.GENERAL);
+          if (made) { s.bossGenerals += made; s.bossNextGeneral = now + C.BOSS.generalEvery; }
           else s.bossNextGeneral = now + 1000;
         }
       }
@@ -576,8 +585,8 @@
       // The lightning drop comes over the pile once a round, part way through it, and once in the boss's fight.
       if (!s.lightningSent && (s.state === STATE.ACTIVE && s.spawned >= r.ghosts * C.LIGHTNING.at
         || s.state === STATE.BOSS && s.bossOn && !s.bossDyingAt && s.bossHp <= s.bossMax * C.LIGHTNING.bossAt)) {
-        s.lightningSent = 1;
-        if (!dropsOf(LIGHTNING_DROP)) placeDrop(LIGHTNING_DROP);
+        // Sent once one hangs over the pile: with every drop slot taken, it tries again the next tick.
+        if (dropsOf(LIGHTNING_DROP) || placeDrop(LIGHTNING_DROP)) s.lightningSent = 1;
       }
 
       // Drops: the first player to walk into a landed one takes it; the lightning, the first to reach the pile under it.
@@ -944,7 +953,7 @@
       /** Sends down a drop of `kind` (BL.ghostSim.DROP), as the lab's number keys did. */
       drop: (kind) => s.state !== STATE.IDLE && (kind !== TESS_DROP || !tessOut()) && !!placeDrop(kind),
       /** A ghost of `tier` comes over the crest now. */
-      ghost: (tier) => fighting() && spawnGroup(1, () => tier),
+      ghost: (tier) => fighting() && spawnGroup(1, () => tier) > 0,
       /** A gorilla is called down beside player `id`. */
       gorilla: (id) => fighting() && !!addBrute(playerById(id) || null),
       /** The round ends: everything spawned and gone (or the wait cut short). */

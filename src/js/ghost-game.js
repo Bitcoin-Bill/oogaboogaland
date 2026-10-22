@@ -121,7 +121,7 @@
     MODELS.prepare();
     const group = createNode({ sightHidden: true });
     addChild(root, group);
-    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ onGo: () => closeIntro(true), onMusic: () => audio.toggleMusic() });
+    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ onGo: () => closeIntro(true), onMusic: () => audio.toggleMusic(), onSkip: () => audio.skip() });
     // Every mesh the hunt has shown, kept on the GPU for the visit (`liveGeometry`): frames swap in and out.
     const used = [];
     const keep = (geometry) => {
@@ -380,7 +380,9 @@
     const restoreIsland = () => {
       hub.clearProps(false);
       if (!overrides.size) return;
-      for (const [cave, was] of overrides) cave.override = was;
+      // An Ooga someone else took to drive meanwhile stays theirs: what it had before the hunt is what it goes back to
+      // when they let go, not now.
+      for (const [cave, was] of overrides) if (!(cave.remoteControlled && hub.remoteUnderlying(cave, was))) cave.override = was;
       overrides.clear();
       crew.refreshStates(true);
     };
@@ -589,12 +591,8 @@
         hub.gameMode(true);
         cackled = beamed = rumbled = introShown = false;
         segShown = -1;
-        // The hunt's playlist comes with the hunt, in a new random order.
+        // The hunt's playlist comes with the hunt, in a new random order (each track fetched as it comes up).
         audio.newPlaylist();
-        if (!BL.ghostMusicData) {
-          const loading = BL.deferred.load("halloween-music");
-          if (loading) loading.catch(() => {});
-        }
       }
       if (st === ST.DAWN) { restoreIsland(); hub.gameMode(false); disarmHunters(); audio.play("rumble", 1.6); }
       if (st === ST.COUNTDOWN) {
@@ -1522,7 +1520,7 @@
       // The playlist runs from the herald's launch to the victory banner; the mini player shows it meanwhile.
       const musicTime = S.state >= ST.LAP && S.state <= ST.BOSS || S.state === ST.VICTORY;
       audio.music(musicTime);
-      hud.player(musicTime ? audio.nowPlaying : null, audio.musicOn);
+      hud.player(musicTime ? audio.nowPlaying : null, audio.musicOn, audio.tracks > 1);
       jolt = Math.max(0, jolt - dt * 2.2);
       quake = Math.max(quakeOf(t), jolt);
       if (S.state >= ST.LAP && S.state <= ST.DEFEAT) armHunter(crew.player);
@@ -1610,15 +1608,16 @@
         ctx2d.globalAlpha = 1;
       }
     };
-    // A follower's hits go to the host summed per target a tenth of a second at a time (`HIT_BATCH_MS`), so a rifle with
-    // both monkeys (three hits a shot) stays inside the room's budget for one page's reports.
+    // A follower's hits go to the host as one report a tenth of a second (`HIT_BATCH_MS`), each target's damage summed,
+    // so any mix of rifle and monkey fire, at any number of targets, stays at ten reports a second.
     const HIT_BATCH_MS = 100, HIT_SLOTS = 16, HIT_MAX = 60;
     const hitIds = new Float64Array(HIT_SLOTS), hitDamage = new Float64Array(HIT_SLOTS);
     let hitCount = 0, hitSentAt = 0;
     const flushHits = (now) => {
       if (!hitCount || now - hitSentAt < HIT_BATCH_MS) return;
       hitSentAt = now;
-      for (let i = 0; i < hitCount; i++) sync.hit(hitIds[i], Math.min(HIT_MAX, hitDamage[i]));
+      for (let i = 0; i < hitCount; i++) hitDamage[i] = Math.min(HIT_MAX, hitDamage[i]);
+      sync.hits(hitIds, hitDamage, hitCount);
       hitCount = 0;
     };
     const queueHit = (id, damage) => {

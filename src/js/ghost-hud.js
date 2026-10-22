@@ -21,19 +21,25 @@
     keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["X"], "Switch to your weapon"]],
     touch: [[["Left stick"], "Move your Ooga"], [["Combat"], "Switch to your weapon"], [["Hold fire"], "Shoot the ghosts"]]
   };
-  /** The HUD; `onGo` when the visitor dismisses how to play, `onMusic` when they flip the mini player's switch. */
-  const create = ({ onGo = null, onMusic = null } = {}) => {
+  /**
+   * The HUD; `onGo` when the visitor dismisses how to play, `onMusic` when they flip the mini player's switch,
+   * `onSkip` when they skip to the next track.
+   */
+  const create = ({ onGo = null, onMusic = null, onSkip = null } = {}) => {
     loadFace();
     const el = {
       hud: document.getElementById("ghost-hud"), top: document.getElementById("ghost-top"), lives: document.getElementById("ghost-lives"), health: document.getElementById("ghost-health"),
       banner: document.getElementById("ghost-banner"), title: document.getElementById("ghost-banner-title"), sub: document.getElementById("ghost-banner-sub"),
       boss: document.getElementById("ghost-boss"), bar: document.getElementById("ghost-boss-bar"), flash: document.getElementById("ghost-flash"),
       intro: document.getElementById("ghost-intro"), introKeys: document.getElementById("ghost-intro-keys"), introGo: document.getElementById("ghost-intro-go"),
-      player: document.getElementById("ghost-player"), playerTitle: document.getElementById("ghost-player-title"), playerToggle: document.getElementById("ghost-player-toggle")
+      player: document.getElementById("ghost-player"), playerTitle: document.getElementById("ghost-player-title"), playerToggle: document.getElementById("ghost-player-toggle"),
+      playerSkip: document.getElementById("ghost-player-skip")
     };
     // The switch, let go of after a press so the island's keys keep working.
     const flip = () => { if (onMusic) onMusic(); el.playerToggle.blur(); };
     el.playerToggle.addEventListener("click", flip);
+    const skip = () => { if (onSkip) onSkip(); el.playerSkip.blur(); };
+    el.playerSkip.addEventListener("click", skip);
     const go = () => { if (onGo) onGo(); };
     // Inside the dialog the island leaves the keys alone, so it takes its own: Enter, Space or Escape go on.
     const introKey = (e) => {
@@ -43,7 +49,7 @@
     };
     el.introGo.addEventListener("click", go);
     el.intro.addEventListener("keydown", introKey);
-    const last = { shown: false, top: null, lives: null, title: null, sub: null, boss: -1, livesState: "", health: -2, player: null, playing: null, on: null };
+    const last = { shown: false, top: null, lives: null, title: null, sub: null, boss: -1, livesState: "", health: -2, player: null, playing: null, on: null, skips: null };
     const cells = el.health.children;
     const text = (node, key, value) => {
       if (last[key] === value) return;
@@ -90,8 +96,9 @@
       void el.health.offsetWidth;
       el.health.classList.add("healing");
     };
-    // The mini player: shown while the hunt's music runs (`track` its title and maker, null to hide), its switch `on`.
-    const player = (track, on) => {
+    // The mini player: shown while the hunt's music runs (`track` its title and maker, null to hide), its switch `on`,
+    // and its skip while the music is on and the list has more than one track (`skips`).
+    const player = (track, on, skips = false) => {
       const shown = !!track;
       if (shown !== last.player) { last.player = shown; el.player.hidden = !shown; }
       if (!shown) return;
@@ -103,6 +110,8 @@
         el.playerToggle.setAttribute("aria-pressed", on ? "true" : "false");
         el.player.toggleAttribute("data-off", !on);
       }
+      const canSkip = skips && on;
+      if (canSkip !== last.skips) { last.skips = canSkip; el.playerSkip.hidden = !canSkip; }
     };
     // How to play, shown (`coarse` for touch words) or put away.
     const intro = (on, coarse = false) => {
@@ -139,6 +148,7 @@
     };
     const dispose = () => {
       el.playerToggle.removeEventListener("click", flip);
+      el.playerSkip.removeEventListener("click", skip);
       el.introGo.removeEventListener("click", go);
       el.intro.removeEventListener("keydown", introKey);
       el.health.removeEventListener("animationend", healed);

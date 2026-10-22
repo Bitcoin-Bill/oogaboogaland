@@ -56,7 +56,7 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | client → room | `{ t: "mute", on }` | this page muted or unmuted its own microphone, for everyone's roster |
 | client → room | `{ t: "hp", v, ko }` | the driven body's health normalized to 0-100, in steps of 4, and knockout flag; only on a change, 4 a second at most |
 | client → room | `{ t: "chat", text }` | an Ooga Chat line (see Ooga Chat); the room names the speaker |
-| client → room | `{ t: "ghost", k, g?, d? }` | HALLOWEEN: the ghost hunt's `start` or `pause`, or a `hit` on ghost `g` (0 the boss, up to 65535) for `d` (1–60: a follower's hits on one target summed over a tenth of a second); relayed to the NPC host alone, from a page on the island with a body that is not the host, 20 a second with a burst of 24; nothing is kept |
+| client → room | `{ t: "ghost", k, g?, d? }` | HALLOWEEN: the ghost hunt's `start` or `pause`, or `hits` `h` (a follower's tenth of a second of hits as one report: up to 16 pairs of ghost id, 0 the boss, up to 65535, and its summed damage, 1–60; an older page's lone `hit` `g`, `d` is still read); relayed to the NPC host alone, from a page on the island with a body that is not the host, 20 a second with a burst of 24; nothing is kept |
 | client → room | binary | the NPC host's frame: Ooga poses, gear, status and work, then its events (see The crew in step) |
 | client → room | `"ping"` every 10 s | answered `"pong"` without waking the room |
 | room → client | `welcome { you, players, tickHz, now, loopEpoch, host, followers }` | on connect: everyone else, their last pose, whether each is in voice (`voice`) and muted (`muted`), and their health (`hp`, `ko`) |

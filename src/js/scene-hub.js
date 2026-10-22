@@ -8711,6 +8711,7 @@
     addTarget, selectOoga, mayDriveOoga, zoneOf,
     gorillaActive: () => !!(clankerPlay && clankerPlay.active),
     gameMode: setGameMode,
+    remoteUnderlying: (cave, override) => remotes.setUnderlying(cave, override),
     // The driven Ooga's rifle out and the view in combat, as 2 and X would have it.
     readyGun: () => {
       if (!pilot.aiming) pilot.modeAction("mode-toggle");

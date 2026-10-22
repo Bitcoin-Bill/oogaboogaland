@@ -2250,6 +2250,22 @@ body[data-active-scene="arcade"] .magazine-hud {
   cursor: pointer;
 }
 
+.ghost-player-skip {
+  flex: none;
+  padding: 3px 7px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--paper);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ghost-player-skip[hidden] {
+  display: none;
+}
+
 .ghost-player[data-off] .ghost-player-toggle {
   background: var(--wood-edge);
   color: var(--paper);

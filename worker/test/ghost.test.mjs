@@ -14,6 +14,10 @@ test("a ghost start, pause or hit within bounds is read; anything else is ignore
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"pause","g":3}'), { t: "ghost", k: "pause" });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":12,"d":5,"extra":1}'), { t: "ghost", k: "hit", g: 12, d: 5 });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":7,"d":60}'), { t: "ghost", k: "hit", g: 7, d: 60 }, "a batch of hits on one ghost");
+  assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hits","h":[0,12,7,4,9,60]}'), { t: "ghost", k: "hits", h: [0, 12, 7, 4, 9, 60] }, "a tenth of a second's hits on three targets as one report");
+  for (const h of [[], [1], [1, 2, 3], [1, 0], [1, 61], [-1, 2], [70000, 2], [1.5, 2], Array(34).fill(1), "1,2"]) {
+    assert.equal(parseClientMessage(JSON.stringify({ t: "ghost", k: "hits", h })), null, JSON.stringify(h));
+  }
   for (const bad of [{ k: "hit", g: -1, d: 2 }, { k: "hit", g: 70000, d: 2 }, { k: "hit", g: 1, d: 0 }, { k: "hit", g: 1, d: 61 }, { k: "hit", g: 1.5, d: 2 },
     { k: "hit", g: "1", d: 2 }, { k: "kill", g: 1 }, {}]) {
     assert.equal(parseClientMessage(JSON.stringify({ t: "ghost", ...bad })), null, JSON.stringify(bad));
@@ -72,11 +76,12 @@ test("a follower's ghost report reaches the host alone, and nothing from the hos
   assert.equal(h.room.hostId, 1, "the first page on the island hosts");
   await h.send(follower, { t: "ghost", k: "hit", g: 4, d: 2 });
   await h.send(follower, { t: "ghost", k: "start" });
-  assert.deepEqual(ghosts(host), [{ t: "ghost", k: "hit", g: 4, d: 2, from: 2 }, { t: "ghost", k: "start", from: 2 }]);
+  await h.send(follower, { t: "ghost", k: "hits", h: [0, 12, 4, 6] });
+  assert.deepEqual(ghosts(host), [{ t: "ghost", k: "hit", g: 4, d: 2, from: 2 }, { t: "ghost", k: "start", from: 2 }, { t: "ghost", k: "hits", h: [0, 12, 4, 6], from: 2 }]);
   assert.equal(ghosts(follower).length + ghosts(away).length, 0, "only the host hears the hunt's reports");
   await h.send(away, { t: "ghost", k: "start" });
   await h.send(host, { t: "ghost", k: "start" });
-  assert.equal(ghosts(host).length, 2, "a page off the island and the host itself are not relayed");
+  assert.equal(ghosts(host).length, 3, "a page off the island and the host itself are not relayed");
 });
 
 test("a follower's ghost reports are throttled to a burst, and come back with time", async () => {

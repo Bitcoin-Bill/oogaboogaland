@@ -1628,6 +1628,7 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
     <div class="ghost-player" id="ghost-player" hidden>
       <span class="ghost-player-note" aria-hidden="true">♪</span>
       <span class="ghost-player-title" id="ghost-player-title"></span>
+      <button type="button" class="ghost-player-skip" id="ghost-player-skip" aria-label="Next track" hidden>⏭</button>
       <button type="button" class="ghost-player-toggle" id="ghost-player-toggle" aria-pressed="true">Music on</button>
     </div>
     <div class="ghost-intro" id="ghost-intro" role="dialog" aria-modal="true" aria-labelledby="ghost-intro-title" hidden>
@@ -1902,8 +1903,11 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/ghost-hud.js" data-defer="halloween"></script>
   <script src="js/ghost-sync.js" data-defer="halloween"></script>
   <script src="js/ghost-game.js" data-defer="halloween"></script>
-  <script src="js/ghost-boss-audio-data.js" data-defer="halloween-music"></script>
-  <script src="js/ghost-music-data.js" data-defer="halloween-music"></script>
+  <script src="js/ghost-boss-audio-data.js" data-defer="halloween-track-boss"></script>
+  <script src="js/ghost-track-colt.js" data-defer="halloween-track-colt"></script>
+  <script src="js/ghost-track-martial.js" data-defer="halloween-track-martial"></script>
+  <script src="js/ghost-track-nightmare.js" data-defer="halloween-track-nightmare"></script>
+  <script src="js/ghost-track-synthed.js" data-defer="halloween-track-synthed"></script>
   <script src="js/director.js"></script>
 </body>
 

@@ -4876,6 +4876,27 @@ const ghostHuntChecks = async () => {
       armed && lost && gifted && whole, JSON.stringify({ armed, lost, gifted, whole, seg: me.seg, state: z.state.state }));
   }
   {
+    // With every ghost slot held (dying ghosts keep theirs a moment), no ghost is counted as spawned; with every drop
+    // slot full, the round's lightning waits and comes as soon as a slot frees.
+    const z = begin(17);
+    let now = T0;
+    const tick = () => { now += FRAME; z.beginPresence(); z.present(1, 0, 0, 6); z.advance(now); };
+    while (now < T0 + 60000 && z.state.state !== ST.ACTIVE) tick();
+    for (const g of z.ghosts) { g.on = true; g.dying = G.DYING.SHOT; g.dyingAt = z.state.now; }
+    const before = z.state.spawned;
+    for (let i = 0; i < 4; i++) tick();
+    const pooled = z.state.spawned === before;
+    for (const d of z.drops) { d.on = true; d.kind = 0; d.x = 15; d.z = 15; d.at = z.state.now; }
+    z.state.spawned = Math.ceil(z.settings().ghosts * G.CONFIG.LIGHTNING.at);
+    for (let i = 0; i < 6; i++) tick();
+    const waited = !z.state.lightningSent && !z.drops.some((d) => d.on && d.kind === G.LIGHTNING_DROP);
+    z.drops[0].on = false;
+    for (let i = 0; i < 6; i++) tick();
+    const came = !!z.state.lightningSent && z.drops.some((d) => d.on && d.kind === G.LIGHTNING_DROP);
+    record("ghost hunt: a full ghost pool counts no ghost as spawned, and a round's lightning waits for a free drop slot rather than being lost",
+      pooled && waited && came, JSON.stringify({ pooled, waited, came }));
+  }
+  {
     const lost = begin(3), states = new Set();
     play(lost, 0, 3600000, { shoot: false, watch: (s) => states.add(s.state.state) });
     const defeat = states.has(ST.DEFEAT) && !states.has(ST.VICTORY) && lost.state.state === ST.IDLE;

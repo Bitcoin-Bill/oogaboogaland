@@ -1,20 +1,31 @@
 // HALLOWEEN: the ghost hunt's sound, ported from OBL-Audio-lab's sfx.js and wave.js. Synthesized cues on a pool of
 // voices built once (an oscillator with its filter, gain and a wobble, and a filtered slice of one looping noise), so a
 // cue only schedules automation, as the island's other sound does; and the lab's recordings (ghost-audio-data.js)
-// decoded once into buffers, one source a play, with the hunt's playlist (the lab's boss music and an original track,
-// from the deferred `halloween-music` group) decoded a track at a time. One AudioContext, opened only after a gesture
+// decoded once into buffers, one source a play, with the hunt's playlist (the lab's boss music and four tracks, each
+// its own deferred `halloween-track-<key>` group fetched as it comes up) decoded a track at a time. One AudioContext, opened only after a gesture
 // the browser has activated; the page-wide mute (`oogaboogaland.audio`);
 // suspended while the tab is hidden; `dispose` closes it.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
   const MASTER = 0.35, LEVEL = 0.5, VOICES = 16, STORAGE_KEY = "oogaboogaland.audio", MUSIC_KEY = "ooga-ghost-music";
-  // The hunt's playlist: each track's title, who made it, and where its bytes are once the `halloween-music` group has
-  // arrived. Played in a shuffled order from a hunt's start, one after another.
+  // The hunt's playlist: each track's title, who made it and its key; its bytes come in its own deferred group,
+  // `halloween-track-<key>`, fetched only as it comes up. Played in a shuffled order from a hunt's start.
   const TRACKS = [
-    { title: "Night Shift", by: "original", data: () => BL.ghostMusicData && BL.ghostMusicData.nightShift },
-    { title: "The Boss", by: "OBL Audio Lab", data: () => BL.ghostBossAudioData }
+    { key: "boss", title: "The Boss", by: "OBL Audio Lab" },
+    { key: "colt", title: "Instagram", by: "Colt Fingaz" },
+    { key: "martial", title: "Martial Arts Action", by: "Luis Humanoide" },
+    { key: "nightmare", title: "Nightmare Pulse", by: "Pixabay" },
+    { key: "synthed", title: "Synthed Halloween", by: "LunarBoomMusic" }
   ];
+  const bytesOf = (k) => BL.ghostMusic && BL.ghostMusic[TRACKS[k].key];
+  // Asks for a track's group; a failed fetch is forgotten, so the next ask tries again.
+  const fetchTrack = (k) => {
+    if (bytesOf(k)) return null;
+    const loading = BL.deferred.load(`halloween-track-${TRACKS[k].key}`);
+    if (loading) loading.catch(() => {});
+    return loading;
+  };
   const CLIPS = ["wave", "kaboom", "screech", "freeze", "apples", "double", "banana", "ooga", "landing", "network", "tessZap", "tessScream"];
 
   const decode = (ctx, base64) => {
@@ -366,8 +377,9 @@
       if (music || !ctx || !musicWanted || !musicOn) return;
       const k = current();
       if (loaded !== k) {
-        const bytes = TRACKS[k].data();
-        if (!bytes || loading === k) return;
+        const bytes = bytesOf(k);
+        if (!bytes) { const fetching = fetchTrack(k); if (fetching) fetching.then(startMusic, () => {}); return; }
+        if (loading === k) return;
         loading = k;
         song = null; loaded = -1;
         decode(ctx, bytes).then((b) => { if (loading !== k) return; song = b; loaded = k; loading = -1; startMusic(); }, () => { loading = -1; place++; });
@@ -377,8 +389,15 @@
       music = ctx.createBufferSource();
       music.buffer = song;
       music.connect(musicGain);
-      music.onended = () => { music = null; place++; if (place % order.length === 0) shuffle(order[order.length - 1]); startMusic(); };
+      music.onended = () => { music = null; advance(); startMusic(); };
       music.start();
+      // The next track's bytes are fetched while this one plays, so it can follow without a wait.
+      fetchTrack(order[(place + 1) % order.length]);
+    };
+    // On to the next track, a new order once the list has been through (never opening on the one just heard).
+    const advance = () => {
+      place++;
+      if (place % order.length === 0) shuffle(order[order.length - 1]);
     };
     // A fresh order, never opening on `last` (the track just heard) when there is a choice.
     const shuffle = (last = -1) => {
@@ -394,6 +413,14 @@
       }
       if (!on || music || loading >= 0 || !musicOn || muted || !live()) return;
       startMusic();
+    };
+    /** The mini player's skip: on to the next track now (there is always a next with more than one). */
+    const skip = () => {
+      if (order.length < 2) return;
+      stopMusic();
+      loading = -1;
+      advance();
+      if (musicWanted && musicOn && !muted && live()) startMusic();
     };
     /** A hunt begins: the playlist in a new random order, from its top. */
     const newPlaylist = () => { stopMusic(); shuffle(); };
@@ -419,7 +446,7 @@
       if (ctx) ctx.close().catch(() => {});
       ctx = master = noise = voices = null;
     };
-    return { open: () => !muted && live(), play, music: setMusic, newPlaylist, toggleMusic, get musicOn() { return musicOn; },
+    return { open: () => !muted && live(), play, music: setMusic, newPlaylist, toggleMusic, skip, get tracks() { return order.length; }, get musicOn() { return musicOn; },
       get nowPlaying() { return TRACKS[current()]; }, update, dispose, get opened() { return !!ctx; } };
   };
 
