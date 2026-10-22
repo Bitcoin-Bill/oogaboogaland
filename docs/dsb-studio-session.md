@@ -44,7 +44,7 @@ Production use still needs explicitly approved host/cohost IDs and reviewed cont
 
 Both WebGL2 and Canvas2D support the same dynamic image surface backed by the video element. WebGL updates the existing texture and avoids per-frame mipmap generation; video surfaces are capped at 1280×720. The native panel remains the accessible fallback. The video has one audio path, avoiding duplicate sound between the panel and the world. Received voice never enters the microphone publication. Existing echo-cancellation/noise-suppression constraints are retained; headphones are recommended for live acceptance.
 
-Studio ambience ducks while the shared program is playing; the cabinet archive is stopped when presentation starts. The existing cross-origin archive remains a native audio element because its source does not provide the CORS needed for Web Audio mixing. No arbitrary media proxy is introduced. CSP adds only same-origin media; existing script/style restrictions remain intact.
+Studio ambience ducks while the shared program is playing. The DSB Spaces archive that once played from the cabinet left `rock` with its external host (the cabinet is set dressing now), so nothing else in the room has to stop when a presentation starts. No arbitrary media proxy is introduced. CSP adds only same-origin media; existing script/style restrictions remain intact.
 
 ## Acceptance limits
 

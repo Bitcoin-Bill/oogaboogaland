@@ -555,7 +555,9 @@ export class Room extends DurableObject {
   // /voice/<op> from the Worker, which checked the session and set x-player-id. Ops: session (a publish
   // or receive session), publish (the mic's offer), live (the publishing connection is up: only now is the
   // mic announced, since pulling a publication before it connects fails), pull (peers the room allows),
-  // renegotiate, close (dropped peers' tracks), leave (forget this player's sessions).
+  // renegotiate, close (dropped peers' tracks), unpublish (give up the microphone and keep hearing), leave (forget
+  // this player's sessions). Each call carries the socket's `x-room-token`, so a replaced connection's calls are
+  // refused, and one player's calls run one at a time.
   async voiceRequest(op, request) {
     const p = this.players.get(Number(request.headers.get("x-player-id")));
     if (!p) return new Response(JSON.stringify({ error: "join the island first" }), { status: 409, headers: { "content-type": "application/json" } });

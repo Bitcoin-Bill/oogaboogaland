@@ -10,8 +10,10 @@ import { parseStudioCommand, studioCanSpeak, STUDIO_ZONE } from "./studio-policy
 //                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
 //                 pose.g                         optional gorilla locomotion: [flags, speed, stride, climb, side, swim]
 //                 { t: "chat", text, clientId? }            a line for Ooga Chat (see Chat below)
+//                 { t: "studio", action, revision?, commandId?, ... }  a DSB Studio seat or host command
+//                                (`parseStudioCommand` in studio-policy.js; see docs/dsb-studio-session.md)
 //                 binary                         the NPC host's frame of every Ooga's pose, relayed as is
-// Room → client:  welcome { you, players, tickHz, now, loopEpoch }, join { p }, leave { id, reason },
+// Room → client:  welcome { you, players, tickHz, now, loopEpoch, connectionToken }, join { p }, leave { id, reason },
 //                 body { id, name }, state { now, ps: [id, x, y, z, yaw, ...], gs? }, kick { reason },
 //                 state.gs                       gorilla locomotion in [id, ...g] runs; welcome/join carry g too
 //                 release { name, reason }   the Ooga this socket claimed is not, or no longer, its to drive
@@ -21,7 +23,11 @@ import { parseStudioCommand, studioCanSpeak, STUDIO_ZONE } from "./studio-policy
 //                                            and join carry the same two fields on every player, and hp and ko
 //                 hp { id, v, ko }           a player's driven Ooga's health changed
 //                 voice { peers, gens }      whom to hear, and each one's publication count (a new count is a
-//                                            microphone published again, to be pulled again)
+//                                            microphone published again, to be pulled again); in the Studio also
+//                                            `listeners`, the other receive sessions there
+//                 studio-state { state }     the Studio's host, mode, program anchor, seats and this page's own
+//                                            rights; studio-result { action, commandId, ok, error, revision }
+//                                            answers a command; studio-mic-revoked: drop the microphone now
 //                 chat { id, at, login, name, text }  a line someone said, to everyone, the sender too
 //                 chat-ack { clientId }     the sender's line was accepted, including a recognized retry
 //                 chat-rejected { clientId?, reason }  refused; rate retries keep the same id
