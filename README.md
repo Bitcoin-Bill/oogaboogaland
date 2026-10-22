@@ -194,7 +194,7 @@ To add your Ooga, add one file to `src/characters/` named after your GitHub hand
 
 No analytics and no personal data. Read-only requests only, nothing about the visitor sent: mempool.space (falling back to Esplora), Coinbase and other public price feeds, the oogatron stats worker and Timechain Index. The donation handle and message stay in localStorage.
 
-On the Cloudflare site, signing in with GitHub is optional. A signed-in player's GitHub id, login, avatar URL, display name and session records are kept in the site's database until they sign out, the session expires or they delete the account (`DELETE /api/me`). The GitHub token is used once and never stored. Nothing is kept for visitors who don't sign in.
+On the Cloudflare site, signing in with GitHub is optional. A signed-in player's GitHub id, login, avatar URL, display name and session records are kept in the site's database until they sign out, the session expires or they delete the account (`DELETE /api/me`). The GitHub token is used once and never stored. Nothing is kept for visitors who don't sign in, except a question typed to Tess that the page can't answer by itself: it is sent to Anthropic for Claude to answer, and kept for 90 days with her answer and nothing that says who asked.
 
 DSB Land additionally contacts public Bitcoin feeds and radio/media services; payment is always an explicit action in the visitor's wallet. Zuzu uses local mock replies and deterministic fallback and sends no conversations to an AI provider. Its provider-neutral backend is prepared but not deployed.
 
