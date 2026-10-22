@@ -256,12 +256,15 @@
     }
     for (const s of [-1, 1]) lamps.push(["chain", s * 6, 12.5, 8], ["chain", s * 13, 16.5, 3]);
     const my = e.y, mz = FM.EXIT_Z;
-    return FM.lanterns(lamps, [
+    const hung = FM.lanterns(lamps, [
       [-14, 16, -12, 14, 16, -12, 1.6, [0.2, 0.4, 0.6, 0.8]], [-18, 13.5, -8, 18, 13.5, -8, 1.4, [0.2, 0.35, 0.65, 0.8]],
       [20, 9.5, 5, 13.5, 9, 7, 0.6, [0.5]],
       // Just past the rim, the mouth's own string of lamps, hung where the hub hangs it.
       [-3.05, my + 3.42, mz + 1.1, 3.05, my + 3.42, mz + 1.1, 0.3, [0.3, 0.7]]
     ]);
+    // Kortik's station lights its deck with two lanterns of its own, on the bracket by the board and on the floor.
+    for (const [along, y, out] of BL.kortikModels.BOARD.lights) hung.lights.push(kx + out, kd.y + y, kd.z - along, 6);
+    return hung;
   });
 
   // Where a line stands: one of the four featured bays, a gallery stand, or nowhere shown (the overflow count). The
