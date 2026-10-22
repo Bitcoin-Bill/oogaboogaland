@@ -59,7 +59,10 @@
   const NO_MIRROR_BODY_WAVES = new Float32Array(BL.mirrorBody.CAPACITY * 4);
   const FOG_OFF = 1e8;
   const LIGHT_EYE = { x: 0, y: 0, z: 0 };
-  const MESH_STRIDE = 10;
+  // A mesh vertex in 32-bit words: its position (3 floats), its unit normal (10:10:10:2), its colour with the normal's
+  // length in 32nds (4 bytes; the length marks water, lava, roads, the lake and voxel detail) and its emissive code
+  // (1 float). 24 bytes against the 40 of ten floats; a mirror source adds 3 floats and a rig's joint 1.
+  const MESH_WORDS = 6;
   const LINE_STRIDE = 12;
   const MATRIX_MASKS = new Int32Array([630678, 497559, 988959, 495513, 1009263, 288049, 456438, 616809]);
   // Projection-weighted rays stay parallel in orthographic views and retain
@@ -117,8 +120,11 @@ precision highp float;
 // The depth pre-pass draws these vertices through its own program; invariance keeps both programs' depths equal.
 invariant gl_Position;
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNormal;
-layout(location=2) in vec4 aColor;
+// Packed (MESH_WORDS): the unit normal; the colour, its alpha the normal's length in 32nds, which marks the material;
+// the emissive code.
+layout(location=1) in vec3 aNormalUnit;
+layout(location=2) in vec4 aColorPacked;
+layout(location=10) in float aEmissive;
 layout(location=3) in vec4 aM0;
 layout(location=4) in vec4 aM1;
 layout(location=5) in vec4 aM2;
@@ -177,6 +183,8 @@ vec3 lakeBodyWarp(vec3 p) {
   return q;
 }
 void main() {
+  vec3 aNormal = aNormalUnit * (aColorPacked.a * (255.0 / 32.0));
+  vec4 aColor = vec4(aColorPacked.rgb, aEmissive);
   mat4 m = rigMatrix(mat4(aM0, aM1, aM2, aM3));
   vec4 params = uRigCount > 0 ? uRigParams[int(aJoint)] : aParams;
   vVoxel = uRigCount > 0 ? uRigVoxels[int(aJoint)] : uVoxel;
@@ -2149,28 +2157,33 @@ void main() {
         gl.vertexAttribDivisor(loc, 1);
       }
     };
-    const makePart = (data, floatsPerVertex, layout, ibo) => {
+    // `layout` holds [location, size, type, normalized, byte offset] for each attribute of a `stride`-byte vertex.
+    const makePart = (data, stride, layout, ibo) => {
       const vao = gl.createVertexArray();
       gl.bindVertexArray(vao);
       const vbo = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      let offset = 0;
-      for (const [loc, size] of layout) {
+      for (const [loc, size, type, normalized, offset] of layout) {
         gl.enableVertexAttribArray(loc);
-        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, floatsPerVertex * 4, offset * 4);
-        offset += size;
+        gl.vertexAttribPointer(loc, size, type, normalized, stride, offset);
       }
       bindInstanceAttribs(ibo);
       gl.bindVertexArray(null);
-      return { vao, vbo, count: data.length / floatsPerVertex };
+      return { vao, vbo, count: data.byteLength / stride };
+    };
+    // A packed mesh vertex (MESH_WORDS), and an extra float attribute after it: [location, size].
+    const meshLayout = (extra) => {
+      const layout = [[0, 3, gl.FLOAT, false, 0], [1, 4, gl.INT_2_10_10_10_REV, true, 12], [2, 4, gl.UNSIGNED_BYTE, true, 16], [10, 1, gl.FLOAT, false, 20]];
+      if (extra) layout.push([extra[0], extra[1], gl.FLOAT, false, MESH_WORDS * 4]);
+      return layout;
     };
     const buildMeshPart = (geometry, ibo, dataOnly = false) => {
       const { verts, faces } = geometry;
       let triCount = 0;
       for (const f of faces) triCount += f.i.length - 2;
       if (!triCount) return null;
-      const source = geometry.mirrorSource, stride = source ? MESH_STRIDE + 3 : MESH_STRIDE;
+      const source = geometry.mirrorSource, stride = source ? MESH_WORDS + 3 : MESH_WORDS;
       // A voxel geometry names its grid; a face whose corners all sit on it gets block detail, flagged by a doubled
       // normal. Faces moved off the grid after the build (a shift, a scale, a merged prop) simply go without.
       const voxel = geometry.voxel || null;
@@ -2182,7 +2195,7 @@ void main() {
         return true;
       };
       let gridded = 0;
-      const out = new Float32Array(triCount * 3 * stride);
+      const out = new ArrayBuffer(triCount * 3 * stride * 4), words = new Uint32Array(out), floats = new Float32Array(out), bytes = new Uint8ClampedArray(out);
       // A `smooth` geometry shades with vertex normals: each face's area-weighted Newell normal summed into the
       // vertices it uses, once at upload (cartoon foliage reads as soft round clumps, not facets).
       const smooth = geometry.smooth ? new Float32Array(verts.length) : null;
@@ -2202,23 +2215,25 @@ void main() {
       let o = 0;
       const put = (idx, nx, ny, nz, c, e) => {
         const b = idx * 3;
-        out[o++] = verts[b];
-        out[o++] = verts[b + 1];
-        out[o++] = verts[b + 2];
+        floats[o] = verts[b];
+        floats[o + 1] = verts[b + 1];
+        floats[o + 2] = verts[b + 2];
         if (given && (given[b] || given[b + 1] || given[b + 2])) {
           nx = given[b]; ny = given[b + 1]; nz = given[b + 2];
         } else if (smooth) {
           const l = Math.hypot(smooth[b], smooth[b + 1], smooth[b + 2]) || 1;
           nx = smooth[b] / l; ny = smooth[b + 1] / l; nz = smooth[b + 2] / l;
         }
-        out[o++] = nx;
-        out[o++] = ny;
-        out[o++] = nz;
-        out[o++] = c[0] / 255;
-        out[o++] = c[1] / 255;
-        out[o++] = c[2] / 255;
-        out[o++] = e;
-        if (source) { out[o++] = source[b]; out[o++] = source[b + 1]; out[o++] = source[b + 2]; }
+        const length = Math.hypot(nx, ny, nz), unit = length ? 511 / length : 0;
+        words[o + 3] = (Math.round(nx * unit) & 1023) | (Math.round(ny * unit) & 1023) << 10 | (Math.round(nz * unit) & 1023) << 20;
+        const at = (o + 4) * 4;
+        bytes[at] = c[0];
+        bytes[at + 1] = c[1];
+        bytes[at + 2] = c[2];
+        bytes[at + 3] = length * 32;
+        floats[o + 5] = e;
+        if (source) { floats[o + 6] = source[b]; floats[o + 7] = source[b + 1]; floats[o + 8] = source[b + 2]; }
+        o += stride;
       };
       const writeFace = (f) => {
         // Newell's method, stable when leading vertices coincide.
@@ -2264,8 +2279,8 @@ void main() {
         plainCount = o / stride;
         for (const f of faces) if (special(f)) writeFace(f);
       }
-      if (dataOnly) return { data: out, voxel: gridded ? voxel : null };
-      const part = makePart(out, stride, source ? [[0, 3], [1, 3], [2, 4], [9, 3]] : [[0, 3], [1, 3], [2, 4]], ibo);
+      if (dataOnly) return { data: words, voxel: gridded ? voxel : null };
+      const part = makePart(out, stride * 4, meshLayout(source ? [9, 3] : null), ibo);
       part.voxel = gridded ? voxel : null;
       part.plainCount = plainCount;
       return part;
@@ -2273,19 +2288,19 @@ void main() {
     const buildRigPart = (rig, ibo) => {
       const parts = rig.sources.map(geometry => buildMeshPart(geometry, ibo, true));
       let length = 0;
-      for (const part of parts) length += part ? part.data.length / MESH_STRIDE * (MESH_STRIDE + 1) : 0;
-      const data = new Float32Array(length);
+      for (const part of parts) length += part ? part.data.length / MESH_WORDS * (MESH_WORDS + 1) : 0;
+      const data = new ArrayBuffer(length * 4), words = new Uint32Array(data), floats = new Float32Array(data);
       let offset = 0;
       for (let joint = 0; joint < parts.length; joint++) {
         const part = parts[joint];
         if (!part) continue;
         if (part.voxel) rig.voxels.set(part.voxel, joint * 4);
-        for (let i = 0; i < part.data.length; i += MESH_STRIDE) {
-          for (let k = 0; k < MESH_STRIDE; k++) data[offset++] = part.data[i + k];
-          data[offset++] = joint;
+        for (let i = 0; i < part.data.length; i += MESH_WORDS) {
+          for (let k = 0; k < MESH_WORDS; k++) words[offset++] = part.data[i + k];
+          floats[offset++] = joint;
         }
       }
-      return makePart(data, MESH_STRIDE + 1, [[0, 3], [1, 3], [2, 4], [8, 1]], ibo);
+      return makePart(data, (MESH_WORDS + 1) * 4, meshLayout([8, 1]), ibo);
     };
     const LINE_CORNERS = [[0, -1], [1, -1], [1, 1], [0, -1], [1, 1], [0, 1]];
     const buildLinePart = (geometry, ibo) => {
@@ -2310,7 +2325,7 @@ void main() {
           out[o++] = l.emissive || 0;
         }
       }
-      const part = makePart(out, LINE_STRIDE, [[0, 3], [1, 3], [2, 2], [8, 4]], ibo);
+      const part = makePart(out, LINE_STRIDE * 4, [[0, 3, gl.FLOAT, false, 0], [1, 3, gl.FLOAT, false, 12], [2, 2, gl.FLOAT, false, 24], [8, 4, gl.FLOAT, false, 32]], ibo);
       part.width = geometry.lineWidth || 1.5;
       return part;
     };

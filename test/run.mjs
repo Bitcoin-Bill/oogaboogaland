@@ -15968,7 +15968,8 @@ const raceRigChecks = async () => {
   const expectedOrdinaryHashes = [
     // Depth pre-pass "no image change" rendering core: the shared vertex and fragment
     // bytes the depth-only and plain variants derive from, plus the untouched shadow path.
-    "6bed3532a26c98c3e5a9218674dbe75c789324168104f6b0eb7fb5c88872a012",
+    // Packed mesh vertices decode into aNormal and aColor at the top of main (was 6bed3532).
+    "4184e76c3501711766e5229bc42eb5d249eb88212b5a9cf3b9086ebe5767286d",
     // 487d99ac909f added uObjectSlab2 for the Factory roof bore; removing its
     // declaration and clipping predicate restores the previous b82d02f4 hash.
     "f5f71f7931156d9329b39a13997433e2146fa367cee44e5ceb44ace6038a2be3",
