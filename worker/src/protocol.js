@@ -9,6 +9,7 @@
 //                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
 //                 pose.g                         optional gorilla locomotion: [flags, speed, stride, climb, side, swim]
 //                 { t: "chat", text, clientId? }            a line for Ooga Chat (see Chat below)
+//                 { t: "ghost", k, g?, d? }      HALLOWEEN: the ghost hunt's `start` or `pause`, or a `hit` on ghost g for d, for the host
 //                 binary                         the NPC host's frame of every Ooga's pose, relayed as is
 // Room → client:  welcome { you, players, tickHz, now, loopEpoch }, join { p }, leave { id, reason },
 //                 body { id, name }, state { now, ps: [id, x, y, z, yaw, ...], gs? }, kick { reason },
@@ -25,6 +26,7 @@
 //                 chat-ack { clientId }     the sender's line was accepted, including a recognized retry
 //                 chat-rejected { clientId?, reason }  refused; rate retries keep the same id
 //                 chat-history { messages }  after welcome: the lines the room still holds, oldest first
+//                 ghost { k, g, d, from }    HALLOWEEN: a follower's start or hit, relayed to the NPC host alone
 // Zones: `<group>` or `<group>.<place>`. Voice is shared within a group; who is shown is matched on the whole
 // name, since a place inside a group can have coordinates of its own (the Factory's tunnel on the island and
 // its hall). `none` is nowhere: off the island's edge, or between scenes; it shares voice with nobody.
@@ -86,6 +88,9 @@ export const DOOR_TRANSIT_MS = 12000;
 export const DOOR_PASS_MS = 8000;
 export const DOOR_HZ = 4;
 export const DOOR_BURST = 6;
+// HALLOWEEN: the ghost hunt's reports to the host: a rifle's hits, a dozen a second at most.
+export const GHOST_HZ = 12;
+export const GHOST_BURST = 12;
 // The character set of donation messages (`donations.sanitize` in src/js/donations.js), checked against it in worker/test.
 export const CHAT_STRIP = /[^\w .,!?'@#:-]/g;
 export const sanitizeChat = (text) => String(text).replace(CHAT_STRIP, "").trim();
@@ -149,6 +154,12 @@ export const parseClientMessage = (text) => {
     if (msg.op === "pass") return typeof msg.door === "string" && DOOR_ROOM.test(msg.door) && (msg.dir === "in" || msg.dir === "out")
       ? { t: "door", op: "pass", door: msg.door, dir: msg.dir } : null;
     return null;
+  }
+  // HALLOWEEN: a follower's word to the ghost hunt's host.
+  if (msg.t === "ghost") {
+    if (msg.k === "start" || msg.k === "pause") return { t: "ghost", k: msg.k };
+    return msg.k === "hit" && Number.isInteger(msg.g) && msg.g >= 0 && msg.g < 65536 && Number.isInteger(msg.d) && msg.d >= 1 && msg.d <= 20
+      ? { t: "ghost", k: "hit", g: msg.g, d: msg.d } : null;
   }
   if (msg.t === "poker-voice") return msg.table === null || Number.isInteger(msg.table) && msg.table >= 0 && msg.table < 10 ? { t: "poker-voice", table: msg.table } : null;
   return null;

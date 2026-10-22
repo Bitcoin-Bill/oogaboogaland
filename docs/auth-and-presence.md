@@ -56,6 +56,7 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | client → room | `{ t: "mute", on }` | this page muted or unmuted its own microphone, for everyone's roster |
 | client → room | `{ t: "hp", v, ko }` | the driven body's health normalized to 0-100, in steps of 4, and knockout flag; only on a change, 4 a second at most |
 | client → room | `{ t: "chat", text }` | an Ooga Chat line (see Ooga Chat); the room names the speaker |
+| client → room | `{ t: "ghost", k, g?, d? }` | HALLOWEEN: the ghost hunt's `start`, or a `hit` on ghost `g` (0 the boss, up to 65535) for `d` (1–20); relayed to the NPC host alone, from a page on the island with a body that is not the host, 12 a second with a burst of 12; nothing is kept |
 | client → room | binary | the NPC host's frame: Ooga poses, gear, status and work, then its events (see The crew in step) |
 | client → room | `"ping"` every 10 s | answered `"pong"` without waking the room |
 | room → client | `welcome { you, players, tickHz, now, loopEpoch, host, followers }` | on connect: everyone else, their last pose, whether each is in voice (`voice`) and muted (`muted`), and their health (`hp`, `ko`) |
@@ -67,6 +68,7 @@ A signed-in visitor holds one WebSocket to `/room` for the page life. The Worker
 | room → client | `voice { peers, gens }` | the ids this player should hear and each one's publication count (a new count is a microphone published again, pulled again); sent when that changes, and after every zone message |
 | room → client | `vstate { id, voice, muted }` | a player's microphone went live or off, or they muted or unmuted it; sent only on a change |
 | room → client | `hp { id, v, ko }` | a player's driven Ooga's health changed (a new body starts at 100) |
+| room → client | `ghost { k, g, d, from }` | HALLOWEEN: to the NPC host only, a follower's ghost hunt report, `from` the room id of the page that sent it |
 | room → client | `release { name, reason }` | a claim refused (`not-yours`) or a legacy claim freed on owner arrival (`owner-here`) |
 | room → client | `kick { reason }`, then close 4000 | `replaced` (a newer tab), `stale` (90 s silent, swept once a minute), `full` (32 players), `revoked` (account access removed) |
 
@@ -124,6 +126,8 @@ Signed-in players on the island see the same Oogas doing the same things (`src/j
 - **Followers pose puppets and replay events.** On every other signed-in page those Oogas are puppets (`cave.puppet`): `crew.update` skips their AI, and npc-sync eases them toward the latest frame after the crew's update, snapping when one jumps far (into a bed, back from a fall). Gear changing holder is moved there and the mirror and outlines refreshed. Events replay through the page's own effects; shots fly as visual-only rounds (`crew.showShot`: no hits, no mirror crossing), and the gorillas get the host's plans and hits, so they travel and react in step without a stream of their own. An Ooga someone drives is never a puppet: its driver's page runs it and the others show it as a remote player.
 - **Measured** (at the earlier ten frames a second): two and three pages on one machine kept every Ooga within 0.4 of the host's (0.05 on average), and every undriven Ooga's gear, eyes, colourway and work state identical in samples 6 s apart; a follower replayed the host's sleep marks, 71 shots with their 70 gorilla hits, the gorillas' plans and a poked Ooga's speech. A host closing handed over within seconds and a new page followed the new host.
 - Visitors who are not signed in have no room and keep their own crew. No database is involved: the latest frame lives in the room's memory.
+
+HALLOWEEN: the hub's ghost hunt rides the same frames. While a hunt runs, the host's frame carries one more event, `{ k: "gh", ... }`, the whole hunt as `ghost-sim.js` snapshots it (state, round, its random draws, every ghost, the boss, drops and players, timers on the hunt's own clock), so a follower draws it and a new host picks it up where the old one stopped. Followers send their herald click and their hits as `ghost` messages, relayed to the host alone; the host judges every touch, beam and pickup from the players' reported poses, and each page applies its own Ooga's damage from the frames.
 
 The banana pile level, donations, crates and what shots do to the world (the mirror, breakables) stay each page's own. The gorillas' own motion runs on each page from the same plans and hits, so it stays close rather than exact.
 
