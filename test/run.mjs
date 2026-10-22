@@ -9322,9 +9322,12 @@ const factoryGreeter = { name: "factory greeter", why: "rule: the guide notices 
     // Keep the visitor on the floor the tour measures from, beside it. Existing floor checks independently prove
     // the widest visitor can reach these stairs, bridges and landings.
     const follow = () => { a.root.position.x = s.anchor.x + 1.6; a.root.position.z = s.anchor.z + 0.6; a.root.position.y = s.anchor.y + a.baseY; };
+    // A stop's next line comes once her bubble has been up long enough to read, and a bubble's clock runs in the
+    // frame's overlay pass, so each step draws the overlay as a frame does.
     let elapsed = 0;
+    const step = () => { g.update(0.04, elapsed += 0.04); BL.scenes.factory.overlay(0.04); };
     for (const id of Object.keys(BL.factoryGreeter.TOURS)) {
-      for (let i = 0; i < 3000 && !(s.phase === "work" && s.stage !== "fly"); i++) g.update(0.04, elapsed += 0.04);
+      for (let i = 0; i < 3000 && !(s.phase === "work" && s.stage !== "fly"); i++) step();
       const q = g.root.position;
       a.root.position.x = q.x + 1.2; a.root.position.z = q.z; a.root.position.y = q.y - 1.6 + a.baseY;
       g.greet();
@@ -9332,7 +9335,7 @@ const factoryGreeter = { name: "factory greeter", why: "rule: the guide notices 
       choices.find(button => button.textContent === BL.factoryGreeter.TOURS[id].title).click();
       const stops = new Set(), lines = new Set(); let returned = false;
       for (let i = 0; i < 18000; i++) {
-        follow(); g.update(0.04, elapsed += 0.04);
+        follow(); step();
         if (s.phase === "talk") stops.add(s.waypoint);
         lines.add(s.spoken);
         if (s.phase === "work") { returned = true; break; }
