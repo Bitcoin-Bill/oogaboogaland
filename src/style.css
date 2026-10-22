@@ -3386,7 +3386,7 @@ body.game-mode #message-stack {
   border-radius: 7px 6px 8px 6px;
   background: var(--tablet);
   box-shadow: var(--tablet-shadow);
-  color: var(--ink);
+  color: var(--paper);
   font-size: 12px;
   outline: none;
 }
