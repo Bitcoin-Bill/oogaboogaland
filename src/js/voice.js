@@ -14,11 +14,15 @@
 // The room's lists carry each voice's publication count, so a microphone published again (its owner
 // reconnected or restarted) is pulled again rather than left on a dead track; a connection that fails or stays
 // dropped after it was up starts voice over on its own, and a pull that misses a wanted voice is retried.
-// Alone (#181): hold the microphone track off when nobody can hear it. Studio
-// sends an authoritative count of receive sessions, including listeners who
-// never publish. Other zones retain their existing speaker-list gate. A user's
-// own mute stands whoever comes and goes; no count acquires a microphone.
-// Exports enable, toggle, restart, stop, setPeers, subscribe, dispose, inspect, speaking, muteLocal, mutedLocally and stats.
+// Alone (#181): while the room's list of whom to hear is empty, nobody here can hear this page either (the room
+// lists exactly the players driving an Ooga in the same place with a live microphone, and lets a page pull only
+// those), so the microphone track is held off as a mute holds it (`stats.alone`), and comes back by itself when the
+// room lists someone. It is still published, so the room can tell others this page is here to be heard. Alone is
+// not a mute: the room is not told, and a visitor's own mute stands whoever comes and goes. In DSB Studio an
+// audience can listen without publishing, so there the room's `voice` message also counts the other receive
+// sessions (`listeners`), and that count holds the gate instead; no count ever acquires a microphone.
+// Exports enable, listen, dropMic, preflight, cancelPreflight, devices, selectDevice, setReceiveLevel, toggle, restart, stop,
+// setPeers, subscribe, dispose, inspect, speaking, muteLocal, mutedLocally and stats.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -34,7 +38,6 @@
   // Each wanted voice's publication count from the room: a new count is a microphone published again.
   const wantedGen = new Map();
   const stats = { enabled: false, muted: false, alone: false, micWanted: false, speaking: false, joining: false, peers: 0, hearing: 0, error: "", micError: "", publishing: false, blocked: false, ready: false, preflight: false, preflightPending: false, permission: "unknown", deviceId: "", receiveLevel: 1, micLevel: 0, receiveState: "off" };
-  Object.defineProperty(stats, "receiveError", { enumerable: true, get: () => stats.error });
   const samples = new Float32Array(SAMPLES);
   const mutedLogins = new Set();
   let mic = null, pubPc = null, subPc = null, desired = [], queue = Promise.resolve();
@@ -601,5 +604,5 @@
   // For the feed panel and debugging: whom the room wants heard, whom this page pulled, and both connections.
   const inspect = () => ({ desired: desired.slice(), pulled: [...subs.keys()], publish: pubPc ? pubPc.connectionState : "none", receive: subPc ? subPc.connectionState : "none" });
 
-  BL.voice = { preflight, cancelPreflight, devices, selectDevice, setInputDevice: selectDevice, setReceiveLevel, setOutputGain: setReceiveLevel, enable, listen, dropMic, toggle, restart, stop, setPeers, subscribe, dispose, inspect, speaking, muteLocal, mutedLocally, stats };
+  BL.voice = { preflight, cancelPreflight, devices, selectDevice, setReceiveLevel, enable, listen, dropMic, toggle, restart, stop, setPeers, subscribe, dispose, inspect, speaking, muteLocal, mutedLocally, stats };
 })();

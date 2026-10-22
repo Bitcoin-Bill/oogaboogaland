@@ -3,7 +3,7 @@
 (() => {
   "use strict";
   const BL=window.BL;
-  const create=({onOpen=()=>{},onPresentation=()=>{},onSeatRejected=()=>{}}={})=>{
+  const create=({onOpen=()=>{},onSeatRejected=()=>{}}={})=>{
     const dialog=document.createElement("dialog");dialog.className="studio-session";dialog.setAttribute("aria-label","DSB Studio shared session");
     dialog.innerHTML='<header><h2>DSB Studio</h2><button type="button" data-close>Return to room</button></header><p data-status role="status">Sign in to join the shared Studio.</p><video playsinline preload="metadata" aria-label="Shared Studio program"></video><p data-program></p><p data-playback role="status"></p><p data-screen-state role="status"></p><div class="studio-controls"><button type="button" data-sound>Enable Studio sound</button><button type="button" data-retry hidden>Retry sound</button><button type="button" data-mic>Join conversation</button><button type="button" data-listen-off>Leave Studio audio</button></div><p data-audio role="status">Studio sound off.</p><p data-mic-reason></p><p data-mic-error role="status"></p><div class="studio-controls"><button type="button" data-raise hidden>Raise hand</button><button type="button" data-lower hidden>Lower hand</button><button type="button" data-captions>Show captions</button></div><details><summary>Transcript and description</summary><p data-transcript></p><a data-transcript-link>Open transcript</a></details><details><summary>Personal sound and microphone setup</summary><label>Program level for you <input data-program-level type="range" min="0" max="1" step=".05" value="1"></label><label>Voice level for you <input data-voice-level type="range" min="0" max="1" step=".05" value="1"></label><label>Microphone <select data-device><option value="">Default microphone</option></select></label><button type="button" data-preflight>Test microphone locally</button><button type="button" data-cancel-preflight>Release test microphone</button><label>Local microphone level <meter data-meter min="0" max="1" value="0"></meter></label><p data-preflight-state>Testing never publishes your microphone. Joining conversation is a separate action.</p></details><section data-host hidden><h3>Host controls</h3><button type="button" data-claim>Become host</button><div data-presenter hidden><button type="button" data-presentation>Present</button><button type="button" data-discussion>Open discussion</button><button type="button" data-qa>Open Q&amp;A</button><label>Reviewed program <select data-source></select></label><button type="button" data-next>Next reviewed program</button><button type="button" data-play>Play program</button><button type="button" data-pause>Pause program</button><label>Program position <input data-seek type="range" min="0" max="0" step=".1" value="0"></label><label>Shared program volume <input data-volume type="range" min="0" max="1" step=".05" value=".65"></label><label>Participant <select data-participant></select></label><button type="button" data-invite>Invite raised hand</button><button type="button" data-restore>Restore speaking eligibility</button><button type="button" data-transfer>Transfer host</button><button type="button" data-revoke>Revoke speaking</button><button type="button" data-release>Release host</button></div></section><p data-error role="status"></p>';
     document.body.appendChild(dialog);
@@ -11,7 +11,7 @@
     const catalogue=BL.studioMedia;
     for(const source of catalogue.sources){const option=document.createElement("option");option.value=source.id;option.textContent=source.title;sourceSelect.appendChild(option);}
     video.muted=true;
-    let active=false,disposed=false,room=null,state=null,soundEnabled=false,soundWanted=false,soundAttempt=false,soundGeneration=0,soundFailure="",muted=false,attempting=false,playBlocked=false,buffering=false,elapsed=0,returnFocus=null,visit=0,playGeneration=0,sequence=0,seatClaim=null,awaitingSeat=false,micRequested=false,micRequestGeneration=0,presenting=null,programGain=1,personalProgram=1,selectedSource=null,captions=false;
+    let active=false,disposed=false,room=null,state=null,soundEnabled=false,soundWanted=false,soundAttempt=false,soundGeneration=0,soundFailure="",muted=false,attempting=false,playBlocked=false,buffering=false,elapsed=0,returnFocus=null,visit=0,playGeneration=0,sequence=0,seatClaim=null,awaitingSeat=false,micRequested=false,micRequestGeneration=0,programGain=1,personalProgram=1,selectedSource=null,captions=false;
     const mediaUrl=path=>location.protocol==="file:"?new URL((location.pathname.endsWith("/src/index.html")?"":"src/")+path.slice(1),location.href).href:path;
     const currentSource=()=>catalogue.byId[state?.source]||catalogue.sources[0];
     const isHost=()=>state?.hostId===BL.net.state.selfId;
@@ -103,7 +103,7 @@
       if(!state){video.pause();if(BL.voice.stats.publishing||micRequested){micRequestGeneration++;micRequested=false;BL.voice.dropMic();}reflect();return;}
       if(!state.canSpeak&&(BL.voice.stats.publishing||micRequested)){micRequestGeneration++;micRequested=false;BL.voice.dropMic();}
       if(seatClaim!==null&&!awaitingSeat&&!state.seats.some(seat=>seat.id===BL.net.state.selfId&&seat.seat===seatClaim)){seatClaim=null;onSeatRejected();}
-      const nextPresenting=state.mode==="presentation"||state.mode==="qa";if(presenting!==nextPresenting){presenting=nextPresenting;onPresentation(presenting);}reconcile();reflect();
+      reconcile();reflect();
     };
     const unsubscribeVoice=BL.voice.subscribe(()=>{if(active){reflect();}});
     const unsubscribe=BL.net.subscribeStudio(accept),unsubscribeAccount=BL.net.subscribe(()=>{if(active){if(BL.net.state.room!=="live"){state=null;awaitingSeat=false;video.pause();}reflect();}});
@@ -132,8 +132,8 @@
     listen(document,"visibilitychange",()=>{if(active&&!document.hidden){reconcile();reflect();}});
     const close=()=>{if(dialog.open){dialog.close();BL.dsbMenuShell?.present(dialog,false);onOpen(false);returnFocus?.focus();returnFocus=null;}};
     const leave=()=>{
-      if(!active)return;visit++;soundGeneration++;playGeneration++;attempting=false;active=false;micRequestGeneration++;micRequested=false;presenting=null;programGain=1;close();state=null;seatClaim=null;awaitingSeat=false;soundEnabled=false;soundWanted=false;soundAttempt=false;soundFailure="";playBlocked=false;buffering=false;selectedSource=null;video.pause();video.muted=true;video.removeAttribute("src");video.querySelectorAll("track").forEach(track=>track.remove());video.load();
-      if(room?.screen)delete room.screen.geometry.imageSurface;room=null;BL.voice.stop();onPresentation(false);
+      if(!active)return;visit++;soundGeneration++;playGeneration++;attempting=false;active=false;micRequestGeneration++;micRequested=false;programGain=1;close();state=null;seatClaim=null;awaitingSeat=false;soundEnabled=false;soundWanted=false;soundAttempt=false;soundFailure="";playBlocked=false;buffering=false;selectedSource=null;video.pause();video.muted=true;video.removeAttribute("src");video.querySelectorAll("track").forEach(track=>track.remove());video.load();
+      if(room?.screen)delete room.screen.geometry.imageSurface;room=null;BL.voice.stop();
     };
     return {
       enter:r=>{if(disposed)return;visit++;attempting=false;active=true;room=r;state=BL.net.state.studio||null;loadSource();r.screen.geometry.imageSurface={dynamic:true,asset:{width:320,height:180,load:()=>video},rect:[-3.5,-1.75,7,3.5]};reconcile();reflect();},
