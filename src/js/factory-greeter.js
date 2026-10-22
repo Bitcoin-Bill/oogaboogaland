@@ -16,7 +16,7 @@
     declined: "No problem! Come find me if you want a tour.",
     gather: "Tours start at the balcony. Follow me!",
     menu: "Four tours! Pick one.",
-    follow: "Follow me! Lines, the core, the switchboard.",
+    follow: "Follow me! Lines, the core, the routing console.",
     channels: "Lines are channels to peers. A payment can hop node to node.",
     core: "The core is this node. It forwards payments; it mines nothing.",
     outcomes: "Settled means it went through. Failed means it did not — never why.",

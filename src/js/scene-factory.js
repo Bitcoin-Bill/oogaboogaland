@@ -144,7 +144,7 @@
     forge: ["On-chain forge · open and close", "Channels are opened and closed with Bitcoin transactions. Opening one feeds the forge carts of sats from the chain; closing one mints a coin that goes back down to it."],
     shaftIn: ["From the chain · opening channels", "Sats come up this shaft from the Bitcoin chain. Each channel the node opens sends carts of them into the forge, more for a bigger channel."],
     shaftOut: ["To the chain · closing channels", "When a channel closes, its sats go back to the Bitcoin chain: the forge mints them into a coin that rolls down this shaft."],
-    switchboard: ["Switchboard · routing", "Every payment the node passes on for someone else is a forward. The screens light as they go through."],
+    switchboard: ["Routing Console · routing", "Every payment the node passes on for someone else is a forward. The screens light as they go through."],
     rebalancer: ["Rebalancer · moving liquidity", "Rebalancing moves sats between channels so lines keep working. It is shown by the hour, never for one line."],
     treasury: ["Treasury · routing fees", "The gold under the glass is the node's public capacity, visible to anyone on the Lightning network. Each forward that earns the demo node a fee sends a nugget up the belt into the crate."],
     cooker: ["Banana cooker · tips into bananas", "Every tip is cooked here: the core throws its sats across, the cooker chomps and churns, and bananas shoot up the ceiling tube to the island's pile."],
@@ -162,7 +162,7 @@
   // The Ooga the visitor walked in as: one playable actor from the shared crew, and the world it carries.
   let people = null, avatar = null, playerWorld = null, unsubscribeAccount = null, remotes = null, footsteps = null;
   const NO_ACTORS = [];
-  let scene = null, greeter = null, actPrompt = false;
+  let scene = null, greeter = null, kortik = null, actPrompt = false;
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the
   // room every frame, so signed-in players in the hall hear each other (voice needs a driven Ooga).
   const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name);
@@ -234,6 +234,11 @@
     for (const [lx, ly, lz] of FM.STUDY.lamps) lamps.push(["hang", L.study.x - lz, L.study.y + ly, L.study.z + lx]);
     if (FM.donationCorner()) for (const [x, y, z] of [...FM.KIOSK.hooks, ...FM.BOARD.hooks]) lamps.push(["hang", x, y, z]);
     lamps.push(["post", L.switchboard.x + 3.1, L.switchboard.y, L.switchboard.z - 1.9, Math.PI]);
+    // Kortik's Switchboard: a lantern from each end of the beam over its sign, and a post lamp at the deck's two
+    // corners on the hall's side, clear of the bridge and the stair.
+    const kd = L.kortik, kx = kd.x - kd.w / 2 + FM.KORTIK.face;
+    for (const [along, y, out] of BL.kortikModels.BOARD.hooks) lamps.push(["hang", kx + out, kd.y + y, kd.z - along]);
+    lamps.push(["post", kd.x + 1.9, kd.y, kd.z - kd.d / 2 + 0.25, Math.PI], ["post", kd.x + kd.w / 2 - 0.25, kd.y, kd.z + kd.d / 2 - 0.25, 0]);
     // Two from the arms at the ends of each forge shaft's header.
     for (const [x, z] of FM.SHAFTS) for (const s of [-1, 1]) lamps.push(["hang", x + s * 1.7, 2.76, z - 0.2]);
     // Two from each of the rebalancer's, the treasury's and the cooker's signs.
@@ -253,7 +258,7 @@
     const my = e.y, mz = FM.EXIT_Z;
     return FM.lanterns(lamps, [
       [-14, 16, -12, 14, 16, -12, 1.6, [0.2, 0.4, 0.6, 0.8]], [-18, 13.5, -8, 18, 13.5, -8, 1.4, [0.2, 0.35, 0.65, 0.8]],
-      [-20, 9, 8, -13, 9, 12, 0.6, [0.5]], [20, 9.5, 5, 13.5, 9, 7, 0.6, [0.5]],
+      [20, 9.5, 5, 13.5, 9, 7, 0.6, [0.5]],
       // Just past the rim, the mouth's own string of lamps, hung where the hub hangs it.
       [-3.05, my + 3.42, mz + 1.1, 3.05, my + 3.42, mz + 1.1, 0.3, [0.3, 0.7]]
     ]);
@@ -985,7 +990,7 @@
     setData(s.feeBoard, "ROUTING FEES (PUBLIC)", [["Forwards settled", sats(r.settled), "count"], ["Earned a fee", sats(r.fees), "sats"], ["Hour's success", r.summary ? `${Math.round(r.summary.ratio * 100)}%` : "None yet", "ok"]], 1.9);
     setData(s.statsBoard, "NODE STATS (PUBLIC)", [["Channels", r.channels ?? snap.channelCount, "count"], ["Peers", r.peers ?? snap.peerCount, "count"], ["Total capacity", `${sats(snap.capacity)} sats`, "sats"], ["Fee policy", `${low} / ${high} ppm`, "plain"], ["Node", NODE_STATES[r.node] || "Unknown", "ok"]], 1.9);
     const summary = r.summary ? `Foundry hour: ${r.summary.count} fwd, ${Math.round(r.summary.ratio * 100)}% ok` : "(Routing & Forwarding)";
-    setBoard(s.switchLabel, "SWITCHBOARD", summary, false);
+    setBoard(s.switchLabel, "ROUTING CONSOLE", summary, false);
     const shown = s.placeOf.size, total = r.channels ?? snap.channelCount;
     setBoard(s.galleryLabel, "MORE CHANNELS", `${Math.max(0, total - 4)} lines, ${Math.max(0, total - shown)} not shown`, false);
     // A real page shows the shared donation totals here too, rather than this visit's animation counters.
@@ -1676,6 +1681,8 @@
     greeter = BL.factoryGreeter.create({ parent: root, input, fx, feed,
       visitor: () => people && people.player === avatar ? avatar : null,
       demoRunning: () => feed.reading.contract === "obl.factory.demo.v1" || feed.reading.contract === null && !!shared.mock, coarse: COARSE, camera, quality: () => renderer.quality });
+    kortik = BL.kortik.create({ fx });
+    addChild(root, kortik.node);
     // With no Ooga the visitor cannot talk to the guide: a hint points them to the island to pick one.
     if (!avatar) hud.hint(`${BL.factoryGreeter.NAME} the guide gives tours here — pick an Ooga on the island first`);
     // Sent from the island's dialog to tip: on to the kiosk's glass at the first frame, once the pilot has placed the view.
@@ -1686,7 +1693,7 @@
     factoryScene.input = input;
     factoryScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null, demoTip, fx,
-      factory: { node: shared, feed, mock, greeter, get scene() { return scene; }, simulate(seconds, dt = 1 / 30) { for (let t = 0; t < seconds; t += dt) shared.tick(dt); } }
+      factory: { node: shared, feed, mock, greeter, kortik, get scene() { return scene; }, simulate(seconds, dt = 1 / 30) { for (let t = 0; t < seconds; t += dt) shared.tick(dt); } }
     };
   };
 
@@ -2063,6 +2070,7 @@
     }
     greeter.update(dt, elapsed);
     greeter.light(RENDER_OPTS.lights, LIGHT.tess * 8);
+    kortik.update(dt, elapsed, camera.position);
     // The act button talks to the guide in reach, starts the picked tour or skips a line ahead, or, within the
     // kiosk's hint reach, donates, the way the hub shows ENTER ARCADE by its door; the pilot's own label returns once
     // the offer is gone. The guide comes first, as the button tries the guide before the kiosk.
@@ -2088,6 +2096,8 @@
     world.pilot = pilot.player ? pilot.player.traits.name : null;
     greeter.dispose();
     greeter = null;
+    kortik.dispose();
+    kortik = null;
     unsubscribe();
     unsubscribe = null;
     settleCooker(scene);
@@ -2133,6 +2143,7 @@
     }
     if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
     if (greeter) greeter.liveGeometry(set);
+    if (kortik) kortik.liveGeometry(set);
     if (remotes) remotes.liveGeometry(set);
   };
   const stats = () => {

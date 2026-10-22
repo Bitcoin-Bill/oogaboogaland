@@ -38,6 +38,14 @@
   const HALL = { halfW: 23, back: -22, front: 30, h: 26 };
   // The walls' stone comes in cells this big and leans this far in over the hall's height.
   const WALL_CELL = 0.75, WALL_LEAN = 3.5, STATION_BACK = 0.8;
+  // Kortik's Switchboard on its deck (LAYOUT.kortik): the patch wall stands along the deck's west edge, its face `face`
+  // in from the edge and looking into the hall (+x), `wall` either side of the deck's middle. What stands in front of
+  // it blocks the walkers, as [along the wall, out from it, radius]; along runs toward -z.
+  const KORTIK = {
+    face: 0.55, wall: 2.8, seat: 0.9,
+    blocks: [[-2.45, 0.22, 0.4], [-1.75, 0.22, 0.4], [-1.05, 0.22, 0.4], [-0.35, 0.22, 0.4], [0.35, 0.22, 0.4], [1.05, 0.22, 0.4],
+      [1.75, 0.22, 0.4], [2.45, 0.22, 0.4], [0, 0.9, 0.42], [2.2, 0.85, 0.45], [-2.3, 1.0, 0.5]]
+  };
   // Where the glowing water runs down the back wall.
   const FALLS = [-17, -4.5, 4.5, 18];
   // Every standing place, in the cave's frame. A deck is its centre, top height, width (x) and depth (z).
@@ -67,6 +75,9 @@
       { bay: 3, x: 20.8, y: LEVEL.main, z: -2, turn: -Math.PI / 2 }
     ],
     switchboard: { x: -12, y: LEVEL.low, z: 6, w: 7, d: 5 },
+    // Kortik's Switchboard: a deck forward and to the left of the Routing Console's, at its height, reached by a stair
+    // from the pit on its east side and a level bridge north onto the console's deck (both in `stairs`).
+    kortik: { x: -16.9, y: LEVEL.low, z: 12.2, w: 7.2, d: 6 },
     // One platform along the right wall carries the node's money in a row toward the way out: the rebalancer, the
     // treasury and the banana cooker, each station facing +z. The platform is the deck; a station's entry is where
     // it stands, and its w and d size its gorilla's patch. The cooker stands far enough from the treasury, and the
@@ -102,14 +113,15 @@
     // Every other flight of stairs, [x, y, z] at the bottom and at the top and its width, read by the scaffold that
     // builds them (cutting the rail wherever one lands) and by the floor an Ooga walks: pit to the
     // core's walkway, the main level to the high lines up the lines' inner sides, the high
-    // lines to the landing in front of the first gallery, one flight from each, and the pit up to the platform by the
-    // cooker. An end on a deck's edge stands on that edge's rail line and crosses it square, so its rails meet the
-    // ends of the deck's.
+    // lines to the landing in front of the first gallery, one flight from each, the pit up to the platform by the
+    // cooker and up to Kortik's deck, and a level flight from his deck to the Routing Console's. An end on a deck's
+    // edge stands on that edge's rail line and crosses it square, so its rails meet the ends of the deck's.
     stairs: [
       [-4.8, 0, 7.5, -4.8, LEVEL.main, 1.3, 1.6], [4.8, 0, 7.5, 4.8, LEVEL.main, 1.3, 1.6],
       [-9.2, LEVEL.main, -4.4, -9.2, LEVEL.high, -9.6, 1.6], [9.2, LEVEL.main, -4.4, 9.2, LEVEL.high, -9.6, 1.6],
       [-6.4, LEVEL.high, -14.05, -0.8, LEVEL.top, -14.05, 1.6], [6.4, LEVEL.high, -14.05, 0.8, LEVEL.top, -14.05, 1.6],
-      [5.6, 0, 20.4, 9.5, LEVEL.low, 20.4, 1.6]
+      [5.6, 0, 20.4, 9.5, LEVEL.low, 20.4, 1.6],
+      [-9.5, 0, 13.4, -13.4, LEVEL.low, 13.4, 1.6], [-13.9, LEVEL.low, 9.3, -13.9, LEVEL.low, 8.4, 1.2]
     ],
     // The landing the flights from A and B meet at, against the first gallery's front, and the bridges along the top:
     // the watchtower to the first gallery and the first gallery to the second, [x0, z0, x1, z1, width] edge to edge.
@@ -568,6 +580,8 @@
     // they hang from it on brackets rather than stand on posts, which would land in the porches below them.
     for (const b of L.bays) deckAt(b, "nsew");
     for (const d of [L.switchboard, L.platform]) deckAt(d, "nsew");
+    // Kortik's switchboard stands along its west edge, where a rail would be.
+    deckAt(L.kortik, "nse");
     deckAt(L.lookout, "nsew");
     deckAt(L.lookoutDeck, "nsew", 0);
     deckAt(L.lookoutApproach, "ew", 0);
@@ -714,7 +728,7 @@
   const FLOOR = cached(() => {
     const L = LAYOUT, rects = [], strips = [], blocks = [], discs = [];
     const rect = (d, y = d.y) => rects.push(d.x - d.w / 2 + 0.15, d.x + d.w / 2 - 0.15, d.z - d.d / 2 + 0.15, d.z + d.d / 2 - 0.15, y);
-    for (const d of [...L.bays, L.switchboard, L.platform, L.lookout, L.lookoutDeck, L.lookoutApproach, ...L.galleries]) rect(d);
+    for (const d of [...L.bays, L.switchboard, L.kortik, L.platform, L.lookout, L.lookoutDeck, L.lookoutApproach, ...L.galleries]) rect(d);
     // The landing runs on into the first gallery it opens onto.
     const ld = L.landing;
     rects.push(ld.x - ld.w / 2 + 0.15, ld.x + ld.w / 2 - 0.15, ld.z - ld.d / 2 - 0.4, ld.z + ld.d / 2 - 0.15, ld.y);
@@ -818,6 +832,9 @@
     for (const s of [-1, 1]) block(st.x - S.z, st.z + s * S.post, 0.35, st.y - 0.5, st.y + 8);
     block(st.x - S.crate[1], st.z + S.crate[0], 0.4, st.y - 0.5, st.y + 1.2);
     block(st.x - S.easel[1], st.z + S.easel[0], 0.5, st.y - 0.5, st.y + 2.8);
+    // Kortik's switchboard, desk, stool, side table and crates.
+    const k = L.kortik, kx = k.x - k.w / 2 + KORTIK.face;
+    for (const [along, out, r] of KORTIK.blocks) block(kx + out, k.z - along, r, k.y - 0.5, k.y + 3);
     return { rects: new Float32Array(rects), strips: new Float32Array(strips), blocks: new Float32Array(blocks), discs: new Float32Array(discs),
       stairs: new Float32Array([L.stairway, ...L.stairs].flat()), ring: L.ring };
   });
@@ -3481,7 +3498,7 @@
     LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R,
     forgeSign, forgeWave, forgeLines, forgeTrack, forgeShafts, mintCoin, COILS, teslaCoil, banner, statusLantern, peerPipes, peerMirrors, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, supportAt, stairCeilingAt, clearAt, walkable, resolveFall,
     hall, scaffold, coreBody, coreChamber, conduits, sat, satFailed, stationFrame, capacitor, forge, forgeFire, cart,
-    switchboard, switchScreens, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
+    switchboard, switchScreens, KORTIK, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
     COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, cookerBody, cookerFixtures, cookerLid, cookerPort, cookerGear, cookerSats, donationKiosk, kioskScreen, kioskIdle, kioskThanks, BOARD, donationBoard, boardFace, boardValues, paintBoard, satCube, flyingBanana, coreRingLime,
     coreRing, teslaArcs, lookoutTower, lookoutLamp, lookoutOptics, lookoutBeam, LOOKOUT_BEAM, STUDY, studyHall, studyNote, studyBoard, tunnels, galleryStation, galleryCaps, label, lanterns, hardHat, hubTunnel, hubWindow, bakeWindow, windowLights, exitTunnel, outsideView,
     beam, moved, turnedY, smoothBolt, smoothBitcoin
