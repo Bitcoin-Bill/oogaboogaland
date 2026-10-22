@@ -2130,6 +2130,7 @@ void main() {
       if (rec.mesh) {
         gl.deleteVertexArray(rec.mesh.vao);
         gl.deleteBuffer(rec.mesh.vbo);
+        if (rec.mesh.ebo) gl.deleteBuffer(rec.mesh.ebo);
       }
       if (rec.line) {
         gl.deleteVertexArray(rec.line.vao);
@@ -2157,8 +2158,9 @@ void main() {
         gl.vertexAttribDivisor(loc, 1);
       }
     };
-    // `layout` holds [location, size, type, normalized, byte offset] for each attribute of a `stride`-byte vertex.
-    const makePart = (data, stride, layout, ibo) => {
+    // `layout` holds [location, size, type, normalized, byte offset] for each attribute of a `stride`-byte vertex. With
+    // `indices` the part is drawn through them, and its `count` and every range drawn from it count indices.
+    const makePart = (data, stride, layout, ibo, indices = null) => {
       const vao = gl.createVertexArray();
       gl.bindVertexArray(vao);
       const vbo = gl.createBuffer();
@@ -2169,9 +2171,23 @@ void main() {
         gl.vertexAttribPointer(loc, size, type, normalized, stride, offset);
       }
       bindInstanceAttribs(ibo);
+      let ebo = null;
+      if (indices) {
+        ebo = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      }
       gl.bindVertexArray(null);
-      return { vao, vbo, count: data.byteLength / stride };
+      return { vao, vbo, ebo, index: indices ? (indices.BYTES_PER_ELEMENT === 2 ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT) : 0,
+        indexSize: indices ? indices.BYTES_PER_ELEMENT : 0, count: indices ? indices.length : data.byteLength / stride };
     };
+    // Triangles `first` to `first + count` (in corners) of a part, `instances` times.
+    const drawPart = (part, first, count, instances) => {
+      if (part.index) gl.drawElementsInstanced(gl.TRIANGLES, count, part.index, first * part.indexSize, instances);
+      else gl.drawArraysInstanced(gl.TRIANGLES, first, count, instances);
+    };
+    // Indices for `vertices` corners, in the narrowest type that holds them.
+    const indexArray = (vertices, length) => vertices <= 65536 ? new Uint16Array(length) : new Uint32Array(length);
     // A packed mesh vertex (MESH_WORDS), and an extra float attribute after it: [location, size].
     const meshLayout = (extra) => {
       const layout = [[0, 3, gl.FLOAT, false, 0], [1, 4, gl.INT_2_10_10_10_REV, true, 12], [2, 4, gl.UNSIGNED_BYTE, true, 16], [10, 1, gl.FLOAT, false, 20]];
@@ -2180,8 +2196,8 @@ void main() {
     };
     const buildMeshPart = (geometry, ibo, dataOnly = false) => {
       const { verts, faces } = geometry;
-      let triCount = 0;
-      for (const f of faces) triCount += f.i.length - 2;
+      let triCount = 0, corners = 0;
+      for (const f of faces) if (f.i.length > 2) { triCount += f.i.length - 2; corners += f.i.length; }
       if (!triCount) return null;
       const source = geometry.mirrorSource, stride = source ? MESH_WORDS + 3 : MESH_WORDS;
       // A voxel geometry names its grid; a face whose corners all sit on it gets block detail, flagged by a doubled
@@ -2195,7 +2211,10 @@ void main() {
         return true;
       };
       let gridded = 0;
-      const out = new ArrayBuffer(triCount * 3 * stride * 4), words = new Uint32Array(out), floats = new Float32Array(out), bytes = new Uint8ClampedArray(out);
+      // A face's corners are written once and its triangles fan out of them through the indices.
+      const out = new ArrayBuffer(corners * stride * 4), words = new Uint32Array(out), floats = new Float32Array(out), bytes = new Uint8ClampedArray(out);
+      const indices = indexArray(corners, triCount * 3);
+      let n = 0;
       // A `smooth` geometry shades with vertex normals: each face's area-weighted Newell normal summed into the
       // vertices it uses, once at upload (cartoon foliage reads as soft round clumps, not facets).
       const smooth = geometry.smooth ? new Float32Array(verts.length) : null;
@@ -2262,10 +2281,13 @@ void main() {
         }
         const emissive = f.emissive || 0;
         const e = f.matrixCave || f.matrixLocalGlyphSurface || f.matrixWorldGlyphSurface || f.matrixPermanentFallback ? -1 - (f.matrixCave || 0) * 2 - (f.matrixWorldGlyphSurface ? 32 : 0) - (f.matrixPermanentFallback ? 64 : 0) - emissive : emissive;
+        if (f.i.length < 3) return;
+        const first = o / stride;
+        for (const idx of f.i) put(idx, nx, ny, nz, f.color, e);
         for (let k = 1; k < f.i.length - 1; k++) {
-          put(f.i[0], nx, ny, nz, f.color, e);
-          put(f.i[k], nx, ny, nz, f.color, e);
-          put(f.i[k + 1], nx, ny, nz, f.color, e);
+          indices[n++] = first;
+          indices[n++] = first + k;
+          indices[n++] = first + k + 1;
         }
       };
       // Faces the plain shader variant can draw (no special water, no Matrix cave or glyph tags) lead, so a camera
@@ -2276,31 +2298,34 @@ void main() {
         for (const f of faces) writeFace(f);
       } else {
         for (const f of faces) if (!special(f)) writeFace(f);
-        plainCount = o / stride;
+        plainCount = n;
         for (const f of faces) if (special(f)) writeFace(f);
       }
-      if (dataOnly) return { data: words, voxel: gridded ? voxel : null };
-      const part = makePart(out, stride * 4, meshLayout(source ? [9, 3] : null), ibo);
+      if (dataOnly) return { data: words, indices, voxel: gridded ? voxel : null };
+      const part = makePart(out, stride * 4, meshLayout(source ? [9, 3] : null), ibo, indices);
       part.voxel = gridded ? voxel : null;
       part.plainCount = plainCount;
       return part;
     };
     const buildRigPart = (rig, ibo) => {
       const parts = rig.sources.map(geometry => buildMeshPart(geometry, ibo, true));
-      let length = 0;
-      for (const part of parts) length += part ? part.data.length / MESH_WORDS * (MESH_WORDS + 1) : 0;
-      const data = new ArrayBuffer(length * 4), words = new Uint32Array(data), floats = new Float32Array(data);
-      let offset = 0;
+      let vertices = 0, count = 0;
+      for (const part of parts) if (part) { vertices += part.data.length / MESH_WORDS; count += part.indices.length; }
+      const data = new ArrayBuffer(vertices * (MESH_WORDS + 1) * 4), words = new Uint32Array(data), floats = new Float32Array(data);
+      const indices = indexArray(vertices, count);
+      let offset = 0, n = 0;
       for (let joint = 0; joint < parts.length; joint++) {
         const part = parts[joint];
         if (!part) continue;
         if (part.voxel) rig.voxels.set(part.voxel, joint * 4);
+        const base = offset / (MESH_WORDS + 1);
+        for (const index of part.indices) indices[n++] = base + index;
         for (let i = 0; i < part.data.length; i += MESH_WORDS) {
           for (let k = 0; k < MESH_WORDS; k++) words[offset++] = part.data[i + k];
           floats[offset++] = joint;
         }
       }
-      return makePart(data, (MESH_WORDS + 1) * 4, meshLayout([8, 1]), ibo);
+      return makePart(data, (MESH_WORDS + 1) * 4, meshLayout([8, 1]), ibo, indices);
     };
     const LINE_CORNERS = [[0, -1], [1, -1], [1, 1], [0, -1], [1, 1], [0, 1]];
     const buildLinePart = (geometry, ibo) => {
@@ -2907,7 +2932,7 @@ void main() {
       applyCutaway(p, rec.geometry);
       gl.uniform1f(p.u.uClipMaxY, Math.min(rec.geometry.cutawayPreserve ? 1e6 : cutawayMaxY, rec.geometry.clipMaxY ?? 1e6));
       gl.bindVertexArray(rec.mesh.vao);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, rec.mesh.count, count);
+      drawPart(rec.mesh, 0, rec.mesh.count, count);
       gl.activeTexture(gl.TEXTURE0);
       gl.useProgram(resume.prog);
     };
@@ -3127,7 +3152,7 @@ void main() {
           gl.polygonOffset(0, -4);
         }
         gl.bindVertexArray(part.vao);
-        gl.drawArraysInstanced(gl.TRIANGLES, first, count, n);
+        drawPart(part, first, count, n);
         if (offset) gl.disable(gl.POLYGON_OFFSET_FILL);
       }
     };
@@ -3310,7 +3335,7 @@ void main() {
           if (!mirror.query) mirror.query = gl.createQuery();
           gl.beginQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE, mirror.query);
         }
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, part.count, rec.count);
+        drawPart(part, 0, part.count, rec.count);
         if (query) {
           gl.endQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
           mirror.queryPending = true;
@@ -3336,7 +3361,7 @@ void main() {
           if (!shard.geometry.mirrorSource || !shard.mesh || !shard.drawCount || shard.offscreen) continue;
           applyCutaway(shardProgram, shard.geometry);
           gl.bindVertexArray(shard.mesh.vao);
-          gl.drawArraysInstanced(gl.TRIANGLES, 0, shard.mesh.count, shard.drawCount);
+          drawPart(shard.mesh, 0, shard.mesh.count, shard.drawCount);
           mirrorDebug.shardsDrawn += shard.drawCount;
         }
       }
@@ -3399,7 +3424,7 @@ void main() {
         gl.uniform4fv(pg.u.uRipples, ripples ? ripples.waves : NO_MIRROR_RIPPLES);
         gl.bindTexture(gl.TEXTURE_2D, t.tex);
         gl.bindVertexArray(rec.mesh.vao);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, rec.mesh.count, rec.count);
+        drawPart(rec.mesh, 0, rec.mesh.count, rec.count);
       }
       // The passes after this one bind their inputs to unit 0.
       gl.activeTexture(gl.TEXTURE0);
@@ -3463,7 +3488,7 @@ void main() {
         const tint = node.rippleTint;
         gl.uniform3f(pg.u.uCrestTint, tint ? tint[0] : -1, tint ? tint[1] : 0, tint ? tint[2] : 0);
         gl.bindVertexArray(rec.mesh.vao);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, rec.mesh.count, rec.drawCount);
+        drawPart(rec.mesh, 0, rec.mesh.count, rec.drawCount);
         rippleSurfaces += rec.drawCount; rippleWaves += ripples ? ripples.active : 0;
       }
       if (started) {
