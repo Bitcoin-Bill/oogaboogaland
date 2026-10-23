@@ -418,6 +418,21 @@
   // The driven Ooga's own footsteps, heard by this page alone (footsteps.js).
   let footsteps = null;
   let weather = null, unsubscribeMempool = null, unsubscribeChain = null, mempoolIsland = null, timechainIsland = null, bifrostIsle = null;
+  // Decorative motion follows the view or the driven character, with room between waking and resting.
+  const effectPointNear = (p, x, y, z, radius2) => (p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 <= radius2;
+  const effectsActiveAt = (x, y, z, active, near, far) => {
+    const radius = active ? far : near, radius2 = radius * radius;
+    if (effectPointNear(camera.position, x, y, z, radius2) || effectPointNear(camera.target, x, y, z, radius2)) return true;
+    const player = clankerPlay?.player || pilot?.player;
+    return !!player && effectPointNear(player.root.position, x, y, z, radius2);
+  };
+  const updatePortalEffects = (phase, dt) => {
+    const w = phase.node.world;
+    phase.pause(!effectsActiveAt(w[12], w[13] + 1.5, w[14], !phase.paused, 24, 32));
+    if (phase.paused) return false;
+    phase.update(dt, phase.ripples.time + dt);
+    return true;
+  };
   // The two boards across the hole from the vine bridge, one reading the chain and one reading the
   // weather. Each holds its canvas, its panel node and the reading it last drew, so a snapshot saying
   // nothing new replaces no geometry.
@@ -2283,10 +2298,10 @@
   let life = null;
   const buildLife = () => {
     if (renderer.kind === "canvas2d") return;
-    const gulls = BL.dressing.flock({ count: 22, radius: [28, 70], height: [8, 30], seed: 3 });
-    const shore = BL.dressing.flock({ count: 10, radius: [90, 150], height: [SEA_Y + 6, SEA_Y + 20], seed: 8, scale: 3 });
+    const gulls = BL.dressing.flock({ count: 22, radius: [28, 70], height: [8, 30], seed: 3, activeAt: effectsActiveAt });
+    const shore = BL.dressing.flock({ count: 10, radius: [90, 150], height: [SEA_Y + 6, SEA_Y + 20], seed: 8, scale: 3, activeAt: effectsActiveAt });
     // Keep the full hulls between the main island's outlying islets and the sea stacks starting at r240.
-    const boats = BL.dressing.fleet({ sea: SEA_Y, spots: [[140, 0.4, 5.6], [160, 2.2, 6.8], [125, 3.9, 6.2], [150, 5.1, 5.3], [170, 1.3, 7.3]] });
+    const boats = BL.dressing.fleet({ sea: SEA_Y, spots: [[140, 0.4, 5.6], [160, 2.2, 6.8], [125, 3.9, 6.2], [150, 5.1, 5.3], [170, 1.3, 7.3]], activeAt: effectsActiveAt });
     for (const node of [gulls.node, shore.node, ...boats.nodes]) {
       addChild(root, node);
       placed.push(node);
@@ -3317,7 +3332,8 @@
     const claimGround = () => {
       for (const [x, z, r] of site.claims) claim(x, z, r);
     };
-    return { site, group, claimGround, phase: null, window: null, heimdall: null, hum: 0 };
+    BL.bifrostIsle.update(site, 0, 0, NaN, NaN, NaN);
+    return { site, group, claimGround, phase: null, window: null, heimdall: null, hum: 0, effectsActive: false, effectsTime: 0 };
   };
   // Sani lives in the Sphere's rooms, in his recliner (timechain-interior.js), so on the island he is inside its
   // closed ball, out of sight, whatever his activity says. Driven, borrowed by someone else, away, or on a debug
@@ -6330,13 +6346,14 @@
   // crossed and no dolly back out to the mouth.
   const factoryShield = (dt, elapsed) => {
     const f = factoryMouth, m = f.mouth, o = f.opening, player = pilot.player;
-    f.phase.update(dt, elapsed);
-    f.phase.body.update(dt);
-    f.phase.body.time = f.phase.ripples.time;
-    f.hum -= dt;
-    if (f.hum <= 0) {
-      f.hum = 0.1 + Math.random() * 0.22;
-      f.phase.ripples.pulse(o.minX + Math.random() * (o.maxX - o.minX), o.floorY + Math.random() * (o.ceilingY - o.floorY), 0);
+    if (updatePortalEffects(f.phase, dt)) {
+      f.phase.body.update(dt);
+      f.phase.body.time = f.phase.ripples.time;
+      f.hum -= dt;
+      if (f.hum <= 0) {
+        f.hum = 0.1 + Math.random() * 0.22;
+        f.phase.ripples.pulse(o.minX + Math.random() * (o.maxX - o.minX), o.floorY + Math.random() * (o.ceilingY - o.floorY), 0);
+      }
     }
     f.node.tick(dt);
     if (!player || entering || !BL.scenes.factory) return;
@@ -6356,7 +6373,7 @@
   // B.C.A.'s veil, in a banker's lamp amber, where the lab's stands, so the gorillas' suits show from where they cross.
   const BCA_TINT = [1, 0.78, 0.4], BCA_VEIL_Z = 0.5;
   const bcaVeil = (dt, elapsed) => {
-    bcaMouth.phase.update(dt, elapsed);
+    updatePortalEffects(bcaMouth.phase, dt);
     bcaMouth.office.update(dt);
   };
   // What the gorillas work B.C.A. by: the office's desks and wait spots, with the aisle the way in from its veil.
@@ -6371,18 +6388,24 @@
   // held where it crossed through the fade as at the factory.
   const bifrostGate = (dt, elapsed) => {
     const b = bifrostIsle, p = b.site.portal, o = p.opening, player = pilot.player;
-    b.phase.update(dt, elapsed);
-    b.phase.body.update(dt);
-    b.phase.body.time = b.phase.ripples.time;
-    b.hum -= dt;
-    if (b.hum <= 0) {
-      b.hum = 0.1 + Math.random() * 0.22;
-      b.phase.ripples.pulse(o.minX + Math.random() * (o.maxX - o.minX), o.floorY + Math.random() * (o.ceilingY - o.floorY), 0);
+    if (updatePortalEffects(b.phase, dt)) {
+      b.phase.body.update(dt);
+      b.phase.body.time = b.phase.ripples.time;
+      b.hum -= dt;
+      if (b.hum <= 0) {
+        b.hum = 0.1 + Math.random() * 0.22;
+        b.phase.ripples.pulse(o.minX + Math.random() * (o.maxX - o.minX), o.floorY + Math.random() * (o.ceilingY - o.floorY), 0);
+      }
     }
     const at = player ? player.root.position : null, orbit = pilot.orbit;
     // The bridge glows under the played Ooga's feet.
-    if (at) BL.bifrostIsle.update(b.site, dt, elapsed, at.x, at.y - player.baseY, at.z);
-    else BL.bifrostIsle.update(b.site, dt, elapsed, NaN, NaN, NaN);
+    const head = b.site.cloud.head;
+    b.effectsActive = !b.phase.paused || effectsActiveAt(head.x, b.site.walk.y, head.z, b.effectsActive, 24, 32);
+    if (b.effectsActive) {
+      b.effectsTime += dt;
+      if (at) BL.bifrostIsle.update(b.site, dt, b.effectsTime, at.x, at.y - player.baseY, at.z);
+      else BL.bifrostIsle.update(b.site, dt, b.effectsTime, NaN, NaN, NaN);
+    }
     b.heimdall.update(dt, elapsed, at ? at.x : orbit.tx, at ? at.y - player.baseY : orbit.ty, at ? at.z : orbit.tz, !!player);
     if (!player || entering) return;
     const sr = Math.sin(p.ry), cr = Math.cos(p.ry);
@@ -6415,7 +6438,7 @@
       const W = BL.bifrostWindow, c = camera.position, dx = c.x - p.x, dy = c.y - p.floorY, dz = c.z - p.z, reach = W.FAR + Math.hypot(W.MIDDLE, p.fieldZ);
       if (dx * dx + dy * dy + dz * dz < reach * reach) b.window = W.create({ group: b.group, portal: p });
     }
-    if (b.window) b.window.update(dt, camera, RENDER_OPTS);
+    if (b.window) b.window.update(dt, camera, RENDER_OPTS, !b.phase.paused);
   };
   const BIFROST_VIEW = { ...FACTORY_VIEW, haze: [188, 208, 255] };
   const snapFactoryView = () => {
@@ -8028,7 +8051,7 @@
   const update = (dt, elapsed) => {
     if (ghosts) ghosts.unshake(camera); // HALLOWEEN: last frame's quake comes off before anything reads the camera
     if (lawn && lawn.version !== island.path.version) layLawn();
-    if (life) { life.gulls.update(elapsed); life.shore.update(elapsed); life.boats.update(elapsed); }
+    if (life) { life.gulls.update(elapsed, dt); life.shore.update(elapsed, dt); life.boats.update(elapsed, dt); }
     now = elapsed;
     hour = clock.read();
     if (ghosts) hour = ghosts.hour(hour); // HALLOWEEN: night falls for the hunt
@@ -8096,7 +8119,7 @@
     mirrorCave.damage.update(dt, !mirrorCave.gate.open);
     syncMirrorDamage();
     mirrorCave.ripples.update(dt, elapsed);
-    entropyLab.phase.update(dt, elapsed);
+    updatePortalEffects(entropyLab.phase, dt);
     if (factoryMouth) factoryShield(dt, elapsed);
     if (bifrostIsle) bifrostGate(dt, elapsed);
     if (bcaMouth) bcaVeil(dt, elapsed);
@@ -8255,8 +8278,12 @@
     // Commit portal and Matrix state after that, before rendering, so mirror and interior never disagree.
     syncMatrixInside(player);
     // The factory's window follows the eye, so it moves once the camera is final for the frame.
-    if (factoryMouth && factoryMouth.hall) factoryMouth.hall.update(dt, camera, RENDER_OPTS);
-    if (factoryMouth && factoryMouth.roofWindow) factoryMouth.roofWindow.update(dt, camera, RENDER_OPTS);
+    if (factoryMouth && factoryMouth.hall) factoryMouth.hall.update(dt, camera, RENDER_OPTS, !factoryMouth.phase.paused);
+    if (factoryMouth && factoryMouth.roofWindow) {
+      const r = island.roofOpening;
+      factoryMouth.roofEffectsActive = effectsActiveAt(r.x, r.y, r.z, factoryMouth.roofEffectsActive, 24, 32);
+      factoryMouth.roofWindow.update(dt, camera, RENDER_OPTS, factoryMouth.roofEffectsActive);
+    }
     if (bifrostIsle) updateBifrostWindow(dt);
     updateMatrixWorld(dt, elapsed);
     updateMatrixControl(dt, player);
@@ -10708,7 +10735,7 @@
     buildSpots();
     buildClouds();
     spawnMagazinePickup();
-    critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt });
+    critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt, activeAt: effectsActiveAt });
     mark("props");
     const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, overlayVisible: matrixOverlayVisible, zzzVisible: sleepMarksVisible, tickerAt: TICKER_AT, buildSpots: buildSpotsList, walkIn: WALK_IN, clampDrag, viewYaw: PILE_VIEW.yaw, bedrolls, pileScale: PILE_SCALE, pileY: ALTAR_HEIGHT + 0.02, matrixLivingPile: true, onLayout: layoutPile, crateRadius: () => Math.max(4.4, altar.platformRadius + 0.8), groundAt: playerSupportAt, ceilingAt, wanderSpot, walkable, flyable, glideJetCeiling, useNear, abyssAt, abyssRespawnY: ABYSS_RESPAWN_Y, seaY: SEA_Y, jetpackAllowed, reticleTarget, phase: () => phase };
     shared.deliverySource = factoryMouth ? factoryMouth.deliverySource : null;
@@ -10788,6 +10815,7 @@
     // one factory node: the island ticks it while it is here, as the hall does.
     if (factoryMouth) {
       Object.assign(factoryMouth, { phase: BL.labPhase.create(factoryMouth.group, factoryMouth.mouth, factoryMouth.opening, BL.factoryModels.SHIELD_Z, BL.factoryWindow.TINT), hum: 0, node: BL.factoryFeed.node(world) });
+      factoryMouth.roofEffectsActive = false;
       factoryMouth.hall = renderer.kind === "webgl2" ? BL.factoryWindow.create({ group: factoryMouth.group, mouth: factoryMouth.mouth, node: factoryMouth.node }) : null;
       if (factoryMouth.hall && island.roofOpening) {
         const roof = island.roofOpening;
@@ -11809,8 +11837,9 @@
       // A crossing through the Timechain Sphere's doors keeps full rate, so its walk and swoop finish smoothly.
       if (timechainIsland && timechainIsland.gate.busy) return true;
       if (ghosts && ghosts.inMotion) return true; // HALLOWEEN
-      if (pile.inMotion || fx.inMotion || poolEffectsActive && (weather.active || mempoolIsland.water.active) || magazine && magazine.revealed || MATRIX_WORLD.active || mirrorGuides.state.doorway || mirrorCave.damage.active || mirrorCave.ripples.active || mirrorCave.body.active || entropyLab.phase.ripples.active || entropyLab.phase.body.contacts || entropyLab.phase.body.active) return true;
-      if (bcaMouth && (bcaMouth.phase.ripples.active || bcaMouth.phase.body.contacts || bcaMouth.phase.body.active)) return true;
+      if (pile.inMotion || fx.inMotion || poolEffectsActive && (weather.active || mempoolIsland.water.active) || magazine && magazine.revealed || MATRIX_WORLD.active || mirrorGuides.state.doorway || mirrorCave.damage.active || mirrorCave.ripples.active || mirrorCave.body.active) return true;
+      if (!entropyLab.phase.paused && (entropyLab.phase.ripples.active || entropyLab.phase.body.contacts || entropyLab.phase.body.active)) return true;
+      if (bcaMouth && !bcaMouth.phase.paused && (bcaMouth.phase.ripples.active || bcaMouth.phase.body.contacts || bcaMouth.phase.body.active)) return true;
       for (const sign of headquarters.roomSigns) if (sign.velocity || sign.node.rotation.x) return true;
       for (let i = 0; i < matrixGates.length; i++) if (matrixCave && (matrixGates[i].raising || matrixCave.unlocked && matrixGates[i].node.position.y !== MATRIX_GATE_HIDDEN_Y)) return true;
       return false;

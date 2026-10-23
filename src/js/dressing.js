@@ -14,6 +14,7 @@
 // Beyond sets: `palm(v)` three swaying cartoon palm meshes (not voxels) placed as their own nodes, `islet(v)` the terraced sea stacks on the horizon (variant 1 has a sea arch), `motes(opts)` a
 // fixed field of glowing dust that wraps round the view (`update(elapsed, x, z)`), `flock(opts)` one
 // instanced batch of wheeling gulls and `fleet(opts)` log rafts on the sea, each with `update(elapsed)`.
+// Flocks and fleets may take `activeAt(x, y, z, wasActive, near, far)` to rest distant poses in place.
 //
 // Bake each dressed area once and memoise it (the hub per island, the caves per page).
 // Only `solid` collides.
@@ -1309,28 +1310,43 @@
     data[o + 12] = x; data[o + 13] = y; data[o + 14] = z; data[o + 15] = 1;
   };
   let gullGeometry = null, boatGeometry = [];
-  const flock = ({ count = 18, cx = 0, cz = 0, radius = [26, 60], height = [14, 34], seed = 5, scale = 1.6 } = {}) => {
+  const flock = ({ count = 18, cx = 0, cz = 0, radius = [26, 60], height = [14, 34], seed = 5, scale = 1.6, activeAt = null } = {}) => {
     if (!gullGeometry) gullGeometry = noShadow(set().put("gull", 0, 0, 0).build().solid);
     const node = instanceField(gullGeometry, count), rand = mulberry32(seed), data = node.instanceData;
     const r = new Float32Array(count), h = new Float32Array(count), w = new Float32Array(count), p = new Float32Array(count), f = new Float32Array(count);
+    const time = activeAt ? new Float64Array(count) : null, active = activeAt ? new Uint8Array(count) : null;
+    let placed = false, previous = 0;
     for (let i = 0; i < count; i++) {
       r[i] = radius[0] + rand() * (radius[1] - radius[0]); h[i] = height[0] + rand() * (height[1] - height[0]);
       w[i] = (0.05 + rand() * 0.06) * (rand() < 0.5 ? -1 : 1); p[i] = rand() * 6.283; f[i] = 5 + rand() * 3;
     }
-    const update = (elapsed) => {
+    const update = (elapsed, dt = Math.max(0, elapsed - previous)) => {
+      previous = elapsed;
+      let changed = false;
       for (let i = 0; i < count; i++) {
-        const a = p[i] + elapsed * w[i], x = cx + Math.cos(a) * r[i], z = cz + Math.sin(a) * r[i];
-        const glide = Math.sin(elapsed * 0.3 + p[i]) > 0.2, flap = glide ? 0.6 : 0.3 + Math.abs(Math.sin(elapsed * f[i] + p[i])) * 1.6;
-        writeYaw(data, i * 20, Math.atan2(-Math.sin(a) * w[i], Math.cos(a) * w[i]) + Math.PI, scale, flap * scale, scale, x, h[i] + Math.sin(elapsed * 0.5 + p[i]) * 1.5, z);
+        const o = i * 20;
+        if (activeAt && placed) {
+          active[i] = activeAt(data[o + 12], data[o + 13], data[o + 14], !!active[i], 48, 64) ? 1 : 0;
+          if (!active[i]) continue;
+          time[i] += dt;
+        }
+        const t = activeAt ? time[i] : elapsed;
+        const a = p[i] + t * w[i], x = cx + Math.cos(a) * r[i], z = cz + Math.sin(a) * r[i];
+        const glide = Math.sin(t * 0.3 + p[i]) > 0.2, flap = glide ? 0.6 : 0.3 + Math.abs(Math.sin(t * f[i] + p[i])) * 1.6;
+        writeYaw(data, o, Math.atan2(-Math.sin(a) * w[i], Math.cos(a) * w[i]) + Math.PI, scale, flap * scale, scale, x, h[i] + Math.sin(t * 0.5 + p[i]) * 1.5, z);
+        changed = true;
       }
-      node.instanceVersion++;
+      placed = true;
+      if (changed) node.instanceVersion++;
     };
     update(0);
     return { node, update };
   };
   // Rafts sailing slowly round the island on the sea, rocking on the swell.
-  const fleet = ({ sea = -70, spots = [], seed = 9 } = {}) => {
+  const fleet = ({ sea = -70, spots = [], seed = 9, activeAt = null } = {}) => {
     const nodes = [], rand = mulberry32(seed);
+    const time = activeAt ? new Float64Array(spots.length) : null, active = activeAt ? new Uint8Array(spots.length) : null;
+    let placed = false, previous = 0;
     // Each variant bakes to a logs-and-mast mesh and its sail: two shared geometries (no glow layer).
     for (let v = 0; v < 3; v++) if (!boatGeometry[v]) {
       const baked = set().put("boat", 0, 0, 0, 0, v).build();
@@ -1360,15 +1376,23 @@
       return { node, r, a, w: (0.004 + rand() * 0.004) * (i & 1 ? 1 : -1), ph: rand() * 6.3 };
     });
     for (const b of boats) nodes.push(b.node);
-    const update = (elapsed) => {
-      for (const b of boats) {
-        const a = b.a + elapsed * b.w, n = b.node;
-        n.position.x = Math.sin(a) * b.r; n.position.z = -Math.cos(a) * b.r; n.position.y = sea - 0.2 + Math.sin(elapsed * 0.9 + b.ph) * 0.25;
+    const update = (elapsed, dt = Math.max(0, elapsed - previous)) => {
+      previous = elapsed;
+      for (let i = 0; i < boats.length; i++) {
+        const b = boats[i], n = b.node;
+        if (activeAt && placed) {
+          active[i] = activeAt(n.position.x, n.position.y, n.position.z, !!active[i], 60, 76) ? 1 : 0;
+          if (!active[i]) continue;
+          time[i] += dt;
+        }
+        const t = activeAt ? time[i] : elapsed, a = b.a + t * b.w;
+        n.position.x = Math.sin(a) * b.r; n.position.z = -Math.cos(a) * b.r; n.position.y = sea - 0.2 + Math.sin(t * 0.9 + b.ph) * 0.25;
         // Bow (local +z) along the orbit: the position's derivative in a is (cos a, sin a), signed by the heading.
         n.rotation.y = b.w > 0 ? Math.PI / 2 - a : -Math.PI / 2 - a;
-        n.rotation.z = Math.sin(elapsed * 0.8 + b.ph) * 0.06;
-        n.rotation.x = Math.sin(elapsed * 0.6 + b.ph * 2) * 0.04;
+        n.rotation.z = Math.sin(t * 0.8 + b.ph) * 0.06;
+        n.rotation.x = Math.sin(t * 0.6 + b.ph * 2) * 0.04;
       }
+      placed = true;
     };
     update(0);
     return { nodes, update };
