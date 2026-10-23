@@ -770,10 +770,11 @@ body[data-active-scene="arcade"] .magazine-hud {
 .sheet[data-paired="true"] #roster-panel > .feed-open { display: none; }
 .sheet[data-paired="true"] .panel { min-width: 0; }
 
-/* Leave a grip visible; touch devices keep the whole tab because they cannot hover. */
+/* Tuck tabs only while open; closed panels and touch devices keep the whole tab. */
 @media (hover: hover) and (pointer: fine) {
   .sheet-toggle { transform: translateX(28px); }
   .sheet[data-dock="bottom"] .sheet-toggle { transform: translateY(28px); }
+  .sheet[data-open="false"] .sheet-toggle { transform: none; }
   .sheet .sheet-toggle:hover,
   .sheet .sheet-toggle.virtual-hover,
   .sheet .sheet-toggle:focus-visible { transform: translate(0, 0); }
