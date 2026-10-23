@@ -10614,7 +10614,7 @@ const factoryCanvas = { name: "factory canvas2d", why: "contract: the Canvas 2D 
   record("factory canvas2d: with WebGL2 unavailable the factory still boots and paints, a tip's show in the air", r.kind === "canvas2d" && r.scene === "factory" && r.colours >= 4 && r.flying > 0, JSON.stringify(r));
 } };
 
-const hubDistantEffects = { name: "hub distant effects", why: "rule: distant portals and insects resume without catching up, daylight still changes populations, and visible horizon birds and boats keep moving", run: async (b) => {
+const hubDistantEffects = { name: "hub distant effects", why: "rule: distant portals and insects resume without catching up, daylight still changes populations, and horizon birds, boats and persistent decorative clouds keep moving", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, root = BL.scenes.hub.root, nodes = [];
     const visit = n => { nodes.push(n); for (const child of n.children) visit(child); }; visit(root);
@@ -10673,10 +10673,10 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
     for (const node of insects.filter(n => n.instanceCount > 0)) checkBatch(node);
     // Every horizon actor must keep moving, including birds whose batch also contains a nearby bird.
     // Comparing one slot or just the batch version would miss frozen birds elsewhere in the same flock.
-    const horizon = [], boatPose = n => [n.position.x, n.position.y, n.position.z, n.rotation.x, n.rotation.y, n.rotation.z];
+    const horizon = [], clouds = BL.scenes.hub.debug.matrixCave.clouds, boatPose = n => [n.position.x, n.position.y, n.position.z, n.rotation.x, n.rotation.y, n.rotation.z];
     for (const place of ["far", "pile"]) {
       if (place === "far") far(); else { B.setHour(12); B.pilot.goPreset("pile"); tick(); }
-      const birds = gulls.map(n => Array.from(n.instanceData.slice(0, n.instanceCount * 20))), sails = boats.map(boatPose);
+      const birds = gulls.map(n => Array.from(n.instanceData.slice(0, n.instanceCount * 20))), sails = boats.map(boatPose), sky = clouds.map(c => boatPose(c.node));
       tick(0.4);
       horizon.push({ place, birds: gulls.map((n, k) => {
         const before = birds[k], after = n.instanceData;
@@ -10687,13 +10687,88 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
         }
         return { initialized, visible: n.visible, count: n.instanceCount, moving };
       }), sails: boats.map((n, i) => ({ initialized: sails[i].every(Number.isFinite), visible: n.visible,
-        moving: n.position.x !== sails[i][0] || n.position.z !== sails[i][2], rocking: !same(sails[i].slice(3), boatPose(n).slice(3)) })) });
+        moving: n.position.x !== sails[i][0] || n.position.z !== sails[i][2], rocking: !same(sails[i].slice(3), boatPose(n).slice(3)) })),
+      clouds: clouds.map((c, i) => ({ visible: c.node.visible, moving: c.node.position.x !== sky[i][0] || c.node.position.z !== sky[i][2] })) });
     }
     return { portals, bridgeRested, bridgeResumed, projected, windowResumed, daylight, night, batches, horizon };
   })()`);
   record("hub distant effects: all four portals and the bridge rest and resume locally while the paused window retains parallax", state.portals.length === 4 && state.portals.every(row => Object.values(row).every(Boolean)) && state.bridgeRested && state.bridgeResumed && state.projected && state.windowResumed, JSON.stringify({ portals: state.portals, bridgeRested: state.bridgeRested, bridgeResumed: state.bridgeResumed, projected: state.projected, windowResumed: state.windowResumed }));
   record("hub distant effects: daytime and newly populated nighttime insects and embers keep valid visible poses, rest at distance and resume without a jump", state.daylight && state.night && state.batches.length >= 5 && state.batches.every(row => Object.values(row).every(Boolean)), JSON.stringify({ daylight: state.daylight, night: state.night, batches: state.batches }));
   record("hub distant effects: every horizon bird and all five boats keep moving from the pile and far away", state.horizon.length === 2 && state.horizon.every(row => row.birds.length === 2 && row.birds.reduce((n, batch) => n + batch.count, 0) === 32 && row.birds.every(batch => batch.initialized && batch.visible && batch.count === batch.moving) && row.sails.length === 5 && row.sails.every(boat => Object.values(boat).every(Boolean))), JSON.stringify(state.horizon));
+  const clouds = await b.evaluate(`(() => {
+    const B = __ooga, D = BL.scenes.hub.debug.matrixCave, list = D.clouds, solids = B.headquarters.solids.props;
+    const initial = list.map(c => {
+      const bounds = BL.scene.boundsOf(c.node.geometry);
+      return { cloud: c, node: c.node, geometry: c.node.geometry, radius: Math.hypot(c.node.position.x, c.node.position.z), track: c.radius,
+        y: c.node.position.y, speed: c.speed, x: c.node.position.x, z: c.node.position.z, turn: 0, low: bounds.min[1], high: bounds.max[1],
+        reach: Math.hypot(Math.max(Math.abs(bounds.min[0]), Math.abs(bounds.max[0])), Math.max(Math.abs(bounds.min[2]), Math.abs(bounds.max[2]))) };
+    });
+    const pairs = [];
+    for (let i = 0; i < initial.length; i++) for (let j = i + 1; j < initial.length; j++) {
+      const a = initial[i], b = initial[j];
+      pairs.push({ a, b, sameLane: a.track === b.track && a.y === b.y, distance: Math.hypot(a.x - b.x, a.z - b.z) });
+    }
+    const initialized = initial.length === 30 && initial.every(c => Number.isFinite(c.radius) && c.radius > 0 && Number.isFinite(c.speed) && c.speed > 0);
+    const out = { count: initial.length, initialized, persistent: true, decorative: true, horizontal: true, tangent: true,
+      seconds: 0, laps: 0, radialDrift: 0, heightDrift: 0, maxStep: 0, maxTravelExcess: 0, minGap: Infinity, spacingDrift: 0 };
+    if (!initialized || typeof D.advanceClouds !== "function") { out.initialized = false; return out; }
+    const duration = Math.max(150, 4 * Math.PI * Math.max(...initial.map(c => c.radius / c.speed)) + 2);
+    // Advance only the real cloud updater through two complete laps and past the former 145-second lifetime.
+    // The rest of the island need not simulate half an hour to prove persistent decorative motion.
+    const sample = dt => {
+      out.persistent &&= D.clouds === list && list.length === initial.length;
+      for (let i = 0; i < initial.length; i++) {
+        const c = initial[i], n = c.node, p = n.position;
+        BL.scene.updateWorld(n, n.parent.world);
+        const m = n.world, distance = Math.hypot(p.x - c.x, p.z - c.z), radius = Math.hypot(m[12], m[14]);
+        out.persistent &&= list[i] === c.cloud && list[i].node === n && n.geometry === c.geometry && n.visible
+          && n.scale.x === 1 && n.scale.y === 1 && n.scale.z === 1 && list[i].speed === c.speed && m.every(Number.isFinite);
+        out.decorative &&= n.sightHidden && !solids.isActive(n) && !B.props.some(prop => prop.node === n);
+        out.radialDrift = Math.max(out.radialDrift, Math.abs(Math.hypot(p.x, p.z) - c.radius));
+        out.heightDrift = Math.max(out.heightDrift, Math.abs(p.y - c.y));
+        out.horizontal &&= Math.max(Math.abs(m[1]), Math.abs(m[4]), Math.abs(m[6]), Math.abs(m[9]), Math.abs(m[5] - 1)) < 1e-6;
+        // The mesh's long local X axis must lie across the radius and point along its observed travel.
+        out.tangent &&= Math.abs(m[0] * m[12] + m[2] * m[14]) / radius < 1e-5;
+        if (dt) {
+          out.maxStep = Math.max(out.maxStep, distance);
+          out.maxTravelExcess = Math.max(out.maxTravelExcess, distance - c.speed * dt);
+          out.tangent &&= distance > 0 && (m[0] * (p.x - c.x) + m[2] * (p.z - c.z)) / distance > 0.999;
+          c.turn += Math.atan2(c.x * p.z - c.z * p.x, c.x * p.x + c.z * p.z);
+        }
+        c.x = p.x; c.z = p.z;
+      }
+      for (const pair of pairs) {
+        const a = pair.a, b = pair.b, distance = Math.hypot(a.x - b.x, a.z - b.z);
+        // A whole cloud fits inside its horizontal bounding disk and authored height band.
+        // Either a vertical gap or disjoint disks guarantees these two meshes cannot touch.
+        out.minGap = Math.min(out.minGap, Math.max(a.y + a.low - b.y - b.high, b.y + b.low - a.y - a.high, distance - a.reach - b.reach));
+        if (pair.sameLane) out.spacingDrift = Math.max(out.spacingDrift, Math.abs(distance - pair.distance));
+      }
+    };
+    sample(0);
+    while (out.seconds < duration) {
+      const dt = Math.min(2, duration - out.seconds);
+      D.advanceClouds(dt); sample(dt); out.seconds += dt;
+    }
+    out.laps = Math.min(...initial.map(c => c.turn / (Math.PI * 2)));
+    // The render-only cutaway offset used to lower every high cloud toward the walker,
+    // collapsing separate lanes into buildings even though the node transforms stayed clear.
+    const P = B.pilot, actor = B.cavemen.get("portlandhodl");
+    try {
+      P.possess(actor); if (B.crew.sleeping) B.crew.wakePlayer();
+      if (P.aiming) P.modeAction("mode-toggle");
+      P.navigate({ position: { x: -8, y: 0, z: 8 }, yaw: 0, pitch: 1.1, dist: 24 }); B.advance(0.6, 1 / 60);
+      P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
+      if (P.mode === "shoulder") { P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60); }
+      out.cutaway = { selected: P.player === actor, view: P.mode, combat: P.aiming, active: B.renderOpts.birdsEyeCutaway,
+        mix: B.renderOpts.cutawayCloudMix, heights: initial.every(c => c.node.position.y === c.y && Math.abs(c.node.world[13] - c.y) < 1e-6) };
+    } finally { P.release(true); P.goPreset("pile"); B.advance(0.1, 1 / 60); }
+    return out;
+  })()`);
+  record("hub distant effects: all 30 decorative clouds keep size, orbit and spacing for two full laps, stay horizontal and tangent, and never become collision surfaces", clouds.initialized && clouds.persistent && clouds.decorative && clouds.horizontal && clouds.tangent
+    && clouds.seconds > 145 && clouds.laps >= 2 && clouds.radialDrift < 1e-8 && clouds.heightDrift === 0 && clouds.maxTravelExcess < 1e-7 && clouds.minGap > 0 && clouds.spacingDrift < 1e-8
+    && clouds.cutaway?.selected && clouds.cutaway.view === "birds-eye" && clouds.cutaway.combat && clouds.cutaway.active && clouds.cutaway.mix === 0 && clouds.cutaway.heights
+    && state.horizon.every(row => row.clouds.length === 30 && row.clouds.every(c => c.visible && c.moving)), JSON.stringify(clouds));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
 scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });

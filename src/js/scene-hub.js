@@ -184,7 +184,14 @@
   const SCENERY_CLEARANCE = 0.25;
   const MEADOW_INNER = 5, MEADOW_OUTER = MEADOW - 1.5, CLIFF_INNER = MEADOW + 1.5, CLIFF_OUTER = RADIUS - 1;
   const DOCK_DEG = 75, LADDER_Z = -3.6, LADDER_LEAN = 0.65;
-  const CLOUD_COUNT = 30, CLOUD_FAR = 60, CLOUD_NEAR = 36, CLOUD_FADE = 2.5;
+  // Six clouds per lane, with full-lap clearance around the home rim, bridges and outlying islands.
+  const CLOUD_TRACKS = [
+    { radius: 36, y: -8, speed: 0.48, phase: 0.1 },
+    { radius: 40, y: -3, speed: 0.56, phase: 0.6 },
+    { radius: 38, y: 12, speed: 0.44, phase: 0.35 },
+    { radius: 42, y: 17, speed: 0.64, phase: 0.8 },
+    { radius: 46, y: 24, speed: 0.52, phase: 0.2 }
+  ];
   const WANDER_COUNT = 36, WANDER_INNER = 5.5;
   const ALTAR_HEIGHT = 0.34, ALTAR_BLOCK_WIDTH = 0.2, ALTAR_BLOCK_ARC = 0.3, ALTAR_RING_GAP = 0.02, ALTAR_MAX_BLOCKS = 512;
   const RIPEN = 25, TREE_CHANCE = 0.5, BUSH_CHANCE = 0.25;
@@ -630,7 +637,6 @@
   const targets = [];
   const claimed = [];
   const clouds = [];
-  let cloudRandom = null;
   const lamps = [];
   // updateLamps' selection and light array are a pure function of these inputs; an exact hit reuses
   // last frame's written LIGHT_CAPACITY entries. Position joins target because the headquarters
@@ -5239,7 +5245,8 @@
     const rockMix = active && subterranean ? 1 : mix;
     RENDER_OPTS.birdsEyeCutaway = active;
     RENDER_OPTS.cutawayFade = rockMix;
-    RENDER_OPTS.cutawayCloudMix = mix;
+    // Keep the authored cloud lanes clear of structures even when the island is cut away below them.
+    RENDER_OPTS.cutawayCloudMix = 0;
     RENDER_OPTS.cutawayRockMix = rockMix;
     RENDER_OPTS.cutawayRegionCount = 0;
     if (!active) {
@@ -5278,7 +5285,6 @@
       cutawayPlayer = player;
     }
     const feet = cutawayFeet;
-    RENDER_OPTS.cutawayCloudY = feet - 2;
     // Scan between floor ceilings across the ramp's travel so upper levels
     // peel away progressively instead of switching in a narrow midpoint band.
     // Head clearance remains authoritative during a jump, jet flight or fall.
@@ -5593,25 +5599,19 @@
     p.x = x; p.z = z;
     return true;
   };
-  // Decorative clouds keep their shapes, height band and fades. A fixed ring gives them gentle drift
-  // without terrain queries, obstacle avoidance, walking surfaces or passengers.
-  const placeCloud = (cloud, initial = false) => {
-    const p = cloud.node.position, rand = cloudRandom;
-    cloud.angle = rand() * Math.PI * 2;
-    cloud.radius = Math.sqrt(lerp(CLOUD_NEAR * CLOUD_NEAR, CLOUD_FAR * CLOUD_FAR, rand()));
+  // Every cloud keeps its track and full size for the visit. Its long X axis lies along the circle, level with
+  // the horizon. Clouds on a lane share a speed and keep their spacing; nothing queries or plans movement.
+  const placeCloud = (cloud) => {
+    const p = cloud.node.position;
     p.x = Math.cos(cloud.angle) * cloud.radius; p.z = Math.sin(cloud.angle) * cloud.radius;
-    p.y = lerp(-9, 13, rand());
-    cloud.age = initial ? CLOUD_FADE : 0;
-    cloud.life = lerp(55, 145, rand());
-    cloud.size = initial ? 1 : 0.01;
-    cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
+    cloud.node.rotation.y = -cloud.angle - Math.PI / 2;
   };
   const buildClouds = () => {
-    const rand = cloudRandom = mulberry32(SEED + 77);
-    for (let i = 0; i < CLOUD_COUNT; i++) {
-      const node = createNode({ geometry: hubModels.cloud(Math.min(2, i % 4)), matrixCloud: true, sightHidden: true });
-      const cloud = { node, speed: 0.4 + rand() * 0.4, direction: i % 2 ? 1 : -1, angle: 0, radius: 0, age: 0, life: 0, size: 1 };
-      placeCloud(cloud, true);
+    for (const track of CLOUD_TRACKS) for (let i = 0; i < 6; i++) {
+      const node = createNode({ geometry: hubModels.cloud(Math.min(2, clouds.length % 4)), matrixCloud: true, sightHidden: true });
+      node.position.y = track.y;
+      const cloud = { node, speed: track.speed, angle: track.phase + i * Math.PI / 3, radius: track.radius };
+      placeCloud(cloud);
       addChild(root, node);
       placed.push(node);
       clouds.push(cloud);
@@ -5619,14 +5619,9 @@
   };
   const updateClouds = (dt) => {
     for (let i = 0; i < clouds.length; i++) {
-      const cloud = clouds[i], p = cloud.node.position;
-      cloud.age = Math.min(CLOUD_FADE, cloud.age + dt);
-      cloud.life -= dt;
-      if (cloud.life <= 0) { placeCloud(cloud); continue; }
-      cloud.size = Math.max(0.01, Math.min(1, cloud.age / CLOUD_FADE, cloud.life / CLOUD_FADE));
-      cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
-      cloud.angle += cloud.direction * cloud.speed * dt / cloud.radius;
-      p.x = Math.cos(cloud.angle) * cloud.radius; p.z = Math.sin(cloud.angle) * cloud.radius;
+      const cloud = clouds[i];
+      cloud.angle = (cloud.angle + cloud.speed * dt / cloud.radius) % (Math.PI * 2);
+      placeCloud(cloud);
     }
   };
   // The dais and its flush, one block-wide perimeter grow continuously with the pile.
@@ -11482,6 +11477,7 @@
           get inside() { return matrixCave.portal.inside; },
           get gateRain() { return gateRain; },
           get clouds() { return clouds; },
+          advanceClouds: updateClouds,
           get firstGlyphY() { return matrixCave.firstGlyphY; },
           world: {
             get active() { return !!MATRIX_WORLD.active; },
@@ -11773,7 +11769,6 @@
     for (const node of targets) input.remove(node);
     for (const node of placed) removeChild(root, node);
     targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = lamps.length = pilePosts.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
-    cloudRandom = null;
     fireHazards.length = 0;
     clankerFireReachable = null;
     workZones.length = entranceZones.length = 0;
