@@ -10614,6 +10614,78 @@ const factoryCanvas = { name: "factory canvas2d", why: "contract: the Canvas 2D 
   record("factory canvas2d: with WebGL2 unavailable the factory still boots and paints, a tip's show in the air", r.kind === "canvas2d" && r.scene === "factory" && r.colours >= 4 && r.flying > 0, JSON.stringify(r));
 } };
 
+const hubDistantEffects = { name: "hub distant effects", why: "rule: distant portal and ambient animations retain visible poses, resume without catching up, and still populate correctly when daylight changes", run: async (b) => {
+  const state = await b.evaluate(`(() => {
+    const B = __ooga, root = BL.scenes.hub.root, nodes = [];
+    const visit = n => { nodes.push(n); for (const child of n.children) visit(child); }; visit(root);
+    B.pilot.release(true);
+    const tick = (seconds = 0.1, dt = 0.05) => B.advance(seconds, dt);
+    const view = (x, y, z) => { B.pilot.navigate({ position: { x, y, z }, target: { x, y, z }, yaw: 0, pitch: 0.1, dist: 3 }); tick(); };
+    const far = () => view(500, 300, 500);
+    const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    const phases = nodes.filter(n => n.geometry?.mirrorRippleOnly && n.mirrorRipples && n.mirrorBody);
+    const portals = [];
+    for (const node of phases) {
+      const w = node.world, x = w[12], y = w[13] + 1.5, z = w[14];
+      far(); const before = node.mirrorRipples.time, body = node.mirrorBody.time; tick(0.2);
+      const rested = node.mirrorRipples.time === before && node.mirrorBody.time === body;
+      view(x, y, z); const first = node.mirrorRipples.time; tick(0.1);
+      const moving = node.mirrorRipples.time > first && node.mirrorBody.time > body;
+      far(); const stopped = node.mirrorRipples.time; tick(0.5);
+      const held = node.mirrorRipples.time === stopped;
+      view(x, y, z);
+      portals.push({ rested, moving, held, resumed: node.mirrorRipples.time > stopped && node.mirrorRipples.time - stopped < 0.2, visible: node.visible });
+    }
+    const bridge = B.bifrost, head = bridge.site.cloud.head;
+    far(); const bridgeStart = bridge.effectsTime; tick(0.2);
+    const bridgeRested = !bridge.effectsActive && bridge.effectsTime === bridgeStart;
+    view(head.x, bridge.site.walk.y, head.z);
+    const bridgeResumed = bridge.effectsActive && bridge.effectsTime > bridgeStart && bridge.effectsTime - bridgeStart < 0.2;
+    // The 28 m band is inside the window's visibility range but outside the wake distance. While resting,
+    // its mechanism must hold still and its eye-dependent projection must continue following the camera.
+    const p = bridge.site.portal, sx = Math.sin(p.ry), sz = Math.cos(p.ry);
+    far(); view(p.x + sx * 28, p.floorY + 1.5, p.z + sz * 28);
+    const window = bridge.window, spin = window?.debug.spin, matrix = window ? Array.from(window.debug.batches.hall.instanceData.slice(0, 16)) : [];
+    const windowRested = !!window && bridge.phase.paused && window.debug.shown;
+    view(p.x + sx * 28 + sz, p.floorY + 1.5, p.z + sz * 28 - sx);
+    const projected = windowRested && window.debug.shown && window.debug.spin === spin && !same(matrix, Array.from(window.debug.batches.hall.instanceData.slice(0, 16)));
+    view(p.x + sx * 5, p.floorY + 1.5, p.z + sz * 5);
+    const windowResumed = !!window && !bridge.phase.paused && window.debug.spin !== spin;
+    far(); B.setHour(12); tick(6, 0.15);
+    const butterflyGeometry = [BL.hubModels.butterfly(0), BL.hubModels.butterfly(1)], fireflyGeometry = BL.hubModels.firefly(), emberGeometry = BL.hubModels.ember();
+    const insects = nodes.filter(n => butterflyGeometry.includes(n.geometry) || n.geometry === fireflyGeometry || n.geometry === emberGeometry);
+    const gullGeometry = BL.dressing.flock({ count: 0 }).node.geometry;
+    const gulls = root.children.filter(n => n.geometry === gullGeometry);
+    const boats = root.children.filter(n => n.sightHidden && n.position.y < -60 && n.scale.x > 5 && n.children.length > 0);
+    const batches = [], pose = n => Array.from(n.instanceData.slice(0, 20));
+    const checkBatch = n => {
+      const initial = pose(n), count = n.instanceCount, version = n.instanceVersion;
+      tick(0.2); const rested = same(initial, pose(n)) && n.instanceCount === count && n.instanceVersion === version;
+      view(initial[12], initial[13], initial[14]); const active = pose(n);
+      const resumed = !same(initial, active) && Math.hypot(active[12] - initial[12], active[13] - initial[13], active[14] - initial[14]) < 2;
+      far(); const stopped = pose(n); tick(0.2);
+      batches.push({ initialized: initial.every(Number.isFinite) && initial[15] === 1, visible: n.visible && count > 0, rested, resumed, held: same(stopped, pose(n)) });
+    };
+    for (const node of insects.filter(n => n.instanceCount > 0).concat(gulls)) checkBatch(node);
+    const daylight = B.critters.butterflies > 0 && B.critters.fireflies === 0;
+    B.setHour(0); tick(9, 0.15);
+    const night = B.critters.butterflies === 0 && B.critters.fireflies > 0 && B.critters.surfaceEmbers > 0;
+    for (const node of insects.filter(n => n.instanceCount > 0)) checkBatch(node);
+    const sails = [], boatPose = n => [n.position.x, n.position.y, n.position.z, n.rotation.x, n.rotation.y, n.rotation.z];
+    for (const node of boats) {
+      const initial = boatPose(node); tick(0.2); const rested = same(initial, boatPose(node));
+      view(initial[0], initial[1], initial[2]); const active = boatPose(node);
+      const resumed = !same(initial, active) && Math.hypot(active[0] - initial[0], active[1] - initial[1], active[2] - initial[2]) < 2;
+      far(); const stopped = boatPose(node); tick(0.2);
+      sails.push({ initialized: initial.every(Number.isFinite), visible: node.visible, rested, resumed, held: same(stopped, boatPose(node)) });
+    }
+    B.setHour(12); B.pilot.goPreset("pile"); tick();
+    return { portals, bridgeRested, bridgeResumed, projected, windowResumed, daylight, night, batches, sails, gulls: gulls.length };
+  })()`);
+  record("hub distant effects: all four portals and the bridge rest and resume locally while the paused window retains parallax", state.portals.length === 4 && state.portals.every(row => Object.values(row).every(Boolean)) && state.bridgeRested && state.bridgeResumed && state.projected && state.windowResumed, JSON.stringify({ portals: state.portals, bridgeRested: state.bridgeRested, bridgeResumed: state.bridgeResumed, projected: state.projected, windowResumed: state.windowResumed }));
+  record("hub distant effects: daytime and newly populated nighttime creatures and boats keep valid visible poses, rest at distance and resume without a jump", state.daylight && state.night && state.gulls === 2 && state.batches.length >= 7 && state.sails.length === 5 && state.batches.concat(state.sails).every(row => Object.values(row).every(Boolean)), JSON.stringify({ daylight: state.daylight, night: state.night, gulls: state.gulls, batches: state.batches, sails: state.sails }));
+} };
+scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
 scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });
 scene("hub", { label: "room sign", query: "pos=0", steps: [{ name: "room sign copies hash", why: "rule: tapping a room sign swings it and copies its displayed eight-character code with visible confirmation", run: async (b) => {
