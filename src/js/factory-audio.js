@@ -21,8 +21,13 @@
   const TONES = 18, NOISES = 10, NOISE_SECONDS = 2, MASTER = 0.55, STORAGE_KEY = "oogaboogaland.audio";
   // At REF metres a cue is at half its level, a machine of the bed at BED_REF, and Kortik's board at NEAR_REF.
   const REF = 8, BED_REF = 9, NEAR_REF = 4.5, PAN = 0.75;
-  // Each featured line's note as its sats arrive, a pentatonic run so a busy floor plays a tune; the last is the galleries'.
-  const NOTES = [1046.5, 1174.7, 1318.5, 1568, 784];
+  // Each featured line's note as its sats arrive, struck like a soft mallet: a pentatonic run so a busy floor plays a
+  // tune; the last is the galleries'.
+  const NOTES = [523.25, 587.33, 659.26, 783.99, 392];
+  // The treasury's ring as its crate fills.
+  const KERCHING = [1568, 1975.5, 2349.3];
+  // How loud the events sit under the bed; the bed's own anvil keeps its level.
+  const EVENTS = 0.6;
   // Kortik's vowels, as their first two formants in hertz, a pair each.
   const VOWELS = [300, 780, 470, 900, 740, 1180, 600, 1100, 420, 1700];
 
@@ -317,9 +322,9 @@
     const CUES = {
       // The node: powering up from dark, coming ready, and powering down, heard across the hall.
       start: [REF, 0.45, () => {
-        tone(0, "sawtooth", 40, 360, 2.6, 0.2, 180, 2600, 0.5);
-        tone(0, "square", 20, 180, 2.6, 0.06, 150, 1200, 0.5);
-        knocks(0, "square", 160, 70, 2, 0.4, 0.1, 0.16, 0, 900);
+        tone(0, "triangle", 40, 260, 2.6, 0.12, 180, 1200, 0.6);
+        tone(0, "sine", 20, 130, 2.6, 0.08, 7000, 7000, 0.6);
+        knocks(0, "square", 160, 70, 2, 0.4, 0.1, 0.12, 0, 700);
       }],
       ready: [REF, 0.45, () => {
         tone(0, "sine", 110, 110, 2.2, 0.16, 7000, 7000, 0.3);
@@ -328,28 +333,28 @@
         bell(0.1, 880, 1.8, 0.12);
       }],
       stop: [REF, 0.45, () => {
-        tone(0, "sawtooth", 360, 28, 2.4, 0.2, 2600, 120, 0.02);
-        knocks(0, "square", 120, 45, 1, 0.1, 0.22, 0.24, 0, 600);
+        tone(0, "triangle", 260, 28, 2.4, 0.12, 1200, 120, 0.05);
+        knocks(0, "square", 120, 45, 1, 0.1, 0.22, 0.18, 0, 500);
         hiss(0.1, "lowpass", 2400, 120, 0.7, 1.8, 0.1, 0.05);
       }],
       // The lookout hearing a peer come or go: a ping up, or down.
-      peerUp: [REF, 0.12, () => { tone(0, "sine", 1318.5, 1318.5, 0.3, 0.1); tone(0.13, "sine", 1760, 1760, 0.5, 0.1); }],
-      peerDown: [REF, 0.12, () => { tone(0, "sine", 1760, 1760, 0.3, 0.1); tone(0.13, "sine", 1318.5, 1318.5, 0.5, 0.1); }],
+      peerUp: [REF, 0.08, () => { tone(0, "sine", 659.26, 659.26, 0.5, 0.05); tone(0.18, "sine", 783.99, 783.99, 0.8, 0.05); }],
+      peerDown: [REF, 0.08, () => { tone(0, "sine", 783.99, 783.99, 0.5, 0.05); tone(0.18, "sine", 659.26, 659.26, 0.8, 0.05); }],
       // A line: built with a ratchet and a chirp, switched on with a relay and a rising call, taken down winding
       // down, and switched off with a breaker's thunk.
       opening: [REF, 0, () => {
-        clicks(0, "highpass", 2600, 1, 9, 0.04, 0.018, 0.22, 0, 0.3);
-        clicks(0.5, "highpass", 2600, 1, 9, 0.04, 0.018, 0.22, 0, 0.3);
-        tone(0.95, "sine", 392, 784, 0.35, 0.08);
+        clicks(0, "bandpass", 2000, 2, 9, 0.045, 0.018, 0.12, 0, 0.3);
+        clicks(0.5, "bandpass", 2000, 2, 9, 0.045, 0.018, 0.12, 0, 0.3);
+        tone(0.95, "sine", 392, 523.25, 0.4, 0.05);
       }],
       active: [REF, 0, () => {
-        clicks(0, "highpass", 1400, 0.7, 1, 0.1, 0.035, 0.3);
-        tone(0.04, "sine", 659.3, 659.3, 0.22, 0.12);
-        tone(0.16, "sine", 987.8, 987.8, 0.7, 0.12);
+        clicks(0, "bandpass", 1400, 1, 1, 0.1, 0.035, 0.16);
+        tone(0.04, "sine", 523.25, 523.25, 0.5, 0.06);
+        tone(0.2, "sine", 783.99, 783.99, 1, 0.06);
       }],
       closing: [REF, 0, () => {
-        tone(0, "sawtooth", 640, 90, 1.3, 0.09, 2000, 300, 0.02);
-        clicks(0.3, "highpass", 2600, 1, 7, 0.07, 0.022, 0.2, 0.6, 0.3);
+        tone(0, "triangle", 440, 110, 1.3, 0.06, 1000, 300, 0.05);
+        clicks(0.3, "bandpass", 2000, 2, 7, 0.07, 0.022, 0.1, 0.6, 0.3);
       }],
       closed: [REF, 0, () => {
         knocks(0, "square", 110, 50, 1, 0.1, 0.16, 0.2, 0, 700);
@@ -365,53 +370,49 @@
       forge: [REF, 0.08, () => {
         hiss(0, "lowpass", 200, 2400, 0.8, 0.9, 0.34, 0.12);
         tone(0, "sine", 80, 36, 0.7, 0.3);
-        bell(0.1, 784, 1.4, 0.1);
-        bell(0.26, 1174.7, 1.2, 0.07);
+        bell(0.1, 783.99, 1.4, 0.06);
+        bell(0.26, 1046.5, 1.2, 0.04);
       }],
       spin: [REF, 0, () => {
-        tone(0, "square", 160, 880, 1.2, 0.05, 1200, 3600, 0.08);
-        clicks(0, "bandpass", 3400, 6, 16, 0.075, 0.012, 0.12);
+        tone(0, "triangle", 196, 392, 1.2, 0.03, 700, 1400, 0.2);
+        clicks(0, "bandpass", 2400, 4, 12, 0.1, 0.012, 0.07);
       }],
       mint: [REF, 0.08, () => {
-        bell(0, 2093, 1.9, 0.18);
-        bell(0.004, 3136, 1.3, 0.09);
-        hiss(0, "highpass", 9000, 5000, 0.7, 0.3, 0.1, 0.002);
+        bell(0, 1568, 1.9, 0.1);
+        bell(0.004, 2349.3, 1.3, 0.04);
+        hiss(0, "highpass", 8000, 5000, 0.7, 0.3, 0.05, 0.002);
       }],
       coinDrop: [REF, 0, () => {
-        tone(0, "sine", 2637, 2637, 0.14, 0.09);
-        tone(0.11, "sine", 2349.3, 2349.3, 0.14, 0.07);
-        tone(0.25, "sine", 1975.5, 1975.5, 0.25, 0.06);
-        knocks(0.42, "square", 140, 80, 1, 0.1, 0.1, 0.1, 0, 700);
+        tone(0, "sine", 1975.5, 1975.5, 0.14, 0.05);
+        tone(0.11, "sine", 1568, 1568, 0.14, 0.04);
+        tone(0.25, "sine", 1318.5, 1318.5, 0.25, 0.035);
+        knocks(0.42, "square", 140, 80, 1, 0.1, 0.1, 0.08, 0, 600);
       }],
-      // A forward: its sats zip off their line, each line rings its own note as they arrive, the Routing Console's
-      // relays chatter, a failed one sputters, and a big one surges through the core with the coils' arcs crackling.
-      zip: [REF, 0, () => {
-        tone(0, "sawtooth", 240, 1800, 0.15, 0.05, 800, 5200, 0.004);
-        hiss(0, "bandpass", 1800, 6000, 3, 0.12, 0.04);
-      }],
+      // A forward: its sats swish off their line, each line strikes its own note as the first arrives, the Routing
+      // Console's relays click, a failed one comes back with a soft low bump, and a big one swells through the core with
+      // the coils' arcs crackling.
+      zip: [REF, 0, () => hiss(0, "bandpass", 700, 1800, 1.2, 0.22, 0.06, 0.03)],
       land: [REF, 0, (n) => {
         const f = NOTES[n];
-        tone(0, "sine", f, f, 0.18, 0.07);
-        tone(0, "triangle", f * 2, f * 2, 0.06, 0.02);
+        tone(0, "sine", f, f, 0.6, 0.06, 7000, 7000, 0.004);
+        tone(0, "sine", f * 4, f * 4, 0.05, 0.012);
       }],
-      relay: [REF, 0, () => {
-        clicks(0, "bandpass", 2400, 5, 3, 0.045, 0.012, 0.1);
-        tone(0.01, "square", 1200, 1200, 0.035, 0.02, 3000);
-      }],
+      relay: [REF, 0, () => clicks(0, "bandpass", 1800, 3, 2, 0.05, 0.012, 0.06)],
       fail: [REF, 0, () => {
-        stutter(0, "sawtooth", 200, 95, 0.85, 26, 0.1, 1500);
-        clicks(0, "highpass", 3000, 1, 8, 0.1, 0.02, 0.12, 0.5, 1);
+        tone(0, "triangle", 220, 110, 0.35, 0.07, 900);
+        tone(0.12, "triangle", 165, 82, 0.4, 0.05, 700);
+        clicks(0, "bandpass", 2200, 2, 5, 0.08, 0.02, 0.05, 0.5, 1);
       }],
-      surge: [REF, 0.2, () => {
-        tone(0, "sawtooth", 70, 330, 1.5, 0.15, 400, 3200, 0.05);
-        tone(0, "sine", 56, 38, 1.2, 0.24);
-        clicks(0, "highpass", 2400, 0.7, 18, 0.07, 0.035, 0.22, 0.3, 1);
+      surge: [REF, 0.15, () => {
+        tone(0, "triangle", 65, 196, 1.4, 0.1, 300, 1400, 0.15);
+        tone(0, "sine", 55, 40, 1.2, 0.18);
+        clicks(0, "bandpass", 2400, 1.5, 14, 0.08, 0.03, 0.12, 0.3, 1);
       }],
       // The treasury: a fee's nugget into the crate, and the crate filling up.
-      nugget: [REF, 0, () => { tone(0, "sine", 2793.8, 2793.8, 0.12, 0.08); tone(0.06, "sine", 3729.3, 3729.3, 0.2, 0.05); }],
+      nugget: [REF, 0, () => { tone(0, "sine", 1975.5, 1975.5, 0.1, 0.035); tone(0.05, "sine", 2637, 2637, 0.15, 0.02); }],
       kerching: [REF, 0, () => {
-        for (let i = 0; i < 5; i++) tone(i * 0.07, "sine", 2400 + i * 260, 2400 + i * 260, 0.15, 0.06);
-        bell(0.42, 1568, 1.3, 0.14);
+        for (let i = 0; i < KERCHING.length; i++) tone(i * 0.09, "sine", KERCHING[i], KERCHING[i], 0.2, 0.04);
+        bell(0.32, 1568, 1.2, 0.07);
       }],
       // The rebalancer: engaged with a clunk and a whoosh as it spins up, a sigh of steam as it settles, and a stall.
       rebalance: [REF, 0, () => {
@@ -420,22 +421,22 @@
       }],
       rebalanceEnd: [REF, 0, () => hiss(0, "highpass", 2400, 700, 0.8, 1.3, 0.07, 0.02)],
       rebalanceFail: [REF, 0, () => {
-        stutter(0, "sawtooth", 74, 46, 1, 9, 0.16, 500);
-        knocks(0.95, "square", 90, 40, 1, 0.1, 0.22, 0.14, 0, 600);
+        stutter(0, "triangle", 74, 46, 1, 9, 0.12, 400);
+        knocks(0.95, "square", 90, 40, 1, 0.1, 0.22, 0.1, 0, 500);
       }],
       // The hourly summary printed at the Routing Console, a teleprinter's clatter and its bell.
       summary: [REF, 0, () => {
-        clicks(0, "bandpass", 3400, 4, 14, 0.07, 0.016, 0.13, 0, 1);
-        bell(1.05, 2637, 0.9, 0.07);
+        clicks(0, "bandpass", 2600, 3, 14, 0.07, 0.016, 0.08, 0, 1);
+        bell(1.05, 1975.5, 0.9, 0.04);
       }],
       // A tip: the core takes it in a sparkle, its cubes pop out and plop into the cooker's jaw, which gulps, chomps
       // and spits each banana up the tube.
       lime: [REF, 0.1, () => {
-        tone(0, "sine", 330, 1320, 0.9, 0.1, 7000, 7000, 0.08);
-        tone(0.05, "triangle", 660, 2640, 0.8, 0.04, 7000, 7000, 0.08);
-        hiss(0, "highpass", 5000, 9500, 1, 0.9, 0.04, 0.1);
+        tone(0, "sine", 330, 1046.5, 0.9, 0.07, 7000, 7000, 0.12);
+        tone(0.05, "sine", 659.26, 2093, 0.8, 0.025, 7000, 7000, 0.12);
+        hiss(0, "highpass", 5000, 9500, 1, 0.9, 0.03, 0.15);
       }],
-      toss: [REF, 0, () => tone(0, "sine", 880, 1400, 0.07, 0.03)],
+      toss: [REF, 0, () => tone(0, "sine", 523.25, 783.99, 0.09, 0.02)],
       plop: [REF, 0, () => tone(0, "sine", 440, 150, 0.09, 0.07, 1400)],
       gulp: [REF, 0, () => {
         tone(0, "sine", 260, 70, 0.38, 0.24, 1200);
@@ -452,7 +453,7 @@
         tone(0, "sine", 926, 268, 0.5, 0.08);
         hiss(0, "highpass", 7500, 1800, 0.9, 0.45, 0.07, 0.02);
       }],
-      anvil: [REF, 0, () => { tone(0, "square", 1250, 1238, 0.08, 0.04, 3800); tone(0, "sine", 2730, 2730, 0.45, 0.04); }],
+      anvil: [REF, 0, () => { tone(0, "square", 700, 690, 0.06, 0.025, 1600); tone(0, "sine", 1400, 1400, 0.25, 0.015); }],
       // Kortik's switchboard, close up: a plug pulled from a jack, lifted from its hole, pushed home with a click and
       // stood back in its hole; a key thrown (n 1) or flipped back; a call ringing in, and a failed one's buzzer.
       unplug: [NEAR_REF, 0, () => { tone(0, "sine", 900, 300, 0.06, 0.09); hiss(0, "bandpass", 2500, 1200, 3, 0.05, 0.06); }],
@@ -466,11 +467,8 @@
         knocks(0, "square", n ? 900 : 640, n ? 700 : 480, 1, 0.1, 0.025, 0.07, 0, 2600);
         clicks(0.03, "highpass", 4000, 1, 1, 0.1, 0.012, 0.06);
       }],
-      ring: [NEAR_REF, 0, () => {
-        stutter(0, "triangle", 1050, 1050, 0.4, 22, 0.035, 4000);
-        stutter(0.6, "triangle", 1050, 1050, 0.4, 22, 0.035, 4000);
-      }],
-      buzzer: [NEAR_REF, 0, () => stutter(0, "square", 220, 220, 0.6, 24, 0.07, 1800)],
+      ring: [NEAR_REF, 0, () => stutter(0, "sine", 880, 880, 0.3, 18, 0.02, 3000)],
+      buzzer: [NEAR_REF, 0, () => stutter(0, "triangle", 180, 180, 0.45, 18, 0.04, 900)],
       // His temper: a fist on the desk that rattles the mug, the mug picked up or put down, a stool creaking under him,
       // a plug thrown at the visitor and yanked back, a poke's boink and the steam from his ears.
       thud: [NEAR_REF, 0, () => {
@@ -486,8 +484,8 @@
       }],
       poke: [NEAR_REF, 0, () => { tone(0, "sine", 420, 1100, 0.12, 0.12); tone(0.1, "sine", 1100, 700, 0.12, 0.06); }],
       steam: [NEAR_REF, 0, () => {
-        hiss(0, "highpass", 3500, 6000, 2, 2.2, 0.08, 0.3);
-        tone(0.2, "sine", 2900, 3300, 1.8, 0.03, 7000, 7000, 0.3);
+        hiss(0, "highpass", 3500, 6000, 2, 1.8, 0.06, 0.3);
+        tone(0.2, "sine", 2200, 2500, 1.2, 0.012, 7000, 7000, 0.3);
       }],
       // The katana: drawn with a ring, each cut a swish and a spray of sparks off the board, sheathed with a click,
       // and every channel force-closed at once with a crackle and the plugs flying home.
@@ -528,7 +526,7 @@
       if (!ready) activate();
       if (!ready || muted || document.hidden) return;
       place(x, y, z, entry[0]);
-      AT.level = Math.max(AT.level, entry[1]) * loud;
+      AT.level = Math.max(AT.level, entry[1]) * loud * (name === "anvil" ? 1 : EVENTS);
       entry[2](n);
     };
 
@@ -567,7 +565,7 @@
         g.setTargetAtTime(0.0001, t + 0.004, 0.006);
       }
       if (room.fire > 0.5 && (anvilIn -= step) <= 0) {
-        anvilIn = 0.62;
+        anvilIn = 1.5;
         cue("anvil", spots.forge[0], spots.forge[1], spots.forge[2]);
       }
       // The rebalancer spins up and down, its whir and its air following its speed.

@@ -182,9 +182,9 @@
   const hearNode = (name, node, up, loud = 1, n = 0) => audio.cue(name, node.position.x, node.position.y + up, node.position.z, loud, n);
   // An event's sound at its line's bay or gallery stand, or at the forge for a line the hall does not show.
   const hearPlace = (name, place) => { if (place) hearNode(name, place.node, 2, place.bay ? 1 : 0.6); else hearAt(name, SPOTS.forge, 0.6); };
-  // A featured line's lamp flashing as its sats arrive, ringing the line's own note, or sputtering on a failure; each
-  // sounds again only once its last flash has mostly passed.
-  const arrive = (b) => { if (b.flashL < FLASH * 0.4) hearNode("land", b.node, 2, 1, b.index); b.flashL = FLASH; };
+  // A featured line's lamp flashing as its sats arrive, striking the line's own note as the first comes in, or
+  // sputtering on a failure; each sounds again only once its lamp has gone dark, or mostly so.
+  const arrive = (b) => { if (b.flashL <= 0) hearNode("land", b.node, 2, 1, b.index); b.flashL = FLASH; };
   const sputter = (b) => { if (b.sputter < SPUTTER * 0.5) hearNode("fail", b.node, 2); b.sputter = SPUTTER; };
   const NO_ACTORS = [];
   let scene = null, greeter = null, kortik = null, actPrompt = false;
