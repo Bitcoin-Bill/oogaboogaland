@@ -8607,7 +8607,10 @@
     if (ghosts) ghosts.shake(camera); // HALLOWEEN: the land shakes as the ghost walls rise
   };
   // Signed-in visitors own their pair; bundled actors are available for local play when signed out.
-  const mayDriveOoga = (cave) => cave.contributor ? BL.net.mayDrive(cave.traits.name) : null;
+  const mayDriveOoga = (cave) => {
+    if (ghosts && ghosts.waiting) return "You're in the waiting room until this hunt ends"; // HALLOWEEN: the hunt's waiting room
+    return cave.contributor ? BL.net.mayDrive(cave.traits.name) : null;
+  };
   const actorTransition = {};
   // Validate a new Ooga before giving up the current actor or its camera.
   const selectOoga = (cave) => {
@@ -8691,6 +8694,8 @@
     clankers.setAway(on);
     RENDER_OPTS.windTime = on ? performance.now() * 0.001 % 3600 : NaN;
     if (on) fireworksShells.length = 0;
+    // The act button and the hint pill under the play area (JUMP!, the controls' reminders) stand down too.
+    document.body.classList.toggle("game-mode", on);
     for (const cloud of clouds) cloud.node.visible = !on;
     weather.hold(on);
     mempoolIsland.site.node.visible = !on;
@@ -8711,6 +8716,13 @@
     addTarget, selectOoga, mayDriveOoga, zoneOf,
     gorillaActive: () => !!(clankerPlay && clankerPlay.active),
     gameMode: setGameMode,
+    // The waiting room: the driven Ooga let go of (the free camera to watch from), and at the end the visitor's own
+    // Ooga given back.
+    spectate: (on) => {
+      if (on) { if (pilot.player) pilot.modeAction("mode-release"); return; }
+      const own = BL.net.ownCharacter(), cave = own && crew.cavemen.get(own.handle);
+      if (cave && !pilot.player && !cave.remoteControlled) selectOoga(cave);
+    },
     remoteUnderlying: (cave, override) => remotes.setUnderlying(cave, override),
     // The driven Ooga's rifle out and the view in combat, as 2 and X would have it.
     readyGun: () => {
@@ -11984,6 +11996,7 @@
     ghostClearsProps = false;
     // GAME MODE ends with the visit; the island comes back built afresh.
     gameMode = false;
+    document.body.classList.remove("game-mode");
     RENDER_OPTS.windTime = NaN;
     debugMovementTerrain = DEBUG_MOVE_HIT.node = DEBUG_MOVE_HIT.owner = null;
     DEBUG_GORILLA_HIT.node = DEBUG_GORILLA_HIT.owner = null;

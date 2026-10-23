@@ -12,6 +12,7 @@ test("a ghost start, pause or hit within bounds is read; anything else is ignore
   const { parseClientMessage } = protocol;
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"start"}'), { t: "ghost", k: "start" });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"pause","g":3}'), { t: "ghost", k: "pause" });
+  assert.deepEqual(parseClientMessage('{"t":"ghost","k":"ready"}'), { t: "ghost", k: "ready" }, "a follower readies up in the lobby");
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":12,"d":5,"extra":1}'), { t: "ghost", k: "hit", g: 12, d: 5 });
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hit","g":7,"d":60}'), { t: "ghost", k: "hit", g: 7, d: 60 }, "a batch of hits on one ghost");
   assert.deepEqual(parseClientMessage('{"t":"ghost","k":"hits","h":[0,12,7,4,9,60]}'), { t: "ghost", k: "hits", h: [0, 12, 7, 4, 9, 60] }, "a tenth of a second's hits on three targets as one report");

@@ -6,7 +6,10 @@
 // `advance(now)`; a 50 ms fixed tick, at most four a frame. Fixed pools: MAX_GHOSTS ghosts, the boss, MAX_DROPS
 // drops, MAX_PLAYERS players. `step` allocates nothing.
 //
-//   IDLE -> LAP  the herald is clicked          LAP -> NIGHT -> COUNTDOWN  the walls rise and the dusk runs out
+//   IDLE -> GATHER  the herald is clicked       GATHER -> LAP  the one who woke it (the host) ready, and everyone
+//                                                there ready or GATHER_MS gone by
+//   GATHER -> IDLE  the host not ready by GATHER_MS, or nobody there ABANDON_MS
+//   LAP -> NIGHT -> COUNTDOWN  the walls rise and the dusk runs out
 //   COUNTDOWN -> ACTIVE -> BREAK -> COUNTDOWN  a round is cleared; the sixth clears into BOSS
 //   BOSS -> VICTORY  he burns                    ACTIVE / BOSS -> DEFEAT  every player in the arena frozen
 //   VICTORY / DEFEAT -> DAWN -> IDLE             any hunting state -> DAWN  the arena empty ABANDON_MS
@@ -14,7 +17,8 @@
   "use strict";
   const BL = window.BL = window.BL || {};
 
-  const STATE = { IDLE: 0, LAP: 1, NIGHT: 2, COUNTDOWN: 3, ACTIVE: 4, BREAK: 5, BOSS: 6, VICTORY: 7, DEFEAT: 8, DAWN: 9 };
+  // GATHER, the lobby before the walls rise, comes last in number so every LAP..DAWN range keeps its meaning.
+  const STATE = { IDLE: 0, LAP: 1, NIGHT: 2, COUNTDOWN: 3, ACTIVE: 4, BREAK: 5, BOSS: 6, VICTORY: 7, DEFEAT: 8, DAWN: 9, GATHER: 10 };
   const OUTCOME = { NONE: 0, VICTORY: 1, DEFEAT: 2, ABANDON: 3 };
   // Per round: total ghosts, most at once, seconds between spawn events, ghosts per event, speed (m/s).
   const ROUNDS = [
@@ -42,10 +46,14 @@
   const DYING = { SHOT: 1, TAGGED: 2, BURNED: 3, PUMPKIN: 4, ZAPPED: 5 };
   const CONFIG = {
     TICK_MS: 50, MAX_GHOSTS: 32, MAX_DROPS: 12, MAX_PLAYERS: 16, MAX_PENDING: 24,
+    // The lobby: how long players have to gather and ready up once the herald is woken.
+    GATHER_MS: 30000,
     NIGHT_MS: 3500, COUNTDOWN_MS: 4000, BREAK_MS: 6000, BANNER_MS: 10000, DAWN_MS: 6000, ABANDON_MS: 15000,
     // A lost hunt gives the island back sooner: a short banner and a quick dawn.
     DEFEAT_MS: 3000, DAWN_FAST_MS: 2500,
-    FREEZE_MS: 30000, PLAYER_SEGMENTS: 5, IFRAMES_MS: 1000,
+    // A player whose bar empties is down for the rest of the round (`DOWN_UNTIL`, past any round's end) and comes back
+    // whole as it ends (a round cleared, the next one called); in the boss's fight, until the hunt ends.
+    DOWN_UNTIL: 1e12, PLAYER_SEGMENTS: 5, IFRAMES_MS: 1000,
     GHOST_RADIUS: 0.42, BIG: 1.5, PLAYER_RADIUS: 0.3, SHIELD_PAD: 0.4, BOUNCE_MS: 450, BOUNCE_SPEED: 2.5,
     KNOCK_MS: 140, KNOCK_SPEED: 8, HOVER: 0.3, CLIMB_RATE: 2,
     WEAVE_AMP: 0.85, WEAVE_HZ: 0.4, SEPARATION_PUSH: 1.7, RETARGET_MS: 500, DYING_MS: 1100,
@@ -100,7 +108,7 @@
     "spawnAt", "sx", "sy", "sz", "lx", "lz", "bounceUntil", "bvx", "bvz", "bounceSpeed", "knockUntil", "kvx", "kvz",
     "beamTarget", "beamAt", "beamUntil", "beamHit", "beamReady", "soulTarget", "soulAt", "soulUntil", "soulHit", "soulReady", "hitAt", "struckAt"];
   const PLAYER_FIELDS = ["id", "x", "y", "z", "seg", "frozenUntil", "invulnUntil", "doubleUntil", "kills", "dropsGiven", "hitAt", "hitX", "hitZ",
-    "tess", "tessReady", "zapAt", "zapX", "zapY", "zapZ", "monkeys"];
+    "tess", "tessReady", "zapAt", "zapX", "zapY", "zapZ", "monkeys", "ready", "inGame"];
   const DROP_FIELDS = ["id", "kind", "x", "z", "at"];
   // A gorilla's phase: 1 called down (the beam), 2 falling, 3 landed and shaking, 4 coming, 5 holding someone, 6 gathering.
   const BRUTE_PHASE = { BEAM: 1, FALL: 2, SHAKE: 3, CHASE: 4, LEAP: 5, RECOVER: 6 };
@@ -175,16 +183,24 @@
       for (const p of players) p.here = false;
     };
     /** A player standing in the arena this frame: feet (x, y, z). Unknown ids take a free slot. */
-    const present = (id, x, y, z) => {
+    // A player's slot, found or (while the hunt still takes players) made.
+    const slotFor = (id) => {
       let p = playerById(id);
-      if (!p) {
-        for (const q of players) if (!q.on) { p = q; break; }
-        if (!p) return null;
-        for (const f of PLAYER_FIELDS) p[f] = 0;
-        p.on = true;
-        p.id = id;
-        p.seg = C.PLAYER_SEGMENTS;
-      }
+      if (p) return p;
+      for (const q of players) if (!q.on) { p = q; break; }
+      if (!p) return null;
+      for (const f of PLAYER_FIELDS) p[f] = 0;
+      p.on = true;
+      p.id = id;
+      p.seg = C.PLAYER_SEGMENTS;
+      return p;
+    };
+    // Once the walls rise the roster is fixed: only those who readied up in the lobby (`inGame`) are in the hunt.
+    // Anyone else, those who did not ready and those who came later, waits it out.
+    const rosterFixed = () => s.state !== STATE.IDLE && s.state !== STATE.GATHER;
+    const present = (id, x, y, z) => {
+      const p = rosterFixed() ? playerById(id) : slotFor(id);
+      if (!p || rosterFixed() && !p.inGame) return null;
       p.here = true;
       p.x = x; p.y = y; p.z = z;
       presence++;
@@ -198,7 +214,7 @@
       p.seg = Math.max(0, p.seg - 1);
       p.invulnUntil = s.now + C.IFRAMES_MS;
       p.hitAt = s.now; p.hitX = gx; p.hitZ = gz;
-      if (p.seg === 0) p.frozenUntil = s.now + C.FREEZE_MS;
+      if (p.seg === 0) p.frozenUntil = C.DOWN_UNTIL;
     };
 
     // A gorilla's slam: `n` segments at once, and the blink after it.
@@ -435,11 +451,15 @@
     const enter = (state) => {
       const prev = s.state;
       s.state = state;
-      if (state === STATE.COUNTDOWN) {
-        // A new round: everyone still standing is whole again.
-        s.endsAt = s.now + C.COUNTDOWN_MS; s.spawned = 0; s.healAt = s.now;
-        for (const p of players) if (p.on && !frozen(p)) p.seg = C.PLAYER_SEGMENTS;
+      if (state === STATE.COUNTDOWN || state === STATE.BREAK) {
+        // A round over, or a new one called: everyone down is back, and everyone is whole again.
+        for (const p of players) {
+          if (!p.on) continue;
+          if (frozen(p)) { p.frozenUntil = 0; p.invulnUntil = s.now + C.IFRAMES_MS; }
+          p.seg = C.PLAYER_SEGMENTS;
+        }
       }
+      if (state === STATE.COUNTDOWN) { s.endsAt = s.now + C.COUNTDOWN_MS; s.spawned = 0; s.healAt = s.now; }
       else if (state === STATE.ACTIVE) {
         let n = 0;
         for (const p of players) if (p.on && p.here) n++;
@@ -759,7 +779,25 @@
 
       // The machine.
       const st = s.state;
-      if (st === STATE.LAP) { if (now >= s.lapAt + s.lapMs) { s.endsAt = now + C.NIGHT_MS; enter(STATE.NIGHT); } }
+      if (st === STATE.GATHER) {
+        // The lobby: once its host is ready it starts when everyone there is too, or at its end with whoever is. The host
+        // not ready by its end, nobody ready, or nobody there a while, and it closes with no hunt.
+        const host = s.startedBy ? playerById(s.startedBy) : null, hostReady = !s.startedBy || !!(host && host.ready);
+        let here = 0, readyHere = 0, readyAny = 0;
+        for (const p of players) {
+          if (!p.on) continue;
+          if (p.ready) readyAny++;
+          if (p.here) { here++; if (p.ready) readyHere++; }
+        }
+        if (here) s.emptySince = 0;
+        else if (!s.emptySince) s.emptySince = now;
+        const quiet = !here && now - s.emptySince >= C.ABANDON_MS;
+        if (hostReady && here && readyHere === here || now >= s.endsAt || quiet) {
+          for (const p of players) { p.inGame = p.on && p.ready ? 1 : 0; if (p.on && !p.inGame) p.on = p.here = false; }
+          if (hostReady && readyAny && !quiet) { s.lapAt = now; s.emptySince = 0; enter(STATE.LAP); }
+          else { const lap = s.lapMs; reset(); s.lapMs = lap; }
+        }
+      } else if (st === STATE.LAP) { if (now >= s.lapAt + s.lapMs) { s.endsAt = now + C.NIGHT_MS; enter(STATE.NIGHT); } }
       else if (st === STATE.NIGHT) { if (now >= s.endsAt) { s.round = Math.max(1, s.round); enter(STATE.COUNTDOWN); } }
       else if (st === STATE.COUNTDOWN) { if (now >= s.endsAt) enter(STATE.ACTIVE); }
       else if (st === STATE.ACTIVE) {
@@ -798,7 +836,18 @@
       if (on) { s.paused = 1; s.pausedFor = 0; } else { s.paused = 0; s.epoch = now - s.now; }
       return true;
     };
-    /** The herald was clicked: a hunt begins at `now`, from `round` (debug only skips ahead). */
+    /** Player `id` is ready to hunt (the lobby's Ready, or clicking the herald again); false outside the lobby. */
+    const ready = (id) => {
+      if (s.state !== STATE.GATHER) return false;
+      const p = slotFor(id);
+      if (!p) return false;
+      p.ready = 1;
+      return true;
+    };
+    /**
+     * The herald was clicked by player `by` (the hunt's host): its lobby opens at `now`, and the hunt, from `round`
+     * (debug only skips ahead), follows only once the host has readied up. `by` 0 (debug) opens it with no host.
+     */
     const start = (now, by = 0, fromRound = 1) => {
       if (s.state !== STATE.IDLE) return false;
       const lap = s.lapMs;
@@ -812,7 +861,9 @@
       s.lapAt = 0;
       s.startedBy = by;
       s.round = Math.min(ROUNDS.length, Math.max(1, fromRound | 0));
-      s.state = STATE.LAP;
+      s.state = STATE.GATHER;
+      s.endsAt = C.GATHER_MS;
+      if (by) slotFor(by);
       return true;
     };
 
@@ -902,7 +953,7 @@
       if (snap.g.length % gw || snap.p.length % pw || snap.d.length % dw) return false;
       s.epoch = num(snap.e);
       for (let i = 0; i < STATE_FIELDS.length; i++) s[STATE_FIELDS[i]] = num(snap.s[i]);
-      s.state = Math.max(0, Math.min(STATE.DAWN, s.state | 0));
+      s.state = Math.max(0, Math.min(STATE.GATHER, s.state | 0));
       s.round = Math.max(0, Math.min(ROUNDS.length, s.round | 0));
       s.rng >>>= 0;
       for (const g of ghosts) g.on = false;
@@ -979,7 +1030,7 @@
     };
 
     return {
-      state: s, ghosts, players, drops, brutes, round, settings, debug, brutesAlive, beginPresence, present, playerById, advance, start, pause, hit, snapshot, load, clear, jump,
+      state: s, ghosts, players, drops, brutes, round, settings, debug, brutesAlive, beginPresence, present, playerById, advance, start, ready, pause, hit, snapshot, load, clear, jump,
       get ticks() { return ticks; }, get presence() { return presence; },
       frozen: (p) => frozen(p), alive, radiusOf, dawnMs
     };

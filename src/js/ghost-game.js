@@ -34,7 +34,7 @@
   // `BANNER_KEEP` of the hunt's night, over `BANNER_IN_S`, and lifts again over `BANNER_OUT_S` for play.
   const BANNER_KEEP = 0.4, BANNER_IN_S = 0.6, BANNER_OUT_S = 0.9;
   const NIGHT_FADE_MS = 6000, NIGHT_HOUR = 23.25, COOLDOWN_MS = 30000, START_WAIT_MS = 4000, LOST_HOST_MS = 6000;
-  const WALL_H = 3.3, MOUTH_W = 5.6, MOUTH_ALONG = 1.2;
+  const WALL_H = 3.3, MOUTH_W = 5.6, MOUTH_ALONG = 0.6;
   // Each bridge's wall stands up its steps where the rock rises well over head height at both sides, wide enough to bury
   // its ends in it, so there is no way round; `SINK` puts its foot a little into the tread it stands on.
   const BRIDGES = [
@@ -121,7 +121,8 @@
     MODELS.prepare();
     const group = createNode({ sightHidden: true });
     addChild(root, group);
-    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ onGo: () => closeIntro(true), onMusic: () => audio.toggleMusic(), onSkip: () => audio.skip() });
+    const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ coarse: hub.coarse, onMusic: () => audio.toggleMusic(), onSkip: () => audio.skip(),
+      onReady: () => readyUp(), onDecline: () => { declined = true; } });
     // Every mesh the hunt has shown, kept on the GPU for the visit (`liveGeometry`): frames swap in and out.
     const used = [];
     const keep = (geometry) => {
@@ -178,15 +179,21 @@
       // changes nothing about where the island's NPCs may walk.
       return { stop: s, node, zone, up: 0, wisp: (fnv1a(s.name) % 100) / 100, sealed: false, half: s.width / 2 + C.PLAYER_RADIUS, y0: s.base - 1, y1: s.base + 6 };
     });
-    // One way: a step from the meadow side of a raised wall to behind it, within its width, is refused at any height.
+    // One way: a step from the meadow side of a raised wall to behind it, within its width, is refused at any height, and
+    // so is a step into the ground behind it (its depth, its width, no higher than the wall, so a cave's roof stays free)
+    // from anywhere outside that ground, so nobody slips round a wall's end between it and the rock. Anyone already
+    // behind it may still walk out.
     let sealedCount = 0;
     const seal = (fromX, fromZ, toX, toZ, y) => {
       for (let i = 0; i < walls.length; i++) {
         const w = walls[i];
         if (!w.sealed || y < w.y0 || y > w.y1) continue;
-        const s = w.stop, a = (fromX - s.cx) * s.nx + (fromZ - s.cz) * s.nz, b = (toX - s.cx) * s.nx + (toZ - s.cz) * s.nz;
+        const s = w.stop, fx = fromX - s.cx, fz = fromZ - s.cz, tx = toX - s.cx, tz = toZ - s.cz;
+        const a = fx * s.nx + fz * s.nz, b = tx * s.nx + tz * s.nz;
+        if (y <= s.base + s.height && b <= 0 && b > -s.depth && Math.abs(tx * s.nz - tz * s.nx) < w.half
+          && !(a <= 0 && a > -s.depth && Math.abs(fx * s.nz - fz * s.nx) < w.half)) return true;
         if (!(a > 0 && b <= 0)) continue;
-        const k = a / (a - b), x = fromX + (toX - fromX) * k - s.cx, z = fromZ + (toZ - fromZ) * k - s.cz;
+        const k = a / (a - b), x = fx + (tx - fx) * k, z = fz + (tz - fz) * k;
         if (Math.abs(x * s.nz - z * s.nx) <= w.half) return true;
       }
       return false;
@@ -334,7 +341,11 @@
       },
       onMessage: (msg) => {
         if (msg.k === "pause") togglePause();
-        else if (msg.k === "start") { if (S.state === ST.IDLE && clock() - idleAt >= COOLDOWN_MS) sim.start(clock(), msg.from, SKIP); }
+        else if (msg.k === "ready") sim.ready(msg.from);
+        else if (msg.k === "start") {
+          if (S.state === ST.IDLE && clock() - idleAt >= COOLDOWN_MS) sim.start(clock(), msg.from, SKIP);
+          else if (S.state === ST.GATHER) sim.ready(msg.from);
+        }
         else sim.hit(msg.g, msg.d, msg.from);
       }
     });
@@ -343,23 +354,6 @@
     // The hunt's own time: held where it stopped while paused (a follower's snapshots move its start on only 4 a second).
     const huntTime = () => S.paused ? S.now : clock() - S.epoch;
     const togglePause = () => { if (sim.pause(!S.paused, clock())) audio.play("thump"); };
-    // How to play, as the hunt's first round is called: the page that runs the hunt holds it still until its visitor
-    // dismisses it (the button, Enter, Space or Escape); another page shows it without holding anything. Dismissed,
-    // the visitor's Ooga has its rifle out in combat, ready to fire (inside the gesture, so the mouse can be taken).
-    let introShown = false, introOpen = false, introPaused = false;
-    const openIntro = () => {
-      introOpen = true;
-      hud.intro(true, coarse);
-      if (npcSync.role !== "follow" && !S.paused) introPaused = sim.pause(true, clock());
-    };
-    const closeIntro = (ready = false) => {
-      if (!introOpen) return;
-      introOpen = false;
-      hud.intro(false);
-      if (introPaused && S.paused) sim.pause(false, clock());
-      introPaused = false;
-      if (ready && crew.player && !hub.gorillaActive()) hub.readyGun();
-    };
     const myId = () => npcSync.role === "solo" ? 1 : net.state.selfId;
 
     // ---------- the island cleared for the hunt ----------
@@ -414,14 +408,84 @@
       }
       return null;
     };
-    const tapHerald = () => {
-      if (S.state !== ST.IDLE) return;
-      if (hub.gorillaActive()) { hub.hud.toast("Ghost hunts are for Oogas · let go of the gorilla first"); return; }
-      if (!crew.player) {
-        const cave = pickOoga();
-        if (!cave) { hub.hud.toast("Pick an Ooga Booga first, then wake the ghost"); return; }
-        if (!hub.selectOoga(cave)) return;
+    // A hunter needs an Ooga: the visitor's own, or a free one; false (with a toast) when there is none to be had.
+    const hunter = () => {
+      if (hub.gorillaActive()) { hub.hud.toast("Ghost hunts are for Oogas · let go of the gorilla first"); return false; }
+      if (crew.player) return true;
+      const cave = pickOoga();
+      if (!cave) { hub.hud.toast("Pick an Ooga Booga first, then wake the ghost"); return false; }
+      return hub.selectOoga(cave);
+    };
+    // The lobby's Ready (the button, R, or the herald clicked again): this page's player is in.
+    const readyUp = () => {
+      if (S.state !== ST.GATHER || !hunter()) return;
+      declined = false;
+      audio.open();
+      if (npcSync.role === "follow") sync.ready();
+      else sim.ready(myId());
+      // Ready means ready: the rifle out in combat (inside the press, so the mouse can be taken for aiming).
+      if (crew.player && !hub.gorillaActive()) hub.readyGun();
+    };
+    let declined = false;
+    // ---------- the lobby and the waiting room ----------
+    // The lobby's rows (one a player there, pooled) and the key its card was last drawn for.
+    const LOBBY_ROWS = Array.from({ length: C.MAX_PLAYERS }, () => ({ id: 0, name: "", ready: false, host: false }));
+    let lobbyShown = -1;
+    const nameOf = (id) => {
+      if (id === myId()) {
+        const me = net.state.me;
+        return me ? `${me.display || me.login} (you)` : "You";
       }
+      const rec = net.remotes.get(id);
+      return rec ? rec.display || rec.login || "A hunter" : "A hunter";
+    };
+    // While the lobby is open (and this visitor has not said "not this time"): who is there and who is ready, and the
+    // seconds left; drawn again only when one of those changes.
+    const drawLobby = (t) => {
+      if (S.state !== ST.GATHER || declined) { lobbyShown = -1; hud.lobby(null); return; }
+      const secs = Math.max(0, Math.ceil((S.endsAt - t) / 1000));
+      let count = 0, readyBits = 0, ids = 0, meReady = false, hostReady = !S.startedBy;
+      for (const q of sim.players) {
+        if (!q.on || count >= LOBBY_ROWS.length) continue;
+        LOBBY_ROWS[count].ready = !!q.ready; LOBBY_ROWS[count].id = q.id; LOBBY_ROWS[count].host = q.id === S.startedBy;
+        if (q.id === S.startedBy && q.ready) hostReady = true;
+        if (q.ready) readyBits += 1 << count;
+        if (q.id === myId() && q.ready) meReady = true;
+        ids += q.id * (count + 1);
+        count++;
+      }
+      const signIn = !!net.state.backend && !net.state.me;
+      // One number for all of it: seconds, how many, which (a sum of ids by place), who is ready, and the two flags.
+      const key = secs * 1e14 + count * 1e12 + (ids % 10000) * 1e8 + readyBits * 8 + (hostReady ? 4 : 0) + (meReady ? 2 : 0) + (signIn ? 1 : 0);
+      if (key === lobbyShown) return;
+      lobbyShown = key;
+      for (let i = 0; i < count; i++) LOBBY_ROWS[i].name = nameOf(LOBBY_ROWS[i].id);
+      // Until the host is ready nothing starts: they are asked, and everyone else waits on them.
+      const goal = !hostReady ? S.startedBy === myId() ? `Ready up to start the hunt · ${secs} s` : `Waiting for the host to ready up · ${secs} s`
+        : `Gather by the banana pile and ready up · starts in ${secs} s`;
+      hud.lobby(key, goal, LOBBY_ROWS, count, meReady, signIn);
+    };
+    // Waiting room: the walls are up and this visitor is not in the hunt (they did not ready, or came later). Their Ooga
+    // is put away and they watch from the free camera until the hunt ends.
+    const waiting = () => {
+      if (S.state < ST.LAP || S.state > ST.DEFEAT) return false;
+      const me = sim.playerById(myId());
+      return !(me && me.inGame);
+    };
+    let spectating = false;
+    const spectate = (on) => {
+      if (on === spectating) return;
+      spectating = on;
+      if (on) {
+        hub.spectate(true);
+        const own = net.ownCharacter(), mine = own && crew.cavemen.get(own.handle);
+        if (mine && !mine.remoteControlled && !overrides.has(mine)) { overrides.set(mine, mine.override); mine.override = "away"; crew.refreshStates(false); }
+        hub.hud.toast("A hunt is on · you're in the waiting room until it ends");
+      } else hub.spectate(false);
+    };
+    const tapHerald = () => {
+      if (S.state === ST.GATHER) { readyUp(); return; }
+      if (S.state !== ST.IDLE || !hunter()) return;
       audio.open();
       audio.play("ooga");
       if (npcSync.role === "follow") {
@@ -527,7 +591,8 @@
     };
     const drawHud = (t) => {
       const st = S.state;
-      hud.show(st !== ST.IDLE);
+      hud.show(st !== ST.IDLE && st !== ST.GATHER);
+      drawLobby(t);
       if (st === ST.IDLE) { topKey = livesKey = bannerKey = -1; return; }
       // A round's start: the bar glows orange as it fills back.
       if (S.healAt !== healShown) { healShown = S.healAt; if (S.healAt) hud.heal(); }
@@ -539,18 +604,19 @@
           : st === ST.DAWN ? "Dawn comes back" : st === ST.ACTIVE ? `Round ${S.round} · ghosts ${left}` : `Round ${S.round}`);
       }
       const me = sim.playerById(myId()), cave = crew.player;
-      const frozenS = me && huntTime() < me.frozenUntil ? Math.ceil((me.frozenUntil - huntTime()) / 1000) : 0;
+      const frozenS = me && huntTime() < me.frozenUntil ? 1 : 0;
       const shieldS = Math.max(0, Math.ceil((S.shieldUntil - t) / 1000)), slowS = Math.max(0, Math.ceil((S.slowUntil - t) / 1000));
       const doubleS = me ? Math.max(0, Math.ceil((me.doubleUntil - t) / 1000)) : 0;
-      const where = !cave ? 1 : hub.gorillaActive() ? 2 : !localHere ? 3 : 0;
+      const where = waiting() ? 4 : !cave ? 1 : hub.gorillaActive() ? 2 : !localHere ? 3 : 0;
       const lk = where * 1e9 + (me ? me.seg : 9) * 1e8 + frozenS * 1e6 + shieldS * 1e4 + slowS * 1e2 + doubleS + (me ? me.kills : 0) * 1e10;
       if (lk !== livesKey) {
         livesKey = lk;
         hud.health(where ? -1 : frozenS ? 0 : me ? me.seg : C.PLAYER_SEGMENTS);
-        if (where === 1) hud.lives("Pick an Ooga Booga to join the hunt", "away");
+        if (where === 4) hud.lives(coarse ? "Waiting room · you'll play the next game · drag to look round" : "Waiting room · you'll play the next game · W A S D to fly round", "away");
+        else if (where === 1) hud.lives("Pick an Ooga Booga to join the hunt", "away");
         else if (where === 2) hud.lives("Gorillas can't hunt ghosts · pick an Ooga Booga", "away");
         else if (where === 3) hud.lives("Behind a ghost wall · walk out to join", "away");
-        else if (frozenS) hud.lives(`Down · back in ${frozenS} s`, "frozen");
+        else if (frozenS) hud.lives(st === ST.BOSS ? "Down · until the hunt ends" : "Down · back when this round ends", "frozen");
         else {
           let line = `${me ? me.kills : 0} busted`;
           if (shieldS) line += ` · shield ${shieldS} s`;
@@ -565,10 +631,10 @@
       const bossIntro = st === ST.BOSS && t - stateAt < 3500;
       const dawnWords = st === ST.DAWN && S.outcome === SIM.OUTCOME.ABANDON && t - stateAt < 4000;
       bannerUp = S.paused || st === ST.COUNTDOWN || st === ST.BREAK || bossIntro || st === ST.VICTORY || st === ST.DEFEAT || dawnWords;
-      const bk = st * 1000 + secs * 10 + (bossIntro ? 1 : 0) + (dawnWords ? 2 : 0) + S.round * 1e5 + (S.paused && !introOpen ? 1e8 : 0);
+      const bk = st * 1000 + secs * 10 + (bossIntro ? 1 : 0) + (dawnWords ? 2 : 0) + S.round * 1e5 + (S.paused ? 1e8 : 0);
       if (bk !== bannerKey) {
         bannerKey = bk;
-        if (S.paused && !introOpen) hud.banner("Paused", coarse ? "the ghosts wait" : "P to go on");
+        if (S.paused) hud.banner("Paused", "P to go on");
         else if (st === ST.COUNTDOWN) hud.banner(`Round ${S.round}`, secs >= 4 ? "get ready" : `${secs}`);
         else if (st === ST.BREAK) hud.banner(`Round ${S.round} cleared!`, `next round in ${secs}`);
         else if (bossIntro) hud.banner("THE BOSS is here", "he spits ghosts over the bluff");
@@ -584,12 +650,15 @@
     const beamShown = new Float64Array(C.MAX_GHOSTS), soulShown = new Float64Array(C.MAX_GHOSTS);
     const onState = (st, prev, t) => {
       stateAt = t;
-      if (prev === ST.IDLE && st !== ST.IDLE) {
+      // The hunt proper begins as the walls rise (straight from IDLE on a page that joins mid-hunt), not in its lobby.
+      const wasOff = prev === ST.IDLE || prev === ST.GATHER;
+      if (st === ST.GATHER) declined = false;
+      if (wasOff && st !== ST.IDLE && st !== ST.GATHER) {
         guide.lend(driveTess);
         tessHolder = 0; tessGone = 0;
         clearIsland();
         hub.gameMode(true);
-        cackled = beamed = rumbled = introShown = false;
+        cackled = beamed = rumbled = false;
         segShown = -1;
         // The hunt's playlist comes with the hunt, in a new random order (each track fetched as it comes up).
         audio.newPlaylist();
@@ -597,13 +666,12 @@
       if (st === ST.DAWN) { restoreIsland(); hub.gameMode(false); disarmHunters(); audio.play("rumble", 1.6); }
       if (st === ST.COUNTDOWN) {
         audio.play("wave");
-        if (!introShown) { introShown = true; openIntro(); }
       }
       if (st === ST.BOSS) audio.play("scream", 1);
       if (st === ST.VICTORY) audio.play("health");
       if (st === ST.DEFEAT) audio.play("scream", 0.6);
-      if (st === ST.IDLE || st === ST.DAWN) closeIntro();
-      if (st === ST.IDLE) { idleAt = clock(); restoreIsland(); hub.gameMode(false); disarmHunters(); guide.lend(null); zapBeam.visible = false; }
+      // A lobby that closed with nobody ready leaves the herald where it was, not resting.
+      if (st === ST.IDLE) { idleAt = prev === ST.GATHER ? -Infinity : clock(); restoreIsland(); hub.gameMode(false); disarmHunters(); guide.lend(null); zapBeam.visible = false; }
     };
     const cueDrops = (t) => {
       for (let i = 0; i < C.MAX_DROPS; i++) {
@@ -978,7 +1046,7 @@
         rumbled = true;
         if (since < RISE_AT + RISE_MS) audio.play("rumble", (RISE_MS + 1000) / 1000);
       }
-      const showIdle = idle && clock() - idleAt >= COOLDOWN_MS;
+      const showIdle = idle && clock() - idleAt >= COOLDOWN_MS || st === ST.GATHER;
       // Clicked, an orange beam comes down out of the sky onto it; then it cackles and shoots straight up the beam out of
       // sight, sparks streaming behind it.
       const held = st === ST.LAP && since < HERALD_BEAM_MS;
@@ -1026,7 +1094,7 @@
       face(herald, size);
       show(herald, MODELS.ghost(TIERS.herald, heraldView, heraldMirror, MODELS.MODE.normal));
       // Its orange wisps go round it, rising and falling as they go, faster in the beam, each leaving a trail of embers.
-      const turn = held || vanishing ? now / 260 : now / ORB_TURN_MS;
+      const turn = held || vanishing ? now / 260 : st === ST.GATHER ? now / 330 : now / ORB_TURN_MS;
       for (let k = 0; k < HERALD_WISPS; k++) {
         const a = turn + k * TAU / HERALD_WISPS, x = heraldX + Math.cos(a) * ORB_R * size * 1.15, z = heraldZ + Math.sin(a) * ORB_R * size * 1.15;
         const y = foot + (ORB_Y + 0.18 * Math.sin(a * 2 + k)) * size, glow = 0.8 + 0.2 * Math.sin(now / 130 + k * 2);
@@ -1369,6 +1437,7 @@
     let viewHeld = false, hidMine = null;
     // Gives the view and this page's Ooga back (a hunt ending, the island left).
     const letGo = () => {
+      spectating = false;
       if (viewHeld) { viewHeld = false; hub.holdView(false); }
       if (hidMine) { hidMine.root.visible = true; hidMine = null; }
     };
@@ -1516,6 +1585,7 @@
       if (role === "follow") flushHits(now);
       const t = huntTime();
       if (S.state !== prevState) { onState(S.state, prevState, t); prevState = S.state; }
+      spectate(waiting());
       nightK = nightOf(t);
       // The playlist runs from the herald's launch to the victory banner; the mini player shows it meanwhile.
       const musicTime = S.state >= ST.LAP && S.state <= ST.BOSS || S.state === ST.VICTORY;
@@ -1654,9 +1724,9 @@
     };
     /** The lab's debug keys, with Shift, on a `debug=1` page during a hunt; true when one was used. */
     const key = (e) => {
-      if (introOpen && (e.key === "Enter" || e.key === " " || e.key === "Escape")) { if (!e.repeat) closeIntro(true); return true; }
-      // P holds the hunt still and lets it go on, for everyone in it (a follower asks the host).
-      if ((e.key === "p" || e.key === "P") && !e.shiftKey && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && S.state >= ST.LAP && S.state <= ST.BOSS) {
+      if (S.state === ST.GATHER && !declined && (e.key === "r" || e.key === "R") && !e.shiftKey && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { readyUp(); return true; }
+      // P holds the hunt still and lets it go on, for everyone in it (a follower asks the host); on a debug page only.
+      if (hub.debug && (e.key === "p" || e.key === "P") && !e.shiftKey && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && S.state >= ST.LAP && S.state <= ST.BOSS) {
         if (npcSync.role === "follow") sync.pause();
         else togglePause();
         return true;
@@ -1715,7 +1785,7 @@
 
     // ---------- debug (`__ooga.halloween`) ----------
     const debug = {
-      sim, walls, stops, spots, lapMs, herald,
+      sim, walls, stops, spots, lapMs, herald, seal,
       get state() { return Object.keys(ST).find((k) => ST[k] === S.state); },
       get round() { return S.round; },
       get role() { return npcSync.role; },
@@ -1732,7 +1802,7 @@
     };
 
     return {
-      update, drawOverlay, hit, shot, key, down, rock: MODELS.rock(), hour, shade, shake, unshake, release, dispose, liveGeometry, refuseTravel, debug,
+      update, drawOverlay, hit, shot, key, down, get waiting() { return spectating; }, rock: MODELS.rock(), hour, shade, shake, unshake, release, dispose, liveGeometry, refuseTravel, debug,
       get sealed() { return sealedCount > 0; },
       get hunting() { return S.state !== ST.IDLE; },
       get busy() { return busy(); },

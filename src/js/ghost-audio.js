@@ -422,8 +422,17 @@
       advance();
       if (musicWanted && musicOn && !muted && live()) startMusic();
     };
-    /** A hunt begins: the playlist in a new random order, from its top. */
-    const newPlaylist = () => { stopMusic(); shuffle(); };
+    // How often a hunt opens on `FIRST_PICK`, Colt Fingaz's track; the rest of the list follows shuffled.
+    const FIRST_PICK = TRACKS.findIndex((t) => t.key === "colt"), FIRST_ODDS = 0.75;
+    /** A hunt begins: the playlist in a new random order, from its top (Colt Fingaz's first, three times in four). */
+    const newPlaylist = () => {
+      stopMusic();
+      shuffle();
+      if (FIRST_PICK >= 0 && Math.random() < FIRST_ODDS) {
+        const at = order.indexOf(FIRST_PICK);
+        order[at] = order[0]; order[0] = FIRST_PICK;
+      }
+    };
     /** The visitor's music switch (remembered in this browser): off stops it now, on plays from the track's top. */
     const toggleMusic = () => {
       musicOn = !musicOn;

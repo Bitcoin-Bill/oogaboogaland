@@ -4787,7 +4787,8 @@ const ghostHuntChecks = async () => {
     }
     return now - T0;
   };
-  const begin = (seed) => { const sim = G.create({ seed, spots, lapMs: 20000 }); sim.start(T0, 1); return sim; };
+  // Both test players ready up in the lobby, so the walls rise as soon as they are there.
+  const begin = (seed) => { const sim = G.create({ seed, spots, lapMs: 20000 }); sim.start(T0, 1); sim.ready(1); sim.ready(2); return sim; };
   {
     const a = begin(7), b = begin(7);
     play(a, 0, 120000); play(b, 0, 120000);
@@ -4897,12 +4898,67 @@ const ghostHuntChecks = async () => {
       pooled && waited && came, JSON.stringify({ pooled, waited, came }));
   }
   {
+    // The lobby: player 1 wakes the ghost (its host) and readies, player 2 is there but never readies; at the lobby's
+    // end only 1 is in the hunt, and neither 2 nor a newcomer (3) gets a slot. Everyone there ready starts it at once;
+    // a host who never readies closes it even with others ready, and so does nobody ready.
+    const lobby = (seed, by) => { const sim = G.create({ seed, spots, lapMs: 20000 }); sim.start(T0, by); return sim; };
+    const run = (sim, ids, until) => {
+      let now = T0;
+      const tick = () => { now += FRAME; sim.beginPresence(); for (const id of ids) sim.present(id, id * 2, 0, 5); sim.advance(now); };
+      tick();
+      const gathering = sim.state.state === ST.GATHER;
+      while (now < T0 + until && sim.state.state === ST.GATHER) tick();
+      return { gathering, tick };
+    };
+    const a = lobby(21, 1);
+    a.ready(1);
+    const { gathering, tick } = run(a, [1, 2], G.CONFIG.GATHER_MS + 500);
+    const rosterOnly = a.state.state === ST.LAP && a.players.filter((p) => p.on).map((p) => p.id).join() === "1";
+    tick(); a.present(3, 6, 0, 5);
+    const shutOut = !a.playerById(2) && !a.playerById(3);
+    const b = lobby(22, 1);
+    b.ready(1); b.ready(2);
+    run(b, [1, 2], 1000);
+    const early = b.state.state === ST.LAP && b.state.now < 500;
+    const c = lobby(23, 0);
+    run(c, [5], G.CONFIG.GATHER_MS + 500);
+    const d = lobby(24, 1);
+    d.ready(2);
+    run(d, [1, 2], G.CONFIG.GATHER_MS + 500);
+    const closed = c.state.state === ST.IDLE && d.state.state === ST.IDLE && !d.players.some((p) => p.on);
+    record("ghost hunt: the lobby waits for players to ready up, starts at once when everyone there is, takes only the ready into the hunt (never one who did not ready or came later), and closes with no hunt when its host never readies or nobody does",
+      gathering && rosterOnly && shutOut && early && closed, JSON.stringify({ gathering, rosterOnly, shutOut, early, closed }));
+  }
+  {
+    // A player whose bar empties is down for the rest of the round however long it runs, and back whole as it ends.
+    const z = begin(19), me = () => z.players.find((p) => p.id === 1), mate = () => z.players.find((p) => p.id === 2);
+    let now = T0;
+    // Player 1 stands still where ghosts reach; player 2 is kept out of harm's way (always just hit, so nothing lands).
+    const tick = () => {
+      now += FRAME; z.beginPresence(); z.present(1, 0, 0, 6);
+      const m = z.present(2, 21, 0, 0);
+      if (m) m.invulnUntil = z.state.now + 60000;
+      z.advance(now);
+    };
+    while (now < T0 + 600000 && !(me() && me().seg === 0)) tick();
+    const downAt = z.state.now, round = z.state.round;
+    for (let i = 0; i < 2400 && z.state.state === ST.ACTIVE; i++) tick();
+    const stayed = me().seg === 0 && z.state.now - downAt > 30000 || z.state.state !== ST.ACTIVE;
+    if (z.state.state === ST.ACTIVE) z.debug.next();
+    for (let i = 0; i < 20 && z.state.state === ST.ACTIVE; i++) tick();
+    const back = me().seg === G.CONFIG.PLAYER_SEGMENTS && !(z.state.now < me().frozenUntil) && !!mate();
+    record("ghost hunt: a player gone down stays down for the rest of the round and is back whole when it ends",
+      round >= 1 && stayed && back, JSON.stringify({ round, stayed, back, seg: me().seg, state: z.state.state }));
+  }
+  {
     const lost = begin(3), states = new Set();
     play(lost, 0, 3600000, { shoot: false, watch: (s) => states.add(s.state.state) });
     const defeat = states.has(ST.DEFEAT) && !states.has(ST.VICTORY) && lost.state.state === ST.IDLE;
     const empty = begin(5);
     let outcome = 0;
-    play(empty, 0, 3600000, { here: 0, watch: (s) => { if (s.state.state === ST.DAWN) outcome = s.state.outcome; } });
+    // They gather and the walls rise; then everyone leaves the arena.
+    play(empty, 0, 1000);
+    play(empty, 1000, 3600000, { here: 0, watch: (s) => { if (s.state.state === ST.DAWN) outcome = s.state.outcome; } });
     // A pause holds the hunt's clock and everything in it, even with nobody left, until PAUSE_MAX_MS lets it go on.
     const held = begin(5);
     play(held, 0, 40000);

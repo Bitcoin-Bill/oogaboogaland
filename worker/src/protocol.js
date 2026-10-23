@@ -9,7 +9,7 @@
 //                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
 //                 pose.g                         optional gorilla locomotion: [flags, speed, stride, climb, side, swim]
 //                 { t: "chat", text, clientId? }            a line for Ooga Chat (see Chat below)
-//                 { t: "ghost", k, g?, d? }      HALLOWEEN: the ghost hunt's `start` or `pause`, or a `hit` on ghost g for d, for the host
+//                 { t: "ghost", k, g?, d?, h? }  HALLOWEEN: the ghost hunt's `start`, `ready` or `pause`, or `hits` h, for the host
 //                 binary                         the NPC host's frame of every Ooga's pose, relayed as is
 // Room → client:  welcome { you, players, tickHz, now, loopEpoch }, join { p }, leave { id, reason },
 //                 body { id, name }, state { now, ps: [id, x, y, z, yaw, ...], gs? }, kick { reason },
@@ -167,7 +167,7 @@ export const parseClientMessage = (text) => {
   }
   // HALLOWEEN: a follower's word to the ghost hunt's host.
   if (msg.t === "ghost") {
-    if (msg.k === "start" || msg.k === "pause") return { t: "ghost", k: msg.k };
+    if (msg.k === "start" || msg.k === "pause" || msg.k === "ready") return { t: "ghost", k: msg.k };
     if (msg.k === "hits") return ghostHits(msg.h);
     return msg.k === "hit" && ghostHit(msg.g, msg.d) ? { t: "ghost", k: "hit", g: msg.g, d: msg.d } : null;
   }
