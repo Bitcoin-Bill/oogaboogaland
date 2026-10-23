@@ -1996,8 +1996,8 @@
         return;
       }
       const awakeTravel = !cave.bedTravel.mode || cave.bedTravel.mode === "walk" && !cave.bedTravel.toBed;
-      const fireControlled = cave === player && (cave.camp.burning || cave.camp.rolling);
-      const ready = w.secondaryOwned && (w.equipped || cave.state === "working" || fireControlled) && cave.root.visible && cave.state !== "sleeping" && awakeTravel
+      // A controlled Ooga keeps its rifle on its back while using its primary weapon.
+      const ready = w.secondaryOwned && (cave === player || w.equipped || cave.state === "working") && cave.root.visible && cave.state !== "sleeping" && awakeTravel
         && (cave === player || !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active);
       const working = cave !== player && cave.state === "working";
       const celebrating = working && cave.cheer > 0;
@@ -5496,7 +5496,7 @@
       standPose(cave);
       if (!ctx.abyssAt || !ctx.abyssAt(cave.root.position.x, cave.root.position.z, cave.root.position.y - cave.baseY, cave)) cave.root.position.y = groundY(cave) + cave.hop;
       if (cave.jet && cave.jetFuel < JET_LAUNCH_FUEL && grounded(cave)) cave.jetRecovering = true;
-      if (cave.traits.stoneAxe) poseWeapon(cave);
+      poseWeapon(cave);
       return true;
     };
     const release = () => {
