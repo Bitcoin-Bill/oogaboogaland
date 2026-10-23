@@ -10895,6 +10895,70 @@ const timechainBlockChecks = async () => {
 };
 const sphereLocal = `T = BL.scenes.hub.debug.timechainIsland, SP = BL.timechainModels.SPOTS, local = (p) => (p.x - T.place.x) * T.sin + (p.z - T.place.z) * T.cos`;
 const sphereStand = (x, z) => `__ooga.pilot.navigate({ position: { x: T.worldX(${x}, ${z}), y: T.place.y, z: T.worldZ(${x}, ${z}) }, yaw: T.place.ry, pitch: 0.1, dist: 4 }); __ooga.advance(0.3, 1 / 60);`;
+const sphereInnerSurface = { name: "timechain inner surface", why: "regression: the HUB Sphere was see-through from inside and its entrance box intruded before entering the passage", run: async (b) => {
+  const result = await b.evaluate(`(() => {
+    const T = BL.scenes.hub.debug.timechainIsland, site = T.site, exterior = [], logo = new Set(site.logoBatches.map(b => b.node));
+    const hash = value => {
+      const text = JSON.stringify(value, (_, v) => typeof v === "number" ? Number(v.toFixed(7)) : v);
+      let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+      return h >>> 0;
+    };
+    let inward = 0, outward = 0, paired = true, winding = true, logoInner = 0, paintInner = Infinity;
+    for (const node of site.outer.children) {
+      const g = node.geometry; if (!g) continue;
+      const front = [], back = [];
+      for (const f of g.faces) {
+        const points = f.i.map(i => g.verts.slice(i * 3, i * 3 + 3)), normals = f.i.map(i => g.normals.slice(i * 3, i * 3 + 3));
+        const p = points[0], n = normals[0], inside = n[0] * p[0] + n[1] * (p[1] - 3) + n[2] * p[2] < 0;
+        const row = [points, normals, f.color, f.emissive];
+        (inside ? back : front).push(row);
+        let nx = 0, ny = 0, nz = 0;
+        for (let k = 0; k < points.length; k++) {
+          const a = points[k], c = points[(k + 1) % points.length];
+          nx += (a[1] - c[1]) * (a[2] + c[2]); ny += (a[2] - c[2]) * (a[0] + c[0]); nz += (a[0] - c[0]) * (a[1] + c[1]);
+        }
+        if (Math.hypot(nx, ny, nz) > 1e-10) winding &&= nx * n[0] + ny * n[1] + nz * n[2] > 0;
+        if (inside) {
+          const radius = Math.hypot(p[0], p[1] - 3, p[2]);
+          if (logo.has(node)) logoInner = Math.max(logoInner, radius); else paintInner = Math.min(paintInner, radius);
+        }
+      }
+      inward += back.length; outward += front.length; exterior.push(front);
+      paired &&= front.length === back.length && front.every((f, i) => {
+        const backFace = back[i], frontPoint = f[0][0], backPoint = backFace[0][backFace[0].length - 1];
+        const outerRadius = Math.hypot(frontPoint[0], frontPoint[1] - 3, frontPoint[2]), innerRadius = Math.hypot(backPoint[0], backPoint[1] - 3, backPoint[2]);
+        return JSON.stringify(f[2]) === JSON.stringify(backFace[2]) && f[3] === backFace[3] && innerRadius < outerRadius
+          && Math.abs(frontPoint[0] / outerRadius - backPoint[0] / innerRadius) < 1e-7
+          && Math.abs((frontPoint[1] - 3) / outerRadius - (backPoint[1] - 3) / innerRadius) < 1e-7
+          && Math.abs(frontPoint[2] / outerRadius - backPoint[2] / innerRadius) < 1e-7;
+      });
+    }
+    const counts = () => site.outer.children.reduce((n, child) => n + (child.instanceCount || 0), 0), angle = site.outer.rotation.y, masks = [];
+    for (const spin of [0, 0.6, 2.3]) {
+      site.turn(spin); site.setDoors(0); const closed = counts();
+      site.setDoors(1); const open = counts(); site.setDoors(0);
+      masks.push({ closed, open, restored: counts() === closed });
+    }
+    site.turn(angle);
+    const entrance = [site.shell, site.picture, site.keypad, site.entrance, site.bridge, ...site.doors, site.plug], visible = entrance.map(n => n.visible), views = [];
+    let hiddenCollisionHash = 0;
+    for (const [place, x, y, z, hidden] of [["hollow", 0, 3, 0, true], ["beside passage", 4, 1.7, 10, true],
+      ["above passage", 0, 8, 10, true], ["passage", 0, 1.7, 10, false], ["outside", 0, 1.7, 16, false]]) {
+      site.view({ x: T.worldX(x, z), y: T.place.y + y, z: T.worldZ(x, z) });
+      views.push({ place, hidden: entrance.every(n => BL.scene.hiddenFromCamera(n) === hidden),
+        visible: entrance.every((n, i) => n.visible === visible[i]), paintVisible: !BL.scene.hiddenFromCamera(site.outer) });
+      if (place === "hollow") hiddenCollisionHash = hash(site.shell.geometry.collisionGeometry);
+    }
+    site.view(__ooga.camera.position);
+    return { inward, outward, paired, winding, logoInFront: logoInner > 0 && logoInner < paintInner,
+      exteriorHash: hash(exterior), collisionHash: hash(site.shell.geometry.collisionGeometry), masks, views, hiddenCollisionHash };
+  })()`);
+  // Baselines from the previous one-sided shell, rounded only to avoid engine-specific last-bit trig differences.
+  record("timechain inner surface: inward paint and logos face the eye with correct layer order, while exterior geometry and collision remain unchanged", result.inward === result.outward && result.inward > 0 && result.paired && result.winding && result.logoInFront && result.exteriorHash === 804869805 && result.collisionHash === 2719609463, JSON.stringify(result));
+  record("timechain inner surface: opening the doors masks both skins together at every sampled rotation and closing restores them", result.masks.length === 3 && result.masks.every(row => row.open < row.closed && row.restored), JSON.stringify(result.masks));
+  record("timechain inner surface: the entrance stays hidden from the hollow, returns inside its passage and outside the ball, and keeps collision and visible state intact", result.views.length === 5 && result.views.every(row => row.hidden && row.visible && row.paintVisible) && result.hiddenCollisionHash === 2719609463, JSON.stringify({ views: result.views, hiddenCollisionHash: result.hiddenCollisionHash }));
+} };
+scene("hub", { label: "sphere inner surface", query: "pos=0&view=timechain", steps: [sphereInnerSurface] });
 // Logs every frame of a crossing from the page: the camera's pose in each side's handover frame (the island's from its
 // handover point, `handZ` in, `outZ` out; the room's from `entry` in, `exitEye` out), the last frame before and first
 // after each swap, and every held first-person frame whose camera stands off the Ooga (a third-person frame).

@@ -8264,6 +8264,7 @@
     timechainIsland.gate.view(dt);
     // Tess moves after the view is set, so a tour's glide has the last word on it.
     islandGuide.update(dt, elapsed);
+    timechainIsland.site.view(camera.position);
     for (let i = 0; i < signDetails.length; i++) {
       const sign = signDetails[i], dx = camera.position.x - sign.x, dy = camera.position.y - sign.y, dz = camera.position.z - sign.z;
       const limit = sign.node.geometry === sign.pixels ? 20 : 16;
@@ -11092,7 +11093,12 @@
       return kept;
     };
     timechainIsland.gate = BL.timechainGate.create({ site: timechainIsland.site, place: timechainIsland.place, pilot, crew, hud, camera, renderer, canvas: glCanvas, world, go, equipJetpack,
-      show: timechainIsland.show, renderView: (view) => renderer.render(root, view, RENDER_OPTS), keep: keepGeometry });
+      show: timechainIsland.show, renderView: (view) => {
+        timechainIsland.site.view(view.position);
+        const rendered = renderer.render(root, view, RENDER_OPTS);
+        timechainIsland.site.view(camera.position);
+        return rendered;
+      }, keep: keepGeometry });
     // A room's address opened signed in, with no visit of this tab's own to repeat, comes here with the room chosen.
     if (timechainIsland.gate.preselected) hud.toast(`Room ${timechainIsland.gate.preselected} is chosen at the keypad · walk up to it and press Enter to go in`);
     clankerMeshes = BL.solidProps.create();
