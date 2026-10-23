@@ -10614,7 +10614,7 @@ const factoryCanvas = { name: "factory canvas2d", why: "contract: the Canvas 2D 
   record("factory canvas2d: with WebGL2 unavailable the factory still boots and paints, a tip's show in the air", r.kind === "canvas2d" && r.scene === "factory" && r.colours >= 4 && r.flying > 0, JSON.stringify(r));
 } };
 
-const hubDistantEffects = { name: "hub distant effects", why: "rule: distant portal and ambient animations retain visible poses, resume without catching up, and still populate correctly when daylight changes", run: async (b) => {
+const hubDistantEffects = { name: "hub distant effects", why: "rule: distant portals and insects resume without catching up, daylight still changes populations, and visible horizon birds and boats keep moving", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, root = BL.scenes.hub.root, nodes = [];
     const visit = n => { nodes.push(n); for (const child of n.children) visit(child); }; visit(root);
@@ -10666,24 +10666,34 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       far(); const stopped = pose(n); tick(0.2);
       batches.push({ initialized: initial.every(Number.isFinite) && initial[15] === 1, visible: n.visible && count > 0, rested, resumed, held: same(stopped, pose(n)) });
     };
-    for (const node of insects.filter(n => n.instanceCount > 0).concat(gulls)) checkBatch(node);
+    for (const node of insects.filter(n => n.instanceCount > 0)) checkBatch(node);
     const daylight = B.critters.butterflies > 0 && B.critters.fireflies === 0;
     B.setHour(0); tick(9, 0.15);
     const night = B.critters.butterflies === 0 && B.critters.fireflies > 0 && B.critters.surfaceEmbers > 0;
     for (const node of insects.filter(n => n.instanceCount > 0)) checkBatch(node);
-    const sails = [], boatPose = n => [n.position.x, n.position.y, n.position.z, n.rotation.x, n.rotation.y, n.rotation.z];
-    for (const node of boats) {
-      const initial = boatPose(node); tick(0.2); const rested = same(initial, boatPose(node));
-      view(initial[0], initial[1], initial[2]); const active = boatPose(node);
-      const resumed = !same(initial, active) && Math.hypot(active[0] - initial[0], active[1] - initial[1], active[2] - initial[2]) < 2;
-      far(); const stopped = boatPose(node); tick(0.2);
-      sails.push({ initialized: initial.every(Number.isFinite), visible: node.visible, rested, resumed, held: same(stopped, boatPose(node)) });
+    // Every horizon actor must keep moving, including birds whose batch also contains a nearby bird.
+    // Comparing one slot or just the batch version would miss frozen birds elsewhere in the same flock.
+    const horizon = [], boatPose = n => [n.position.x, n.position.y, n.position.z, n.rotation.x, n.rotation.y, n.rotation.z];
+    for (const place of ["far", "pile"]) {
+      if (place === "far") far(); else { B.setHour(12); B.pilot.goPreset("pile"); tick(); }
+      const birds = gulls.map(n => Array.from(n.instanceData.slice(0, n.instanceCount * 20))), sails = boats.map(boatPose);
+      tick(0.4);
+      horizon.push({ place, birds: gulls.map((n, k) => {
+        const before = birds[k], after = n.instanceData;
+        let initialized = before.every(Number.isFinite), moving = 0;
+        for (let i = 0; i < n.instanceCount; i++) {
+          const at = i * 20; initialized &&= before[at + 15] === 1;
+          if (after[at + 12] !== before[at + 12] || after[at + 14] !== before[at + 14]) moving++;
+        }
+        return { initialized, visible: n.visible, count: n.instanceCount, moving };
+      }), sails: boats.map((n, i) => ({ initialized: sails[i].every(Number.isFinite), visible: n.visible,
+        moving: n.position.x !== sails[i][0] || n.position.z !== sails[i][2], rocking: !same(sails[i].slice(3), boatPose(n).slice(3)) })) });
     }
-    B.setHour(12); B.pilot.goPreset("pile"); tick();
-    return { portals, bridgeRested, bridgeResumed, projected, windowResumed, daylight, night, batches, sails, gulls: gulls.length };
+    return { portals, bridgeRested, bridgeResumed, projected, windowResumed, daylight, night, batches, horizon };
   })()`);
   record("hub distant effects: all four portals and the bridge rest and resume locally while the paused window retains parallax", state.portals.length === 4 && state.portals.every(row => Object.values(row).every(Boolean)) && state.bridgeRested && state.bridgeResumed && state.projected && state.windowResumed, JSON.stringify({ portals: state.portals, bridgeRested: state.bridgeRested, bridgeResumed: state.bridgeResumed, projected: state.projected, windowResumed: state.windowResumed }));
-  record("hub distant effects: daytime and newly populated nighttime creatures and boats keep valid visible poses, rest at distance and resume without a jump", state.daylight && state.night && state.gulls === 2 && state.batches.length >= 7 && state.sails.length === 5 && state.batches.concat(state.sails).every(row => Object.values(row).every(Boolean)), JSON.stringify({ daylight: state.daylight, night: state.night, gulls: state.gulls, batches: state.batches, sails: state.sails }));
+  record("hub distant effects: daytime and newly populated nighttime insects and embers keep valid visible poses, rest at distance and resume without a jump", state.daylight && state.night && state.batches.length >= 5 && state.batches.every(row => Object.values(row).every(Boolean)), JSON.stringify({ daylight: state.daylight, night: state.night, batches: state.batches }));
+  record("hub distant effects: every horizon bird and all five boats keep moving from the pile and far away", state.horizon.length === 2 && state.horizon.every(row => row.birds.length === 2 && row.birds.reduce((n, batch) => n + batch.count, 0) === 32 && row.birds.every(batch => batch.initialized && batch.visible && batch.count === batch.moving) && row.sails.length === 5 && row.sails.every(boat => Object.values(boat).every(Boolean))), JSON.stringify(state.horizon));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
 scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });

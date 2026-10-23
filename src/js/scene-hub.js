@@ -2294,14 +2294,15 @@
       placed.push(node);
     });
   };
-  // Life over the sea: gulls wheeling round the island and sails out on the water.
+  // Life over the sea: gulls wheeling round the island and sails out on the water. Keep these moving at
+  // every distance: their silhouettes are visible from the hub long before the camera gets close.
   let life = null;
   const buildLife = () => {
     if (renderer.kind === "canvas2d") return;
-    const gulls = BL.dressing.flock({ count: 22, radius: [28, 70], height: [8, 30], seed: 3, activeAt: effectsActiveAt });
-    const shore = BL.dressing.flock({ count: 10, radius: [90, 150], height: [SEA_Y + 6, SEA_Y + 20], seed: 8, scale: 3, activeAt: effectsActiveAt });
+    const gulls = BL.dressing.flock({ count: 22, radius: [28, 70], height: [8, 30], seed: 3 });
+    const shore = BL.dressing.flock({ count: 10, radius: [90, 150], height: [SEA_Y + 6, SEA_Y + 20], seed: 8, scale: 3 });
     // Keep the full hulls between the main island's outlying islets and the sea stacks starting at r240.
-    const boats = BL.dressing.fleet({ sea: SEA_Y, spots: [[140, 0.4, 5.6], [160, 2.2, 6.8], [125, 3.9, 6.2], [150, 5.1, 5.3], [170, 1.3, 7.3]], activeAt: effectsActiveAt });
+    const boats = BL.dressing.fleet({ sea: SEA_Y, spots: [[140, 0.4, 5.6], [160, 2.2, 6.8], [125, 3.9, 6.2], [150, 5.1, 5.3], [170, 1.3, 7.3]] });
     for (const node of [gulls.node, shore.node, ...boats.nodes]) {
       addChild(root, node);
       placed.push(node);
@@ -8051,7 +8052,7 @@
   const update = (dt, elapsed) => {
     if (ghosts) ghosts.unshake(camera); // HALLOWEEN: last frame's quake comes off before anything reads the camera
     if (lawn && lawn.version !== island.path.version) layLawn();
-    if (life) { life.gulls.update(elapsed, dt); life.shore.update(elapsed, dt); life.boats.update(elapsed, dt); }
+    if (life) { life.gulls.update(elapsed); life.shore.update(elapsed); life.boats.update(elapsed); }
     now = elapsed;
     hour = clock.read();
     if (ghosts) hour = ghosts.hour(hour); // HALLOWEEN: night falls for the hunt
