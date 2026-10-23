@@ -705,6 +705,9 @@
         }
         if (cave.bedroll) return true;
         for (const bed of ctx.outdoorBedrolls || []) if (!bed.sleeper) { cave.bedroll = bed; bed.sleeper = cave; return true; }
+        // The scene's next fixed anchor, found only when an overflow sleeper needs it.
+        const bed = ctx.moreOutdoorBedrolls && ctx.moreOutdoorBedrolls();
+        if (bed) { cave.bedroll = bed; bed.sleeper = cave; return true; }
         return false;
       }
       cave.bedroll = bedrolls.find((bed) => !bed.sleeper) || bedrolls[cave.index % bedrolls.length];

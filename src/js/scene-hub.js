@@ -11323,9 +11323,11 @@
       surfaceAt: (x, z, y) => island.supportAt(x, z, y, 1e-6, null, PLAYER_RADIUS)
     });
     const sleepNavigation = headquarters.sleepNavigation = BL.headquartersSleep.create({ island, beds: bedrolls, walkable: sleepRouteClear, surfaceRoute: shared.npcPaths.route });
-    shared.outdoorBedrolls = headquarters.outdoorBeds = BL.headquartersSleep.outdoorBeds(mempoolIsland,
-      (x, y, z) => physicalClearAt(x, y, z, 0.15, 1.5, null) && propSegmentClear(x, y, z, x, y, z, 0.15, 1.5, null),
-      Math.max(0, contributors.activeRoster.length - bedrolls.length) + 2);
+    // Overflow sleepers take the rainforest's fixed anchors in order, searched once a page and only as far as needed.
+    const forest = BL.headquartersSleep.outdoor(mempoolIsland,
+      (x, y, z) => physicalClearAt(x, y, z, 0.15, 1.5, null) && propSegmentClear(x, y, z, x, y, z, 0.15, 1.5, null), island);
+    shared.outdoorBedrolls = headquarters.outdoorBeds = forest.beds;
+    shared.moreOutdoorBedrolls = forest.more;
     const sleepRouteFrom = { x: 0, y: 0, z: 0 };
     // An Ooga stood up on its mattress plans from the floor under it: the planner joins a start to its graph along the
     // island's floor both ways, and that floor never climbs back onto a bed, so a start on one would never join.
@@ -11700,7 +11702,8 @@
     });
     crew.refreshStates(true);
     unsubscribeActivity = contributors.subscribe(() => crew.refreshStates());
-    const signedInArrival = ctx.from === null && !!BL.net.ownCharacter();
+    // Sign-in returns to the bare page; a routed hub place (a shared link, the Sphere's keypad) is still honoured.
+    const signedInArrival = ctx.from === null && (!ctx.place || ctx.place === "donate") && !!BL.net.ownCharacter();
     let initialCharacter = ctx.from === null && !signedInArrival && !pilot.loginViewRestored && preloadedCharacter ? contributors.activeRoster.find((entry) => entry.name.toLowerCase() === preloadedCharacter) : null;
     if (ctx.from === null && !signedInArrival && !pilot.loginViewRestored && (preloadedJetpackWear || preloadedEquipment) && !params.has("character") && !initialCharacter) initialCharacter = contributors.activeRoster.find((entry) => crew.stateOf(crew.cavemen.get(entry.name)) === "working") || contributors.activeRoster[0];
     const initialGorilla = initialCharacter && preloadedGorilla ? crew.cavemen.get(initialCharacter.name) : null;

@@ -13,8 +13,10 @@ On hub arrival, working Oogas start beside the banana pile and chilling Oogas
 gather around the campfire, filling clear places in the inner ring before using
 outer rings. Sleeping Oogas get separate HQ and basement beds, newest activity
 first; the longest-inactive sleepers overflow into separate rainforest sleeping
-spots. A signed-in visitor arrives awake beside the pile regardless of activity,
-without changing their contribution timestamps.
+spots, taken in one fixed order (the Nth overflow sleeper takes the Nth spot) and
+searched once a page only as far as sleepers need them. A signed-in visitor
+arrives awake beside the pile regardless of activity, without changing their
+contribution timestamps.
 
 Roster activity labels use yellow **clankin**, orange **chillin**, and gray **sleepin**.
 A separate dot before the name is green when `cave.humanControlled` is true and gray

@@ -5651,7 +5651,7 @@ for (const id of ["hub", "lab", "factory"]) {
   } });
 }
 // Real account lookup before hub construction; only the sockets and activity clock are fixtures.
-const signedInArrivalWire = mode => {
+const signedInArrivalWire = (mode, staleView = true) => {
   const fetch = window.fetch.bind(window), sockets = [];
   window.__arrivalWire = { sockets, mode, seeded: false };
   window.WebSocket = class {
@@ -5669,13 +5669,13 @@ const signedInArrivalWire = mode => {
       owner.lastCommitAt = owner.lastContributionAt = now - ({ working: 0.5, chilling: 12, sleeping: 72, away: 31 * 24 }[mode]) * hour;
       away.lastCommitAt = away.lastContributionAt = now - 32 * 24 * hour;
       __arrivalWire.otherAway = away.name;
-      sessionStorage.setItem("ooga-login-view", JSON.stringify({ at: now, route: location.pathname + location.search,
+      if (staleView) sessionStorage.setItem("ooga-login-view", JSON.stringify({ at: now, route: location.pathname + location.search,
         context: null, eye: [6, -20, 0], target: [0, -24, 0], up: [0, 1, 0], fov: 0.7 }));
     }
     return fetch(url, options);
   };
 };
-const signedInArrival = { name: "hub signed-in arrival", why: "regression: owners loaded asleep or away instead of standing beside the pile, and routed or saved underground views could put them back below", run: async b => {
+const signedInArrival = { name: "hub signed-in arrival", why: "regression: owners loaded asleep or away instead of standing beside the pile, and `view=` or saved underground views could put them back below", run: async b => {
   const result = await b.evaluate(`(async () => {
     const B = __ooga, W = __arrivalWire, c = B.cavemen.get("portlandhodl"), other = B.cavemen.get(W.otherAway);
     const read = () => ({ selected: B.pilot.player === c, visible: c.root.visible, activity: BL.contributors.stateFor(c.contributor),
@@ -5699,6 +5699,16 @@ const signedInArrival = { name: "hub signed-in arrival", why: "regression: owner
   record(`sleeping overflow ${result.mode}: newest sleepers occupy separate HQ and basement beds and older sleepers have their own rainforest anchors`,
     !result.beds.failures.length && result.beds.claimed > 0 && result.beds.overflow > 0, JSON.stringify(result.beds));
 } };
+// A signed-in link to a hub place still arrives there: /sphere-3 with no visit of this tab's own is the Sphere's doors, room 3 chosen.
+const signedInRouted = { name: "hub signed-in arrival routed", why: "regression: every signed-in load was treated as a sign-in return, so links to hub places, the Sphere's keypad among them, landed at the pile", run: async b => {
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, c = B.cavemen.get("portlandhodl"), T = BL.scenes.hub.debug.timechainIsland, p = c.root.position;
+    return { scene: B.scene, path: location.pathname, selected: B.pilot.player === c, visible: c.root.visible,
+      doors: Math.hypot(p.x - T.worldX(0.4, 15.4), p.z - T.worldZ(0.4, 15.4)), pile: Math.hypot(p.x, p.z), preselected: T.gate.preselected };
+  })()`);
+  record("signed-in routed arrival: a signed-in link to /sphere-3 stands the owner at the Sphere's doors with room 3 chosen, not at the pile",
+    r.scene === "hub" && r.path === "/sphere" && r.selected && r.visible && r.doors < 3.5 && r.preselected === 3, JSON.stringify(r));
+} };
 if (!ONLY || onlyMatches(signedInArrival.name)) tasks.push({ name: "hub signed-in arrival", scene: "hub", perf: false, run: async () => {
   const html = await readFile(join(root, "oogaboogaland.html"));
   const server = createServer((req, res) => {
@@ -5708,8 +5718,11 @@ if (!ONLY || onlyMatches(signedInArrival.name)) tasks.push({ name: "hub signed-i
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   try {
-    for (const mode of ["working", "chilling", "sleeping", "away"]) await fold(`http://127.0.0.1:${server.address().port}/mempool?debug=1&view=basement&mempool=0&chain=0&oogatron=0&totems=0&halloween=0&hour=12&day=80`,
+    // Sign-in returns to the bare page; a `view=` and a saved login view must not put the owner back below.
+    for (const mode of ["working", "chilling", "sleeping", "away"]) await fold(`http://127.0.0.1:${server.address().port}/?debug=1&view=basement&mempool=0&chain=0&oogatron=0&totems=0&halloween=0&hour=12&day=80`,
       [[signedInArrival.name, signedInArrival.run]], { initScript: `(${signedInArrivalWire.toString()})(${JSON.stringify(mode)})` });
+    await fold(`http://127.0.0.1:${server.address().port}/sphere-3?debug=1&mempool=0&chain=0&oogatron=0&totems=0&halloween=0&hour=12&day=80`,
+      [[signedInRouted.name, signedInRouted.run]], { initScript: `(${signedInArrivalWire.toString()})("sleeping", false)` });
   } finally { await new Promise(resolve => server.close(resolve)); }
 } });
 // The hosted page as `npm run site` stages it: each `data-defer` group leaves the built page for its own same-origin file,
