@@ -186,7 +186,9 @@
   // What a typed question asks, answered from what the page knows: the lines she says (`lines`), the stop a trip goes
   // to (`go`), the place it is about (`place`, for a following "take me there"), or the island tour (`tour`); null
   // when the page can't answer it. Words are matched whole, after folding case, accents and punctuation; a place is
-  // named by its longest matching alias.
+  // named by its longest matching alias. An alias that also names an idea (`IDEAS`: Lightning, the mempool, mining)
+  // takes the visitor there when they ask to go, but a question about it is left to the Worker, and "it" or "there"
+  // stands for the last place only in a trip ("take me there").
   const PLACES = {
     pile: ["pile", "banana pile", "bananas pile"],
     totems: ["jumbotron", "oogatron", "totem", "totems"],
@@ -198,6 +200,7 @@
     arcade: ["arcade", "ooga arcade", "games", "game", "rally", "ooga rally", "drop", "orbit", "mine", "tickets", "prizes"],
     mempool: ["mempool", "mempool island", "rainforest", "lake", "chamber", "vine bridge"]
   };
+  const IDEAS = new Set(["lightning", "lightning node", "mempool", "mine", "game", "drop"]);
   const WORDS = {
     greet: ["hi", "hello", "hey", "hiya", "howdy", "yo", "gm", "good morning", "good evening"],
     thanks: ["thanks", "thank you", "thx", "ty", "cheers"],
@@ -206,18 +209,21 @@
     trip: ["take me", "go to", "go there", "show me", "where", "how do i get", "how to get", "find", "bring me", "fly me",
       "fly to", "lead me", "get to", "head to", "walk to", "visit"],
     there: ["there", "it"],
-    donate: ["donate", "donation", "donating", "tip", "tips", "tipping", "feed", "zap", "sats", "pay"],
-    controls: ["controls", "control", "keys", "keyboard", "move", "walk", "jump", "run", "how do i play", "how to play", "fly", "camera"],
-    signIn: ["sign in", "signin", "log in", "login", "github", "account"],
-    news: ["whats new", "what s new", "new", "news", "updates", "latest"]
+    donate: ["donate", "donation", "donating", "tip", "tips", "tipping", "feed", "zap", "pay"],
+    controls: ["the controls", "keyboard", "what keys", "which keys", "how do i play", "how to play", "how do i move", "how to move",
+      "move around", "how do i walk", "walk around", "how do i jump", "how do i run", "how do i fly", "camera"],
+    signIn: ["sign in", "signin", "sign up", "log in", "login", "account"],
+    news: ["whats new", "what s new", "what is new", "anything new", "news", "updates", "what changed"]
   };
   const fold = (text) => ` ${String(text).toLowerCase().replace(/₿/g, "b").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ").trim()} `;
   const has = (q, words) => words.some((w) => q.includes(` ${w} `));
-  const placeIn = (q) => {
+  const placeIn = (q, named) => {
     let best = -1, length = 0;
     STOPS.forEach((stop, i) => {
-      for (const alias of PLACES[stop.id]) if (alias.length > length && q.includes(` ${alias} `)) { best = i; length = alias.length; }
+      for (const alias of PLACES[stop.id]) {
+        if (alias.length > length && !(named && IDEAS.has(alias)) && q.includes(` ${alias} `)) { best = i; length = alias.length; }
+      }
     });
     return best;
   };
@@ -229,9 +235,8 @@
     if (words <= 4 && has(q, WORDS.thanks)) return reply(["thanks"]);
     if (has(q, WORDS.who)) return reply(["whoAmI"]);
     if (has(q, WORDS.tour)) return { lines: [], go: null, place: null, tour: true };
-    let place = placeIn(q);
-    if (place < 0 && last !== null && has(q, WORDS.there)) place = last;
-    if (place >= 0 && has(q, WORDS.trip)) return reply(STOPS[place].lines, place, place);
+    const any = placeIn(q, false), place = placeIn(q, true), trip = any >= 0 ? any : last !== null && has(q, WORDS.there) ? last : -1;
+    if (trip >= 0 && has(q, WORDS.trip)) return reply(STOPS[trip].lines, trip, trip);
     if (has(q, WORDS.donate)) return reply(["donate", "donateKiosk"], null, STOPS.findIndex((stop) => stop.id === "factory"));
     if (place < 0 && has(q, WORDS.controls)) return reply(["controls", "controlsMore", "controlsPhone"]);
     if (has(q, WORDS.signIn)) return reply(["signIn", "signInPerks"]);

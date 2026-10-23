@@ -15158,13 +15158,17 @@ const tessAnswerChecks = (BL) => {
     ["Take me to the games", "trip:arcade"], ["where's B.C.A.?", "trip:bca"], ["how do I get to the factory", "trip:factory"], ["hello, where is the arcade?", "trip:arcade"],
     ["What's the Mempool island?", "say:mempool"], ["tell me about ₿IFRÖST", "say:bifrost"], ["How do I donate?", "say:donate"], ["how do I move", "say:controls"],
     ["how do I sign in", "say:signIn"], ["what's new?", "say:newsIntro"], ["who are you?", "say:whoAmI"], ["hi tess", "say:hello"],
-    ["can you show me around?", "tour"], ["what is bitcoin", "none"], ["   ", "none"]
+    ["can you show me around?", "tour"], ["what is bitcoin", "none"], ["   ", "none"], ["take me to the mempool", "trip:mempool"],
+    ["what is the lightning network?", "none"], ["what's the mempool?", "none"], ["how do I mine bitcoin?", "none"],
+    ["what are private keys?", "none"], ["how many sats in a bitcoin?", "none"], ["should I run a node?", "none"],
+    ["what's the latest block?", "none"], ["who controls bitcoin?", "none"], ["is the code on github?", "none"]
   ];
   const wrong = cases.map(([q, want]) => [q, want, route(q)]).filter(([, want, got]) => want !== got);
-  const there = route("take me there", place("lab")), suggested = H.SUGGESTIONS.every((q) => H.answer(q) !== null);
+  const there = route("take me there", place("lab")), followUp = route("is it free?", place("arcade"));
+  const suggested = H.SUGGESTIONS.every((q) => H.answer(q) !== null);
   const lines = cases.flatMap(([q]) => (H.answer(q) || { lines: [] }).lines).every((id) => typeof H.LINES[id] === "string");
-  record("tess answers: the page sends a typed question to a trip, an answer, the tour or nothing, follows \"take me there\" to the last place, and answers every suggestion",
-    !wrong.length && there === "trip:lab" && suggested && lines, JSON.stringify({ wrong, there, suggested, lines }));
+  record("tess answers: the page sends a typed question to a trip, an answer, the tour or nothing, follows \"take me there\" to the last place, leaves other follow-ups and Bitcoin questions that name a place's idea to the Worker, and answers every suggestion",
+    !wrong.length && there === "trip:lab" && followUp === "none" && suggested && lines, JSON.stringify({ wrong, there, followUp, suggested, lines }));
 };
 // The Lightning Factory in Node: the feed's two contracts, the demo node that stands in for a real one, and the
 // walkable floor of the hall, each through the module's own functions.
