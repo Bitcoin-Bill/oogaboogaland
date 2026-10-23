@@ -198,6 +198,7 @@
   const RETICLE_PROPS = new Set(["tree", "bush", "flower", "torch", "firepit", "totem", "ladder", "poolsign", "poolpainting", "chainsign", "weathersign", "poolfern", "poollog", "jaguar", "monkey", "toucan", "canopy", "jumbotron", "palm", "timechainentrance", "timechainkeypad", "bifrostgate", "heimdall"]);
   const workCave = (slot) => slot.repo && (slot.status === "open" || slot.status === "mirror");
   const MATRIX_LIVING_PROPS = new Set(["tree"]);
+  const SCREEN_CULL_PROPS = new Set(["tree", "bush", "rock", "crate", "barrel", "flower", "grass", "palm", "poolrock", "poolfern", "poollog", "canopy", "magazine"]);
   const SOLID_PROPS = new Set(["tree", "firepit", "dock", "jumbotron", "totem", "poolbridge", "poolrock", "canopy"]);
   const CLANKER_STEP_PROPS = new Set(["poolrock"]);
   const BUSH_WORDS = ["Something rustles.", "A beetle. Ooga leaves it.", "Just a bush."];
@@ -1534,6 +1535,7 @@
 
   const addProp = (kind, node, x, z, radius) => {
     const owner = { kind: "prop", prop: kind, node, x, z, ripe: 0, pickRadius: radius, active: true };
+    if (SCREEN_CULL_PROPS.has(kind)) node.screenCull = true;
     if (kind === "tree" || kind === "bush" || kind === "flower" || kind === "grass" || kind === "palm") owner.weaponType = "none";
     if (kind === "tree" || kind === "palm") node.npcTreeSupport = true;
     if (kind === "tree" || kind === "palm" || kind === "canopy") node.ragePass = true;
@@ -2343,7 +2345,7 @@
   };
   const buildLawn = () => {
     if (renderer.kind === "canvas2d") return;
-    const node = createNode({ geometry: hubModels.lawnTuft(), instanceData: new Float32Array(LAWN_CAP * 20), instanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true });
+    const node = createNode({ geometry: hubModels.lawnTuft(), screenCull: true, instanceData: new Float32Array(LAWN_CAP * 20), instanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true });
     addChild(root, node);
     placed.push(node);
     lawn = { node, version: -1 };
@@ -3464,6 +3466,7 @@
       const quiet = kind === "grass";
       const pickRadius = kind === "tree" ? BL.scene.boundsOf(geometry).radius : footprint + 0.3;
       const node = place(geometry, x, z, ry, y, quiet ? null : kind, pickRadius);
+      if (quiet) node.screenCull = true;
       if (quiet || kind === "flower" || kind === "bush") node.sightHidden = true;
       if (MATRIX_LIVING_PROPS.has(kind)) node.matrixLiving = true;
       const owner = quiet ? { kind: "prop", prop: kind, node, x, z, ripe: 0, pickRadius: 0, active: true } : props[props.length - 1];
