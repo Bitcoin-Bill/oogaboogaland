@@ -18,8 +18,8 @@
 
   // How to play, on the lobby: each line its keys and what they do, for a keyboard and mouse or for touch.
   const INTRO = {
-    keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["X"], "Switch to your weapon"]],
-    touch: [[["Left stick"], "Move your Ooga"], [["Combat"], "Switch to your weapon"], [["Hold fire"], "Shoot the ghosts"]]
+    keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["G"], "Switch weapons"]],
+    touch: [[["Left stick"], "Move your Ooga"], [["Ready"], "Start in combat mode"], [["Hold fire"], "Shoot the ghosts"]]
   };
   /**
    * The HUD; `coarse` for touch words, `onMusic` when the visitor flips the mini player's switch, `onSkip` when they

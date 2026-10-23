@@ -6,7 +6,7 @@
   const THROW_CHARGE_TIME = 1, THROW_MIN_POWER = 1 / 3, THROW_RESULT_TIME = 0.35;
   const PITCH_LIMIT = Math.PI / 2 - 0.0001, ZOOM_PAUSE = 220;
   const create = ({ canvas, camera, renderer, pilot, hud, clankers, input = null, constrainCamera = null,
-    reticleTarget = null, sightClear = null, aimCeiling = null, groundAt = null, grabOoga = null, releaseOoga = null, mayPossess = null, birdsEyeMin = 5, maxDistance = 32 }) => {
+    reticleTarget = null, sightClear = null, aimCeiling = null, groundAt = null, grabOoga = null, releaseOoga = null, mayPossess = null, combatOnly = null, birdsEyeMin = 5, maxDistance = 32 }) => {
     const orbit = pilot.orbit, cameraHandoff = pilot.cameraHandoff, target = { x: 0, y: 0, z: 0 };
     const smashMin = clankers.smashPower(0, true), smashBase = clankers.smashPower(0, false);
     const smashMax = clankers.smashPower(1, false), smashRate = (smashMax - smashBase) / POUND_CHARGE_TIME;
@@ -292,9 +292,12 @@
       hud.el.act.hidden = true;
       return true;
     };
+    const requireCombat = () => {
+      if (player && !combat && combatOnly?.()) action("mode-toggle");
+    };
     const possess = (entry, atBoot = false, transition = null) => {
       if (disposed || !entry || !entry.active || !entry.root.visible) return false;
-      if (entry === player) return true;
+      if (entry === player) { requireCombat(); return true; }
       const refusal = mayPossess && mayPossess(entry);
       if (refusal) { hud.toast(refusal); return false; }
       const incoming = transition || captureControl(controlState);
@@ -363,6 +366,7 @@
       hud.tooltip.hide();
       showAct();
       if (!atBoot && incoming.focused) focusCombat();
+      requireCombat();
       return true;
     };
     const action = (name) => {
@@ -377,7 +381,9 @@
       } else if (name === "gorilla-beat") clankers.chestBeat();
       else if (name === "mode-release") release();
       else if (name === "mode-toggle") {
-        if (clankers.sleeping(player)) { hud.hint("Wake this gorilla before entering shooter mode"); return true; }
+        const required = !!combatOnly?.();
+        if (required && combat) return true;
+        if (clankers.sleeping(player) && !required) { hud.hint("Wake this gorilla before entering shooter mode"); return true; }
         let entryView = null;
         if (!combat && view === "orbit") {
           // Choose from the displayed eye around the body, even while a
@@ -1053,6 +1059,7 @@
     };
     const refreshCombat = () => {
       if (!player) return;
+      requireCombat();
       if (!clankers.combatEnabled) {
         if (grabActive && releaseOoga) releaseOoga(player, false);
         grabHeld = grabActive = grabSpent = false;

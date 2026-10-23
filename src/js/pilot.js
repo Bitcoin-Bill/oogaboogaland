@@ -2102,7 +2102,10 @@
         return !!cave;
       }
       if (action !== "mode-toggle" || !cave) return false;
-      if (!weaponViewReady(cave)) {
+      const combatOnly = !!ctx.combatOnly?.();
+      if (combatOnly && cave.weapon.aiming) return true;
+      // A game's combat intent survives sleep/stuns; readiness still gates aiming and attacks.
+      if (!weaponViewReady(cave) && !combatOnly) {
         hud.hint(crew.sleeping ? "Wake this Ooga Booga before entering shooter mode" : "Stand up before entering shooter mode");
         return true;
       }
@@ -2156,8 +2159,12 @@
       syncModeHud();
       return true;
     };
+    const requireCombat = () => {
+      const cave = player();
+      if (cave && !cave.weapon.aiming && ctx.combatOnly?.()) modeAction("mode-toggle");
+    };
     const possess = (cave, transition = null) => {
-      if (cave && cave === player()) return true;
+      if (cave && cave === player()) { requireCombat(); return true; }
       if (!cave || crew.cavemen.get(cave.traits.name) !== cave) { hud.toast("That Ooga is not available here"); return false; }
       // A scene may refuse an Ooga (whose it is, who is here): the refusal says why and nothing changes.
       const refusal = mayPossess && mayPossess(cave);
@@ -2249,6 +2256,7 @@
       handoff.begin(incoming);
       targetWait = assistedTargetWait = 0;
       finishHandoffView(0);
+      requireCombat();
       return true;
     };
     const rememberSleepView = () => {
@@ -3521,6 +3529,7 @@
       if (!exactCamera) { update(0); capturePose(pose); }
       restoredPose = pose;
       update(0);
+      requireCombat();
     };
     const resumePose = () => {
       if (!restoredPose) return;
@@ -3619,6 +3628,7 @@
     }
     const refreshCombat = () => {
       if (!crew) return;
+      requireCombat();
       if (!crew.combatEnabled) {
         const cave = player();
         if (cave) { crew.stopBurst(cave); crew.stopReload(cave, true); crew.releaseSwing(cave, true); }

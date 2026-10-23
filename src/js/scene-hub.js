@@ -235,7 +235,7 @@
   // One visit's state: created in enter, dropped in leave.
   let oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
   // GAME MODE (`setGameMode`): an island event holds the island still for play while it runs.
-  let gameMode = false;
+  let gameMode = false, gameCombatOnly = false;
   // HALLOWEEN: the ghost hunt (ghost-game.js) once its group has arrived, the visit it was asked for, and its walls' seal.
   let ghosts = null, ghostLoading = false, ghostVisit = 0, ghostSeal = null;
   let magazine, magazineState, clankers, clankerPlay, clankerMeshes, clankerPartOwners, grabSupportEntry = null, entropyLab, chalkboard, factoryMouth = null, arcadeMouth = null, bcaMouth = null, glCanvas = null;
@@ -8425,10 +8425,12 @@
   // (the renderer's `windTime` held where it stood), the meadow's fire pit goes out (`updateLamps`),
   // the Timechain Sphere stops turning, the island's clouds and the Mempool island's weather go (`weather.hold`), and
   // the Mempool island itself is hidden and left unrun. All of it comes back when the event lets go, and in `leave`.
-  const setGameMode = (on) => {
+  const setGameMode = (on, combatOnly = false) => {
     on = !!on;
-    if (on === gameMode) return;
+    combatOnly = on && !!combatOnly;
+    if (on === gameMode && combatOnly === gameCombatOnly) return;
     gameMode = on;
+    gameCombatOnly = combatOnly;
     if (!on) for (const rec of clankerCaptures) if (rec.cave) finishClankerRider(rec.entry, false);
     crew.setCombatEnabled(on);
     clankers.setCombatEnabled(on);
@@ -8461,7 +8463,7 @@
     openMouths: island.mouths.filter((m) => !sealedCaves.some((sealed) => sealed.mouth === m)),
     addTarget, selectOoga, mayDriveOoga, zoneOf,
     gorillaActive: () => !!(clankerPlay && clankerPlay.active),
-    gameMode: setGameMode,
+    gameMode: on => setGameMode(on, true),
     lobbyOpen: (on, restore) => pilot.setMenuOpen(on, restore),
     // The waiting room: the driven Ooga let go of (the free camera to watch from), and at the end the visitor's own
     // Ooga given back.
@@ -10627,7 +10629,7 @@
     hooks = {};
     input = interactMod.create({ canvas: ctx.canvas, renderer, camera, hooks, preciseHover: true });
     presets = { pile: PILE_VIEW, gate: GATE_VIEW };
-    pilot = pilotMod.create({ renderer, canvas: ctx.canvas, camera, hud, presets, landing: "pile", pitch: [PITCH_MIN, PITCH_MAX], dist: [DIST_MIN, DIST_MAX], follow: FOLLOW, fly: FLY, clampTarget, clampCamera, observeOrbit: position => clampCamera(position, 0), ceilingAt, birdsEyeMin: BIRDS_EYE_MIN, birdsEyeCeiling, releaseView: releaseCameraView, enterFreeView: enterFreeCameraView, coarse: COARSE, onFreeAction: freeAction, jetpackStatus: jetpackHudStatus, mayPossess: mayDriveOoga, close: { ...CLOSE_VIEW, maxStep: STEP_MAX, groundAt: playerSupportAt, visualGroundAt: visualSupportAt, sleepEyeFloorAt, zone: () => playerCaveIndex } });
+    pilot = pilotMod.create({ renderer, canvas: ctx.canvas, camera, hud, presets, landing: "pile", pitch: [PITCH_MIN, PITCH_MAX], dist: [DIST_MIN, DIST_MAX], follow: FOLLOW, fly: FLY, clampTarget, clampCamera, observeOrbit: position => clampCamera(position, 0), ceilingAt, birdsEyeMin: BIRDS_EYE_MIN, birdsEyeCeiling, releaseView: releaseCameraView, enterFreeView: enterFreeCameraView, coarse: COARSE, onFreeAction: freeAction, jetpackStatus: jetpackHudStatus, mayPossess: mayDriveOoga, combatOnly: () => gameCombatOnly, close: { ...CLOSE_VIEW, maxStep: STEP_MAX, groundAt: playerSupportAt, visualGroundAt: visualSupportAt, sleepEyeFloorAt, zone: () => playerCaveIndex } });
     chalkboard = BL.chalkboard.create({
       renderer,
       onOpen: () => { pilot.setActive(false); pilot.controls.reset(); input.reset(); hud.tooltip.hide(); },
@@ -11219,6 +11221,7 @@
       canvas: ctx.canvas, camera, pilot, hud, clankers, input, renderer, reticleTarget,
       grabOoga: grabClankerRider, releaseOoga: releaseClankerRider,
       mayPossess: entry => BL.net.mayDriveGorilla(entry.owner.traits.name),
+      combatOnly: () => gameCombatOnly,
       sightClear: shared.fireReachable, aimCeiling: entry => birdsEyeCeiling(entry, true), constrainCamera: constrainClankerCamera,
       groundAt: (x, z, y) => {
         // Sample below shoulder height in this layer, not a cave's roof or a
@@ -11685,7 +11688,7 @@
     ghostLoading = false;
     ghostSeal = null;
     // GAME MODE ends with the visit; the island comes back built afresh.
-    gameMode = false;
+    gameMode = gameCombatOnly = false;
     document.body.classList.remove("game-mode");
     RENDER_OPTS.windTime = NaN;
     debugMovementTerrain = DEBUG_MOVE_HIT.node = DEBUG_MOVE_HIT.owner = null;
