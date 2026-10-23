@@ -195,7 +195,7 @@
           break;
       }
     };
-    const unsubscribe = node.feed.subscribe(onEvent);
+    let unsubscribe = node.feed.subscribe(onEvent);
 
     // The show advances only while nearby and shown, keeping its existing motion when it resumes.
     const step = (dt) => {
@@ -301,8 +301,10 @@
       }
     };
 
+    const suspend = () => { if (unsubscribe) unsubscribe(); unsubscribe = null; };
+    const resume = () => { if (!unsubscribe) unsubscribe = node.feed.subscribe(onEvent); };
     const dispose = () => {
-      unsubscribe();
+      suspend();
       root.visible = false;
       removeChild(group, root);
     };
@@ -316,7 +318,7 @@
       },
       batches: { hall, chamber, fire, blueLit, blueDim, orangeLit, orangeDim, sat: gold, satRed: red }
     };
-    return { root, update, dispose, debug };
+    return { root, update, suspend, resume, dispose, debug };
   };
 
   BL.factoryWindow = { create, relief, AXIS, DEPTH, TINT };
