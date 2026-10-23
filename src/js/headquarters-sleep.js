@@ -11,29 +11,66 @@
   // The validated waypoint graph depends only on the island's architecture; later visits reuse it and map
   // fresh bed objects onto its nodes.
   const graphs = new WeakMap();
-  // Reserved sleeping rectangles on the rainforest terraces above the Mempool ramp.
+  // Reserved sleeping rectangles on the rainforest terraces and dry forest floor.
   // Sample the whole footprint, not just its centre, to reject channels, terrace
   // edges and props. These are floor anchors, with no mattress or rendered items.
-  const outdoorBeds = (pool, clear = () => true) => {
-    const beds = [];
+  const outdoorBeds = (pool, clear = () => true, minimum = 0) => {
+    const beds = [], footprints = [];
     const L = pool.layout;
+    const add = (radius, bearing, angle = bearing, extra = false) => {
+      const sr = Math.sin(angle), cr = Math.cos(angle), lx = Math.sin(bearing) * radius, lz = Math.cos(bearing) * radius;
+      const x = pool.worldX(lx, lz), z = pool.worldZ(lx, lz);
+      // The four rectangle axes keep supplemental sleepers clear of the original rows and each other.
+      if (extra) for (const other of footprints) {
+        if (Math.hypot(lx - other.x, lz - other.z) < 1.8) return false;
+        let separate = false;
+        for (let axis = 0; axis < 4; axis++) {
+          const ax = axis === 0 ? sr : axis === 1 ? cr : axis === 2 ? other.sr : other.cr;
+          const az = axis === 0 ? cr : axis === 1 ? -sr : axis === 2 ? other.cr : -other.sr;
+          const reach = 0.75 * (Math.abs(ax * sr + az * cr) + Math.abs(ax * other.sr + az * other.cr))
+            + 1.5 * (Math.abs(ax * cr - az * sr) + Math.abs(ax * other.cr - az * other.sr)) + 0.1;
+          if (Math.abs((lx - other.x) * ax + (lz - other.z) * az) >= reach) { separate = true; break; }
+        }
+        if (!separate) return false;
+      }
+      let low = Infinity, high = -Infinity;
+      for (let a = -0.75; a <= 0.75; a += 0.25) for (let b = -1.5; b <= 1.5; b += 0.25) {
+        const px = lx + sr * a + cr * b, pz = lz + cr * a - sr * b, r = Math.hypot(px, pz);
+        if (extra) {
+          if (r < L.RING.path + 0.05) return false;
+          for (const nest of L.NESTS) if (Math.abs(r - L.NEST.r) < L.NEST.halfR + 0.05
+            && Math.abs(L.turn(Math.atan2(px, pz), nest.bearing) * r) < L.NEST.halfT + 0.05) return false;
+        }
+        const y = L.groundAt(px, pz);
+        low = Math.min(low, y); high = Math.max(high, y);
+      }
+      if (low < L.LEVEL.ground || high - low > 0.5 || !Number.isFinite(high)) return false;
+      let safe = true;
+      for (let a = -0.75; safe && a <= 0.75; a += 0.25) for (let b = -1.5; safe && b <= 1.5; b += 0.25) {
+        safe = clear(pool.worldX(lx + sr * a + cr * b, lz + cr * a - sr * b), pool.place.y + high + 0.03,
+          pool.worldZ(lx + sr * a + cr * b, lz + cr * a - sr * b));
+      }
+      if (!safe) return false;
+      beds.push({ x, y: pool.place.y + high, z, outdoor: true, sleeper: null,
+        node: { rotation: { y: pool.place.ry + angle + Math.PI / 2 } } });
+      footprints.push({ x: lx, z: lz, sr, cr });
+      return true;
+    };
+    // Keep the established ridge rows first, then fill dry forest gaps outside the walking ring and gorilla nests.
     for (let along = 4; along <= 38; along += 3.6) {
-      const bearing = L.RAMP.start + along / L.RAMP.r, sr = Math.sin(bearing), cr = Math.cos(bearing);
-      for (const radius of [13.9, 16.2, 18.5]) {
-        const lx = sr * radius, lz = cr * radius, x = pool.worldX(lx, lz), z = pool.worldZ(lx, lz);
-        let low = Infinity, high = -Infinity;
-        for (let a = -0.75; a <= 0.75; a += 0.25) for (let b = -1.5; b <= 1.5; b += 0.25) {
-          const y = L.groundAt(lx + sr * a + cr * b, lz + cr * a - sr * b);
-          low = Math.min(low, y); high = Math.max(high, y);
-        }
-        if (low < L.LEVEL.ground || high - low > 0.5 || !Number.isFinite(high)) continue;
-        let safe = true;
-        for (let a = -0.75; safe && a <= 0.75; a += 0.25) for (let b = -1.5; safe && b <= 1.5; b += 0.25) {
-          safe = clear(pool.worldX(lx + sr * a + cr * b, lz + cr * a - sr * b), pool.place.y + high + 0.03,
-            pool.worldZ(lx + sr * a + cr * b, lz + cr * a - sr * b));
-        }
-        if (safe) beds.push({ x, y: pool.place.y + high, z, outdoor: true, sleeper: null,
-          node: { rotation: { y: pool.place.ry + bearing + Math.PI / 2 } } });
+      const bearing = L.RAMP.start + along / L.RAMP.r;
+      for (const radius of [13.9, 16.2, 18.5]) add(radius, bearing);
+    }
+    for (let radius = 13.9; radius < L.R; radius += 0.5) for (let along = 1; along < L.RAMP.length; along += 0.8) {
+      const bearing = L.RAMP.start + along / L.RAMP.r;
+      for (let turn = 0; turn < 4; turn++) if (add(radius, bearing, turn < 2 ? bearing + turn * Math.PI / 2 : (turn - 2) * Math.PI / 2, true)) break;
+    }
+    // Props can consume the coarse rows. Fill remaining dry gaps only when the scene
+    // still needs beds, preserving every earlier anchor and the same full-footprint checks.
+    for (let radius = 13.75; beds.length < minimum && radius < L.R; radius += 0.25) {
+      for (let along = 0; beds.length < minimum && along < L.RAMP.length; along += 0.4) {
+        const bearing = L.RAMP.start + along / L.RAMP.r;
+        for (let turn = 0; turn < 8; turn++) if (add(radius, bearing, turn * Math.PI / 8, true)) break;
       }
     }
     return beds;
