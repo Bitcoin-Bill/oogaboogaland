@@ -767,6 +767,7 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .sheet[data-paired="true"] #bananas-panel { grid-column: 1; grid-row: 1; }
 .sheet[data-paired="true"] #roster-panel { grid-column: 2; grid-row: 1; border-left: 2px solid var(--wood-edge); }
+.sheet[data-paired="true"] #roster-panel > .feed-open { display: none; }
 .sheet[data-paired="true"] .panel { min-width: 0; }
 
 /* Leave a grip visible; touch devices keep the whole tab because they cannot hover. */
