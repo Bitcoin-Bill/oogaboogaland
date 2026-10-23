@@ -10085,6 +10085,66 @@ const factoryCooker = { name: "factory cooker", why: "rule: a tip in the factory
   })()`);
   record("factory cooker: a burst of tips past the cooker's pools is counted at once, stays inside the pools, adds no nodes, rides no line, and still sends every banana out", burst.level === burst.n && burst.cubes <= burst.cap.cubes && burst.bananas <= burst.cap.bananas && burst.grew === 0 && burst.routed === 0 && burst.out === burst.n, JSON.stringify(burst));
 } };
+// Kortik poked as a player pokes him: Space from beside his stool and a click on him, then the escalation they work
+// up to, through his sword drawn on them to the katana on the board.
+const factoryKortik = { name: "kortik pokes", why: "rule: Space beside Kortik's stool (the act button reads POKE there, and not a few metres off) and a click on him poke him; five pokes draw his sword, the third poke he then ignores brings his katana down on the board even with another poke after it, and he sits back down square to it with the sword home", run: async (b) => {
+  const stand = (out, along = 0) => b.evaluate(`(() => {
+    const B = __ooga, a = B.cavemen.get("portlandhodl"), F = BL.factoryModels, seat = F.kortikAt(${along}, 0, F.KORTIK.seat + ${out});
+    if (B.crew.player !== a) B.pilot.possess(a);
+    B.pilot.navigate({ position: { x: seat[0], y: F.LAYOUT.kortik.y, z: seat[2] }, yaw: -Math.PI / 2, pitch: 0, dist: 6 });
+    for (let i = 0; i < 20; i++) B.advance(1 / 30, 1 / 30);
+    return { label: document.getElementById("act").textContent, anger: B.factory.kortik.anger, feet: +(a.root.position.y - a.baseY).toFixed(2) };
+  })()`);
+  const anger = () => b.evaluate(`(() => { __ooga.advance(0.2, 1 / 30); return __ooga.factory.kortik.anger; })()`);
+  const near = await stand(1.6);
+  await b.key(" ");
+  const poked = await anger();
+  const far = await stand(4);
+  await b.key(" ");
+  const farAfter = await anger();
+  // A click on his head, from a free view of the deck with the Ooga stood aside out of the line.
+  await stand(3.5, 2.4);
+  const aim = await b.evaluate(`(() => {
+    const B = __ooga, K = B.factory.kortik, P = B.pilot, o = P.orbit;
+    P.release();
+    const h = K.kortik.parts.head.world;
+    o.target.x = o.tx = h[12]; o.target.y = o.ty = h[13]; o.target.z = o.tz = h[14]; o.yaw = o.tYaw = Math.PI / 2 - 0.35; o.pitch = o.tPitch = 0.1; o.dist = o.tDist = 5;
+    for (let i = 0; i < 20; i++) B.advance(1 / 30, 1 / 30);
+    const w = K.kortik.parts.head.world, s = B.project(w[12], w[13] + 0.25, w[14], {}), hit = s && B.input.pick(s.x, s.y);
+    return { x: s ? s.x : -1, y: s ? s.y : -1, kind: hit ? hit.owner.kind : null, anger: K.anger };
+  })()`);
+  await b.click(aim.x, aim.y);
+  await b.sleep(300);
+  const clicked = await anger();
+  const fit = await b.evaluate(`(() => {
+    const B = __ooga, K = B.factory.kortik, k = K.kortik, P = k.parts, seatY = BL.kortikModels.BOARD.seat.y, step = () => B.advance(1 / 30, 1 / 30);
+    const drawn = () => Math.hypot(P.sword.position.x - P.katana.position.x, P.sword.position.y - P.katana.position.y, P.sword.position.z - P.katana.position.z) > 0.2;
+    const said = () => { const bubble = B.fx.speech(k); return bubble ? bubble.rows.join(" ") : ""; };
+    while (K.anger < 5) K.poke();
+    const angry = K.anger;
+    let threatened = false, threat = false;
+    for (let t = 0; t < 20 && !threatened; t += 1 / 30) { step(); threatened = K.threatened; }
+    for (let t = 0; t < 1; t += 1 / 30) { step(); threat ||= drawn(); }
+    // Four quick pokes while he is still holding the sword out: the fourth lands after the third has made him snap.
+    for (let i = 0; i < 4; i++) { K.poke(); for (let t = 0; t < 0.2; t += 1 / 30) { step(); threat ||= drawn(); } }
+    let enough = false, forced = false, sat = false;
+    for (let t = 0; t < 40 && !(forced && sat); t += 1 / 30) {
+      step();
+      const line = said();
+      enough ||= line === "ENOUGH!";
+      forced ||= line === "Force-closed.";
+      sat = forced && k.root.position.y < seatY + 0.05 && !drawn();
+    }
+    for (let t = 0; t < 3; t += 1 / 30) step();
+    const off = Math.atan2(Math.sin(k.root.rotation.y - Math.PI), Math.cos(k.root.rotation.y - Math.PI));
+    return { angry, threatened, threat, enough, forced, sat, off: +off.toFixed(3), home: !drawn() };
+  })()`);
+  record("kortik pokes: Space beside his stool pokes him and the act button reads POKE there; four metres off it is the Ooga's own and leaves him be",
+    near.label === "POKE" && poked === near.anger + 1 && far.label !== "POKE" && farAfter === far.anger, JSON.stringify({ near, poked, far, farAfter }));
+  record("kortik pokes: a click on him picks him and pokes him", aim.kind === "kortik" && clicked === aim.anger + 1, JSON.stringify({ aim, clicked }));
+  record("kortik pokes: five pokes draw his sword, the third he ignores brings the katana down on the board and a fourth straight after does not call it off, and he sits back down square to it with the sword home",
+    fit.angry === 5 && fit.threatened && fit.threat && fit.enough && fit.forced && fit.sat && Math.abs(fit.off) < 0.05 && fit.home, JSON.stringify(fit));
+} };
 // Everywhere the widest Ooga on the roster can walk from the balcony, by the factory's own step rule on a
 // quarter-metre grid: both ends of every stair, every line's deck and its peer tunnel's porch, the switchboard, Kortik's deck, the
 // right-wall platform with the rebalancer, treasury and banana cooker, the donation kiosk in the right wall, the
@@ -13914,7 +13974,7 @@ scene("race", { query: "rain=0&draw=0", steps: [raceStart, raceOwn, raceBench, {
 scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on the target, scores its own medal and is saved as the best", dropRun), dropCrash, trip("drop"), dropOwn] });
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit"), orbitOwn] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls, mineOwn] });
-scene("factory", { query: "character=portlandhodl", steps: [factoryWalking, factoryGreeter, factoryLadders, factoryRailingJump, factoryWeapons, factoryForward, factoryForge, factoryShields, trip("factory")] });
+scene("factory", { query: "character=portlandhodl", steps: [factoryWalking, factoryGreeter, factoryLadders, factoryRailingJump, factoryWeapons, factoryForward, factoryForge, factoryShields, factoryKortik, trip("factory")] });
 scene("factory", { label: "cooker", query: "character=portlandhodl", steps: [donation("factory", { stat: "cooker.out", seconds: 14, where: "the cooker sends its bananas up through the ceiling tube" }), donationDetails, factoryCooker, trip("factory")] });
 scene("factory", { label: "entrance", url: hubPage(src, "character=portlandhodl"), steps: [factoryFloor, factoryEntrance] });
 scene("factory", { label: "canvas2d", query: "canvas2d=1&character=portlandhodl", steps: [factoryCanvas, factoryGreeter] });

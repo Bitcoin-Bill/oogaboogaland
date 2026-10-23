@@ -599,14 +599,16 @@
     coil(round, tb.x - 0.06, tb.y, tb.z, 0.08, 3);
     round.push(along(screwdriver(RED), tb.x + 0.1, tb.y + 0.01, tb.z - 0.05, 0.3, 1, -0.1), along(screwdriver(BLACK), tb.x + 0.12, tb.y + 0.01, tb.z + 0.04, 0.2, 1, 0.25));
     round.push(along(hammer(), tb.x + 0.06, tb.y + 0.01, tb.z + 0.01, -0.25, 1, 0.1), along(pliers(), tb.x + 0.02, tb.y + 0.01, tb.z - 0.06, 0.1, 1, -0.3));
-    lanternParts(0.62, 1.5, 0, 1.62, parts, glass);
+    const [floorAlong, floorFoot, floorOut, floorScale] = FM.KORTIK.lanterns[1];
+    lanternParts(floorScale, floorAlong, floorFoot, floorOut, parts, glass);
     // Out on the deck to the left, a crate with spare cord coiled on top; by the post, the lantern on its bracket.
     crate(parts, -2.5, 0, 1.95, 0.62, 0.12, "#8a5a30");
     coil(round, -2.5, 0.62, 1.95, 0.19, 4);
-    const pl = -(half + 0.02);
-    parts.push(FM.beam(pl, 2.25, 0.04, pl, 2.25, 0.46, 0.06, IRON), FM.beam(pl, 1.95, 0.04, pl, 2.22, 0.3, 0.035, IRON));
-    parts.push(...chain(pl, 2.22, 0.4, pl, 2.1, 0.4, 0.035, IRON));
-    lanternParts(0.55, pl, 2.1 - 0.84 * 0.55, 0.4, parts, glass);
+    // The bracket's arm and brace come off the post over the lantern, which hangs from its end on a short chain.
+    const [pl, foot, lo, scale] = FM.KORTIK.lanterns[0], top = foot + 0.84 * scale;
+    parts.push(FM.beam(pl, top + 0.15, 0.04, pl, top + 0.15, lo + 0.06, 0.06, IRON), FM.beam(pl, top - 0.15, 0.04, pl, top + 0.12, lo - 0.1, 0.035, IRON));
+    parts.push(...chain(pl, top + 0.12, lo, pl, top, lo, 0.035, IRON));
+    lanternParts(scale, pl, foot, lo, parts, glass);
     // His stool, square and pegged, with stretchers for his sandals.
     const sz = B.seat.z;
     parts.push(bevelBox({ w: 0.44, h: 0.06, d: 0.44, color: WOOD, offset: { y: 0.52, z: sz } }));

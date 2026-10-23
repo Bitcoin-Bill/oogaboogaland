@@ -1693,7 +1693,8 @@
     kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort() });
     addChild(root, kortik.node);
     // Kortik himself takes pokes; his board frames itself and says what it is, as the stations do.
-    for (const part of kortik.figure) { input.add(part, { kind: "kortik", priority: 2, weaponType: "none" }, { radius: 0.6 }); targets.push(part); }
+    // He outranks the board he sits in, but not an Ooga or the guide nearer the view.
+    for (const part of kortik.figure) { input.add(part, { kind: "kortik", priority: 1, weaponType: "none" }, { radius: 0.6 }); targets.push(part); }
     input.add(kortik.board, { kind: "kortikBoard", preset: "kortik", weaponType: "none" }, { radius: 3 });
     targets.push(kortik.board);
     // With no Ooga the visitor cannot talk to the guide: a hint points them to the island to pick one.

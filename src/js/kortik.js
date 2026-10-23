@@ -44,6 +44,8 @@
   // How high he stands on his stool, and how long the sword takes to come into his hand and to go back.
   const RISE = 0.46, DRAW = 0.26, SHEATHE = 0.42;
   const SEGMENTS = 10, TAU = Math.PI * 2;
+  // A cut's light along the blade, laid down this often whatever the frame rate.
+  const TRAIL_EVERY = 1 / 60;
   // A plan's steps, where a hand goes (in the wall's frame, or with his body), and a jack's states.
   const LOOK = 0, MOVE = 1, GRAB = 2, PLUG = 3, DROP = 4, KEY = 5, LEAN = 6, SAY = 7, SHAKE = 8, WAIT = 9, SWIVEL = 10, STAND = 11, ROLL = 12;
   const THUD = 13, FAIL = 14, WAG = 15, SWORD = 16, FORCE = 17, TILT = 18, SCAB = 19, MUG = 20, THROW = 21;
@@ -64,8 +66,8 @@
     -0.3, 1.85, 0.5, 2.5, 0.4, 0.55,
     0.45, 1.25, 0.55, -0.9, 0.1, -0.2
   ]);
+  const { clamp } = BL.math;
   const smooth = (t) => t * t * (3 - 2 * t);
-  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const wrapAngle = (a) => a - TAU * Math.round(a / TAU);
   // A rotation as a quaternion from where it sends x, y and z, into `out`.
   const fromBasis = (out, xx, xy, xz, yx, yy, yz, zx, zy, zz) => {
@@ -90,10 +92,11 @@
     addChild(node, createNode({ position: { x: KM.LOG.x, y: KM.LOG.y, z: KM.LOG.z }, rotation: { x: -Math.PI / 2, y: KM.LOG.ang, z: 0 }, geometry: S.log }));
     const mug = createNode({ position: { x: KM.MUG.x, y: KM.DESK, z: KM.MUG.z }, geometry: S.mug });
     addChild(node, mug);
-    // Places in the wall's frame he turns to: the Routing Console, and the middle of the hall where Tess flies.
-    const wallOf = (x, y, z, out) => { out[0] = -(z - oz); out[1] = y - oy; out[2] = x - ox; return out; };
-    const consoleAt = wallOf(FM.LAYOUT.switchboard.x, FM.LAYOUT.switchboard.y + 2, FM.LAYOUT.switchboard.z, new Float32Array(3));
-    const hallAt = wallOf(FM.LAYOUT.ring.x, FM.LAYOUT.ring.y + 4, FM.LAYOUT.ring.z, new Float32Array(3));
+    // Places in the wall's frame he turns to: the Routing Console, and the middle of the hall where Tess flies. The
+    // station's frame and the hall's are converted only through `FM.kortikAt` and `FM.kortikFrom`.
+    const consoleAt = FM.kortikFrom(FM.LAYOUT.switchboard.x, FM.LAYOUT.switchboard.y + 2, FM.LAYOUT.switchboard.z, new Float32Array(3));
+    const hallAt = FM.kortikFrom(FM.LAYOUT.ring.x, FM.LAYOUT.ring.y + 4, FM.LAYOUT.ring.z, new Float32Array(3));
+    const HALL3 = new Float32Array(3), VISITOR = new Float32Array(3);
 
     // The lamps, one over every jack. The board's own blinking has a hashed phase and rate a lamp; the active jacks'
     // lamps show their calls instead.
@@ -188,13 +191,13 @@
     // before he answers another, steam from his ears, the reaction waiting for his hands to be free, whether the plan he
     // is on is one, and whether the visitor's Ooga stands within a poke of him.
     let anger = 0, calmIn = 0, peak = 0, threatened = false, ignored = 0, flinch = 0, glare = 0, retort = 0, steam = 0, steamIn = 0;
-    let wantReact = 0, reacting = false, visitorNear = false;
+    let wantReact = 0, reacting = false, visitorNear = false, emoteDue = false;
     // Shouting for Tess, the moment she would hear it and answer (through `onShout`).
     let hailIn = 0;
     // The sword: drawn or not and how far into his hand, the scabbard's turn ready to draw, the blade's angle and tilt
     // (now, and from and to for the right hand's move), which way it last swung round, whether that move is a cut, and
     // where its point and the left hand's hold are.
-    let swordOn = false, swordBlend = 0, scab = 0, scabTarget = 0, bladeTh = 1.62, bladePh = 0.35, thFrom = 0, thTo = 0, phFrom = 0, phTo = 0, swing = 1, strike = 0, glint = 0, sparkIn = 0;
+    let swordOn = false, swordBlend = 0, scab = 0, scabTarget = 0, bladeTh = 1.62, bladePh = 0.35, thFrom = 0, thTo = 0, phFrom = 0, phTo = 0, swing = 1, strike = 0, glint = 0, sparkIn = 0, trailIn = 0;
     const TIP = new Float32Array(3), TWO = new Float32Array(3);
     // The board's moods and the desk's: lamps gone wild and then dark, a failed call's red lamp, the mug in his hand or
     // jumping, the plugs jolting.
@@ -300,7 +303,8 @@
       for (let i = 0; i < 5; i++) {
         const x = (rand() - 0.5) * 3.6, y = 1.1 + rand() * 1.6;
         sparksAt(x, y, 0.05, 6);
-        fx.puff(ox + 0.1, oy + y, oz - x, 0.2 + rand() * 0.3, 0.2, (rand() - 0.5) * 0.3, 1.4);
+        FM.kortikAt(x, y, 0.1, HALL3);
+        fx.puff(HALL3[0], HALL3[1], HALL3[2], 0.2 + rand() * 0.3, 0.2, (rand() - 0.5) * 0.3, 1.4);
       }
     };
     const begin = (s) => {
@@ -369,8 +373,9 @@
         case THUD: {
           mugHop = 0.36; jolt = 0.3; chaos = Math.max(chaos, 0.2);
           const o = s.arm * 3;
-          fx.puff(ox + fist[o + 2], oy + KM.DESK + 0.02, oz - fist[o], 0.3, 0.25, 0, 0.9);
-          fx.puff(ox + fist[o + 2], oy + KM.DESK + 0.02, oz - fist[o], -0.1, 0.2, 0.3, 0.9);
+          FM.kortikAt(fist[o], KM.DESK + 0.02, fist[o + 2], HALL3);
+          fx.puff(HALL3[0], HALL3[1], HALL3[2], 0.3, 0.25, 0, 0.9);
+          fx.puff(HALL3[0], HALL3[1], HALL3[2], -0.1, 0.2, 0.3, 0.9);
           break;
         }
         case FAIL:
@@ -665,6 +670,8 @@
       push(SCAB, 0, 0, 0, -1, -1, 0);
       go(0, T_REST, 0.35, 0);
       go(1, T_REST, 0.35);
+      // His cuts twisted him round; he sits back down square to the board.
+      push(SWIVEL, 0, 0, 0, -1, -1, 0);
       push(STAND, 0.55, 0, 0, -1, -1, 0);
       push(WAIT, 0.8);
       push(SAY, 0, 0, 0, -1, -1, REWIRE);
@@ -705,7 +712,7 @@
     };
     const react = (level) => {
       reacting = true;
-      if (level === SNAP) return katana();
+      if (level === SNAP) { sinceKatana = 0; return katana(); }
       if (level === IGNORE) {
         // The silent treatment: back to the board, arms folded, chin up and away.
         push(SWIVEL, 0.4, 0, 0, -1, -1, 0);
@@ -787,9 +794,10 @@
       sinceKatana++;
       return bag[bagAt++];
     };
-    // Whoever is near and a quiet over: an emote; otherwise mostly just a moment.
+    // Whoever is near and a quiet over: an emote, as the next plan of its own (so a poke's reaction can come first);
+    // otherwise mostly just a moment.
     const afterwards = (chance) => {
-      if (near && quiet <= 0 && rand() < chance) ACTS[nextEmote()]();
+      if (near && quiet <= 0 && rand() < chance) emoteDue = true;
       else if (rand() < 0.15) fuss();
       else push(WAIT, 0.4 + rand() * 1.2);
     };
@@ -829,8 +837,14 @@
       stepT = 0;
       reacting = false;
       let j = oldest(CLEARING);
-      if (wantReact) { react(wantReact); wantReact = 0; }
+      // A poke's reaction comes first, at how angry he is now, not when he was poked: cooled right down, none.
+      // An emote owed from the last plan gets this one chance.
+      const level = wantReact > ANGRY ? wantReact : Math.min(wantReact, anger), due = emoteDue && near && quiet <= 0;
+      wantReact = 0;
+      emoteDue = false;
+      if (level > 0) react(level);
       else if (forced >= 0) { ACTS[forced](); forced = -1; }
+      else if (due) ACTS[nextEmote()]();
       else if (j >= 0) disconnect(j);
       else if ((j = oldest(CALLING)) >= 0) {
         const c = freeCord(j), was = oldest(CONNECTED, sideOf(j));
@@ -901,8 +915,10 @@
     const SPARKS = KM.sparks(), TRAIL = KM.trail();
     const sparksAt = (x, y, z, count) => {
       for (let i = 0; i < count; i++) {
+        // Out of the board along +out, which is the hall's +x: the velocity turns as the station does.
         const vx = (Math.random() - 0.5) * 2.4, vy = 0.6 + Math.random() * 1.8, vz = 0.8 + Math.random() * 1.6;
-        fx.spawnParticle(SPARKS[i % SPARKS.length], ox + z, oy + y, oz - x, vz, vy, -vx, 0.35 + Math.random() * 0.35, 9, 7, oy + 0.03);
+        FM.kortikAt(x, y, z, HALL3);
+        fx.spawnParticle(SPARKS[i % SPARKS.length], HALL3[0], HALL3[1], HALL3[2], vz, vy, -vx, 0.35 + Math.random() * 0.35, 9, 7, oy + 0.03);
       }
     };
     // The sword: on his hip it rides the scabbard; in his hands it lies along the cut his right hand is making, its
@@ -951,9 +967,14 @@
       if (swordOn && swordBlend >= 1 && glint < 0) glint = 1;
       // A cut leaves its light along the blade's outer half, and throws sparks wherever its point scrapes the board.
       if (strike && kind[0] === T_SWORD && moveDur[0] > 0) {
-        for (let i = 0; i < 6; i++) {
-          const f = (0.45 + 0.11 * i) * K.tip, x = fist[0] + dx * f, y = fist[1] + dy * f, z = fist[2] + dz * f;
-          fx.spawnParticle(TRAIL, ox + z, oy + y, oz - x, 0, 0, 0, 0.3, 0, 0, oy);
+        trailIn -= dt;
+        if (trailIn <= 0) {
+          trailIn = TRAIL_EVERY;
+          for (let i = 0; i < 6; i++) {
+            const f = (0.45 + 0.11 * i) * K.tip;
+            FM.kortikAt(fist[0] + dx * f, fist[1] + dy * f, fist[2] + dz * f, HALL3);
+            fx.spawnParticle(TRAIL, HALL3[0], HALL3[1], HALL3[2], 0, 0, 0, 0.3, 0, 0, oy);
+          }
         }
         if (TIP[2] < 0.07) {
           sparkIn -= dt;
@@ -981,12 +1002,18 @@
       }
     };
 
+    // Whether a point on the floor, its feet at `feetAt`, stands within `reach` of his stool on his deck.
+    const withinPoke = (x, z, feetAt, reach) => {
+      if (Math.abs(feetAt - oy) > 1.2) return false;
+      FM.kortikFrom(x, oy, z, VISITOR);
+      return Math.hypot(VISITOR[0], VISITOR[2] - seatZ) <= reach;
+    };
     const update = (dt, elapsed, view, visitor, feet) => {
       time += dt;
       // The view in the wall's frame, and whether it is near enough for him to act up for it.
-      viewer[0] = -(view.z - oz); viewer[1] = view.y - oy; viewer[2] = view.x - ox;
-      near = Math.hypot(view.x - (ox + seatZ), view.y - (oy + 1), view.z - oz) < HEAR;
-      visitorNear = !!visitor && Math.abs(feet - oy) < 1.2 && Math.hypot(visitor.x - (ox + seatZ), visitor.z - oz) < POKE_REACH;
+      FM.kortikFrom(view.x, view.y, view.z, viewer);
+      near = Math.hypot(viewer[0], viewer[1] - 1, viewer[2] - seatZ) < HEAR;
+      visitorNear = !!visitor && withinPoke(visitor.x, visitor.z, feet, POKE_REACH);
       // His temper cools a level at a time while he is left alone; calm again after a proper fit, he says so.
       if (retort > 0) retort -= dt;
       if (hailIn > 0 && (hailIn -= dt) <= 0 && onShout) onShout();
@@ -1082,7 +1109,7 @@
         if (steamIn <= 0) {
           steamIn = 0.11;
           const m = P.head.world;
-          for (const side of [-1, 1]) {
+          for (let side = -1; side <= 1; side += 2) {
             const ex = side * 7.4 * KM.U, ey = 5 * KM.U;
             fx.puff(m[0] * ex + m[4] * ey + m[12], m[1] * ex + m[5] * ey + m[13], m[2] * ex + m[6] * ey + m[14], m[0] * side * 0.9, 0.5 + m[1] * side * 0.9, m[2] * side * 0.9, 0.7);
           }
@@ -1187,12 +1214,21 @@
     const interrupt = () => {
       count = at = 0;
       leanTarget = 0.1; rollTarget = tiltTarget = scabTarget = 0; yawTarget = Math.PI; wagT[0] = wagT[1] = 0;
+      // His hands come back to rest from wherever the dropped plan had them, and every key sits as its cord does.
+      for (let a = 0; a < 2; a++) {
+        for (let i = 0; i < 3; i++) from[a * 3 + i] = hand[a * 3 + i];
+        kind[a] = T_REST; moveT[a] = 0; moveDur[a] = 0.35; moveE[a] = 0;
+      }
+      for (let c = 0; c < n; c++) keyTarget[c] = cordJack[c] >= 0 ? 0.55 : 0;
     };
     // A poke: whatever he is doing, he jumps, glares and answers back at once, gets angrier, and acts on it as soon as
     // his hands are free. Once he has drawn on the visitor he ignores them, until the last poke he will take sends him
     // at the board.
     const poke = () => {
       flinch = 0.35; glare = 1.4; calmIn = CALM;
+      quiet = Math.max(quiet, 10);
+      // He has snapped: nothing more gets through until the katana is out.
+      if (wantReact === SNAP) return;
       if (threatened) {
         ignored++;
         if (ignored >= PATIENCE) { threatened = false; ignored = 0; anger = peak = 0; wantReact = SNAP; }
@@ -1208,12 +1244,11 @@
         if (anger >= 4) chaos = Math.max(chaos, 0.25);
         wantReact = anger;
       }
-      quiet = Math.max(quiet, 10);
       if (!reacting && free()) interrupt();
     };
     // Space from the visitor's Ooga within reach pokes him too.
     const useNear = (x, z, reach, feetAt) => {
-      if (Math.abs(feetAt - oy) > 1.2 || Math.hypot(x - (ox + seatZ), z - oz) > Math.max(reach, POKE_REACH)) return false;
+      if (!withinPoke(x, z, feetAt, Math.max(reach, POKE_REACH))) return false;
       poke();
       return true;
     };
@@ -1227,7 +1262,7 @@
     };
     return {
       node, board, figure: [P.head, P.torso], kortik: k, update, liveGeometry, dispose, emote, poke, useNear, actLabel,
-      get jacks() { return jack; }, get cords() { return cordJack; }, get held() { return cordHeld; }, get near() { return near; }, get anger() { return anger; }
+      get jacks() { return jack; }, get cords() { return cordJack; }, get held() { return cordHeld; }, get near() { return near; }, get anger() { return anger; }, get threatened() { return threatened; }
     };
   };
   BL.kortik = { create, LINES, EMOTES };

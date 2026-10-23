@@ -41,10 +41,11 @@
   // Kortik's Switchboard on its deck (LAYOUT.kortik): the patch wall stands along the deck's west edge, its face `face`
   // in from the edge and looking into the hall (+x), `wall` either side of the deck's middle. What stands in front of
   // it blocks the walkers, as [along the wall, out from it, radius]; along runs toward -z. Its lanterns hang from
-  // `hooks` at the ends of the beam over its sign, and the station's own two light the deck from `lights` (the one on
-  // the bracket by the board and the one on the floor by the cabinet), each [along, up, out].
+  // `hooks` at the ends of the beam over its sign, [along, up, out]; the station's own two (the one on the bracket by
+  // the board and the one on the floor by the cabinet) stand at `lanterns`, [along, foot, out, scale], and light the
+  // deck from inside their glass.
   const KORTIK = {
-    face: 0.55, wall: 2.8, seat: 0.8, hooks: [[-2.6, 5.05, 0.28], [2.6, 5.05, 0.28]], lights: [[-2.82, 1.85, 0.4], [1.5, 0.38, 1.62]],
+    face: 0.55, wall: 2.8, seat: 0.8, hooks: [[-2.6, 5.05, 0.28], [2.6, 5.05, 0.28]], lanterns: [[-2.82, 1.638, 0.4, 0.55], [1.5, 0, 1.62, 0.62]],
     blocks: [[-2.45, 0.22, 0.4], [-1.75, 0.22, 0.4], [-1.05, 0.22, 0.4], [-0.35, 0.22, 0.4], [0.35, 0.22, 0.4], [1.05, 0.22, 0.4],
       [1.75, 0.22, 0.4], [2.45, 0.22, 0.4], [-2.5, 0.68, 0.38], [-1.85, 0.68, 0.38], [-1.2, 0.68, 0.38], [1.2, 0.68, 0.38],
       [1.85, 0.68, 0.38], [2.5, 0.68, 0.38], [0, 0.8, 0.42], [2.25, 1.5, 0.5], [1.5, 1.62, 0.25], [-2.5, 1.95, 0.45]]
@@ -3055,10 +3056,18 @@
     }
     return geos;
   };
-  // A point in Kortik's Switchboard's frame ([along, up, out] from the middle of its face) in the hall's, into `out`.
-  const kortikAt = (along, up, out) => {
+  // A point in Kortik's Switchboard's frame ([along, up, out] from the middle of its face) in the hall's, into `into`
+  // (a fresh array when none is given), and a hall point back in the station's frame. The station turns its +out
+  // (+z) to the hall's +x.
+  const kortikAt = (along, up, out, into = []) => {
     const d = LAYOUT.kortik;
-    return [d.x - d.w / 2 + KORTIK.face + out, d.y + up, d.z - along];
+    into[0] = d.x - d.w / 2 + KORTIK.face + out; into[1] = d.y + up; into[2] = d.z - along;
+    return into;
+  };
+  const kortikFrom = (x, y, z, into = []) => {
+    const d = LAYOUT.kortik;
+    into[0] = d.z - z; into[1] = y - d.y; into[2] = x - (d.x - d.w / 2 + KORTIK.face);
+    return into;
   };
   // Kortik's Switchboard's lanterns, as the hall and the window hang them: one from each end of the beam over its sign,
   // and a post lamp at the deck's two corners on the hall's side, clear of the bridge and the stair. And where the
@@ -3068,7 +3077,7 @@
     return [...KORTIK.hooks.map(([along, up, out]) => ["hang", ...kortikAt(along, up, out)]),
       ["post", d.x + 1.9, d.y, d.z - d.d / 2 + 0.25, Math.PI], ["post", d.x + d.w / 2 - 0.25, d.y, d.z + d.d / 2 - 0.25, 0]];
   };
-  const kortikLights = () => KORTIK.lights.map(([along, up, out]) => kortikAt(along, up, out));
+  const kortikLights = () => KORTIK.lanterns.map(([along, foot, out, scale]) => kortikAt(along, foot + 0.4 * scale, out));
   // Where the lanterns hang, by the rules `lighting()` in `scene-factory.js` hangs them: [kind, x, y, z, turn] each,
   // and the strings across the hall [ax, ay, az, bx, by, bz, sag, at]. The mouth's own string is past the shield.
   const windowLamps = () => {
@@ -3522,7 +3531,7 @@
     LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R,
     forgeSign, forgeWave, forgeLines, forgeTrack, forgeShafts, mintCoin, COILS, teslaCoil, banner, statusLantern, peerPipes, peerMirrors, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, supportAt, stairCeilingAt, clearAt, walkable, resolveFall,
     hall, scaffold, coreBody, coreChamber, conduits, sat, satFailed, stationFrame, capacitor, forge, forgeFire, cart,
-    switchboard, switchScreens, KORTIK, kortikLamps, kortikLights, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
+    switchboard, switchScreens, KORTIK, kortikAt, kortikFrom, kortikLamps, kortikLights, REB, TRE, rebalancerBase, rebalancerRing, rebalancerFlow, treasuryBody, goldPile, hopperFill, beltNugget, goldCrate, dataBoard, moveBoard,
     COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, cookerBody, cookerFixtures, cookerLid, cookerPort, cookerGear, cookerSats, donationKiosk, kioskScreen, kioskIdle, kioskThanks, BOARD, donationBoard, boardFace, boardValues, paintBoard, satCube, flyingBanana, coreRingLime,
     coreRing, teslaArcs, lookoutTower, lookoutLamp, lookoutOptics, lookoutBeam, LOOKOUT_BEAM, STUDY, studyHall, studyNote, studyBoard, tunnels, galleryStation, galleryCaps, label, lanterns, hardHat, hubTunnel, hubWindow, bakeWindow, windowLights, exitTunnel, outsideView,
     beam, moved, turnedY, smoothBolt, smoothBitcoin
