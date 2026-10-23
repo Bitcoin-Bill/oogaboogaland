@@ -65,9 +65,19 @@ function send(res, status, body, type) {
   res.end(body);
 }
 
+// A rebuild restages the site, so a file can be gone between the check and the read: that is a 404, never a crash.
+function readOrNull(path) {
+  try {
+    return statSync(path).isFile() ? readFileSync(path) : null;
+  } catch {
+    return null;
+  }
+}
+
 function serveFile(res, path) {
-  if (!existsSync(path) || !statSync(path).isFile()) return send(res, 404, "not found");
-  send(res, 200, readFileSync(path), TYPES[extname(path)] || "application/octet-stream");
+  const body = readOrNull(path);
+  if (!body) return send(res, 404, "not found");
+  send(res, 200, body, TYPES[extname(path)] || "application/octet-stream");
 }
 
 const server = createServer((req, res) => {
@@ -89,7 +99,9 @@ const server = createServer((req, res) => {
   const file = normalize(join(site, pathname));
   if (!file.startsWith(site + sep)) return send(res, 403, "forbidden");
   for (const candidate of [file, `${file}.html`]) if (existsSync(candidate) && statSync(candidate).isFile()) return serveFile(res, candidate);
-  send(res, 404, readFileSync(join(site, "404.html")), TYPES[".html"]);
+  const missing = readOrNull(join(site, "404.html"));
+  if (missing) send(res, 404, missing, TYPES[".html"]);
+  else send(res, 404, "not found");
 });
 
 await rebuild();
@@ -102,7 +114,11 @@ server.listen(port, host, () => {
   console.log(`serving http://${host}:${port}/ (the staged site; try /rally) and http://${host}:${port}/src/ (sources)`);
   if (!watching) return;
   let timer = null;
+  // The build writes the cast's generated file itself (scripts/characters.mjs); watching it would rebuild forever.
+  // A change to the cast is a change under src/characters/, which is watched.
+  const generated = join("js", "characters.gen.js");
   watch(src, { recursive: true }, (_, file) => {
+    if (file === generated) return;
     if (file) console.log(`changed ${file}`);
     clearTimeout(timer);
     timer = setTimeout(rebuild, 100);

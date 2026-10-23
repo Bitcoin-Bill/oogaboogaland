@@ -4804,7 +4804,7 @@ const ghostHuntChecks = async () => {
     record("ghost hunt: a seeded hunt repeats exactly, and one picked up from its snapshot mid-way (a new host) goes on the same", repeated && loaded && same && hunting && a.state.kills > 0, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills }));
   }
   {
-    const sim = begin(11), rounds = [], drops = { 3: false, 4: false }, gorillas = [], seenBrutes = new Set();
+    const sim = begin(11), rounds = [], drops = { 3: false, 4: false }, gorillas = [], skeletons = [], seenBrutes = new Set();
     let maxAlive = 0, round = 0, lapToNight = false;
     const settings = { ghosts: 0, cap: 0, interval: 0, group: 0, speed: 0 };
     const states = new Set();
@@ -4813,20 +4813,20 @@ const ghostHuntChecks = async () => {
       states.add(st.state);
       if (st.state === ST.NIGHT) lapToNight = true;
       if (st.state === ST.ACTIVE) {
-        if (st.round !== round) { round = st.round; rounds[round] = { total: G.roundSettings(round, st.players, settings).ghosts, cap: settings.cap, max: 0 }; }
+        if (st.round !== round) { round = st.round; rounds[round] = { total: G.roundSettings(round, st.players, settings).ghosts, cap: settings.cap, max: 0, players: st.players }; }
         rounds[round].max = Math.max(rounds[round].max, s.alive());
         rounds[round].spawned = st.spawned;
         if (round === 3 && s.drops.some((d) => d.on && d.kind === 1)) drops[3] = true;
-        for (const b of s.brutes) if (b.on && !seenBrutes.has(b.id)) { seenBrutes.add(b.id); gorillas[round] = (gorillas[round] || 0) + 1; }
+        for (const b of s.brutes) if (b.on && !seenBrutes.has(b.id)) { seenBrutes.add(b.id); const into = b.kind ? skeletons : gorillas; into[round] = (into[round] || 0) + 1; }
         if (round === 4 && s.drops.some((d) => d.on && d.kind === 2)) drops[4] = true;
       }
       maxAlive = Math.max(maxAlive, s.alive());
     } });
     const tables = rounds.slice(1).every((r) => r.spawned === r.total && r.max <= r.cap);
     const path = [ST.LAP, ST.NIGHT, ST.COUNTDOWN, ST.ACTIVE, ST.BREAK, ST.BOSS, ST.VICTORY, ST.DAWN].every((st) => states.has(st)) && !states.has(ST.DEFEAT);
-    record("ghost hunt: shooting every ghost clears each round's whole table within its cap, round 3 drops the shield and round 4 the ice, each ordinary round sends its gorillas, the sixth clears into the boss, his fall is victory and dawn hands the island back",
-      lapToNight && rounds.length === 7 && tables && drops[3] && drops[4] && gorillas.slice(1, 7).every((n, i) => n === G.CONFIG.BRUTE.perRound[i]) && path && sim.state.state === ST.IDLE && maxAlive <= G.CONFIG.MAX_GHOSTS,
-      JSON.stringify({ rounds: rounds.slice(1), drops, gorillas, states: [...states], end, maxAlive }));
+    record("ghost hunt: shooting every ghost clears each round's whole table within its cap, round 3 drops the shield and round 4 the ice, each ordinary round sends its gorillas and skeletons, the sixth clears into the boss, his fall is victory and dawn hands the island back",
+      lapToNight && rounds.length === 7 && tables && drops[3] && drops[4] && gorillas.slice(1, 7).every((n, i) => n === G.CONFIG.BRUTE.perRound[i]) && [1, 2, 3, 4, 5, 6].every((r) => (skeletons[r] || 0) === G.bonesFor(r, rounds[r].players)) && path && sim.state.state === ST.IDLE && maxAlive <= G.CONFIG.MAX_GHOSTS,
+      JSON.stringify({ rounds: rounds.slice(1), drops, gorillas, skeletons, states: [...states], end, maxAlive }));
   }
   {
     // Two players away from the pile, shooting what comes within 8 m, until the lightning comes over it; then one walks

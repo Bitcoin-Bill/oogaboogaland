@@ -238,9 +238,17 @@
   let jumbotronSpot, oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
   // GAME MODE (`setGameMode`): an island event holds the island still for play while it runs.
   let gameMode = false;
+  // GAME MODE's ring (`updateGameRing`): the node, how far it has risen (0 to 1) and the seconds left before it starts up.
+  let gameRing = null, gameRingK = 0, gameRingWait = 0;
+  // Its floating lanterns (one node each over one geometry), and whether they showed last frame.
+  const ringLanterns = [];
+  let ringLanternsShown = false;
+  // The camp's stores by the fire (`meadowDressing`), which GAME MODE hides with their pick nodes (none on Canvas 2D).
+  let campDressing = null;
+  const campPicks = [];
   // HALLOWEEN: the ghost hunt (ghost-game.js) once its group has arrived, the visit it was asked for, and its walls' seal.
   let ghosts = null, ghostLoading = false, ghostVisit = 0, ghostSeal = null, ghostClearsProps = false;
-  const GHOST_PROPS = new Set(["crate", "barrel"]);
+  const GHOST_PROPS = new Set(["crate", "barrel", "rock"]);
   let magazine, magazineState, breakables, clankers, clankerPlay, clankerMeshes, clankerPartOwners, grabSupportEntry = null, entropyLab, chalkboard, factoryMouth = null, arcadeMouth = null, bcaMouth = null, glCanvas = null;
   const dragHand = new Float64Array(3), dragFoot = new Float64Array(3);
   const THROW_SWING_TIME = 0.28, THROW_SETTLE_TIME = 0.2, THROW_CARRY_SPEED_MAX = 8;
@@ -660,11 +668,12 @@
   // released with the visit's other targets. `toWorld` maps a piece's set coordinates to the island, or null to
   // leave it out (the furniture inside a mouth belongs to the cave, not the facade).
   const PICK_GEOMETRY = { verts: [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5], faces: [], lines: [] };
-  const addPieceTargets = (picks, toWorld) => {
+  const addPieceTargets = (picks, toWorld, nodes = null) => {
     for (let i = 0; i < picks.length; i += 6) {
       const at = toWorld(picks[i + 2], picks[i + 3], picks[i + 4], picks[i]);
       if (!at) continue;
       const node = createNode({ position: at, geometry: PICK_GEOMETRY });
+      if (nodes) nodes.push(node);
       BL.scene.updateWorld(node);
       addTarget(node, { kind: "piece", piece: picks[i], variant: picks[i + 1], node, x: at.x, y: at.y, z: at.z, next: 0, weaponType: "none" }, { radius: Math.max(0.35, picks[i + 5]) });
     }
@@ -2072,11 +2081,12 @@
     if (!byIsland) DRESSED.set(island, byIsland = new Map());
     let baked = byIsland.get("meadow");
     if (!baked) {
-      const set = BL.dressing.set(), ground = [];
+      // The camp's stores (its barrel and crates) are a set of their own, which GAME MODE puts away (`campDressing`).
+      const set = BL.dressing.set(), camp = BL.dressing.set(), ground = [];
       const ok = (x, z, r) => island.surfaceAt(x, z) === 0 && free(x, z, r) && workSceneryClear(x, z, r)
         && !nearMouth(x, z, 7) && pilePostCorridorClear(x, z, r);
       const stand = (kind, x, z, turns, variant, r) => {
-        if (kind) set.put(kind, x, 0, z, turns, variant);
+        if (kind) (kind === "rubble" ? set : camp).put(kind, x, 0, z, turns, variant);
         ground.push(x, z, r);
         claim(x, z, r);
       };
@@ -2097,11 +2107,16 @@
         stand("rubble", p.x, p.z, deg & 3, rubble, 0.9);
         rubble++;
       }
-      baked = { ...set.build(), ground };
+      baked = { ...set.build(), ground, camp: camp.build() };
       byIsland.set("meadow", baked);
     } else for (let i = 0; i < baked.ground.length; i += 3) claim(baked.ground[i], baked.ground[i + 1], baked.ground[i + 2]);
     addDressing(baked, root, fire.x, 2.4, fire.z, "meadow:dressing", true);
     addPieceTargets(baked.picks, (x, y, z) => ({ x, y, z }));
+    campDressing = createNode();
+    addChild(root, campDressing);
+    placed.push(campDressing);
+    addDressing(baked.camp, campDressing, fire.x, 2.4, fire.z, "meadow:camp", false);
+    addPieceTargets(baked.camp.picks, (x, y, z) => ({ x, y, z }), campPicks);
     // Every dressing lantern is a real light at dusk, registered after the torches and the fire so the
     // renderer's tier keeps those first; the lanterns' glass glows through the shared glow node above.
     const lit = baked.lights;
@@ -3557,7 +3572,7 @@
     return true;
   };
   const setSceneryActive = (o, active) => {
-    if (active && ghostClearsProps && GHOST_PROPS.has(o.prop)) return; // HALLOWEEN: boxes and barrels stay away for the hunt
+    if (active && ghostClearsProps && GHOST_PROPS.has(o.prop)) return; // HALLOWEEN: boxes, barrels and rocks stay away for the hunt
     if (o.active === active) return;
     o.active = active;
     o.node.visible = active;
@@ -5497,6 +5512,7 @@
   };
   const crossesSealedCave = (fromX, fromZ, toX, toZ, y = 0) => {
     if (ghostSeal !== null && ghostSeal(fromX, fromZ, toX, toZ, y)) return true; // HALLOWEEN: the ghost walls
+    if (crossesGameRing(fromX, fromZ, toX, toZ, y)) return true;
     for (let i = 0; i < sealedCaves.length; i++) {
       const sealed = sealedCaves[i], m = sealed.mouth, sr = sealed.sr, cr = sealed.cr;
       if (y < m.floorY - STEP_MAX || y > m.floorY + PORTAL_MAX_Y) continue;
@@ -6021,12 +6037,15 @@
   };
 
   const celebrate = (donation, bananas) => {
-    for (const cave of crew.workingCavemen()) {
-      if (cave.build) continue;
-      cave.cheer = 1.6;
-      fx.say(cave, ["OOGA!", "BOOGA!", "BANANA!"][fnv1a(`${donation.id}/${cave.traits.name}`) % 3], 1.8);
+    // GAME MODE: no cheering crew and no confetti off the pile while an island event runs; the thanks still shows.
+    if (!gameMode) {
+      for (const cave of crew.workingCavemen()) {
+        if (cave.build) continue;
+        cave.cheer = 1.6;
+        fx.say(cave, ["OOGA!", "BOOGA!", "BANANA!"][fnv1a(`${donation.id}/${cave.traits.name}`) % 3], 1.8);
+      }
+      fx.burst(0, DROP_HEIGHT - 0.2, 0, 26, CONFETTI, 2.2);
     }
-    fx.burst(0, DROP_HEIGHT - 0.2, 0, 26, CONFETTI, 2.2);
     fx.showTicker(`THANKS ${donation.handle ? "@" + donation.handle.toUpperCase() : "ANON"} · ${gameMod.formatLarge(bananas)} BANANAS`, 4.5);
   };
   // The Bitcoin feed: a block strikes the lake and sends light through its collector.
@@ -8486,6 +8505,7 @@
     if (DEBUG) syncDaylightDebug(hour);
     critters.update(dt, elapsed, RENDER_OPTS.day, RENDER_OPTS.stars, fire.k, 1);
     if (!gameMode) updateClouds(dt);
+    updateGameRing(dt, elapsed);
     solids.sync();
     updateRageThrowMap();
     updateSleepingSolids();
@@ -8773,10 +8793,13 @@
   // (the renderer's `windTime` held where it stood), no fireworks go up, the meadow's fire pit goes out (`updateLamps`),
   // the Timechain Sphere stops turning, the island's clouds and the Mempool island's weather go (`weather.hold`), and
   // the Mempool island itself is hidden and left unrun. All of it comes back when the event lets go, and in `leave`.
-  const setGameMode = (on) => {
+  // The ring stands up `ringDelay` seconds after the event begins (the ghost hunt waits for its gates) and sinks as
+  // it ends.
+  const setGameMode = (on, ringDelay = 0) => {
     on = !!on;
     if (on === gameMode) return;
     gameMode = on;
+    gameRingWait = on ? ringDelay : 0;
     clankers.setAway(on);
     RENDER_OPTS.windTime = on ? performance.now() * 0.001 % 3600 : NaN;
     if (on) fireworksShells.length = 0;
@@ -8785,6 +8808,50 @@
     for (const cloud of clouds) cloud.node.visible = !on;
     weather.hold(on);
     mempoolIsland.site.node.visible = !on;
+    // The camp's barrel and crates by the fire go too: hidden, they neither block (solids skip a hidden node) nor pick.
+    if (campDressing) campDressing.visible = !on;
+    for (const node of campPicks) node.visible = !on;
+  };
+  // GAME MODE's ring: a wall round the meadow just inside the foot of the bluff (the ground leaves the meadow about
+  // 22 m from the middle), so nobody playing climbs the cliffs. It grows up out of the ground over `riseS` and sinks
+  // over `sinkS`, and while it stands it refuses a step out across it at or above the meadow; anyone outside it (in a
+  // cave mouth, up the bluff) may still walk in. Half see-through black for now, to show the bounds.
+  const GAME_RING = { r: 21.5, height: 8, riseS: 1.5, sinkS: 1 };
+  const GAME_RING_R2 = GAME_RING.r * GAME_RING.r;
+  const gameRingGeometry = models.cached(() => {
+    const geo = models.lathe({ profile: [[GAME_RING.r, -0.5], [GAME_RING.r, GAME_RING.height]], segments: 96, color: "#000000" });
+    geo.glass = 0.5;
+    geo.castShadow = false;
+    geo.twoSided = true; // Canvas 2D: seen from inside, as players see it
+    return geo;
+  });
+  // Paper lanterns floating over the ring's top as it stands, lit, each bobbing and turning slowly on its own beat.
+  const RING_LANTERNS = 36, LANTERN_LIFT = 0.7, LANTERN_BOB = 0.18;
+  const ringLanternGeometry = models.cached(() => models.noShadow(models.merge(
+    models.lathe({ profile: [[0.12, 0], [0.2, 0.08], [0.22, 0.22], [0.18, 0.36], [0.1, 0.42]], segments: 8, color: "#ff9a3c", emissive: 1 }),
+    models.lathe({ profile: [[0.11, 0.42], [0.12, 0.46], [0.02, 0.48]], segments: 8, color: "#3a2a18" }),
+    models.lathe({ profile: [[0.02, -0.03], [0.13, -0.02], [0.12, 0]], segments: 8, color: "#3a2a18" }))));
+  const crossesGameRing = (fromX, fromZ, toX, toZ, y) => gameMode && gameRingK > 0 && y > -1
+    && fromX * fromX + fromZ * fromZ < GAME_RING_R2 && toX * toX + toZ * toZ >= GAME_RING_R2;
+  const updateGameRing = (dt, elapsed) => {
+    if (gameMode && gameRingWait > 0) gameRingWait -= dt;
+    const target = gameMode && gameRingWait <= 0 ? 1 : 0;
+    if (gameRingK !== target) {
+      gameRingK = target ? Math.min(1, gameRingK + dt / GAME_RING.riseS) : Math.max(0, gameRingK - dt / GAME_RING.sinkS);
+      gameRing.scale.y = ease.inOutQuad(gameRingK);
+      gameRing.visible = gameRingK > 0;
+    }
+    // The lanterns ride up and down with the wall's top.
+    const shown = gameRingK > 0;
+    if (!shown && !ringLanternsShown) return;
+    ringLanternsShown = shown;
+    const top = GAME_RING.height * ease.inOutQuad(gameRingK) + LANTERN_LIFT;
+    for (let i = 0; i < ringLanterns.length; i++) {
+      const node = ringLanterns[i];
+      node.visible = shown;
+      node.position.y = top + Math.sin(elapsed * 0.9 + i * 1.7) * LANTERN_BOB;
+      node.rotation.y = elapsed * 0.3 + i;
+    }
   };
   // HALLOWEEN: the ghost hunt arrives after the island is up (data-defer="halloween", ghost-game.js) and works the island
   // through this one adapter. A load that lands after the visit ended finds a newer `ghostVisit` and attaches nothing;
@@ -8820,11 +8887,24 @@
       pilot.setActive(!on); pilot.controls.reset(); input.reset();
       pilot.setExternalControl(on);
     },
+    // While the view is held, how the visitor is turning it (-1..1, positive to the left): A D,
+    // the arrows, Q E and either stick, read straight from the pilot's controls since the pilot itself is let go of.
+    heldTurn: () => {
+      const a = pilot.controls.read();
+      return clamp(a.orbitYaw + a.yaw - a.x, -1, 1);
+    },
+    // GAME MODE's ring wall's radius, for the minimap.
+    ringRadius: GAME_RING.r,
+    // Where each totem's elixir hangs: on its pole's front, facing the pile, at chest height.
+    elixirSpots: TOTEM_SPOTS.map(([x, z], i) => {
+      const d = Math.hypot(x, z), out = BL.totemModels.layout(i).reach + 0.12;
+      return { x: x - x / d * out, y: island.surfaceAt(x, z) + 1.35, z: z - z / d * out };
+    }),
     // The banana pile at the island's middle: its platform's reach and the top of the pile as it stands now.
     pileRadius: () => altar.platformRadius,
     pileTop: () => pile.core.position.y + pile.core.scale.y * pileTopY,
     setSeal: (fn) => { ghostSeal = fn; },
-    // Boxes and barrels away for the hunt (`poof` where each stood), and back where the island has room after it.
+    // Boxes, barrels and rocks away for the hunt (`poof` where each stood), and back where the island has room after it.
     clearProps: (on, poof) => {
       if (ghostClearsProps === on) return;
       ghostClearsProps = on;
@@ -11173,6 +11253,16 @@
     reflowScenery();
     buildSpots();
     buildClouds();
+    gameRing = createNode({ geometry: gameRingGeometry(), scale: { x: 1, y: 0, z: 1 }, visible: false, sightHidden: true });
+    addChild(root, gameRing);
+    placed.push(gameRing);
+    for (let i = 0; i < RING_LANTERNS; i++) {
+      const a = i / RING_LANTERNS * Math.PI * 2;
+      const node = createNode({ geometry: ringLanternGeometry(), position: { x: Math.sin(a) * GAME_RING.r, y: 0, z: -Math.cos(a) * GAME_RING.r }, visible: false, sightHidden: true });
+      addChild(root, node);
+      placed.push(node);
+      ringLanterns.push(node);
+    }
     spawnMagazinePickup();
     critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt });
     mark("props");
@@ -12089,6 +12179,9 @@
     ghostClearsProps = false;
     // GAME MODE ends with the visit; the island comes back built afresh.
     gameMode = false;
+    gameRing = campDressing = null;
+    gameRingK = gameRingWait = campPicks.length = ringLanterns.length = 0;
+    ringLanternsShown = false;
     document.body.classList.remove("game-mode");
     RENDER_OPTS.windTime = NaN;
     debugMovementTerrain = DEBUG_MOVE_HIT.node = DEBUG_MOVE_HIT.owner = null;
