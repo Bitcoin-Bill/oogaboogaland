@@ -2206,6 +2206,11 @@ body[data-active-scene="arcade"] .magazine-hud {
   display: none;
 }
 
+/* World labels sit above the island HUD, but never above the lobby's own player list. */
+.ghost-lobby:not([hidden]) ~ .tooltip {
+  visibility: hidden;
+}
+
 .ghost-lobby-players li {
   grid-template-columns: 22px 1fr;
 }
@@ -2810,14 +2815,15 @@ body.game-mode #message-stack {
   transition-duration: 0s;
 }
 
-.jetpack-hud[data-equipped="true"] {
-  width: 164px;
+.jetpack-hud {
+  flex: none;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
 }
 
-.jetpack-hud {
-  gap: 8px;
-  padding: 0 4px;
-  cursor: pointer;
+.jetpack-hud[data-equipped="true"] .jetpack-icon {
+  transform: translateX(-13px);
 }
 
 .weapon-hud {
@@ -2980,15 +2986,18 @@ body.game-mode #message-stack {
   opacity: 0.8;
 }
 
-.weapon-hud[data-equipped="true"] .weapon-compact,
-.jetpack-hud[data-equipped="true"] .jetpack-compact {
+.weapon-hud[data-equipped="true"] .weapon-compact {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.1s ease, visibility 0s linear 0.1s;
 }
 
-.equipment-compact[data-level="empty"],
-.jetpack-hud:has(.jetpack-fuel[data-level="low"]) .jetpack-compact {
+.jetpack-hud:not([data-equipped="true"]) .jetpack-compact {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.equipment-compact[data-level="empty"] {
   color: var(--danger);
 }
 
@@ -3131,77 +3140,21 @@ body.game-mode #message-stack {
   color: var(--accent-text);
 }
 
-.weapon-readout,
-.jetpack-readout {
+.weapon-readout {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.14s ease, visibility 0s linear 0.18s;
 }
 
-.jetpack-readout {
-  width: 88px;
-  flex: none;
-}
-
-.weapon-hud[data-equipped="true"] .weapon-readout,
-.jetpack-hud[data-equipped="true"] .jetpack-readout {
+.weapon-hud[data-equipped="true"] .weapon-readout {
   opacity: 1;
   visibility: visible;
   transition-delay: 0.06s, 0s;
 }
 
-.jetpack-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 5px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
-}
-
-.jetpack-fuel {
-  position: relative;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.jetpack-fuel-fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--accent);
-  transform-origin: left;
-}
-
-.jetpack-hud[data-equipped="true"] .jetpack-fuel-fill {
-  background: #ffd84a;
-}
-
-.jetpack-fuel[data-level="low"] .jetpack-fuel-fill {
-  background: var(--danger);
-}
-
-.jetpack-fuel::after {
-  content: "";
-  position: absolute;
-  left: 20%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  z-index: 1;
-  background: rgba(0, 0, 0, 0.65);
-  pointer-events: none;
-}
-
 @media (max-width: 360px) {
   .equipment-hud { left: calc(8px + var(--safe-left)); }
   .weapon-equipment-row { gap: 4px; }
-  .jetpack-hud[data-equipped="true"] { width: 160px; }
 }
 .joysticks {
   display: none;
@@ -5562,6 +5515,45 @@ body.orbit-dragging #tooltip {
 
   .curtain-spinner {
     animation: none;
+  }
+}
+
+/* Keep the HUB clock at the right edge before the equipment row fits beside the title. */
+@media (min-width: 721px) {
+  body[data-active-scene="hub"] .world-clock,
+  body[data-active-scene="hub"] .world-block {
+    right: calc(16px + var(--safe-right));
+    left: auto;
+    margin: 0;
+  }
+
+  body[data-active-scene="hub"] .world-block {
+    justify-content: flex-end;
+  }
+}
+
+/* The wide HUB banner has room for the expanded equipment row beside its title. */
+@media (min-width: 1100px) and (min-height: 501px) {
+  body[data-active-scene="hub"] .topbar {
+    min-height: calc(64px + var(--safe-top));
+  }
+
+  body[data-active-scene="hub"] .equipment-hud {
+    top: calc(8px + var(--safe-top));
+    left: calc(232px + var(--safe-left));
+  }
+
+  body[data-active-scene="hub"] .weapon-equipment-row {
+    transform: scale(0.85);
+    transform-origin: top left;
+  }
+
+  body[data-active-scene="hub"] .sheet {
+    top: calc(72px + var(--safe-top));
+  }
+
+  body[data-active-scene="hub"] .mic-note {
+    top: calc(72px + var(--safe-top));
   }
 }
 

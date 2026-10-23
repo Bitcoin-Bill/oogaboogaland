@@ -3608,6 +3608,11 @@
     syncMirrorDamage();
   };
   const weaponImpact = (source, hit, dx, dy, dz, power = 1, projectile = null) => {
+    // Waking the herald opens a game; it is an interaction before combat exists.
+    if (ghosts && hit.owner.kind === "halloween" && hit.owner.role === "herald") {
+      ghosts.hit(source, hit, power, isPlayerAttack(source));
+      return;
+    }
     if (!gameMode) return;
     if (source && source.controlled && source.actionControlled && source.combat && !source.combat.powerSpent) {
       const combat = source.combat;
@@ -8453,6 +8458,7 @@
     addTarget, selectOoga, mayDriveOoga, zoneOf,
     gorillaActive: () => !!(clankerPlay && clankerPlay.active),
     gameMode: setGameMode,
+    lobbyOpen: (on, restore) => pilot.setMenuOpen(on, restore),
     // The waiting room: the driven Ooga let go of (the free camera to watch from), and at the end the visitor's own
     // Ooga given back.
     spectate: (on) => {
@@ -10380,7 +10386,6 @@
     CAMERA_GLYPHS.time = MATRIX_WORLD.time;
     const gorilla = clankerPlay.active, player = controlledGuideActor();
     const closeWanted = gorilla ? clankerPlay.firstPerson : pilot.closeWanted, closeMix = gorilla ? (closeWanted ? 1 : 0) : pilot.closeMix;
-    hud.tooltip.setControlled(player, !gameMode && !closeWanted && closeMix < 1);
     const combatBirdsEye = gorilla ? clankerPlay.combat && clankerPlay.birdsEye : !!player && pilot.aiming && pilot.birdsEye;
     if (combatBirdsEye || RENDER_OPTS.birdsEyeCutaway) {
       // The actual scene is visible through its roof cut. Rock silhouettes and
@@ -10880,6 +10885,7 @@
       const t = from / (from - to);
       hitMirror(1, lerp(ax, bx, t), lerp(ay, by, t), lerp(az, bz, t), source);
     };
+    shared.weaponInteraction = owner => !!ghosts && !ghosts.busy && owner.kind === "halloween" && owner.role === "herald" && owner.active;
     shared.onWeaponImpact = weaponImpact;
     shared.onMeleeStrike = mirrorCave.ripples.strike;
     shared.aimSurface = mirrorCave.ripples.aimAt;

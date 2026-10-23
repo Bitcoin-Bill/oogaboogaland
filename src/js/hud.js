@@ -294,10 +294,6 @@
       magazineLowAmmo: $("magazine-ammo-low"),
       magazineRearBananas: [...$("magazine-back").querySelectorAll(".magazine-banana")],
       jetpack: $("jetpack-hud"),
-      jetpackFuel: $("jetpack-fuel"),
-      jetpackFuelFill: $("jetpack-fuel-fill"),
-      jetpackFuelValue: $("jetpack-fuel-value"),
-      jetpackCompact: document.querySelector(".jetpack-compact"),
       jetpackCompactFuel: $("jetpack-fuel-compact"),
       jetpackCompactFill: $("jetpack-fuel-compact-fill"),
       messageStack: $("message-stack"),
@@ -1025,16 +1021,12 @@
       const level = fuel < 0.2 ? "low" : "ok";
       if (level !== jetpackLevel) {
         jetpackLevel = level;
-        el.jetpackFuel.dataset.level = level;
         el.jetpackCompactFuel.dataset.level = level;
       }
       if (percent === jetpackPercent) return;
       jetpackPercent = percent;
-      el.jetpackFuelFill.style.transform = `scaleX(${percent / 100})`;
       el.jetpackCompactFill.style.transform = `scaleY(${percent / 100})`;
-      el.jetpackFuel.setAttribute("aria-valuenow", String(percent));
       el.jetpackCompactFuel.setAttribute("aria-valuenow", String(percent));
-      el.jetpackFuelValue.firstChild.data = `${percent}%`;
     };
     const setGorilla = (entry, view = "orbit", combat = false, combatEnabled = true) => {
       if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat && combatEnabled === gorillaCombatEnabled) { syncRetakeActor(); return; }

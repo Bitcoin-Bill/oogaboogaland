@@ -417,6 +417,9 @@
     const { root, input, hud, game, world, bedrolls, viewYaw, buildSpots, walkIn, wanderSpot } = ctx;
     let combatEnabled = ctx.combatEnabled === true;
     let weaponsEnabled = combatEnabled || ctx.weaponsEnabled === true;
+    // Scenes can accept a harmless weapon interaction before a game enables damage.
+    const weaponContactsEnabled = () => combatEnabled || weaponsEnabled && !!ctx.weaponInteraction;
+    const weaponContactAllowed = hit => combatEnabled || weaponsEnabled && ctx.weaponInteraction?.(hit.owner, hit.node);
     // playerName creates one playable actor without roster scheduling, beds or a pile.
     // groundAt takes the caveman's current height: support is layered, so the answer depends on where he is.
     const groundAt = ctx.groundAt || (() => 0);
@@ -1442,10 +1445,14 @@
       return setVec(out, MUZZLE[0], MUZZLE[1], MUZZLE[2]);
     };
     const meleeReach = (cave = player) => Math.hypot(0.625, 0.15) * cave.traits.height + BL.scene.boundsOf(cave.parts.club.geometry).max[1];
+    const findMeleeTarget = (cave) => {
+      const hit = cave.weapon.meleeTarget;
+      if (!weaponContactsEnabled() || !ctx.meleeTarget || !ctx.meleeTarget(hit, cave) || !weaponContactAllowed(hit)) hit.node = hit.owner = null;
+    };
     const weaponContactClear = (from, hit, melee = false) => {
       if (melee && input.weaponTargets) {
         const dx = hit.x - from.x, dy = hit.y - from.y, dz = hit.z - from.z, distance = Math.hypot(dx, dy, dz);
-        if (distance > 1e-6 && input.weaponTargets.ray(weaponCover, from.x, from.y, from.z, dx / distance, dy / distance, dz / distance, distance + 1e-5, player)) {
+        if (distance > 1e-6 && input.weaponTargets.ray(weaponCover, from.x, from.y, from.z, dx / distance, dy / distance, dz / distance, distance + 1e-5, player, combatEnabled ? null : ctx.weaponInteraction)) {
           if (weaponCover.owner !== hit.owner && (!hit.owner.cave || weaponCover.owner.cave !== hit.owner.cave)) return false;
           // A club can touch several faces of the same object at once. Test
           // cover up to its nearest face, not through the object's interior.
@@ -1469,11 +1476,10 @@
     };
     const strikeMeleePower = (cave) => cave.weapon.meleePower * MELEE_HIT_POWER * (cave.traits.nunchaku ? NUNCHAKU_POWER : 1);
     const hitMeleeTarget = (cave, powerOverride = null) => {
-      if (!combatEnabled) return false;
       const w = cave.weapon, hit = w.meleeTarget;
       if (!hit.node) return false;
       const dx = hit.x - weaponStart.x, dy = hit.y - weaponStart.y, dz = hit.z - weaponStart.z, distance = Math.hypot(dx, dy, dz);
-      if (!input.weaponTargets.valid(hit, cave) || distance > meleeReach(cave) + 0.1 || !weaponContactClear(weaponStart, hit, true)) {
+      if (!weaponContactAllowed(hit) || !input.weaponTargets.valid(hit, cave) || distance > meleeReach(cave) + 0.1 || !weaponContactClear(weaponStart, hit, true)) {
         hit.node = hit.owner = null;
         return false;
       }
@@ -1481,7 +1487,7 @@
       const inv = distance > 1e-6 ? 1 / distance : 0;
       // The reticle's in-range object owns this strike. A neighboring prop
       // may stop its visible arc, but cannot steal damage from that target.
-      if (hit.node.mirror && ctx.onProjectileMove) {
+      if (combatEnabled && hit.node.mirror && ctx.onProjectileMove) {
         ctx.onProjectileMove(hit.x - dx * inv * 0.02, hit.y - dy * inv * 0.02, hit.z - dz * inv * 0.02,
           hit.x + dx * inv * 0.02, hit.y + dy * inv * 0.02, hit.z + dz * inv * 0.02, 0);
       }
@@ -1662,10 +1668,10 @@
         const absorbed = ctx.absorbProjectile && ctx.absorbProjectile(x, y, z, p, step, bullet.source, bullet.workShot);
         if (absorbed) bullet.life = 0;
         let impacted = false, dx = 0, dy = 0, dz = 0, distance = 0;
-        if (combatEnabled && !absorbed && !bullet.feedback && !bullet.workShot && !bullet.tomato && input.weaponTargets
+        if (weaponContactsEnabled() && !absorbed && !bullet.feedback && !bullet.workShot && !bullet.tomato && input.weaponTargets
           && (bullet.source === player || BL.net && BL.net.state.resolved && !BL.net.state.me)) {
           dx = p.x - x; dy = p.y - y; dz = p.z - z; distance = Math.hypot(dx, dy, dz);
-          if (distance > 1e-6 && input.weaponTargets.ray(weaponHit, x, y, z, dx / distance, dy / distance, dz / distance, distance + (bullet.life ? 0 : bullet.reach) + 1e-5, bullet.source)) {
+          if (distance > 1e-6 && input.weaponTargets.ray(weaponHit, x, y, z, dx / distance, dy / distance, dz / distance, distance + (bullet.life ? 0 : bullet.reach) + 1e-5, bullet.source, combatEnabled ? null : ctx.weaponInteraction)) {
             setVec(weaponStart, x, y, z);
             if (weaponContactClear(weaponStart, weaponHit)) {
               bullet.feedback = true;
@@ -1830,7 +1836,7 @@
       }
       w.meleeTarget.node = null;
       w.meleeAimX = w.meleeAimY = w.meleeAimZ = 0;
-      if (combatEnabled && !held && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      if (!held) findMeleeTarget(cave);
       w.meleeReadyTime = 0;
       w.meleeTime = MELEE_TIME;
       w.meleeHeld = held;
@@ -1856,7 +1862,7 @@
       stopBurst(cave);
       const w = cave.weapon;
       w.meleeTarget.node = w.meleeTarget.owner = null;
-      if (combatEnabled && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      findMeleeTarget(cave);
       w.bashTime = GUN_BASH_TIME;
       return true;
     };
@@ -1866,7 +1872,7 @@
       const w = cave.weapon;
       if (!w.meleeHeld) return false;
       w.meleeTarget.node = null;
-      if (combatEnabled && !cancel && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      if (!cancel) findMeleeTarget(cave);
       w.meleeHeld = false;
       w.meleeQuick = quick && !cancel;
       w.meleeStrikeTime = w.meleeQuick ? MELEE_QUICK_STRIKE : MELEE_STRIKE * (1 + w.meleeCharge * 0.5);
@@ -6091,7 +6097,7 @@
       // Only the forward stroke can hit. Held wind-up and recovery never
       // repeatedly disturb a surface, and idle actors do no contact work.
       const meleeStep = dt * (cave.traits.nunchaku ? NUNCHAKU_RATE : 1);
-      const striking = combatEnabled && dt > 0 && (ctx.onMeleeStrike || input.weaponTargets || ctx.fireReachable) && cave === player && w.primaryEquipped && !w.meleeHeld && !w.meleeHit
+      const striking = weaponContactsEnabled() && dt > 0 && (ctx.onMeleeStrike || input.weaponTargets || ctx.fireReachable) && cave === player && w.primaryEquipped && !w.meleeHeld && !w.meleeHit
         && w.meleeTime > MELEE_RECOVER && w.meleeTime - meleeStep < meleeRelease && (!w.meleeQuick || w.meleeTime <= meleeRelease)
         && !cave.camp.seat && !cave.bedTravel.mode;
       if (striking) {
@@ -6124,7 +6130,7 @@
         poseWeapon(cave);
       }
       if (cave.ladder && cave.ladder.plane) ladderPose(cave);
-      if (combatEnabled && bashBefore > GUN_BASH_IMPACT && w.bashTime <= GUN_BASH_IMPACT && cave === player && w.equipped && !w.reloading && !w.swapTime && !w.reloadHandoff && !cave.health.stunned && !cave.camp.seat && !cave.bedTravel.mode) {
+      if (weaponContactsEnabled() && bashBefore > GUN_BASH_IMPACT && w.bashTime <= GUN_BASH_IMPACT && cave === player && w.equipped && !w.reloading && !w.swapTime && !w.reloadHandoff && !cave.health.stunned && !cave.camp.seat && !cave.bedTravel.mode) {
         weaponOrigin(weaponStart, cave, true);
         hitMeleeTarget(cave, GUN_BASH_POWER);
       }
@@ -6132,9 +6138,9 @@
         // The power spent on release stays with the strike until its arc lands.
         BL.scene.updateWorld(cave.root);
         weaponOrigin(weaponStart, cave, true);
-        const interactive = input.weaponTargets && input.weaponTargets.strike(weaponHit, meleePreviousWorld, club.world, club.geometry, cave)
+        const interactive = input.weaponTargets && input.weaponTargets.strike(weaponHit, meleePreviousWorld, club.world, club.geometry, cave, combatEnabled ? null : ctx.weaponInteraction)
           && weaponContactClear(weaponStart, weaponHit, true);
-        const blocked = !interactive && meleeSceneryBlocked(cave, meleePreviousWorld, club.world);
+        const blocked = combatEnabled && !interactive && meleeSceneryBlocked(cave, meleePreviousWorld, club.world);
         let contactFraction = 1;
         if (interactive || blocked) {
           // Refine only a confirmed contact. Ordinary swings do one mesh
@@ -6147,7 +6153,7 @@
             const middle = (low + high) / 2;
             for (let j = 0; j < 16; j++) meleeProbeWorld[j] = lerp(meleePreviousWorld[j], meleeCurrentWorld[j], middle);
             const touching = interactive
-              ? input.weaponTargets.strike(weaponHit, meleePreviousWorld, meleeProbeWorld, club.geometry, cave) && weaponContactClear(weaponStart, weaponHit, true)
+              ? input.weaponTargets.strike(weaponHit, meleePreviousWorld, meleeProbeWorld, club.geometry, cave, combatEnabled ? null : ctx.weaponInteraction) && weaponContactClear(weaponStart, weaponHit, true)
               : meleeSceneryBlocked(cave, meleePreviousWorld, meleeProbeWorld);
             if (touching) {
               high = middle;
@@ -6160,7 +6166,7 @@
             const power = strikeMeleePower(cave);
             if (interactive) {
               for (let j = 0; j < 16; j++) meleeProbeWorld[j] = lerp(meleePreviousWorld[j], meleeCurrentWorld[j], high);
-              if (meleeContact.node.mirror && ctx.onMeleeStrike) ctx.onMeleeStrike(meleePreviousWorld, meleeProbeWorld, club.geometry, dt, power);
+              if (combatEnabled && meleeContact.node.mirror && ctx.onMeleeStrike) ctx.onMeleeStrike(meleePreviousWorld, meleeProbeWorld, club.geometry, dt, power);
               if (ctx.onWeaponHit) ctx.onWeaponHit(cave, meleeContact.type, power);
               if (ctx.onWeaponImpact) {
                 // The contact's own swept motion supplies the impact direction,
@@ -6180,7 +6186,7 @@
         } else if (w.meleeTime <= MELEE_RECOVER && w.meleeTarget.node) {
           // Resolve the reticle target even if the visible skin passed beside it.
           hitMeleeTarget(cave);
-        } else if (!input.weaponTargets && ctx.onMeleeStrike) {
+        } else if (combatEnabled && !input.weaponTargets && ctx.onMeleeStrike) {
           w.meleeHit = ctx.onMeleeStrike(meleePreviousWorld, club.world, club.geometry, dt, strikeMeleePower(cave));
         }
         if (w.meleeHit) {

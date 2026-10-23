@@ -382,7 +382,7 @@
       zoomTilt = false;
       zoomPitchVelocity = 0;
     };
-    let lockPending = false, lockCancelled = false, aimLocked = false, softAimFocused = false, externalControl = false, externalCombat = null, unlockedAt = -Infinity;
+    let lockPending = false, lockCancelled = false, aimLocked = false, softAimFocused = false, externalControl = false, externalCombat = null, menuOpen = false, unlockedAt = -Infinity;
     let savedPitch = 0, savedDist = 0, savedNear = camera.near, sightClear = null, cursorClear = null, aimSurface = null;
     const weaponViewReady = (cave) => active && !!cave && !cave.health.stunned && !crew.sleeping && (closeWanted || (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode);
     const shoulderBoomPitch = (pitch) => Math.max(pitch, Math.min(0, pitch + 0.22));
@@ -545,7 +545,7 @@
       if (!disposed && armed()) hud.hint(crew.weaponsEnabled ? "Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view" : "Click the island for mouse look · X for click-and-drag look · scroll to change view");
     };
     const lockAim = () => {
-      if (externalControl || coarse || disposed || !armed()) return;
+      if (externalControl || menuOpen || coarse || disposed || !armed()) return;
       lockCancelled = false;
       if (lockPending || document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
       lockPending = true;
@@ -555,15 +555,39 @@
       if (request && request.then) request.then(() => {
         lockPending = false;
         if (externalControl && !disposed) return;
-        if (disposed || !armed() || lockCancelled) unlockAim();
+        if (disposed || !armed() || lockCancelled) {
+          // An old capture can settle after a menu already restored soft
+          // mouse-look. Cancel that capture without losing the new focus.
+          const restore = !disposed && !menuOpen && armed() && softAimFocused;
+          unlockAim();
+          if (restore) focusAim();
+        }
         if (disposed) retireAimLock();
       }, aimLockFailed);
     };
     const focusAim = (capture = false) => {
-      if (externalControl || coarse || disposed || !armed()) return false;
+      if (externalControl || menuOpen || coarse || disposed || !armed()) return false;
       setSoftAimFocus(true);
       if (capture) lockAim();
       return true;
+    };
+    // A menu releases mouse-look without changing carry/combat intent. Network
+    // transitions can close it without a gesture: soft focus restores the
+    // crosshair then, and the next real canvas click takes native lock again.
+    const setMenuOpen = (on, restore = true) => {
+      if (menuOpen === on) return;
+      menuOpen = on;
+      if (on) {
+        freeCursor();
+        if (player()) { crew.thrust(false); crew.holdRocketJump(false); }
+        attackReleaseBlocked = true;
+        clearFeedback();
+      } else {
+        controls.reset();
+        resetPointer();
+        if (restore && armed()) focusAim(!!navigator.userActivation?.isActive);
+      }
+      reticle.hidden = on || !armed();
     };
     const captureAimEntry = (cave) => {
       const p = cave.root.position, up = camera.up || cursorUp;
@@ -604,11 +628,11 @@
       else if (!overhead && overheadActive) overheadExit = overheadMix;
       overheadActive = overhead;
       if (!combat) overheadMix = overheadExit = 0;
-      reticle.hidden = !combat;
+      reticle.hidden = menuOpen || !combat;
       if (!combat) setCombatTooltip(null);
       if (!overhead && !overheadExit) resetAssist();
       const cursorFocused = softAimFocused || document.pointerLockElement === canvas;
-      if (combat && overhead && !coarse && cursorFocused && (!carryCursor.active || carryCursor.visible)) {
+      if (combat && !menuOpen && overhead && !coarse && cursorFocused && (!carryCursor.active || carryCursor.visible)) {
         const rect = canvas.getBoundingClientRect();
         carryCursor.start(rect.left + overheadX * rect.width / renderer.size.width,
           rect.top + overheadY * rect.height / renderer.size.height, false, false);
@@ -653,7 +677,7 @@
       }
       aimCave = cave;
       clearFeedback();
-      reticle.hidden = !combat;
+      reticle.hidden = menuOpen || !combat;
       if (!cave) { peekTarget = peekMix = 0; return; }
       centeredCarry = false;
       carryExitMode = 0;
@@ -1336,7 +1360,7 @@
       eyeMotionValid = false;
     };
     const aimMouseMove = (e) => {
-      if (externalControl || !armed() || document.pointerLockElement !== canvas && (!softAimFocused || e.target !== canvas)) return;
+      if (externalControl || menuOpen || !armed() || document.pointerLockElement !== canvas && (!softAimFocused || e.target !== canvas)) return;
       if (e.movementX || e.movementY) resumePose();
       if (birdsEye()) {
         if (document.pointerLockElement === canvas) moveOverheadPointer(e.movementX, e.movementY);
@@ -1391,6 +1415,7 @@
     };
     const aimPointer = (e) => {
       if (!active || externalControl || e.pointerType !== "mouse") return;
+      if (menuOpen) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (crew && crew.sleeping) {
         clearRightGesture();
         if (e.button === 2 || e.buttons & 2) {
@@ -1511,7 +1536,7 @@
       }
     };
     const aimKey = (e) => {
-      if (externalControl || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (externalControl || menuOpen || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Tab") {
         if (!e.repeat) {
           const captured = armed() && (softAimFocused || !lockCancelled && (lockPending || document.pointerLockElement === canvas));
@@ -1549,7 +1574,7 @@
       }
     };
     const releaseAimAttack = (e) => {
-      if (externalControl || !crew || aimReleaseEvent === e || e.type === "mouseup" && aimReleaseEvent?.type === "pointerup"
+      if (externalControl || menuOpen || !crew || aimReleaseEvent === e || e.type === "mouseup" && aimReleaseEvent?.type === "pointerup"
         && e.button === aimReleaseEvent.button && e.timeStamp - aimReleaseEvent.timeStamp < 100) return;
       aimReleaseEvent = e;
       const cave = player(), focused = aimLeftFocused || ads;
@@ -1894,7 +1919,7 @@
         return true;
       }
       const cave = player();
-      if (!active || !crew.weaponsEnabled || !cave || cave.grabbedBy || crew.sleeping) return false;
+      if (!active || menuOpen || !crew.weaponsEnabled || !cave || cave.grabbedBy || crew.sleeping) return false;
       resumePose();
       if (action === "weapon-primary" || action === "weapon-primary-down") {
         const alreadyHeld = !cave.weapon.equipped;
@@ -2288,6 +2313,7 @@
     // Scenes close their own UI first. Each remaining press frees the cursor,
     // then lets go of the Ooga, before the scene is allowed to leave.
     const escape = () => {
+      if (menuOpen) return true;
       if (externalControl) return false;
       if (softAimFocused || lockPending && !lockCancelled || document.pointerLockElement === canvas || performance.now() - unlockedAt < 100) {
         unlockAim();
@@ -2299,6 +2325,7 @@
     };
     // Nearby actions consume a press; a ready jetpack leaves Space as throttle.
     const action = () => {
+      if (menuOpen) return true;
       if (player()?.grabbedBy) return true;
       if (ctx.onPlayerAction && ctx.onPlayerAction()) return true;
       if (!active) return true;
@@ -2335,6 +2362,7 @@
     const hooks = {
       hoverIgnore: () => closeWanted || closeMix > 0 ? player() : null,
       onOrbit: (dx, dy) => {
+        if (menuOpen) return;
         if (dx || dy) resumePose();
         if ((dx || dy) && hud.fadeDetachedName) hud.fadeDetachedName();
         if (birdsEye()) { moveOverheadPointer(dx, dy); return; }
@@ -2361,7 +2389,7 @@
         }
       },
       onZoom: (factor, gesture = null, px = null, py = null) => {
-        if (factor === 1 || firstOnly) return;
+        if (menuOpen || factor === 1 || firstOnly) return;
         const now = performance.now(), direction = Math.sign(factor - 1);
         const fresh = gesture !== null ? gesture !== zoomGesture
           : zoomGesture !== null || direction !== zoomDirection || now - zoomAt > ZOOM_PAUSE;
@@ -2530,7 +2558,7 @@
     };
     // Call before the crew moves: reads keys and sticks for this frame.
     const readInput = (dt) => {
-      if (!active || externalControl) return;
+      if (!active || externalControl || menuOpen) return;
       syncAim();
       const a = controls.read();
       // Arrival easing keeps its label; only manual camera input fades it.
@@ -3523,7 +3551,7 @@
         // Held propulsion lets go too: readInput, which would see its key released, does not run while inactive.
         crew.steer(0, 0, 0, 0, 0); crew.thrust(false); crew.holdRocketJump(false);
       }
-      reticle.hidden = !value || !armed();
+      reticle.hidden = menuOpen || !value || !armed();
     };
     const dispose = () => {
       handoff.cancel();
@@ -3615,7 +3643,7 @@
       } catch (_) { return false; }
     };
     saveActiveLoginView = saveLoginView;
-    return { orbit, hooks, controls, cursor: carryCursor, cameraHandoff: handoff, captureControl, capturePose, restorePose, focusAim, setExternalControl,
+    return { orbit, hooks, controls, cursor: carryCursor, cameraHandoff: handoff, captureControl, capturePose, restorePose, focusAim, setMenuOpen, setExternalControl,
       // The first person's field of view at this canvas's shape (unaimed), for a view held from outside to match it.
       eyeFov: () => Math.min(MAX_FOV, Math.max(BASE_FOV, 2 * Math.atan(Math.tan(MIN_HFOV / 2) / (renderer.size.width / Math.max(1, renderer.size.height))))),
       loginViewRestored: !!loginView, loginContext: loginView?.context || null, get poseHeld() { return !!restoredPose; }, get aiming() { return armed(); },

@@ -7391,6 +7391,52 @@ const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visit
   })()`);
   record("hub game-only combat: HUB weapons fire, swing, swap magazines and reload without damage; regeneration, knockouts, dropped gear, rage and grabbing stay off, X keeps both look modes, and game exit restores health and releases held Oogas", Object.values(r).every(Boolean), JSON.stringify(r));
 } };
+const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shooting"}`, why: "regression: harmless HUB weapons must still wake the herald, and its lobby must release mouse-look until it closes", run: async b => {
+  const loaded = await untilPage(b, "BL.scenes.hub.debug.halloween?.herald.geometry", 15000);
+  record("ghost entry: the deferred herald loads", loaded);
+  if (!loaded) return;
+  if (!melee) await b.key("x");
+  const entry = await b.evaluate(`(() => {
+    const B = __ooga, H = BL.scenes.hub.debug, G = H.halloween, a = B.crew.player, p = G.herald.position;
+    const radius = Math.hypot(p.x, p.z), gap = ${melee ? 0.9 : 2.5}, k = (radius - gap) / radius;
+    const x = p.x * k, z = p.z * k, yaw = Math.atan2(p.x - x, p.z - z);
+    B.crew.relocatePlayer({ x, y: H.island.surfaceAt(x, z), z }, yaw);
+    B.crew.configureWeapon(a, ${melee ? 1 : 2}, 30);
+    BL.scene.updateWorld(BL.scenes.hub.root);
+    const center = BL.scene.boundsOf(G.herald.geometry).center, point = new Float64Array(3);
+    BL.math.mat4.transformPoint(point, G.herald.world, center[0], center[1], center[2]);
+    const health = a.health.value, before = a.weapon.shotsFired;
+    const accepted = ${melee ? "B.crew.swingWeapon(a)" : "B.crew.fireWeapon(a, { x: point[0], y: point[1], z: point[2] })"};
+    B.advance(0.4, 1 / 60);
+    return { accepted, state: G.state, combat: B.crew.combatEnabled, game: H.gameMode, health: a.health.value === health,
+      shots: a.weapon.shotsFired - before, shown: !document.getElementById("ghost-lobby").hidden,
+      aiming: B.pilot.aiming, reticle: document.getElementById("weapon-reticle").hidden,
+      labelsHidden: ["tooltip", "controlled-name"].every(id => getComputedStyle(document.getElementById(id)).visibility === "hidden") };
+  })()`);
+  record(`ghost entry: ${melee ? "a club" : "an AK burst"} opens the lobby without readying automatically or enabling HUB damage`, entry.accepted && entry.state === "GATHER" && entry.shown && entry.health && !entry.game && !entry.combat && (melee || entry.shots > 0 && entry.shots <= 3), JSON.stringify(entry));
+  if (!entry.shown) return;
+  const released = await untilPage(b, '!document.pointerLockElement && !document.body.classList.contains("aim-cursor-focused") && document.getElementById("weapon-reticle").hidden');
+  record("ghost lobby: the menu releases mouse-look and hides world names without changing carry/combat mode", released && entry.labelsHidden && entry.aiming === !melee, JSON.stringify(entry));
+  const button = await b.evaluate(`(() => { const r = document.getElementById("ghost-lobby-${melee ? "decline" : "ready"}").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await b.click(button.x, button.y);
+  const closed = await untilPage(b, 'document.getElementById("ghost-lobby").hidden');
+  record("ghost lobby: world-name visibility is restored after closing", await b.evaluate('["tooltip", "controlled-name"].every(id => getComputedStyle(document.getElementById(id)).visibility !== "hidden")'));
+  const resumed = await b.evaluate(`({ aiming: __ooga.pilot.aiming, focus: document.body.classList.contains("aim-cursor-focused") || document.pointerLockElement === document.getElementById("scene"), reticle: !document.getElementById("weapon-reticle").hidden, combat: __ooga.crew.combatEnabled, game: BL.scenes.hub.debug.gameMode })`);
+  record(`ghost lobby: ${melee ? "declining keeps carry mode and a free cursor" : "Ready starts the hunt and restores crosshair control"}`, closed && (melee ? !resumed.aiming && !resumed.focus && !resumed.reticle && !resumed.game : resumed.aiming && resumed.focus && resumed.reticle && resumed.combat && resumed.game), JSON.stringify(resumed));
+  if (melee || !resumed.game) return;
+  const hunt = await b.evaluate(`(() => {
+    const B = __ooga, H = BL.scenes.hub.debug, G = H.halloween, C = BL.ghostSim.CONFIG, a = B.crew.player;
+    G.simulate((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS) / 1000 + 0.5);
+    const active = G.state, ghosts = G.sim.ghosts.filter(g => g.on && !g.dying).length, unlimited = a.weapon.unlimited;
+    const shots = a.weapon.shotsFired, ammo = a.weapon.ammo;
+    const fired = B.crew.fireWeapon(a, { x: a.root.position.x, y: 30, z: a.root.position.z }, 1);
+    B.advance(0.3, 1 / 60);
+    const shooting = fired && a.weapon.shotsFired > shots && a.weapon.ammo === ammo;
+    G.end(); B.advance(1 / 60, 1 / 60);
+    return { active, ghosts, unlimited, shooting, restored: !H.gameMode && !B.crew.combatEnabled && !a.weapon.unlimited && !B.crew.damage(a, 100) && B.crew.weaponsEnabled };
+  })()`);
+  record("ghost hunt: Ready progresses to an active round with ghosts and unlimited shooting; dawn restores harmless HUB weapons", hunt.active === "ACTIVE" && hunt.ghosts > 0 && hunt.unlimited && hunt.shooting && hunt.restored, JSON.stringify(hunt));
+} });
 const hubMelee = { name: "hub melee", why: "rule: focused quick taps recover their strike power over time, changing weapons cannot bypass recovery, and a charged strike doubles damage", run: async (b) => {
   await tapKey(b, "1");
   // The preceding AK check deliberately leaves carry mode. These contacts
@@ -14674,6 +14720,7 @@ scene("poker", { opts: PHONE_SIZE, steps: [phone("poker", { card: '[data-intro="
   if (process.env.POKER_SHOTS) await b.screenshot(join(process.env.POKER_SHOTS, "poker-phone.png"));
 } }] });
 scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubCombatGate, ...[hubAk, hubMelee, hubJetpack].map(gameCombat)] });
+for (const melee of [false, true]) scene("hub", { label: `ghost entry ${melee ? "melee" : "shooting"}`, query: "halloween=1&character=portlandhodl&weapon=2&ammo=30", exclusive: true, steps: [hubGhostEntry(melee)] });
 // Her greeting comes once a page, to a fresh landing nothing has moved, so the guide has its own page.
 scene("hub", { label: "guide", query: "character=portlandhodl&jetpack=1", steps: [hubGuide] });
 // Native pointer-lock assertions need sole focus; another browser lane can
@@ -16895,7 +16942,7 @@ const carriedReleaseProof = () => {
       leap: {}, hop: 0, hopV: 0 };
     const entry = { capture: { cave, autonomous: false, warpVisit: false, throwing: true, time: 1, posed: true }, motion: {}, heading: 0 };
     cave.grabbedBy = entry; const queries = [];
-    const context = { entry, cave, ceiling, STEP_MAX: 0.35, clamp: (x, a, b) => Math.max(a, Math.min(b, x)),
+    const context = { gameMode: true, entry, cave, ceiling, STEP_MAX: 0.35, clamp: (x, a, b) => Math.max(a, Math.min(b, x)),
       clankerGripAt: () => [0, 3, 0], ceilingAt: () => ceiling,
       playerSupportAt: (x, z, y) => { queries.push(y); return y < 0 ? -10 : y + 0.35 >= ceiling ? ceiling : 0; },
       crew: { recoverDragged() {}, poseWeapon() {} } };
@@ -16907,7 +16954,7 @@ const carriedReleaseProof = () => {
     const cave = { root: { position: { x: 0, y: 3, z: 0 } }, baseY: 0, bodyHeight: 2, viewLift: 0, leap: {} };
     const entry = { capture: { cave, autonomous: false, warpVisit: false, aim: {}, aimed: true }, motion: {}, heading: Math.PI / 2 };
     cave.grabbedBy = entry;
-    const context = { entry, charge, aim: aimed ? { ox: 0, oy: 3, oz: 0, dx: 0, dy: 0, dz: -1 } : null,
+    const context = { gameMode: true, entry, charge, aim: aimed ? { ox: 0, oy: 3, oz: 0, dx: 0, dy: 0, dz: -1 } : null,
       clamp: (x, a, b) => Math.max(a, Math.min(b, x)), STEP_MAX: 0.35,
       clankerGripAt: () => [0, 3, 0], ceilingAt: () => Infinity, playerSupportAt: () => 0,
       crew: { recoverDragged() {}, poseWeapon() {} } };
