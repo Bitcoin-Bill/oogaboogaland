@@ -2724,6 +2724,9 @@ body.game-mode #message-stack {
   transform: translateY(-50%);
 }
 
+.mode-hud[data-health="false"] .mode-face-icon { left: calc(50% - 22px); }
+.mode-hud[data-health="false"][data-gorilla="true"] .mode-face-icon { left: calc(50% - 20px); }
+
 .gorilla-hud {
   flex: none;
   justify-content: flex-start;

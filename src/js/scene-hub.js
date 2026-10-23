@@ -6,7 +6,6 @@
   const { createNode, addChild, removeChild, updateWorld, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { JET_SPEED, JET_RISE, JET_FUEL_SECONDS, JET_MOVE_SECONDS } = crewMod;
   const { DROP_HEIGHT } = pileMod;
-  const { CONFETTI } = fxMod;
   const params = new URLSearchParams(location.search);
   const SEED = 1;
   const DEG = Math.PI / 180;
@@ -185,21 +184,16 @@
   const SCENERY_CLEARANCE = 0.25;
   const MEADOW_INNER = 5, MEADOW_OUTER = MEADOW - 1.5, CLIFF_INNER = MEADOW + 1.5, CLIFF_OUTER = RADIUS - 1;
   const DOCK_DEG = 75, LADDER_Z = -3.6, LADDER_LEAN = 0.65;
-  const CLOUD_COUNT = 30, CLOUD_WRAP = 60, CLOUD_NEAR = 36;
-  const CLOUD_GAP = 0.35, CLOUD_LOOK = 36, CLOUD_PLAN_STEP = 2;
-  const CLOUD_SIDE_RATE = 0.7, CLOUD_RISE_RATE = 0.55, CLOUD_SUPPORT_EPSILON = 0.01;
-  const CLOUD_FADE = 2.5, CLOUD_STALL = 1.5, CLOUD_NO_PROGRESS = 24, CLOUD_CLEAR_RUN = 8;
-  const CLOUD_SIDE_OFFSETS = [0, -7, 7, -14, 14, -24, 24];
-  const CLOUD_HEIGHT_OFFSETS = [0, -6, 6, -12, 12];
+  const CLOUD_COUNT = 30, CLOUD_FAR = 60, CLOUD_NEAR = 36, CLOUD_FADE = 2.5;
   const WANDER_COUNT = 36, WANDER_INNER = 5.5;
   const ALTAR_HEIGHT = 0.34, ALTAR_BLOCK_WIDTH = 0.2, ALTAR_BLOCK_ARC = 0.3, ALTAR_RING_GAP = 0.02, ALTAR_MAX_BLOCKS = 512;
   const RIPEN = 25, TREE_CHANCE = 0.5, BUSH_CHANCE = 0.25;
-  const PROP_TIPS = { tree: "Tree · shake it", bush: "Bush · rustle it", rock: "Rock · hit to break", crate: "Box · hit to break", barrel: "Barrel · hit to break", flower: "Flowers", torch: "Torch · warm", firepit: "Fire pit", bedroll: "Somebody's bed", ladder: "Ladder · wobbly", dock: "Dock · creaky", magazine: "Spare magazine · walk into it to collect", poolbridge: "Vine bridge · to the Mempool island", poolsign: "Mempool Rainforest · the way down is through the hill", poolpainting: "Wall painting · tap to read it closely", chainsign: "The chain, at a glance · tap to read it", weathersign: "Reading the weather · tap for the key", poolrock: "Mossy rock", poolfern: "Fern · rustle it", poollog: "Fallen log · something lives in it", jaguar: "Jaguar · do not poke", monkey: "Monkey · it watches you", toucan: "Toucan · big beak", canopy: "Rainforest tree · shake it", jumbotron: "Oogatron · OogaBoogaX on the big screen · tap the screen for a close-up", palm: "Palm · shake it", bifrostbridge: "Bifröst · the bridge to ₿IFRÖST", bifrostgate: "₿IFRÖST · walk an Ooga through the field", heimdall: "Heimdall · keeper of the bridge", gate: null };
-  const RETICLE_PROPS = new Set(["tree", "bush", "rock", "crate", "barrel", "flower", "torch", "firepit", "totem", "ladder", "poolsign", "poolpainting", "chainsign", "weathersign", "poolfern", "poollog", "jaguar", "monkey", "toucan", "canopy", "jumbotron", "palm", "timechainentrance", "timechainkeypad", "bifrostgate", "heimdall"]);
+  const PROP_TIPS = { tree: "Tree · shake it", bush: "Bush · rustle it", flower: "Flowers", torch: "Torch · warm", firepit: "Fire pit", bedroll: "Somebody's bed", ladder: "Ladder · wobbly", dock: "Dock · creaky", magazine: "Spare magazine · walk into it to collect", poolbridge: "Vine bridge · to the Mempool island", poolsign: "Mempool Rainforest · the way down is through the hill", poolpainting: "Wall painting · tap to read it closely", chainsign: "The chain, at a glance · tap to read it", weathersign: "Reading the weather · tap for the key", poolrock: "Mossy rock", poolfern: "Fern · rustle it", poollog: "Fallen log · something lives in it", jaguar: "Jaguar · do not poke", monkey: "Monkey · it watches you", toucan: "Toucan · big beak", canopy: "Rainforest tree · shake it", jumbotron: "Oogatron · OogaBoogaX on the big screen · tap the screen for a close-up", palm: "Palm · shake it", bifrostbridge: "Bifröst · the bridge to ₿IFRÖST", bifrostgate: "₿IFRÖST · walk an Ooga through the field", heimdall: "Heimdall · keeper of the bridge", gate: null };
+  const RETICLE_PROPS = new Set(["tree", "bush", "flower", "torch", "firepit", "totem", "ladder", "poolsign", "poolpainting", "chainsign", "weathersign", "poolfern", "poollog", "jaguar", "monkey", "toucan", "canopy", "jumbotron", "palm", "timechainentrance", "timechainkeypad", "bifrostgate", "heimdall"]);
   const workCave = (slot) => slot.repo && (slot.status === "open" || slot.status === "mirror");
   const MATRIX_LIVING_PROPS = new Set(["tree"]);
-  const SOLID_PROPS = new Set(["tree", "rock", "crate", "barrel", "firepit", "dock", "jumbotron", "totem", "poolbridge", "poolrock", "canopy"]);
-  const CLANKER_STEP_PROPS = new Set(["rock", "crate", "barrel", "poolrock"]);
+  const SOLID_PROPS = new Set(["tree", "firepit", "dock", "jumbotron", "totem", "poolbridge", "poolrock", "canopy"]);
+  const CLANKER_STEP_PROPS = new Set(["poolrock"]);
   const BUSH_WORDS = ["Something rustles.", "A beetle. Ooga leaves it.", "Just a bush."];
   const PALM_WORDS = ["Coconuts. Ooga wanted bananas.", "A coconut thuds down. Ooga dodges.", "The fronds swish."];
   const LEAF = models.particleGeometry("#4a8530", 0.12, 0);
@@ -207,8 +201,6 @@
   const CHIP = models.particleGeometry("#6b625a", 0.1, 0);
   const SPARK = models.particleGeometry("#ffb13b", 0.08, 1);
   const DUST = models.particleGeometry("#a3874f", 0.1, 0);
-  // Fireworks reuse the board's own stat colors, fully emissive so they read at night.
-  const FIREWORK = ["#46ff70", "#3fd1c5", "#6f9fca", "#f5c542", "#e04a3a"].map((c) => models.particleGeometry(c, 0.11, 1));
   const FIRE_VIEW = { coverage: 0, ember: 0, soot: 0 };
   const FIRE_SPECKS = new Float32Array(96 * 4);
   {
@@ -235,13 +227,12 @@
   };
 
   // One visit's state: created in enter, dropped in leave.
-  let jumbotronSpot, oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
+  let oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
   // GAME MODE (`setGameMode`): an island event holds the island still for play while it runs.
   let gameMode = false;
   // HALLOWEEN: the ghost hunt (ghost-game.js) once its group has arrived, the visit it was asked for, and its walls' seal.
-  let ghosts = null, ghostLoading = false, ghostVisit = 0, ghostSeal = null, ghostClearsProps = false;
-  const GHOST_PROPS = new Set(["crate", "barrel"]);
-  let magazine, magazineState, breakables, clankers, clankerPlay, clankerMeshes, clankerPartOwners, grabSupportEntry = null, entropyLab, chalkboard, factoryMouth = null, arcadeMouth = null, bcaMouth = null, glCanvas = null;
+  let ghosts = null, ghostLoading = false, ghostVisit = 0, ghostSeal = null;
+  let magazine, magazineState, clankers, clankerPlay, clankerMeshes, clankerPartOwners, grabSupportEntry = null, entropyLab, chalkboard, factoryMouth = null, arcadeMouth = null, bcaMouth = null, glCanvas = null;
   const dragHand = new Float64Array(3), dragFoot = new Float64Array(3);
   const THROW_SWING_TIME = 0.28, THROW_SETTLE_TIME = 0.2, THROW_CARRY_SPEED_MAX = 8;
   const clankerCaptures = [];
@@ -411,7 +402,6 @@
   const CLANKER_FIRE = [models.particleGeometry("#ff8a2a", 0.18, 1), models.particleGeometry("#ffc148", 0.16, 1)];
   const CLANKER_SMOKE = models.particleGeometry("#70685f", 0.2, 0);
   const CLANKER_HIT = { node: null, owner: null, type: "none", distance: Infinity, x: 0, y: 0, z: 0 };
-  const clankerGroundTarget = (owner) => owner.kind === "prop" && (owner.prop === "crate" || owner.prop === "barrel" || owner.prop === "rock");
   const CLANKER_CAVITY = { floor: 0, ceiling: 0, caveIndex: 0 };
   const JETPACK_HUD_STATE = { owned: false, equipped: false, fuel: 1, blocked: false };
   let enteringTween = null, factoryDeparting = false, bifrostDeparting = false, bifrostHeld = false;
@@ -422,6 +412,9 @@
   let sampledHour = 0, sampledDay = 0, sampledLatitude = NaN, sampledContinuousDay = 0, sampledUtcMs = 0;
   // How far under the Mempool island's ground the view is, 0 to 1: its sun and its storm stay outside.
   let poolShade = 0, poolUnder = 0;
+  // Wake before the bridge; a wider sleep radius keeps its effects steady near the boundary.
+  const POOL_EFFECTS_NEAR = 44, POOL_EFFECTS_FAR = 52;
+  let poolEffectsActive = false, poolEffectsTime = 0;
   // The driven Ooga's own footsteps, heard by this page alone (footsteps.js).
   let footsteps = null;
   let weather = null, unsubscribeMempool = null, unsubscribeChain = null, mempoolIsland = null, timechainIsland = null, bifrostIsle = null;
@@ -622,7 +615,6 @@
   const targets = [];
   const claimed = [];
   const clouds = [];
-  const cloudObstacles = [];
   let cloudRandom = null;
   const lamps = [];
   // updateLamps' selection and light array are a pure function of these inputs; an exact hit reuses
@@ -1547,7 +1539,7 @@
   };
   // A repository's crowd fills a fan of firing rows four abreast (`position` in the work sites: rows from 4.8 m out,
   // 1.35 m apart, each side set back by 0.32 of its distance from the axis, out to 4.15 m). Keep the first
-  // WORK_CLEAR_ROWS of them clear of scenery, including later breakable respawns; a bigger crowd takes the next free
+  // WORK_CLEAR_ROWS of them clear of scenery, as the pile grows; a bigger crowd takes the next free
   // places among the props, and `entranceClear` keeps the doorway itself open. Reserving every row the whole roster
   // could fill (twelve for 46 Oogas) and a walking detour round them emptied the north of the meadow.
   const WORK_CLEAR_ROWS = 2;
@@ -1561,7 +1553,7 @@
     }
     return true;
   };
-  // Bushes, rocks, crates and barrels stand back from every open cave's doorway, the arcade's included:
+  // Bushes stand back from every open cave's doorway, the arcade's included:
   // ENTRANCE_HALF either side of its axis and ENTRANCE_DEPTH out from its mouth.
   const ENTRANCE_HALF = 4, ENTRANCE_DEPTH = 7;
   const entranceClear = (x, z, radius) => {
@@ -1789,9 +1781,9 @@
   // hanging lantern unless named (EntropyLab's white strip lights).
   const THEMES = {
     lab: { glass: 4, icon: "die", banners: [[-1, 1], [1, 1]], string: ["bulb", 4], ceiling: [[-1.6, 1.6, -1.5, -5.6, 3.0, [0.3, 0.72], "tube"]], pieces: [["flaskBench", -5.3, 1.1], ["die", -4.1, 2.8, 0, 1], ["die", -3.5, 3.6, 1, 3], ["die", -4.1, 2.8, 1, 4, 0.5], ["terminal", 5.2, 1.0], ["die", 4.3, 3.2, 1, 2]] },
-    matrix: { glass: 2, icon: "glyph", banners: [[1, 2], [-1, 2]], string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1], ["rubble", -6.3, 2.6, 0, 1]] },
-    lightning: { glass: 0, icon: "bolt", banners: [[-1, 0], [1, 0]], string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["coalCrate", -5.1, 0.8, 0, 3], ["crate", -5.4, 2.1, 1, 0], ["crate", -5.4, 2.1, 0, 1, 0.75], ["barrel", -4.3, 2.9, 0, 1], ["rubble", -6.4, 0.9, 0, 1], ["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["coil", 3.8, 3.4], ["coalCrate", 6.4, 3.4, 0, 1]] },
-    arcade: { glass: 3, icon: "invader", banners: [[-1, 3], [1, 3]], string: ["hanging", 3, [0.12, 0.5, 0.88]], inside: [["barrel", -2.4, -1.9, 0, 0], ["crate", 2.4, -2.0, 1, 0], ["barrel", 2.4, -2.0, 0, 1, 0.75]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["cabinet", -3.6, 1.0, 0, 0], ["cabinet", -2.9, 2.2, 0, 1]] },
+    matrix: { glass: 2, icon: "glyph", banners: [[1, 2], [-1, 2]], string: ["bulb", 2], pieces: [["monolith", -5.0, 0.9, 0, 0], ["monolith", 5.0, 0.9, 0, 1], ["runeStone", -4.2, 2.8, 0, 0], ["runeStone", 4.4, 2.9, 0, 1]] },
+    lightning: { glass: 0, icon: "bolt", banners: [[-1, 0], [1, 0]], string: ["hanging", 0, [0.3, 0.7]], boards: true, pieces: [["gauge", 5.0, 0.9], ["cart", 5.7, 2.4, 1], ["coil", 3.8, 3.4]] },
+    arcade: { glass: 3, icon: "invader", banners: [[-1, 3], [1, 3]], string: ["hanging", 3, [0.12, 0.5, 0.88]], ceiling: [[-2.35, 2.35, -1.5, -5.8, 3.0, [0.35, 0.8]]], pieces: [["cabinet", -3.6, 1.0, 0, 0], ["cabinet", -2.9, 2.2, 0, 1]] },
     bca: { glass: 0, icon: "abacus", banners: [[-1, 4], [1, 4]], string: ["hanging", 0, [0.2, 0.5, 0.8]], ceiling: [[-1.6, 1.6, -2.2, -5.6, 3.1, [0.5]]], pieces: [["abacus", -5.0, 1.0], ["ledger", 5.0, 1.0, 2]] }
   };
   // Themes choose only [side, variant]. The whole standard stays behind and outside the lanterns,
@@ -2064,48 +2056,8 @@
       BL.scene.updateWorld(post.pick.node);
     }
   };
-  // The meadow from the same kit, in world axes: a camp of stores round the fire and rubble in the grass.
-  // Three separate lantern posts follow the pile path; the fixed dressing bakes once for each island.
-  const meadowDressing = (fire) => {
-    if (renderer.kind === "canvas2d") return;
-    let byIsland = DRESSED.get(island);
-    if (!byIsland) DRESSED.set(island, byIsland = new Map());
-    let baked = byIsland.get("meadow");
-    if (!baked) {
-      const set = BL.dressing.set(), ground = [];
-      const ok = (x, z, r) => island.surfaceAt(x, z) === 0 && free(x, z, r) && workSceneryClear(x, z, r)
-        && !nearMouth(x, z, 7) && pilePostCorridorClear(x, z, r);
-      const stand = (kind, x, z, turns, variant, r) => {
-        if (kind) set.put(kind, x, 0, z, turns, variant);
-        ground.push(x, z, r);
-        claim(x, z, r);
-      };
-      // Keep the removed bench's clearing so the remaining camp and seeded scenery stay in place.
-      const CAMP = [[null, 0.9], ["barrel", 0.55], ["coalCrate", 0.6], ["crate", 0.6], ["rubble", 0.8]];
-      let placed = 0;
-      for (let k = 0; k < 16 && placed < CAMP.length; k++) {
-        const a = k / 16 * Math.PI * 2 + 0.3, x = fire.x + Math.cos(a) * 3.1, z = fire.z + Math.sin(a) * 3.1;
-        const [kind, r, variant = placed] = CAMP[placed];
-        if (!ok(x, z, r) || nearPath(x, z, 0.8)) continue;
-        stand(kind, x, z, k & 3, variant, r);
-        placed++;
-      }
-      let rubble = 0;
-      for (let deg = 17; deg < 360 && rubble < 12; deg += 29) {
-        const p = polar(deg, 9 + (deg * 37 % 17));
-        if (!ok(p.x, p.z, 0.9) || nearPath(p.x, p.z, 1.2)) continue;
-        stand("rubble", p.x, p.z, deg & 3, rubble, 0.9);
-        rubble++;
-      }
-      baked = { ...set.build(), ground };
-      byIsland.set("meadow", baked);
-    } else for (let i = 0; i < baked.ground.length; i += 3) claim(baked.ground[i], baked.ground[i + 1], baked.ground[i + 2]);
-    addDressing(baked, root, fire.x, 2.4, fire.z, "meadow:dressing", true);
-    addPieceTargets(baked.picks, (x, y, z) => ({ x, y, z }));
-    // Every dressing lantern is a real light at dusk, registered after the torches and the fire so the
-    // renderer's tier keeps those first; the lanterns' glass glows through the shared glow node above.
-    const lit = baked.lights;
-    for (let i = 0; i < lit.length; i += 4) dressingLights.push(lit[i], lit[i + 1], lit[i + 2], lit[i + 3]);
+  // Cave dressing lamps follow the torches and fire in the renderer's light budget.
+  const addDressingLights = () => {
     for (let i = 0; i < dressingLights.length; i += 4) {
       const lamp = addLamp({ glow: 0, flare: 0, visible: true }, DRESSING_LAMPS[dressingLights[i + 3]], dressingLights[i], dressingLights[i + 1], dressingLights[i + 2], true, (i / 4) % 5, `dressing:${i / 4}`);
       lamp.nightOnly = dressingLights[i + 3] !== BL.dressing.COIL_LIGHT;
@@ -2113,7 +2065,7 @@
     }
     dressingLights.length = 0;
   };
-  // Keep all three posts in both renderers, independently of the heavier meadow dressing.
+  // Keep all three posts in both renderers.
   const buildPilePosts = () => {
     let byIsland = DRESSED.get(island);
     if (!byIsland) DRESSED.set(island, byIsland = new Map());
@@ -3250,7 +3202,26 @@
     // Sync once; later searches must not observe visitors, tree animations or this visit's visibility changes.
     sleepSolids.sync();
     const sleepClear = (x, y, z) => sleepSolids.segmentClear(x, y, z, x, y, z, 0.15, 1.5);
-    return { site, place, centre, groundAt, rainAt, rainHit, wake, worldX, worldZ, localX, localZ, cos, sin, claimGround, wildlife, water, paintings, overAt, coveredAt, billboardOccludes, sightClear, solidAt, rockMaterialAt, boxSolid, boxClear, floatAt, afloat, walked, sleepClear, layout: L, preview };
+    return { site, place, centre, groundAt, rainAt, rainHit, wake, worldX, worldZ, localX, localZ, cos, sin, claimGround, wildlife, water, paintings, overAt, coveredAt, billboardOccludes, sightClear, solidAt, rockMaterialAt, boxSolid, boxClear, floatAt, afloat, walked, sleepClear, layout: L, preview,
+      get effectsActive() { return poolEffectsActive; } };
+  };
+  const nearPoolEffects = (p, radius) => {
+    const dx = p.x - mempoolIsland.place.x, dz = p.z - mempoolIsland.place.z;
+    return dx * dx + dz * dz <= radius * radius;
+  };
+  const updatePoolEffectsActivity = () => {
+    const radius = poolEffectsActive ? POOL_EFFECTS_FAR : POOL_EFFECTS_NEAR;
+    const player = clankerPlay?.player || pilot?.player;
+    const active = !gameMode && (nearPoolEffects(camera.position, radius) || nearPoolEffects(camera.target, radius)
+      || !!player && nearPoolEffects(player.root.position, radius));
+    if (active === poolEffectsActive) return;
+    poolEffectsActive = active;
+    weather.pause(!active);
+    if (active) {
+      // The feed stays live while the geometry rests; paint only its latest reading on return.
+      mempoolIsland.paintings.refresh(chain.snapshot);
+      refreshChainSign();
+    }
   };
   // Where the gorillas sleep while their Oogas do: the banana-leaf beds of the Mempool island's nests, and the dry
   // way to each from the home island, as x, z pairs: up the approach stair, over the bridge, across the court,
@@ -3518,10 +3489,7 @@
     cliff(40, 1.4, 3, "tree", (n) => hubModels.tree(n % 4 === 3 ? 3 : n % 3), true);
     cliff(30, 1, 0.5, "bush", (n) => hubModels.bush(n % 3));
     spread([
-      { kind: "bush", count: 30, radius: 0.7, geometryAt: (n) => hubModels.bush(n % 3) },
-      { kind: "rock", count: 8, radius: 0.9, geometryAt: () => hubModels.breakableRock() },
-      { kind: "crate", count: 10, radius: 0.7, geometryAt: () => hubModels.woodCrate(2), square: true },
-      { kind: "barrel", count: 8, radius: 0.6, geometryAt: () => hubModels.barrel(1) }
+      { kind: "bush", count: 30, radius: 0.7, geometryAt: (n) => hubModels.bush(n % 3) }
     ]);
     meadow(50, 0.35, "flower", () => hubModels.flowerTuft());
     meadow(18, 0.3, "grass", () => hubModels.grass());
@@ -3537,27 +3505,7 @@
     }
     return 0;
   };
-  const scenerySpawnClear = (owner, x, z, radius) => {
-    for (let i = 0; i < props.length; i++) {
-      const other = props[i];
-      if (other === owner || !other.active || !other.node.visible || other.scenery) continue;
-      const footprint = Math.min(other.pickRadius || 0, 1.5);
-      if (footprint && Math.hypot(other.x - x, other.z - z) < radius + footprint) return false;
-    }
-    if (clankers) for (let i = 0; i < clankers.list.length; i++) {
-      const other = clankers.list[i], p = other.root.position;
-      if (!other.active) continue;
-      const shape = BL.agent.footprint, reach = shape.radius(other) + radius;
-      const sine = Math.sin(other.heading), cosine = Math.cos(other.heading);
-      for (let pad = 0; pad < shape.count(other); pad++) {
-        const offset = shape.offset(other, pad), px = p.x + sine * offset, pz = p.z + cosine * offset;
-        if ((px - x) ** 2 + (pz - z) ** 2 < reach * reach) return false;
-      }
-    }
-    return true;
-  };
   const setSceneryActive = (o, active) => {
-    if (active && ghostClearsProps && GHOST_PROPS.has(o.prop)) return; // HALLOWEEN: boxes and barrels stay away for the hunt
     if (o.active === active) return;
     o.active = active;
     o.node.visible = active;
@@ -3570,8 +3518,7 @@
     let visible = 0, radiusCulled = 0, pathCulled = 0, fixedCulled = 0;
     for (let i = 0; i < scenery.length; i++) {
       const o = scenery[i], reason = sceneryReason(o);
-      setSceneryActive(o, reason === 0 && !o.breakable?.broken
-        && (o.active || !o.breakable || scenerySpawnClear(o, o.x, o.z, o.footprint + SCENERY_CLEARANCE)));
+      setSceneryActive(o, reason === 0);
       if (!reason) { if (o.active) visible++; }
       else if (reason === 1) radiusCulled++;
       else if (reason === 2) pathCulled++;
@@ -3583,86 +3530,6 @@
     sceneryFixedCulled = fixedCulled;
     sceneryReflows++;
     if (magazine && !magazine.revealed && !magazine.host.active) attachMagazineHost();
-  };
-  const deactivateBreakable = (owner) => {
-    if (owner.active) sceneryVisible--;
-    setSceneryActive(owner, false);
-    owner.node.highlight = 0;
-    solids.sync();
-    if (clankers) clankers.supportRemoved();
-  };
-  const relocateBreakable = (owner) => {
-    const radius = owner.footprint + SCENERY_CLEARANCE;
-    const inner = Math.max(MEADOW_INNER, island.path.debug.ringOuterRadius + radius);
-    if (inner >= MEADOW_OUTER) return false;
-    const bounds = BL.scene.boundsOf(owner.node.geometry), height = bounds.max[1] - bounds.min[1];
-    // Random probes keep ordinary respawns varied. If they miss every safe
-    // spot, a bounded spiral covers the meadow. The last reserved position is
-    // the final fallback, still subject to every live collision/occupancy check.
-    for (let attempt = 0; attempt <= 336; attempt++) {
-      const fallback = attempt - 80;
-      const angle = fallback < 0 ? Math.random() * Math.PI * 2 : fallback * 2.399963229728653;
-      const distance = Math.sqrt(lerp(inner * inner, MEADOW_OUTER * MEADOW_OUTER, fallback < 0 ? Math.random() : (fallback + 0.5) / 256));
-      const x = attempt === 336 ? owner.x : Math.sin(angle) * distance;
-      const z = attempt === 336 ? owner.z : Math.cos(angle) * distance;
-      if (island.surfaceAt(x, z) !== 0 || island.path.overlaps(x, z, radius) || nearMouth(x, z, radius + 3.5) || !workSceneryClear(x, z, radius)
-        || !entranceClear(x, z, radius)) continue;
-      let clear = true;
-      for (let i = 0; i < 16 && clear; i++) {
-        const a = i * Math.PI / 8;
-        if (island.surfaceAt(x + Math.cos(a) * radius, z + Math.sin(a) * radius) !== 0
-          || island.surfaceAt(x + Math.cos(a) * radius * 0.5, z + Math.sin(a) * radius * 0.5) !== 0) clear = false;
-      }
-      // Keep dormant scenery's reservation too: a shrinking pile may reveal it.
-      // Use the same footprints as initial placement; adding the live-body
-      // clearance again exhausts otherwise valid gaps in a dressed meadow.
-      for (let i = 0; i < claimed.length && clear; i++) {
-        const c = claimed[i];
-        if (c !== owner.reservation && Math.hypot(c.x - x, c.z - z) < c.r + owner.footprint) clear = false;
-      }
-      if (!clear || !island.clearAt(x, 0.01, z, radius, height)
-        || !solids.clearAt(x, 0.01, z, radius, height, owner.node)) continue;
-      if (!scenerySpawnClear(owner, x, z, radius)) continue;
-      for (let i = 0; i < crew.list.length; i++) {
-        const cave = crew.list[i];
-        const p = cave.root.position, feet = p.y - cave.baseY;
-        if (feet < height && feet + cave.bodyHeight > 0 && Math.hypot(p.x - x, p.z - z) < radius + cave.bodyRadius) { clear = false; break; }
-      }
-      for (let i = 0; i < crates.list.length && clear; i++) {
-        const c = crates.list[i], p = c.slot || c.node.position;
-        if (Math.hypot(p.x - x, p.z - z) < radius + 0.9) clear = false;
-      }
-      for (let i = 0; i < breakables.list.length && clear; i++) {
-        const other = breakables.list[i];
-        if (other.reward && Math.hypot(other.node.position.x - x, other.node.position.z - z) < radius + 0.6) clear = false;
-      }
-      if (magazine && Math.hypot(magazine.node.position.x - x, magazine.node.position.z - z) < radius + 0.4) clear = false;
-      if (!clear) continue;
-      owner.x = owner.node.position.x = owner.reservation.x = x;
-      owner.z = owner.node.position.z = owner.reservation.z = z;
-      owner.node.position.y = 0;
-      owner.node.rotation.y = Math.random() * Math.PI * 2;
-      setSceneryActive(owner, true);
-      sceneryVisible++;
-      solids.sync();
-      return true;
-    }
-    return false;
-  };
-  const collectBreakableReward = (kind, amount, cave) => {
-    if (kind === "banana") {
-      const added = crew.collectAmmo(amount, cave);
-      if (added) hud.toast(`+${added} ammo`);
-      pilot.showAct();
-      return true;
-    }
-    if (kind === "magazine") {
-      if (!crew.collectMagazine(cave)) return false;
-      pilot.showAct();
-      hud.toast("Full magazine collected · 30 rounds");
-      return true;
-    }
-    return false;
   };
   const syncMirrorDamage = (quiet = false) => {
     const damage = mirrorCave.damage;
@@ -3723,7 +3590,6 @@
       hitMirror(power, hit.x, hit.y, hit.z, source);
       return;
     }
-    if (breakables && breakables.hit(source, hit, power, isPlayerAttack(source))) return;
     hitRoomSign(source, hit, dx, dy, dz);
   };
   const drop = (list, value) => {
@@ -4051,13 +3917,12 @@
   const playerSupportAt = (x, z, y = 0, previousY = y, player = pilot?.player, dockEntry = false, ignoreClanker = false, passTraffic = false) => {
     passTraffic = passTraffic || rageThrown(player);
     const step = player ? player.hop === 0 && player.hopV <= 0 : !pilot.freeFalling;
-    const height = player ? player.bodyHeight + Math.max(0, player.viewLift) : CLOSE_VIEW.eyeHeight + CAMERA_RADIUS;
     const from = Math.max(y, previousY), rise = step ? STEP_MAX : 0;
-    return Math.max(island.supportAt(x, z, y, STEP_MAX, ABYSS_FLOOR, PLAYER_RADIUS), bedSupportAt(x, z, from, STEP_MAX, PLAYER_RADIUS), cloudFloorAt(x, z, from, rise, height, player), propSupportAt(x, z, from, rise, player, ignoreClanker, passTraffic), waterSupportAt(x, z, from, rise, player), dockStairs ? dockStairs.supportAt(x, z, from, rise, player, dockEntry) : -Infinity);
+    return Math.max(island.supportAt(x, z, y, STEP_MAX, ABYSS_FLOOR, PLAYER_RADIUS), bedSupportAt(x, z, from, STEP_MAX, PLAYER_RADIUS), propSupportAt(x, z, from, rise, player, ignoreClanker, passTraffic), waterSupportAt(x, z, from, rise, player), dockStairs ? dockStairs.supportAt(x, z, from, rise, player, dockEntry) : -Infinity);
   };
   const abyssAt = (x, z, y, actor = pilot?.player) => playerSupportAt(x, z, y, y, actor) === ABYSS_FLOOR;
   const visualSupportAt = (x, z, y) => {
-    const floor = Math.max(cloudFloorAt(x, z, y, STEP_MAX), bedSupportAt(x, z, y, STEP_MAX, PLAYER_RADIUS), propSupportAt(x, z, y, STEP_MAX, pilot.player), waterSupportAt(x, z, y, STEP_MAX, pilot.player), dockStairs ? dockStairs.supportAt(x, z, y, STEP_MAX, pilot.player, false) : -Infinity);
+    const floor = Math.max(bedSupportAt(x, z, y, STEP_MAX, PLAYER_RADIUS), propSupportAt(x, z, y, STEP_MAX, pilot.player), waterSupportAt(x, z, y, STEP_MAX, pilot.player), dockStairs ? dockStairs.supportAt(x, z, y, STEP_MAX, pilot.player, false) : -Infinity);
     return floor > -Infinity && floor > island.supportAt(x, z, y, STEP_MAX, ABYSS_FLOOR, PLAYER_RADIUS) ? floor : island.smoothSupportAt(x, z, y, STEP_MAX, PLAYER_RADIUS);
   };
   const PLAYER_RADIUS = 0.3;
@@ -4952,62 +4817,6 @@
     }
     return true;
   };
-  let cloudHit = null;
-  // Clouds are one-way platforms; their cached rects are the mesh's actual upward faces.
-  // Air below and beside them stays freely flyable.
-  const cloudFloorAt = (x, z, y, maxStep = 0, height = 0, actor = pilot?.player) => {
-    let floor = -Infinity;
-    cloudHit = null;
-    // A placement asking for the floor "from above" (y = Infinity) must not land on a drifting cloud.
-    if (!Number.isFinite(y)) return floor;
-    for (let i = 0; i < clouds.length; i++) {
-      const cloud = clouds[i], node = cloud.node, p = node.position;
-      if (!node.visible || node.parent !== root || cloud.size < 0.2) continue;
-      const size = cloud.size, lx = (x - p.x) / size, lz = (z - p.z) / size, bounds = cloud.bounds;
-      const reach = PLAYER_RADIUS / size;
-      if (lx < bounds[0] - reach || lx > bounds[2] + reach || lz < bounds[1] - reach || lz > bounds[3] + reach) continue;
-      const tops = cloud.tops;
-      for (let j = 0; j < tops.length; j += 5) {
-        const top = p.y + tops[j + 4] * size;
-        if (top <= floor || top > y + maxStep + 1e-7) continue;
-        const dx = Math.max(tops[j] - lx, 0, lx - tops[j + 2]), dz = Math.max(tops[j + 1] - lz, 0, lz - tops[j + 3]);
-        if (dx * dx + dz * dz >= reach * reach - 1e-9) continue;
-        if (top > y + 1e-7 && height && (!physicalClearAt(x, top, z, PLAYER_RADIUS, height, actor) || !island.voxelSegmentClearAt(x, y, z, x, top, z, PLAYER_RADIUS, height))) continue;
-        floor = top;
-        cloudHit = cloud;
-      }
-    }
-    return floor;
-  };
-  const cloudAt = (x, z, y, maxStep = 0) => {
-    const floor = cloudFloorAt(x, z, y, maxStep);
-    return floor > island.supportAt(x, z, y, STEP_MAX, ABYSS_FLOOR, PLAYER_RADIUS) ? cloudHit : null;
-  };
-  const prepareCloudSupport = (cave) => {
-    const p = cave.root.position, feet = p.y - cave.baseY, previous = cave.cloudSupport;
-    const grounded = cave.hop === 0 && cave.hopV <= 0;
-    const height = cave.bodyHeight + Math.max(0, cave.viewLift);
-    if (previous && grounded && !previous.wrapped && previous.node.visible && previous.node.parent === root) {
-      const x = p.x + previous.dx, z = p.z + previous.dz;
-      const floor = cloudFloorAt(x, z, feet, STEP_MAX, height, cave);
-      // A remembered cloud can now be above, below or beside the Ooga. Carry only when its same top surface still
-      // touches the feet; proximity elsewhere in the cloud must never add horizontal motion.
-      const onTop = cloudHit === previous && Math.abs(floor - feet) <= Math.abs(previous.dy) + CLOUD_SUPPORT_EPSILON;
-      if (onTop && flyable(p.x, p.z, x, z, feet, height, cave) && physicalClearAt(x, floor, z, PLAYER_RADIUS, height, cave) && island.voxelSegmentClearAt(p.x, feet, p.z, x, floor, z, PLAYER_RADIUS, height)) {
-        p.x = x; p.z = z;
-      }
-    }
-    const floor = cloudFloorAt(p.x, p.z, feet, grounded ? STEP_MAX : 0, height, cave), current = cloudHit;
-    const ground = Math.max(island.supportAt(p.x, p.z, feet, STEP_MAX, ABYSS_FLOOR, PLAYER_RADIUS), bedSupportAt(p.x, p.z, feet, STEP_MAX, PLAYER_RADIUS), propSupportAt(p.x, p.z, feet, grounded ? STEP_MAX : 0, cave));
-    if (previous || floor > ground) {
-      const support = Math.max(floor, ground);
-      cave.hop = Math.max(0, feet - support);
-      p.y = cave.baseY + support + cave.hop;
-    }
-    // Remember the support layer during flight too.
-    // If that cloud drifts away before landing, hop must rebase onto the abyss without a snap.
-    cave.cloudSupport = floor > ground ? current : null;
-  };
   // Stone frames are rendered boxes, separate from the carved terrain.
   // Rotate the cylinder into each fixed arch's axes; its footprint stays round.
   const entranceCeilingAt = (x, z, y, radius) => {
@@ -5767,198 +5576,40 @@
     p.x = x; p.z = z;
     return true;
   };
-  const cloudBox = (x0, y0, z0, x1, y1, z1) => cloudObstacles.push({ x0, y0, z0, x1, y1, z1 });
-  const cloudBridgeBox = (x0, z0, x1, z1, y, width) => {
-    const reach = width / 2 + 0.7;
-    cloudBox(Math.min(x0, x1) - reach, y - 1.5, Math.min(z0, z1) - reach,
-      Math.max(x0, x1) + reach, y + 3.5, Math.max(z0, z1) + reach);
-  };
-  const buildCloudObstacles = () => {
-    cloudObstacles.length = 0;
-    cloudBox(-RADIUS - 4, -30, -RADIUS - 4, RADIUS + 4, 24, RADIUS + 4);
-    const pool = mempoolIsland.place, poolSite = poolModels.SITE, poolDir = poolModels.DIR;
-    cloudBox(pool.x - poolSite.reach - 3, pool.y - poolSite.isletDepth - 1, pool.z - poolSite.reach - 3,
-      pool.x + poolSite.reach + 3, pool.y + 25, pool.z + poolSite.reach + 3);
-    cloudBridgeBox(pool.bridgeX, pool.bridgeZ, pool.x - poolDir.x * (poolSite.isletR - 1),
-      pool.z - poolDir.z * (poolSite.isletR - 1), pool.y, poolSite.width);
-    const sphere = timechainIsland.place, sphereSite = BL.timechainModels.SITE, sphereDir = BL.timechainModels.DIR;
-    cloudBox(sphere.x - sphereSite.radius - 0.25, sphere.y + 3 - sphereSite.radius - 0.25,
-      sphere.z - sphereSite.radius - 0.25, sphere.x + sphereSite.radius + 0.25,
-      sphere.y + 3 + sphereSite.radius + 0.25, sphere.z + sphereSite.radius + 0.25);
-    cloudBridgeBox(sphere.x - sphereDir.x * sphere.bridgeZ, sphere.z - sphereDir.z * sphere.bridgeZ,
-      sphere.x - sphereDir.x * (sphere.bridgeZ + sphereSite.span),
-      sphere.z - sphereDir.z * (sphere.bridgeZ + sphereSite.span), sphere.y, sphereSite.width);
-    if (bifrostIsle) {
-      const c = bifrostIsle.site.cloud;
-      cloudBox(c.x - c.r - 3, c.y - 18, c.z - c.r - 3, c.x + c.r + 3, c.y + 17, c.z + c.r + 3);
-      cloudBridgeBox(c.head.x, c.head.z, c.end.x, c.end.z, c.y, c.width);
-    }
-  };
-  const cloudToward = (value, target, distance) => value + clamp(target - value, -distance, distance);
-  const cloudClearAt = (cloud, x, y, z, ahead = 0) => {
-    const b = cloud.fullBounds;
-    const x0 = x + b[0], y0 = y + b[1], z0 = z + b[2], x1 = x + b[3], y1 = y + b[4], z1 = z + b[5];
-    for (let i = 0; i < cloudObstacles.length; i++) {
-      const o = cloudObstacles[i];
-      if (x0 < o.x1 + CLOUD_GAP && x1 > o.x0 - CLOUD_GAP && y0 < o.y1 + CLOUD_GAP && y1 > o.y0 - CLOUD_GAP
-        && z0 < o.z1 + CLOUD_GAP && z1 > o.z0 - CLOUD_GAP) return false;
-    }
-    for (let i = 0; i < clouds.length; i++) {
-      const other = clouds[i];
-      if (other === cloud) continue;
-      const p = other.node.position, travel = other.speed * ahead;
-      if ((other.beside ? p.z : p.x) + travel > CLOUD_WRAP) continue;
-      const ox = other.beside ? cloudToward(p.x, other.goalSide, CLOUD_SIDE_RATE * ahead) : p.x + travel;
-      const oz = other.beside ? p.z + travel : cloudToward(p.z, other.goalSide, CLOUD_SIDE_RATE * ahead);
-      const oy = cloudToward(p.y, other.goalY, CLOUD_RISE_RATE * ahead), q = other.fullBounds;
-      if (x0 < ox + q[3] + CLOUD_GAP && x1 > ox + q[0] - CLOUD_GAP && y0 < oy + q[4] + CLOUD_GAP
-        && y1 > oy + q[1] - CLOUD_GAP && z0 < oz + q[5] + CLOUD_GAP && z1 > oz + q[2] - CLOUD_GAP) return false;
-    }
-    return true;
-  };
-  const cloudRouteTime = (cloud, side, height, horizon) => {
-    const p = cloud.node.position, axis = cloud.beside ? p.z : p.x, lateral = cloud.beside ? p.x : p.z;
-    for (let t = 0; t <= horizon + CLOUD_PLAN_STEP; t += CLOUD_PLAN_STEP) {
-      t = Math.min(t, horizon);
-      const along = axis + cloud.speed * t, across = cloudToward(lateral, side, CLOUD_SIDE_RATE * t);
-      const y = cloudToward(p.y, height, CLOUD_RISE_RATE * t);
-      if (!cloudClearAt(cloud, cloud.beside ? across : along, y, cloud.beside ? along : across, t)) return t;
-      if (t === horizon) break;
-    }
-    return horizon + CLOUD_PLAN_STEP;
-  };
-  const considerCloudRoute = (cloud, side, height, horizon) => {
-    side = clamp(side, -84, 84); height = clamp(height, -35, 35);
-    const time = cloudRouteTime(cloud, side, height, horizon), p = cloud.node.position;
-    const lateral = cloud.beside ? p.x : p.z;
-    const cost = Math.abs(side - lateral) + Math.abs(height - p.y) * 1.2
-      + (side === cloud.goalSide && height === cloud.goalY ? 0 : 0.2);
-    if (time > cloud.bestTime || time === cloud.bestTime && cost < cloud.bestCost) {
-      cloud.bestTime = time; cloud.bestCost = cost; cloud.bestSide = side; cloud.bestY = height;
-    }
-  };
-  const planCloud = (cloud) => {
-    const p = cloud.node.position, axis = cloud.beside ? p.z : p.x, side = cloud.beside ? p.x : p.z;
-    const horizon = Math.min(CLOUD_LOOK, (CLOUD_WRAP - axis) / cloud.speed);
-    if (horizon <= 0) return;
-    cloud.bestTime = -1; cloud.bestCost = Infinity;
-    considerCloudRoute(cloud, cloud.goalSide, cloud.goalY, horizon);
-    for (let i = 0; i < CLOUD_SIDE_OFFSETS.length; i++) considerCloudRoute(cloud, side + CLOUD_SIDE_OFFSETS[i], p.y, horizon);
-    for (let i = 1; i < CLOUD_HEIGHT_OFFSETS.length; i++) considerCloudRoute(cloud, side, p.y + CLOUD_HEIGHT_OFFSETS[i], horizon);
-    if (cloud.bestTime <= horizon) {
-      for (let si = 0; si < 2; si++) for (let yi = 0; yi < 2; yi++) {
-        considerCloudRoute(cloud, side + (si ? 14 : -14), p.y + (yi ? 6 : -6), horizon);
-      }
-    }
-    cloud.goalSide = cloud.bestSide; cloud.goalY = cloud.bestY;
-  };
-  const cloudOccupied = (cloud) => {
-    if (!crew) return false;
-    for (let i = 0; i < crew.list.length; i++) {
-      const cave = crew.list[i];
-      if (cave.root.visible && cave.cloudSupport === cloud) return true;
-    }
-    return false;
-  };
+  // Decorative clouds keep their shapes, height band and fades. A fixed ring gives them gentle drift
+  // without terrain queries, obstacle avoidance, walking surfaces or passengers.
   const placeCloud = (cloud, initial = false) => {
     const p = cloud.node.position, rand = cloudRandom;
-    for (let attempt = 0; attempt < 512; attempt++) {
-      const angle = rand() * Math.PI * 2;
-      const radius = Math.sqrt(lerp(CLOUD_NEAR * CLOUD_NEAR, CLOUD_WRAP * CLOUD_WRAP, rand()));
-      p.x = Math.cos(angle) * radius; p.z = Math.sin(angle) * radius;
-      p.y = attempt < 384 ? lerp(-9, 13, rand()) : lerp(13, 35, rand());
-      if (!cloudClearAt(cloud, p.x, p.y, p.z)) continue;
-      cloud.goalSide = cloud.beside ? p.x : p.z;
-      cloud.goalY = p.y;
-      if (cloudRouteTime(cloud, cloud.goalSide, cloud.goalY, CLOUD_CLEAR_RUN) <= CLOUD_CLEAR_RUN) continue;
-      cloud.age = initial ? CLOUD_FADE : 0;
-      cloud.life = lerp(55, 145, rand());
-      cloud.size = initial ? 1 : 0.01;
-      cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
-      cloud.stalled = cloud.blocked = cloud.dx = cloud.dy = cloud.dz = 0;
-      cloud.planTimer = 0;
-      cloud.wrapped = !initial;
-      return;
-    }
-    throw new Error("No clear cloud spawn in the island ring");
+    cloud.angle = rand() * Math.PI * 2;
+    cloud.radius = Math.sqrt(lerp(CLOUD_NEAR * CLOUD_NEAR, CLOUD_FAR * CLOUD_FAR, rand()));
+    p.x = Math.cos(cloud.angle) * cloud.radius; p.z = Math.sin(cloud.angle) * cloud.radius;
+    p.y = lerp(-9, 13, rand());
+    cloud.age = initial ? CLOUD_FADE : 0;
+    cloud.life = lerp(55, 145, rand());
+    cloud.size = initial ? 1 : 0.01;
+    cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
   };
-  // Clouds ring the island, appearing at clear points throughout the ring.
   const buildClouds = () => {
     const rand = cloudRandom = mulberry32(SEED + 77);
-    const surfaces = new Map();
-    buildCloudObstacles();
     for (let i = 0; i < CLOUD_COUNT; i++) {
-      const beside = i % 2 === 0;
-      const node = createNode({ geometry: hubModels.cloud(Math.min(2, i % 4)), matrixCloud: true });
-      let surface = surfaces.get(node.geometry);
-      if (!surface) {
-        const tops = [], bounds = [Infinity, Infinity, -Infinity, -Infinity], v = node.geometry.verts;
-        const full = BL.scene.boundsOf(node.geometry);
-        for (const face of node.geometry.faces) {
-          const a = face.i[0] * 3, b = face.i[1] * 3, c = face.i[2] * 3;
-          if ((v[b + 2] - v[a + 2]) * (v[c] - v[a]) - (v[b] - v[a]) * (v[c + 2] - v[a + 2]) <= 0) continue;
-          let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-          for (const vertex of face.i) {
-            minX = Math.min(minX, v[vertex * 3]); maxX = Math.max(maxX, v[vertex * 3]);
-            minZ = Math.min(minZ, v[vertex * 3 + 2]); maxZ = Math.max(maxZ, v[vertex * 3 + 2]);
-          }
-          tops.push(minX, minZ, maxX, maxZ, v[a + 1]);
-          bounds[0] = Math.min(bounds[0], minX); bounds[1] = Math.min(bounds[1], minZ);
-          bounds[2] = Math.max(bounds[2], maxX); bounds[3] = Math.max(bounds[3], maxZ);
-        }
-        let centerTop = -Infinity;
-        for (let j = 0; j < tops.length; j += 5) if (tops[j] <= 0 && tops[j + 2] >= 0 && tops[j + 1] <= 0 && tops[j + 3] >= 0) centerTop = Math.max(centerTop, tops[j + 4]);
-        surface = {
-          tops: new Float64Array(tops), bounds: new Float64Array(bounds), centerTop,
-          fullBounds: new Float64Array([...full.min, ...full.max])
-        };
-        surfaces.set(node.geometry, surface);
-      }
-      const cloud = {
-        node, speed: 0.4 + rand() * 0.4, beside, tops: surface.tops, bounds: surface.bounds,
-        fullBounds: surface.fullBounds, centerTop: surface.centerTop, dx: 0, dy: 0, dz: 0, wrapped: false,
-        goalSide: 0, goalY: 0, planTimer: i / CLOUD_COUNT, bestTime: 0, bestCost: 0, bestSide: 0, bestY: 0,
-        age: 0, life: 0, size: 1, stalled: 0, blocked: 0
-      };
+      const node = createNode({ geometry: hubModels.cloud(Math.min(2, i % 4)), matrixCloud: true, sightHidden: true });
+      const cloud = { node, speed: 0.4 + rand() * 0.4, direction: i % 2 ? 1 : -1, angle: 0, radius: 0, age: 0, life: 0, size: 1 };
       placeCloud(cloud, true);
-      cloud.planTimer = i / CLOUD_COUNT;
       addChild(root, node);
       placed.push(node);
       clouds.push(cloud);
     }
-    for (let i = 0; i < clouds.length; i++) planCloud(clouds[i]);
   };
   const updateClouds = (dt) => {
     for (let i = 0; i < clouds.length; i++) {
       const cloud = clouds[i], p = cloud.node.position;
       cloud.age = Math.min(CLOUD_FADE, cloud.age + dt);
-      if (cloud.life <= CLOUD_FADE && cloudOccupied(cloud)) cloud.life = CLOUD_FADE;
-      else cloud.life -= dt;
-      if (cloud.life <= 0) { placeCloud(cloud); planCloud(cloud); continue; }
+      cloud.life -= dt;
+      if (cloud.life <= 0) { placeCloud(cloud); continue; }
       cloud.size = Math.max(0.01, Math.min(1, cloud.age / CLOUD_FADE, cloud.life / CLOUD_FADE));
       cloud.node.scale.x = cloud.node.scale.y = cloud.node.scale.z = cloud.size;
-      if ((cloud.planTimer -= dt) <= 0) { planCloud(cloud); cloud.planTimer = 0.8; }
-      const x = p.x, y = p.y, z = p.z, along = (cloud.beside ? z : x) + cloud.speed * dt;
-      cloud.wrapped = false;
-      if (along > CLOUD_WRAP) {
-        placeCloud(cloud); planCloud(cloud); continue;
-      } else {
-        const side = cloudToward(cloud.beside ? x : z, cloud.goalSide, CLOUD_SIDE_RATE * dt);
-        const height = cloudToward(y, cloud.goalY, CLOUD_RISE_RATE * dt);
-        const nx = cloud.beside ? side : along, nz = cloud.beside ? along : side;
-        if (cloudClearAt(cloud, nx, height, nz)) { p.x = nx; p.y = height; p.z = nz; }
-        else if (cloudClearAt(cloud, cloud.beside ? side : x, height, cloud.beside ? z : side)) {
-          if (cloud.beside) p.x = side; else p.z = side;
-          p.y = height;
-          cloud.planTimer = 0.25;
-        } else cloud.planTimer = 0.25;
-      }
-      cloud.stalled = Math.hypot(p.x - x, p.y - y, p.z - z) < cloud.speed * dt * 0.05 ? cloud.stalled + dt : 0;
-      cloud.blocked = (cloud.beside ? p.z - z : p.x - x) < cloud.speed * dt * 0.25 ? cloud.blocked + dt : 0;
-      if (cloud.stalled >= CLOUD_STALL || cloud.blocked >= CLOUD_NO_PROGRESS) { placeCloud(cloud); planCloud(cloud); continue; }
-      cloud.dx = cloud.wrapped ? 0 : p.x - x;
-      cloud.dy = cloud.wrapped ? 0 : p.y - y;
-      cloud.dz = cloud.wrapped ? 0 : p.z - z;
+      cloud.angle += cloud.direction * cloud.speed * dt / cloud.radius;
+      p.x = Math.cos(cloud.angle) * cloud.radius; p.z = Math.sin(cloud.angle) * cloud.radius;
     }
   };
   // The dais and its flush, one block-wide perimeter grow continuously with the pile.
@@ -6026,16 +5677,17 @@
       cave.cheer = 1.6;
       fx.say(cave, ["OOGA!", "BOOGA!", "BANANA!"][fnv1a(`${donation.id}/${cave.traits.name}`) % 3], 1.8);
     }
-    fx.burst(0, DROP_HEIGHT - 0.2, 0, 26, CONFETTI, 2.2);
     fx.showTicker(`THANKS ${donation.handle ? "@" + donation.handle.toUpperCase() : "ANON"} · ${gameMod.formatLarge(bananas)} BANANAS`, 4.5);
   };
   // The Bitcoin feed: a block strikes the lake and sends light through its collector.
   const onMempool = (event) => {
     if (event.type === "block") {
-      // Every block mined while the page is open strikes, whatever the weather is doing.
-      weather.strike({ x: mempoolIsland.place.x, y: mempoolIsland.place.y + mempoolIsland.water.state.shown, z: mempoolIsland.place.z });
-      // And a cube of the lake leaves through the chamber. It takes nothing with it: the backlog says what is left.
-      mempoolIsland.water.block(event.height);
+      // Distant blocks still update the chain and its notice, without queuing a show for the next visit.
+      if (poolEffectsActive) {
+        weather.strike({ x: mempoolIsland.place.x, y: mempoolIsland.place.y + mempoolIsland.water.state.shown, z: mempoolIsland.place.z });
+        // A cube takes nothing with it: the backlog says what is left.
+        mempoolIsland.water.block(event.height);
+      }
       hud.toast(`Block ${event.height} mined${event.txCount ? ` · ${event.txCount} transactions` : ""}`);
     }
   };
@@ -6254,9 +5906,9 @@
     {
       caption: "Rain",
       draw: (c2, s) => {
-        const live = weather.state.arrivals === "live";
-        reading(c2, "ARRIVALS", live ? rateText(weather.state.inflow) : "- VB/S", live ? "#8fc3ff" : STALE_INK,
-          [live ? weatherMod.STEPS[weather.state.step].name.toUpperCase() : "RAIN UNAVAILABLE", s.backlogAt ? `QUEUE ${backlogText(s.vsize)}` : "QUEUE UNAVAILABLE"]);
+        const live = arrivalsLive(s), step = poolEffectsActive ? weather.state.step : weatherMod.stepFor(s.gale);
+        reading(c2, "ARRIVALS", live ? rateText(s.inflow) : "- VB/S", live ? "#8fc3ff" : STALE_INK,
+          [live ? weatherMod.STEPS[step].name.toUpperCase() : "RAIN UNAVAILABLE", s.backlogAt ? `QUEUE ${backlogText(s.vsize)}` : "QUEUE UNAVAILABLE"]);
       },
       note: () => "The large number is new transaction data arriving per second (vB/s). Rain follows a roughly 30-second average, so the weather changes smoothly. The queue below is data still waiting in the mempool (MvB): arrivals can grow it, while new blocks can reduce it. If arrival updates stop for 90 seconds, rain fades and the rate becomes unavailable; that does not mean zero arrivals."
     },
@@ -6264,8 +5916,9 @@
       caption: "Lake",
       draw: (c2, s) => {
         const water = mempoolIsland.water.state;
-        const known = water.status !== "unavailable" || water.preview !== null;
-        reading(c2, "MEMPOOL", known ? backlogText(water.vsize) : "NO READING", water.status === "live" ? "#7cc8ff" : STALE_INK,
+        const known = water.status !== "unavailable" || water.observedAt > 0 || water.preview !== null;
+        const live = water.preview !== null || water.debugFill !== null || water.observedAt > 0 && Date.now() - water.observedAt < BL.poolWater.HYDRO.FRESH_MS;
+        reading(c2, "MEMPOOL", known ? backlogText(water.vsize) : "NO READING", live ? "#7cc8ff" : STALE_INK,
           backlogDetails(s.count, known && water.preview === null && !!s.backlogAt));
       },
       note: () => {
@@ -6291,8 +5944,8 @@
   const onChain = (snapshot) => {
     weather.apply(snapshot);
     mempoolIsland.water.apply(snapshot);
-    mempoolIsland.paintings.refresh(snapshot);
-    refreshChainSign();
+    if (poolEffectsActive || hud.el.board.open) mempoolIsland.paintings.refresh(snapshot);
+    if (poolEffectsActive) refreshChainSign();
     // The boards' canvases only feed the dialog, and openPoolBoard repaints on open.
     if (hud.el.board.open) {
       chainBoard.refresh();
@@ -6419,7 +6072,7 @@
     if (hit.node === mirrorCave.node || o.kind === "cave-sign" || o.kind === "room-sign" || o.kind === "sphere-key" || o.kind === "matrix-button" || o.kind === "matrix-gate"
       || o.kind === "lab-link" || o.kind === "piece" || o.kind === "halloween" && o.role === "herald") return "object"; // HALLOWEEN: halloween
     if (o.kind === "cave") return o.slot.status === "open" ? "object" : "none";
-    if (o.kind === "prop" && (o.breakable || RETICLE_PROPS.has(o.prop))) return "object";
+    if (o.kind === "prop" && RETICLE_PROPS.has(o.prop)) return "object";
     return "none";
   };
   const wobble = (node, amp) => {
@@ -6444,10 +6097,6 @@
     return true;
   };
   const reactProp = (o, p) => {
-    if (o.breakable) {
-      hud.toast("Swing your melee weapon or shoot to break it");
-      return;
-    }
     const w = o.node.world;
     const x = w[12], z = w[14];
     const foundMagazine = (o.prop === "tree" || o.prop === "bush") && revealMagazine(o);
@@ -6462,10 +6111,6 @@
         if (!wobble(o.node, 0.25)) return;
         fx.burst(x, w[13] + 0.7, z, 6, [LEAF], 1.2);
         if (!foundMagazine && !dropBanana(o, BUSH_CHANCE)) hud.toast(BUSH_WORDS[fnv1a(`${o.x}/${o.z}/${Math.floor(now)}`) % BUSH_WORDS.length]);
-        break;
-      case "rock":
-        fx.burst(x, 0.6, z, 6, [CHIP], 1.4);
-        hud.toast("Solid rock. Ow.");
         break;
       case "totem":
         pokeTotem(o);
@@ -6484,15 +6129,6 @@
             if (jumbotron.tapAt(TAP_RAY) === "screen") openJumbotron();
           } else openJumbotron();
         }
-        break;
-      case "crate":
-        if (!wobble(o.node, 0.12)) return;
-        fx.burst(x, 0.9, z, 5, [DUST], 1);
-        hud.toast("Locked. Ooga knows the code.");
-        break;
-      case "barrel":
-        if (!wobble(o.node, 0.3)) return;
-        hud.toast("Empty. Ooga drank it.");
         break;
       case "flower":
         if (!wobble(o.node, 0.4)) return;
@@ -6531,6 +6167,7 @@
         hud.toast("The Mempool is under the lake. Walk in through the hill.");
         break;
       case "poolpainting":
+        mempoolIsland.paintings.refresh(chain.snapshot);
         o.stop.board.index = 0;
         hud.openBoard(o.stop.board);
         break;
@@ -7634,7 +7271,6 @@
     if (player && closeMix > 0.5 && (player.hop > 1e-5 || Math.abs(player.hopV) > 1e-5)) return -Infinity;
     if (player && (abyssAt(player.root.position.x, player.root.position.z, player.root.position.y - player.baseY) || !playerCaveIndex && player.root.position.y - player.baseY < island.surfaceAt(player.root.position.x, player.root.position.z) - STEP_MAX)) return -Infinity;
     if (!player && pilot.freeFalling && abyssAt(x, z, y - CLOSE_VIEW.eyeHeight)) return -Infinity;
-    if (!player && closeMix > 0.5 && cloudAt(x, z, y - CLOSE_VIEW.eyeHeight)) return -Infinity;
     if (undergroundAir && y < physicalFloor && cameraClearAt(x, y, z)) {
       exteriorCeiling = island.ceilingAt(x, y - CAMERA_RADIUS, z, CAMERA_RADIUS) - CAMERA_RADIUS;
       return island.onLand(x, z) ? island.supportAt(x, z, y - CAMERA_RADIUS, 0, ABYSS_FLOOR) + CAMERA_RADIUS : -Infinity;
@@ -8224,47 +7860,12 @@
     go: (i) => jumbotron.goToView(i)
   };
   const openJumbotron = () => hud.openBoard(jumbotronBoard);
-  // Contribution fireworks: shells rise from the jumbotron (or `from`, a totem's
-  // top) and burst in the board's stat colors. Queued with absolute scene-clock
-  // times and stepped in update(), so a waiting shell costs nothing per frame.
-  const fireworksShells = [];
-  const launchFireworks = (strength = 1, from = jumbotronSpot) => {
-    if (!from || !fx || gameMode) return 0;
-    const shells = Math.min(6, 2 + Math.min(4, strength | 0));
-    for (let i = 0; i < shells; i++) {
-      fireworksShells.push({
-        at: now + i * 0.38 + Math.random() * 0.2,
-        phase: "launch",
-        x: from.x + (Math.random() - 0.5) * 2.6,
-        y: from.y,
-        z: from.z + (Math.random() - 0.5) * 1.4,
-        rise: 2.2 + Math.random() * 1.4
-      });
-    }
-    return shells;
-  };
-  const updateFireworks = () => {
-    for (let i = fireworksShells.length - 1; i >= 0; i--) {
-      const shell = fireworksShells[i];
-      if (now < shell.at) continue;
-      if (shell.phase === "launch") {
-        // The rising shell: a fast spark streak with lift instead of drop.
-        fx.spawnParticle(SPARK, shell.x, shell.y, shell.z, 0, shell.rise * 2.4, 0, 0.5, 10, -1.5, 0.03);
-        shell.phase = "burst";
-        shell.at = now + 0.5;
-      } else {
-        fx.burst(shell.x, shell.y + shell.rise, shell.z, 26, FIREWORK, 3.4);
-        fx.burst(shell.x, shell.y + shell.rise, shell.z, 8, [SPARK], 1.6);
-        fireworksShells.splice(i, 1);
-      }
-    }
-  };
   // The four repository totems stand in two pairs beside the jumbotron approach, each with its faces toward the
   // pile. Fire burns in their eyes, each flame a node on the arcade's one `blaze` geometry. For a day after a PR
   // merges into main or master (`totemFeed`, `totemGlow.RECENT`), the repository's own pattern moves over the runes
   // cut into TOTEM_SLICE m slices up the pole and the eyes at their heights, waning to 60% by the day's end; light
   // circles the carved bands between heads, and painted details pulse softly. A merge seen during the visit flares
-  // them brightest for TOTEM_FLARE seconds with sparks. Outside that day the eyes and all glow go out.
+  // them brightest for TOTEM_FLARE seconds. Outside that day the eyes and all glow go out.
   // Each also casts a soft warm light from its middle that follows them, its own lamp kind so the tiers'
   // nearest-first choice treats it like any other lamp.
   // Each stands as tall and wide as its repository's importance (`totemModels.layout`); TOTEM_ROOM past its reach
@@ -8296,14 +7897,12 @@
     speech.cancel();
     speech.speak(line);
   };
-  // A merge landing during the visit: the eyes and runes flare, sparks fly from the eyes, fireworks go up from the
-  // totem's top, the Oogas awake within TOTEM_CHEER cheer and shout its word (never the one being driven), a deep
+  // A merge landing during the visit: the eyes and runes flare, the Oogas awake within TOTEM_CHEER cheer
+  // and shout its word (never the one being driven), a deep
   // voice shouts "Ooga booga!", and one notice names the repository.
   const flareTotem = (i) => {
     const o = totems[i], p = o.owner.node.position, repo = BL.totemFeed.REPOS[i];
     o.flare = 1;
-    fx.burst(p.x, p.y + o.eyeTop, p.z, 14, [SPARK], 1.8);
-    launchFireworks(3, o.top);
     for (const cave of crew.cavemen.values()) {
       if (cave === pilot.player || cave.build || cave.state === "sleeping") continue;
       const c = cave.root.position;
@@ -8358,7 +7957,7 @@
       };
       const light = { r: 0, g: 0, b: 0, radius: 0, glow: 0, hide: false };
       const lamp = addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, Infinity, `totem:${i}`);
-      totems.push({ owner, runes, rings, features, flames, light, lamp, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])), top: { x: spot.x, y: L.apex, z: spot.z } });
+      totems.push({ owner, runes, rings, features, flames, light, lamp, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])) });
     });
     totemUnsub = feed.subscribe((event) => {
       if (event.fresh) flareTotem(event.index);
@@ -8454,6 +8053,8 @@
       }
     }
     RENDER_OPTS.time = elapsed;
+    updatePoolEffectsActivity();
+    if (poolEffectsActive) poolEffectsTime += dt;
     // Under the Mempool island's ground the storm is muffled and the daylight shut out: no shadow reaches that
     // island, so its tunnels would otherwise stand in full sun. The fires and the water light them instead.
     // By where the eye is, not what it looks at: a view from outside aimed into the rock is still outdoors.
@@ -8468,8 +8069,8 @@
       for (let i = 0; i < 3; i++) { RENDER_OPTS.sky[i] *= keep; RENDER_OPTS.ground[i] *= keep; }
     }
     if (ghosts) ghosts.shade(RENDER_OPTS); // HALLOWEEN: the boss dims the sky
-    if (!gameMode) {
-      mempoolIsland.water.update(dt, elapsed, Date.now());
+    if (poolEffectsActive) {
+      mempoolIsland.water.update(dt, poolEffectsTime, Date.now());
       mempoolIsland.paintings.update(dt);
     }
     updateTotems(dt, elapsed);
@@ -8478,9 +8079,8 @@
     if (jumbotron) {
       jumbotron.update(elapsed, renderer);
     }
-    updateChainSign(elapsed);
+    if (poolEffectsActive) updateChainSign(poolEffectsTime);
     hud.updateBoard(elapsed);
-    if (fireworksShells.length) updateFireworks();
     const next = daylight.phaseAt(hour);
     if (next !== phase) setPhase(next);
     if (DEBUG) syncDaylightDebug(hour);
@@ -8575,18 +8175,20 @@
     remotes.update(dt);
     if (ghosts) ghosts.update(dt); // HALLOWEEN
     else if (GHOSTS_WANTED && !ghostLoading && elapsed > 2) loadGhosts(); // HALLOWEEN
-    if (!gameMode) mempoolIsland.wildlife.update(dt, elapsed);
-    for (const cave of crew.list) if (cave.root.visible) {
-      const p = cave.root.position;
-      mempoolIsland.wake(cave.root, p.x, p.y - cave.baseY, p.z, cave.bodyHeight, 0.35);
-    }
-    for (const entry of clankers.list) if (entry.active && entry.root.visible) {
-      const p = entry.root.position;
-      mempoolIsland.wake(entry.root, p.x, p.y, p.z, entry.height, 0.65);
-    }
-    for (const animal of mempoolIsland.wildlife.list) if (animal.root.visible) {
-      const p = animal.root.position, radius = animal.cfg.radius;
-      mempoolIsland.water.wake(animal.root, p.x, p.y, p.z, radius * 2, radius);
+    if (poolEffectsActive) {
+      mempoolIsland.wildlife.update(dt, poolEffectsTime);
+      for (const cave of crew.list) if (cave.root.visible) {
+        const p = cave.root.position;
+        mempoolIsland.wake(cave.root, p.x, p.y - cave.baseY, p.z, cave.bodyHeight, 0.35);
+      }
+      for (const entry of clankers.list) if (entry.active && entry.root.visible) {
+        const p = entry.root.position;
+        mempoolIsland.wake(entry.root, p.x, p.y, p.z, entry.height, 0.65);
+      }
+      for (const animal of mempoolIsland.wildlife.list) if (animal.root.visible) {
+        const p = animal.root.position, radius = animal.cfg.radius;
+        mempoolIsland.water.wake(animal.root, p.x, p.y, p.z, radius * 2, radius);
+      }
     }
     dockStairs.update(dt, pilot.player);
     updateRoomSigns(dt);
@@ -8628,7 +8230,6 @@
         fx.zzzAt(s.x, s.y, s.z);
       }
     }
-    breakables.update(dt, elapsed);
     crates.update(dt, elapsed);
     fx.update(dt);
     stepTweens(dt);
@@ -8770,7 +8371,7 @@
   };
   // GAME MODE: an island event (the ghost hunt today, others to come) clears the island for play and holds the
   // scenery still while it runs: every gorilla nobody drives goes away (clankers' `setAway`), the trees stop swaying
-  // (the renderer's `windTime` held where it stood), no fireworks go up, the meadow's fire pit goes out (`updateLamps`),
+  // (the renderer's `windTime` held where it stood), the meadow's fire pit goes out (`updateLamps`),
   // the Timechain Sphere stops turning, the island's clouds and the Mempool island's weather go (`weather.hold`), and
   // the Mempool island itself is hidden and left unrun. All of it comes back when the event lets go, and in `leave`.
   const setGameMode = (on) => {
@@ -8779,11 +8380,11 @@
     gameMode = on;
     clankers.setAway(on);
     RENDER_OPTS.windTime = on ? performance.now() * 0.001 % 3600 : NaN;
-    if (on) fireworksShells.length = 0;
     // The act button and the hint pill under the play area (JUMP!, the controls' reminders) stand down too.
     document.body.classList.toggle("game-mode", on);
     for (const cloud of clouds) cloud.node.visible = !on;
     weather.hold(on);
+    updatePoolEffectsActivity();
     mempoolIsland.site.node.visible = !on;
   };
   // HALLOWEEN: the ghost hunt arrives after the island is up (data-defer="halloween", ghost-game.js) and works the island
@@ -8824,17 +8425,6 @@
     pileRadius: () => altar.platformRadius,
     pileTop: () => pile.core.position.y + pile.core.scale.y * pileTopY,
     setSeal: (fn) => { ghostSeal = fn; },
-    // Boxes and barrels away for the hunt (`poof` where each stood), and back where the island has room after it.
-    clearProps: (on, poof) => {
-      if (ghostClearsProps === on) return;
-      ghostClearsProps = on;
-      if (!on) { reflowScenery(); solids.sync(); return; }
-      for (const o of scenery) {
-        if (!o.breakable || !GHOST_PROPS.has(o.prop) || !o.active) continue;
-        if (poof) poof(o.node.position.x, o.node.position.y, o.node.position.z);
-        deactivateBreakable(o);
-      }
-    },
     dropJetpack: (cave) => { crew.removeJetpack(cave); pilot.showAct(); },
     // Nudges the driven Ooga along the ground (a ghost's knock, a wraith's pull) where it could walk.
     pull: (cave, dx, dz) => {
@@ -8858,7 +8448,7 @@
   // a cave by its mouth (EntropyLab, the Factory's tunnel and the Arcade's mouth share their halls' groups, HQ
   // is one place whichever entrance), a bridged land from the foot of its bridge (the Timechain Sphere, the
   // Mempool rainforest with its chamber and tunnels, the Bifrost isle), the island itself (`outside`), or
-  // nowhere past its edge: on a cloud, flying or falling off it. Allocation-free; a cave is named once.
+  // nowhere past its edge: flying or falling off it. Allocation-free; a cave is named once.
   const CAVE_ZONES = { c11: "lab", c10: "bca", c2: "factory", c3: "arcade", c1: "mirror" };
   const ZONE_HOLD = 0.25;
   const zoneNames = [];
@@ -8944,7 +8534,6 @@
   const drawExtra = (ctx2d, project) => {
     crew.drawDrops(ctx2d, project);
     remotes.drawNames(ctx2d, project);
-    breakables.drawOverlay(ctx2d);
     if (ghosts) ghosts.drawOverlay(ctx2d, project); // HALLOWEEN
     if (debugSelectedGorilla) {
       const entry = debugSelectedGorilla, move = entry.debugMove, p = entry.root.position;
@@ -10153,44 +9742,13 @@
     if (!entry) return;
     const combat = entry.combat;
     if (combat.serial !== entry.smashSerial) {
-      combat.hit = combat.groundChecked = combat.powerSpent = false;
-      combat.hitOwner = null; combat.serial = entry.smashSerial;
+      combat.hit = combat.powerSpent = false;
+      combat.serial = entry.smashSerial;
     }
-    if (!entry.pound) { combat.hit = combat.groundChecked = false; combat.hitOwner = null; return; }
+    if (!entry.pound) { combat.hit = false; return; }
     BL.scene.updateWorld(entry.root, root.world);
     combat.right.set(entry.gorilla.parts.armR.world);
     combat.left.set(entry.gorilla.parts.armL.world);
-  };
-  const clankerSmashOverlaps = (entry, owner) => {
-    const p = entry.root.position, node = owner.node, bounds = BL.scene.boundsOf(node.geometry);
-    const top = node.position.y + bounds.max[1] * node.scale.y;
-    const bottom = node.position.y + bounds.min[1] * node.scale.y;
-    if (top < p.y - BL.clankers.PROP_STEP - 0.2 || bottom > p.y + 1.2) return false;
-    const heading = entry.heading, forwardX = Math.sin(heading), forwardZ = Math.cos(heading);
-    const rightX = forwardZ, rightZ = -forwardX;
-    const scale = entry.root.scale.x, upright = entry.parked || entry.biped;
-    const halfForward = (upright ? 0.825 : 1.5) * scale;
-    const halfSide = (upright ? 0.825 : 0.85) * scale;
-    const centerForward = (upright ? 0.19 : 0.7) * scale;
-    const reach = 0.55 * scale, frontRadius = (halfForward + reach) * 0.5;
-    const centerX = p.x + forwardX * (centerForward + frontRadius);
-    const centerZ = p.z + forwardZ * (centerForward + frontRadius);
-    const angle = node.rotation.y, axisX = Math.cos(angle), axisZ = -Math.sin(angle);
-    const depthX = Math.sin(angle), depthZ = Math.cos(angle);
-    const midX = (bounds.min[0] + bounds.max[0]) * 0.5 * node.scale.x;
-    const midZ = (bounds.min[2] + bounds.max[2]) * 0.5 * node.scale.z;
-    const dx = node.position.x + axisX * midX + depthX * midZ - centerX;
-    const dz = node.position.z + axisZ * midX + depthZ * midZ - centerZ;
-    const radiusX = (bounds.max[0] - bounds.min[0]) * 0.5 * Math.abs(node.scale.x);
-    const radiusZ = (bounds.max[2] - bounds.min[2]) * 0.5 * Math.abs(node.scale.z);
-    const forwardAxis = forwardX * axisX + forwardZ * axisZ;
-    const forwardDepth = forwardX * depthX + forwardZ * depthZ;
-    const rightAxis = rightX * axisX + rightZ * axisZ;
-    const rightDepth = rightX * depthX + rightZ * depthZ;
-    return Math.abs(dx * forwardX + dz * forwardZ) <= frontRadius + radiusX * Math.abs(forwardAxis) + radiusZ * Math.abs(forwardDepth)
-      && Math.abs(dx * rightX + dz * rightZ) <= halfSide + radiusX * Math.abs(rightAxis) + radiusZ * Math.abs(rightDepth)
-      && Math.abs(dx * axisX + dz * axisZ) <= radiusX + frontRadius * Math.abs(forwardAxis) + halfSide * Math.abs(rightAxis)
-      && Math.abs(dx * depthX + dz * depthZ) <= radiusZ + frontRadius * Math.abs(forwardDepth) + halfSide * Math.abs(rightDepth);
   };
   const CLANKER_BURN_PARTS = ["legR", "legL", "armR", "armL", "torso", "head"];
   // Coast selection uses each island's actual exterior footprint. Route steps
@@ -10580,30 +10138,7 @@
         mirrorCave.ripples.strike(previous, part.world, part.geometry, dt);
         if (!combat.hit && input.weaponTargets.strike(CLANKER_HIT, previous, part.world, part.geometry, entry)) {
           combat.hit = true;
-          combat.hitOwner = CLANKER_HIT.owner;
           weaponImpact(entry, CLANKER_HIT, Math.sin(entry.heading), -1, Math.cos(entry.heading), entry.poundPower);
-        }
-      }
-      if (!combat.groundChecked && entry.poundHit) {
-        // A planted smash covers the front half of the walking footprint,
-        // including a breakable supporting the gorilla's front feet.
-        combat.groundChecked = true;
-        const p = entry.root.position, sx = Math.sin(entry.heading), sz = Math.cos(entry.heading);
-        for (let j = 0; j < breakables.list.length; j++) {
-          const record = breakables.list[j], owner = record.owner;
-          if (record.broken || !owner.active || owner === combat.hitOwner || !clankerSmashOverlaps(entry, owner)) continue;
-          CLANKER_HIT.node = owner.node; CLANKER_HIT.owner = owner;
-          CLANKER_HIT.x = owner.node.position.x; CLANKER_HIT.y = Math.min(p.y, owner.node.position.y + BL.scene.boundsOf(owner.node.geometry).max[1] * owner.node.scale.y);
-          CLANKER_HIT.z = owner.node.position.z;
-          combat.hit = true;
-          weaponImpact(entry, CLANKER_HIT, sx, -1, sz, entry.poundPower);
-        }
-        if (!combat.hit && input.weaponTargets.ray(CLANKER_HIT, p.x + sx * 1.2, p.y + 0.36, p.z + sz * 1.2,
-          sx, 0, sz, 1.9, entry.root, clankerGroundTarget)
-          && clankerCylinderClear(p.x, p.y + 0.36, p.z, CLANKER_HIT.x, CLANKER_HIT.y, CLANKER_HIT.z,
-            0.04, 0.08, entry, CLANKER_HIT.node)) {
-          combat.hit = true;
-          weaponImpact(entry, CLANKER_HIT, sx, -1, sz, entry.poundPower);
         }
       }
     }
@@ -10623,7 +10158,7 @@
     entry.fireFX.spread = new Float32Array(CLANKER_BURN_PARTS.length);
     entry.fireFX.burning = false;
     entry.combat = {
-      left: math.mat4.create(), right: math.mat4.create(), hit: false, hitOwner: null, groundChecked: false,
+      left: math.mat4.create(), right: math.mat4.create(), hit: false,
       serial: -1, lastHitAt: -Infinity, powerSpent: false
     };
     const visit = (node, region = "body") => {
@@ -10966,6 +10501,7 @@
 
   const enter = (ctx) => {
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
+    poolEffectsActive = false; poolEffectsTime = 0;
     glCanvas = ctx.canvas;
     factoryDeparting = bifrostDeparting = bifrostHeld = false;
     overlayCanvas = ctx.overlay;
@@ -11031,7 +10567,7 @@
     hooks = {};
     input = interactMod.create({ canvas: ctx.canvas, renderer, camera, hooks, preciseHover: true });
     presets = { pile: PILE_VIEW, gate: GATE_VIEW };
-    pilot = pilotMod.create({ renderer, canvas: ctx.canvas, camera, hud, presets, landing: "pile", pitch: [PITCH_MIN, PITCH_MAX], dist: [DIST_MIN, DIST_MAX], follow: FOLLOW, fly: FLY, clampTarget, clampCamera, observeOrbit: position => clampCamera(position, 0), ceilingAt, birdsEyeMin: BIRDS_EYE_MIN, birdsEyeCeiling, releaseView: releaseCameraView, enterFreeView: enterFreeCameraView, coarse: COARSE, onFreeAction: freeAction, jetpackStatus: jetpackHudStatus, mayPossess: mayDriveOoga, close: { ...CLOSE_VIEW, maxStep: STEP_MAX, groundAt: playerSupportAt, visualGroundAt: visualSupportAt, sleepEyeFloorAt, cloudAt, zone: () => playerCaveIndex } });
+    pilot = pilotMod.create({ renderer, canvas: ctx.canvas, camera, hud, presets, landing: "pile", pitch: [PITCH_MIN, PITCH_MAX], dist: [DIST_MIN, DIST_MAX], follow: FOLLOW, fly: FLY, clampTarget, clampCamera, observeOrbit: position => clampCamera(position, 0), ceilingAt, birdsEyeMin: BIRDS_EYE_MIN, birdsEyeCeiling, releaseView: releaseCameraView, enterFreeView: enterFreeCameraView, coarse: COARSE, onFreeAction: freeAction, jetpackStatus: jetpackHudStatus, mayPossess: mayDriveOoga, close: { ...CLOSE_VIEW, maxStep: STEP_MAX, groundAt: playerSupportAt, visualGroundAt: visualSupportAt, sleepEyeFloorAt, zone: () => playerCaveIndex } });
     chalkboard = BL.chalkboard.create({
       renderer,
       onOpen: () => { pilot.setActive(false); pilot.controls.reset(); input.reset(); hud.tooltip.hide(); },
@@ -11146,21 +10682,19 @@
       placed.push(jumbotron.node);
       addProp("jumbotron", jumbotron.node, jx, jz, 3.8).pickRay = ray => jumbotron.pickRay(ray);
       hud.restoreBoards(jumbotronBoard);
-      // Shells launch from just above the cabinet's top rail.
-      jumbotronSpot = { x: jx, y: jumbotron.node.position.y + 0.7 * jScale, z: jz };
       // Live stats land on the board and on the roster: fresh last-seen
       // times flow through contributors -> crew.refreshStates, which wakes a
       // sleeper into a walk out of the HQ (and the 60s state interval later
-      // walks idled Oogas down to bed). A rise in org activity earns fireworks.
+      // walks idled Oogas down to bed).
       oogatronUnsub = oogatronLive.subscribe((event) => {
         if (event.type === "stats") {
           if (jumbotron) jumbotron.refreshData(event.stats);
           contributors.applySnapshot(event.stats);
-        } else if (event.type === "contribution") launchFireworks(event.delta);
+        }
       });
     }
     buildTotems();
-    meadowDressing(firePos);
+    addDressingLights();
     buildPilePosts();
     plantPalms();
     raiseIslets();
@@ -11176,7 +10710,7 @@
     spawnMagazinePickup();
     critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt });
     mark("props");
-    const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, overlayVisible: matrixOverlayVisible, zzzVisible: sleepMarksVisible, tickerAt: TICKER_AT, buildSpots: buildSpotsList, walkIn: WALK_IN, clampDrag, viewYaw: PILE_VIEW.yaw, bedrolls, pileScale: PILE_SCALE, pileY: ALTAR_HEIGHT + 0.02, matrixLivingPile: true, onLayout: layoutPile, crateRadius: () => Math.max(4.4, altar.platformRadius + 0.8), groundAt: playerSupportAt, prepareCloudSupport, cloudAt, ceilingAt, wanderSpot, walkable, flyable, glideJetCeiling, useNear, abyssAt, abyssRespawnY: ABYSS_RESPAWN_Y, seaY: SEA_Y, jetpackAllowed, reticleTarget, phase: () => phase };
+    const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, overlayVisible: matrixOverlayVisible, zzzVisible: sleepMarksVisible, tickerAt: TICKER_AT, buildSpots: buildSpotsList, walkIn: WALK_IN, clampDrag, viewYaw: PILE_VIEW.yaw, bedrolls, pileScale: PILE_SCALE, pileY: ALTAR_HEIGHT + 0.02, matrixLivingPile: true, onLayout: layoutPile, crateRadius: () => Math.max(4.4, altar.platformRadius + 0.8), groundAt: playerSupportAt, ceilingAt, wanderSpot, walkable, flyable, glideJetCeiling, useNear, abyssAt, abyssRespawnY: ABYSS_RESPAWN_Y, seaY: SEA_Y, jetpackAllowed, reticleTarget, phase: () => phase };
     shared.deliverySource = factoryMouth ? factoryMouth.deliverySource : null;
     shared.reloadSlotRadius = () => island.path.debug.ringLoadingRadius;
     shared.reloadRadius = () => island.path.debug.ringCenterRadius;
@@ -11191,10 +10725,10 @@
     // The snapshot outlives the visit, so a re-entered hub opens in the weather it left.
     weather.apply(chain.snapshot);
     mempoolIsland.water.apply(chain.snapshot);
-    if (DEBUG_POOL_BLOCK) {
-      mempoolIsland.water.update(0, 0);
-      mempoolIsland.preview.block();
-    }
+    // Give the distant island its standing lake and cloud deck before its first proximity check.
+    mempoolIsland.water.update(0, 0);
+    weather.update(0, null);
+    weather.pause(true);
     mempoolIsland.paintings.refresh(chain.snapshot);
     refreshChainSign();
     unsubscribeChain = chain.subscribe(onChain);
@@ -11460,7 +10994,7 @@
       }, posed: (cave, feet) => {
         const p = cave.root.position, height = cave.bodyHeight || 1.4;
         floatPose(cave, feet, height, 0, now);
-        mempoolIsland.wake(cave.root, p.x, feet, p.z, height, 0.35);
+        if (poolEffectsActive) mempoolIsland.wake(cave.root, p.x, feet, p.z, height, 0.35);
       }
     });
     // Signed-in pages keep the crew in step: one runs it for everyone, the others follow its frames. The
@@ -11532,16 +11066,6 @@
       show: timechainIsland.show, renderView: (view) => renderer.render(root, view, RENDER_OPTS), keep: keepGeometry });
     // A room's address opened signed in, with no visit of this tab's own to repeat, comes here with the room chosen.
     if (timechainIsland.gate.preselected) hud.toast(`Room ${timechainIsland.gate.preselected} is chosen at the keypad · walk up to it and press Enter to go in`);
-    breakables = headquarters.breakables = BL.breakables.create({
-      root, input, renderer, fx, crew,
-      collectReward: collectBreakableReward, deactivate: deactivateBreakable, relocate: relocateBreakable,
-      onAmmoPickup: (added, remaining) => {
-        pilot.showAct();
-        hud.toast(remaining ? `+${added} ammo · ${remaining} left` : "Magazine collected");
-      },
-      trackMirrorObject, untrackMirrorObject
-    });
-    for (const owner of scenery) breakables.register(owner);
     clankerMeshes = BL.solidProps.create();
     clankerPartOwners = new WeakMap();
     headquarters.solids.companions = clankerMeshes;
@@ -11812,7 +11336,7 @@
         get shown() {
           return pile.shown;
         },
-        terrainSections, caveSections, cutawayPaths: CUTAWAY_PATH_STATE, terrainRampRoof, get cutawayTravelRamp() { return cutawayTravelRamp; }, get cutawayTravelChannel() { return cutawayTravelChannel; }, get cutawayTravelStation() { return cutawayTravelStation; }, island, mouths: island.mouths, labels, camera, weather, chain, beasts, pokeBeast, useProp, refreshChainSign, get chainSign() { return chainSign; }, get poolIsland() { return mempoolIsland; }, cameraPose: POSITION_POSE, crew, fx, controls: pilot.controls, props, altar, path: island.path.debug, headquarters, jumbotron, totems: { list: totems, flare: flareTotem }, fireworks: launchFireworks, get fireworksPending() { return fireworksShells.length; }, get npcSync() { return npcSync; }, clankers, clankerPlay, rageThrowMap, rageEdgeGoal, rageLandAt, rageCaptureLandAt, rageMapRouteClear, rageCaptureEligible, rageApproach, rageWarpRequired, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear, cloudFloorAt,
+        terrainSections, caveSections, cutawayPaths: CUTAWAY_PATH_STATE, terrainRampRoof, get cutawayTravelRamp() { return cutawayTravelRamp; }, get cutawayTravelChannel() { return cutawayTravelChannel; }, get cutawayTravelStation() { return cutawayTravelStation; }, island, mouths: island.mouths, labels, camera, weather, chain, beasts, pokeBeast, useProp, refreshChainSign, get chainSign() { return chainSign; }, get poolIsland() { return mempoolIsland; }, cameraPose: POSITION_POSE, crew, fx, controls: pilot.controls, props, altar, path: island.path.debug, headquarters, jumbotron, totems: { list: totems, flare: flareTotem }, get npcSync() { return npcSync; }, clankers, clankerPlay, rageThrowMap, rageEdgeGoal, rageLandAt, rageCaptureLandAt, rageMapRouteClear, rageCaptureEligible, rageApproach, rageWarpRequired, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear,
         scenery: {
           get candidateCount() { return scenery.length; },
           get visibleCount() { return sceneryVisible; },
@@ -12041,6 +11565,8 @@
     }
     if (ctx.from === null && pilot.mode === "first-person") pilot.focusAim();
     if (POSITION_DEBUG) updatePositionDebug(true);
+    updatePoolEffectsActivity();
+    if (DEBUG_POOL_BLOCK) mempoolIsland.preview.block();
     // Tess greets a newcomer once a page and shows them round; nothing she does starts while the island is busy. She
     // greets only a visit that lands on the island's own view, not one sent to a place or walked back out of a cave.
     islandGuide = BL.hubGuide.create({
@@ -12086,7 +11612,6 @@
     if (ghosts) { ghosts.dispose(); ghosts = null; }
     ghostLoading = false;
     ghostSeal = null;
-    ghostClearsProps = false;
     // GAME MODE ends with the visit; the island comes back built afresh.
     gameMode = false;
     document.body.classList.remove("game-mode");
@@ -12132,6 +11657,7 @@
     cutawayX = cutawayZ = cutawayHeadY = 0;
     cutawayHill = false;
     cutawayPool = 0; poolShade = poolUnder = 0;
+    poolEffectsActive = false; poolEffectsTime = 0;
     cutawayPlayer = cutawayHandoffPlayer = null;
     cutawayPathBounds = null;
     cutawayTravelRamp = null; cutawayTravelChannel = -1; cutawayTravelStation = 0;
@@ -12147,7 +11673,6 @@
     clankerCaptures.length = 0;
     clankerPlay.dispose();
     remotes.dispose();
-    breakables.dispose();
     crates.dispose();
     pile.dispose();
     for (const entry of clankers.list) returnLabEquipment(entry);
@@ -12206,21 +11731,18 @@
     }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     totems.length = 0;
-    fireworksShells.length = 0;
-    jumbotronSpot = null;
     if (jumbotron) {
       jumbotron.dispose(renderer);
       jumbotron = null;
     }
     for (const node of targets) input.remove(node);
     for (const node of placed) removeChild(root, node);
-    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = cloudObstacles.length = lamps.length = pilePosts.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
+    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = lamps.length = pilePosts.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
     cloudRandom = null;
     fireHazards.length = 0;
     clankerFireReachable = null;
     workZones.length = entranceZones.length = 0;
     closedCaveZones.length = 0;
-    cloudHit = null;
     RENDER_OPTS.lightCount = 0;
     // The next visit's first frame rebuilds the lamp selection and resamples the clock.
     lampSelValid = false;
@@ -12251,7 +11773,7 @@
     // Drop every per-visit ref but the cached island.
     terrainRampRoof = pathNode = altar = lawn = life = hud = hooks = input = pilot = fx = cameraCover = bananaCover = solids = rockGuides = objectGuides = sightGuides = bananaGuides = pileGuides = platformGuides = mirrorGuides = pile = crew = crates = critters = clock = presets = mirrorCave = matrixCave = matrixControl = gateRain = fire = headquarters = positionDebug = dockStairs = overlayCanvas = null;
     beasts.clear();
-    magazine = magazineState = breakables = weather = footsteps = mempoolIsland = timechainIsland = clankers = clankerPlay = null;
+    magazine = magazineState = weather = footsteps = mempoolIsland = timechainIsland = clankers = clankerPlay = null;
     hubScene.input = hubScene.debug = null;
     return { targets: count };
   };
@@ -12260,7 +11782,6 @@
     if (ghosts) ghosts.liveGeometry(set); // HALLOWEEN
     mempoolIsland.water.liveGeometry(set);
     pile.liveGeometry(set);
-    breakables.liveGeometry(set);
     mirrorCave.damage.liveGeometry(set);
     clankers.liveGeometry(set);
     entropyLab.phase.liveGeometry(set);
@@ -12276,7 +11797,7 @@
     let nodes = 0;
     traverseVisible(root, () => nodes++);
     const all = (n) => 1 + n.children.reduce((sum, c) => sum + all(c), 0);
-    return { visibleNodes: nodes, allNodes: all(root), tweens: tweenCount(), targets: input.targetCount, ...fx.stats(), ...crates.stats(), ...crew.stats(), ...pile.stats(), ...critters.stats(), ...mempoolIsland.water.stats(), ...breakables.stats(), ...weather.stats(), ...remotes.stats(), ghosts: ghosts ? ghosts.stats().ghosts : 0 /* HALLOWEEN */ };
+    return { visibleNodes: nodes, allNodes: all(root), tweens: tweenCount(), targets: input.targetCount, ...fx.stats(), ...crates.stats(), ...crew.stats(), ...pile.stats(), ...critters.stats(), ...mempoolIsland.water.stats(), ...weather.stats(), ...remotes.stats(), ghosts: ghosts ? ghosts.stats().ghosts : 0 /* HALLOWEEN */ };
   };
   const hubScene = {
     // The island reports its own zone as soon as an Ooga is driven (see `zoneOf`); until then it is nowhere.
@@ -12288,7 +11809,7 @@
       // A crossing through the Timechain Sphere's doors keeps full rate, so its walk and swoop finish smoothly.
       if (timechainIsland && timechainIsland.gate.busy) return true;
       if (ghosts && ghosts.inMotion) return true; // HALLOWEEN
-      if (pile.inMotion || fx.inMotion || breakables.inMotion || weather.active || mempoolIsland.water.active || magazine && magazine.revealed || MATRIX_WORLD.active || mirrorGuides.state.doorway || mirrorCave.damage.active || mirrorCave.ripples.active || mirrorCave.body.active || entropyLab.phase.ripples.active || entropyLab.phase.body.contacts || entropyLab.phase.body.active) return true;
+      if (pile.inMotion || fx.inMotion || poolEffectsActive && (weather.active || mempoolIsland.water.active) || magazine && magazine.revealed || MATRIX_WORLD.active || mirrorGuides.state.doorway || mirrorCave.damage.active || mirrorCave.ripples.active || mirrorCave.body.active || entropyLab.phase.ripples.active || entropyLab.phase.body.contacts || entropyLab.phase.body.active) return true;
       if (bcaMouth && (bcaMouth.phase.ripples.active || bcaMouth.phase.body.contacts || bcaMouth.phase.body.active)) return true;
       for (const sign of headquarters.roomSigns) if (sign.velocity || sign.node.rotation.x) return true;
       for (let i = 0; i < matrixGates.length; i++) if (matrixCave && (matrixGates[i].raising || matrixCave.unlocked && matrixGates[i].node.position.y !== MATRIX_GATE_HIDDEN_Y)) return true;

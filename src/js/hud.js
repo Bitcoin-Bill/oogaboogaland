@@ -237,7 +237,7 @@
     renderer.render(root, camera);
     renderer.dispose();
   };
-  const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false }) => {
+  const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false, healthEnabled = false }) => {
     const el = {
       roster: $("roster"), rosterCount: $("roster-count"),
       statDonations: $("stat-donations"),
@@ -356,6 +356,9 @@
     el.gorillaSmash.hidden = true;
     el.mode.hidden = true;
     el.ownOoga.hidden = true;
+    el.mode.dataset.health = el.ownOoga.dataset.health = String(healthEnabled);
+    el.modeHealth.hidden = true;
+    el.ownOogaHealth.hidden = !healthEnabled;
     el.weapon.hidden = true;
     el.magazine.hidden = true;
     el.jetpack.hidden = true;
@@ -737,12 +740,13 @@
           el.ownOoga.setAttribute("aria-label", label);
           el.ownOoga.title = label;
           el.ownOoga.dataset.gorilla = String(!!gorilla);
-          el.ownOogaHealth.setAttribute("aria-label", `${gorilla ? "Gorilla" : "Ooga"} health: ${name}`);
+          if (healthEnabled) el.ownOogaHealth.setAttribute("aria-label", `${gorilla ? "Gorilla" : "Ooga"} health: ${name}`);
         }
         retakePortraitActor = actor;
         retakeGeometry = geometry;
         retakePortraitGeometry = portraitGeometry;
       }
+      if (!healthEnabled) return;
       const source = actor.health, max = source ? source.max : BL.crew.HEALTH_MAX;
       const health = source ? Math.max(0, Math.min(max, source.value)) : max;
       if (health !== retakeHealth || max !== retakeHealthMax) {
@@ -782,17 +786,19 @@
         el.mode.dataset.selected = String(selected);
       }
       if (el.modeFace.hidden === selected) el.modeFace.hidden = !selected;
-      const showHealth = selected;
+      const showHealth = healthEnabled && selected;
       if (el.modeHealth.hidden === showHealth) el.modeHealth.hidden = !showHealth;
-      const sourceHealth = gorilla ? gorillaEntry.health : cave && cave.health;
-      const healthMax = sourceHealth ? sourceHealth.max : BL.crew.HEALTH_MAX;
-      const health = sourceHealth ? Math.max(0, Math.min(healthMax, sourceHealth.value)) : healthMax;
-      if (health !== modeHealth || healthMax !== modeHealthMax) {
-        modeHealth = health;
-        modeHealthMax = healthMax;
-        el.modeHealthFill.style.transform = `scaleY(${health / healthMax})`;
-        el.modeHealth.setAttribute("aria-valuemax", String(healthMax));
-        el.modeHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
+      if (showHealth) {
+        const sourceHealth = gorilla ? gorillaEntry.health : cave && cave.health;
+        const healthMax = sourceHealth ? sourceHealth.max : BL.crew.HEALTH_MAX;
+        const health = sourceHealth ? Math.max(0, Math.min(healthMax, sourceHealth.value)) : healthMax;
+        if (health !== modeHealth || healthMax !== modeHealthMax) {
+          modeHealth = health;
+          modeHealthMax = healthMax;
+          el.modeHealthFill.style.transform = `scaleY(${health / healthMax})`;
+          el.modeHealth.setAttribute("aria-valuemax", String(healthMax));
+          el.modeHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
+        }
       }
       if (stateChanged) { modeCombat = combat; modeView = view; }
       if (identityChanged || stateChanged) {
@@ -1783,7 +1789,7 @@
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
     let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
-    let tipVisibility = null, tipSpeechTop = Infinity, tipSpeechAlpha = 0;
+    let tipVisibility = null, tipSpeechBottom = -Infinity;
     const tipScreen = { x: 0, y: 0, depth: 0 };
     // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
     // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
@@ -1798,7 +1804,7 @@
     };
     const tooltip = {
       show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
-        if (cave !== tipCave) { tipSpeechTop = Infinity; tipSpeechAlpha = 0; }
+        if (cave !== tipCave) tipSpeechBottom = -Infinity;
         tipCave = cave;
         const name = !!cave;
         const changed = text !== tipText || name !== tipName || el.tooltip.classList.contains("tooltip--no-status-dot") !== noStatusDot;
@@ -1806,7 +1812,7 @@
         if (name !== tipName) {
           tipName = name;
           el.tooltip.classList.toggle("tooltip--name", name);
-          el.tooltipHealth.hidden = !name;
+          el.tooltipHealth.hidden = !healthEnabled || !name;
           if (!name) {
             tipState = "";
             tipHealth = tipHealthMax = -1;
@@ -1846,42 +1852,45 @@
         if (!visibility) tooltip.hide();
       },
       beginFrame: () => {
-        tipSpeechTop = Infinity; tipSpeechAlpha = 0;
+        tipSpeechBottom = -Infinity;
         tooltip.update(false);
       },
       update: (place = true) => {
         if (!tipCave) return;
         const state = statusFor(tipCave);
-        const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
-        const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
-        const shownHealth = Math.ceil(health);
-        const healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
-        if (healthChanged) {
-          tipHealth = health; tipHealthMax = healthMax;
-          el.tooltipHealthFill.style.transform = `scaleX(${health / healthMax})`;
-          el.tooltipHealth.setAttribute("aria-valuemax", String(healthMax));
-          el.tooltipHealth.setAttribute("aria-valuenow", String(shownHealth));
+        let healthChanged = false;
+        if (healthEnabled) {
+          const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
+          const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
+          healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
+          if (healthChanged) {
+            tipHealth = health; tipHealthMax = healthMax;
+            el.tooltipHealthFill.style.transform = `scaleX(${health / healthMax})`;
+            el.tooltipHealth.setAttribute("aria-valuemax", String(healthMax));
+            el.tooltipHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
+          }
         }
         if (state !== tipState || healthChanged) {
           tipState = state;
           el.tooltip.dataset.state = state;
-          el.tooltip.setAttribute("aria-label", `${tipText}, ${STATE_LABELS[state]}, ${shownHealth} of ${healthMax} health`);
+          el.tooltip.setAttribute("aria-label", healthEnabled
+            ? `${tipText}, ${STATE_LABELS[state]}, ${Math.ceil(tipHealth)} of ${tipHealthMax} health`
+            : `${tipText}, ${STATE_LABELS[state]}`);
         }
         el.tooltip.hidden = !tipVisibility.anchor(tipCave, tipScreen);
         if (el.tooltip.hidden || !place) return;
-        // The name rests on the head and rises over a bubble only as far as the bubble shows, so a bubble fading
-        // in or out never leaves it hanging over empty space.
-        const rest = tipScreen.y - 2, top = rest + (Math.min(rest, tipSpeechTop - 6) - rest) * tipSpeechAlpha - tipH;
-        placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), Math.max(8, top));
+        // Speech can push the name down at the top edge, where the bubble has no room to rise.
+        const top = Math.max(8, tipScreen.y - 2 - tipH, tipSpeechBottom + 6);
+        placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), top);
       },
-      // The name sits above speech; reserve room for both near the top edge.
+      // Speech sits above the name, which stays anchored to the head.
       speechSpace: (cave) => cave && cave === tipCave && !el.tooltip.hidden ? tipH + 6 : 0,
-      aboveSpeech: (cave, top, alpha = 1) => {
-        if (cave && cave === tipCave && top < tipSpeechTop) { tipSpeechTop = top; tipSpeechAlpha = Math.max(0, Math.min(1, alpha)); }
+      belowSpeech: (cave, bottom) => {
+        if (cave && cave === tipCave && bottom > tipSpeechBottom) tipSpeechBottom = bottom;
       },
       hide: () => {
         tipCave = null;
-        tipSpeechTop = Infinity;
+        tipSpeechBottom = -Infinity;
         el.tooltip.hidden = true;
         el.tooltip.classList.remove("tooltip--name");
         el.tooltipHealth.hidden = true;

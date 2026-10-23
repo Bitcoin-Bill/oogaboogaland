@@ -6826,7 +6826,7 @@ const hubFall = { name: "hub fall", why: "rule: abyss falls return players and N
         const landings = [], c = mode === "player" ? a : npc;
         for (let attempt = 0; attempt < 2; attempt++) {
           B.crew.prepareDragged(c); B.crew.recoverDragged(c);
-          c.cloudSupport = null; c.camp.panic.active = c.roofEscape.active = false;
+          c.camp.panic.active = c.roofEscape.active = false;
           if (mode === "player") B.crew.relocatePlayer({ x: 120, y: -80, z: 120 }, 0);
           else {
             c.slot = slot; c.override = c.state = state;
@@ -6855,7 +6855,7 @@ const hubFall = { name: "hub fall", why: "rule: abyss falls return players and N
         for (const c of B.crew.list) c.puppet = c !== npc;
         const arrive = () => {
           B.crew.prepareDragged(npc); B.crew.recoverDragged(npc);
-          npc.cloudSupport = null; npc.camp.panic.active = npc.roofEscape.active = false;
+          npc.camp.panic.active = npc.roofEscape.active = false;
           npc.slot = slot; npc.override = npc.state = state;
           Object.assign(npc.bedTravel, { mode: "", plan: null, route: null, manual: false, toBed: false, bed: null });
           Object.assign(npc.root.position, { x: 120, y: -80 + npc.baseY, z: 120 });
@@ -6898,13 +6898,8 @@ const hubFall = { name: "hub fall", why: "rule: abyss falls return players and N
       && landed(row.reference) && row.landing.frames <= 8 && landed(row.landing)),
     JSON.stringify({ ...r, respawns }));
 } };
-const hubGrounding = { name: "hub grounding", why: "regression: a placement from above landed on a drifting cloud, and a roaming gorilla read a tree crown as a floor", run: async (b) => {
-  const r = await b.evaluate(`(() => { const B = window.__ooga, clouds = [];
-    for (let tries = 0; tries < 3 && !clouds.length; tries++) {
-      if (tries) B.advance(5);
-      for (let x = -45; x <= 45 && clouds.length < 8; x += 3) for (let z = -45; z <= 45; z += 3)
-        if (B.cloudFloorAt(x, z, 1e6) > -Infinity && clouds.push({ x, z, fromAbove: B.cloudFloorAt(x, z, Infinity) === -Infinity }) >= 8) break;
-    }
+const hubGrounding = { name: "hub grounding", why: "regression: a roaming gorilla read a tree crown as a floor", run: async (b) => {
+  const r = await b.evaluate(`(() => { const B = window.__ooga;
     const trees = B.props.filter((p) => p.prop === "tree" && p.node.npcTreeSupport && p.active), entry = B.clankers.list[0];
     let crown = null;
     for (const tree of trees) {
@@ -6916,9 +6911,9 @@ const hubGrounding = { name: "hub grounding", why: "regression: a placement from
       const max = Math.max(...rises);
       if (!crown || max < crown.max) crown = { x: +tree.x.toFixed(1), z: +tree.z.toFixed(1), max, rises };
     }
-    return { clouds, guard: !!entry && !entry.controlled, treeCount: trees.length, crown }; })()`);
-  record("hub grounding: a cloud is never a floor for a placement from above, and no tree crown is walking support for a roaming gorilla",
-    r.clouds.length > 0 && r.clouds.every((c) => c.fromAbove) && r.guard && r.treeCount > 0 && r.crown.max < 1.0, JSON.stringify(r));
+    return { guard: !!entry && !entry.controlled, treeCount: trees.length, crown }; })()`);
+  record("hub grounding: no tree crown is walking support for a roaming gorilla",
+    r.guard && r.treeCount > 0 && r.crown.max < 1.0, JSON.stringify(r));
 } };
 
 const labWalking = { name: "lab walking", why: "regression: Shift+A left A held in the Ooga's controls, walking the Agent and the next Ooga left on their own", run: async (b) => {
@@ -7279,69 +7274,39 @@ const oogatronPopups = { name: "oogatron popups", why: "rule: Oogatron windows k
   }
   record(`Oogatron ${mode}: restored windows still close normally`, (await read()).length === 0);
 } };
-// The healthiest prop with a level, clear approach: nearby ledges or seeded
-// scenery must not lift the visitor or obstruct the shoulder view.
+// A stationary mesh with the real Ooga damage path keeps weapon regressions
+// independent of the hub's decoration. Its object classification preserves
+// the reticle behavior, and ample health keeps the fixture out of KO handling.
+const hubWeaponTarget = (geometry, position) => {
+  const B = __ooga, S = BL.scene, node = S.createNode({ geometry, position, sightHidden: true });
+  const bounds = S.boundsOf(geometry), cave = { root: node, parts: { head: node }, traits: { name: "weapon-fixture", display: "Weapon fixture" },
+    state: "chilling", baseY: -bounds.min[1], bodyHeight: bounds.max[1] - bounds.min[1], health: { value: 100, max: 100, delay: 0, stunned: false } };
+  const owner = { kind: "caveman", weaponType: "object", cave, node, active: true };
+  S.addChild(BL.scenes.hub.root, node); B.input.add(node, owner);
+  return { owner, maxHealth: 100, get health() { return cave.health.value; }, set health(value) { cave.health.value = value; } };
+};
 const nextTo = (prop, gap, yaw = "-Math.PI / 2", pitch = 0.3) => `(() => {
-  const B = window.__ooga, a = B.cavemen.get("portlandhodl");
+  const B = __ooga, a = B.cavemen.get("portlandhodl"), solids = B.headquarters.solids, step = BL.pilot.WALK.step;
   if (B.crew.player !== a) B.pilot.possess(a);
-  const r = B.headquarters.breakables.list.filter(r => r.owner.prop === "${prop}" && r.owner.active && !r.broken && !r.reveal)
-    .sort((a, b) => b.health - a.health).find(r => {
-      const t = r.owner.node.position, x = t.x - ${gap}, step = BL.pilot.WALK.step;
-      // Use the visitor's actual terrain/prop support and 0.3 m walking footprint.
-      return Math.abs(B.headquarters.solids.supportAt(x, t.z, t.y, t.y, a) - t.y) < 1e-6
-        && B.headquarters.solids.props.clearAt(x, t.y + step, t.z, 0.3, Math.max(0, a.bodyHeight - step));
-    });
-  if (!r) throw new Error("No level, clear approach to ${prop}");
-  window.__target = r; delete window.__targetBrokenAt;
-  const t = r.owner.node.position;
+  const t = [{ x: -12, z: 0 }, { x: -8, z: 16 }, { x: 12, z: 0 }].find(point => {
+    point.y = B.island.surfaceAt(point.x, point.z);
+    const x = point.x - ${gap};
+    return Math.abs(solids.supportAt(x, point.z, point.y, point.y, a) - point.y) < 1e-6
+      && solids.props.clearAt(x, point.y + step, point.z, 0.3, Math.max(0, a.bodyHeight - step))
+      && solids.props.clearAt(point.x, point.y + 0.05, point.z, 1.5, a.bodyHeight);
+  });
+  if (!t) throw new Error("No level, clear approach to weapon fixture");
+  const geometry = "${prop}" === "barrel" ? BL.hubModels.barrel() : BL.hubModels.breakableRock();
+  window.__target = (${hubWeaponTarget.toString()})(geometry, t);
   B.pilot.navigate({ position: { x: t.x - ${gap}, y: t.y, z: t.z }, yaw: ${yaw}, pitch: ${pitch}, dist: 4 });
-  B.advance(0.3, 1 / 60); return r.health;
+  B.advance(0.3, 1 / 60); return window.__target.health;
 })()`;
-const hubMelee = { name: "hub melee", why: "rule: a ready swing does five damage, so a box breaks in one, a barrel in two and a rock in four, and the prop comes back", run: async (b) => {
-  const swings = {};
+const removeWeaponTarget = `(() => { const B = __ooga, node = window.__target.owner.node; B.hud.tooltip.hide(); B.input.remove(node); BL.scene.removeChild(BL.scenes.hub.root, node); B.renderer.releaseGeometry(node.geometry); delete window.__target; })()`;
+const hubMelee = { name: "hub melee", why: "rule: focused quick taps recover their strike power over time, changing weapons cannot bypass recovery, and a charged strike doubles damage", run: async (b) => {
   await tapKey(b, "1");
   // The preceding AK check deliberately leaves carry mode. These contacts
   // exercise the ordinary shoulder reticle, including the recovery aim below.
   await b.evaluate(`(() => { const B = __ooga, P = B.pilot; if (!P.aiming) P.modeAction("mode-toggle"); if (P.birdsEye) P.hooks.onZoom(0.001); B.advance(1, 1 / 60); })()`);
-  // Start the respawn clock at the breaking contact, including real frames
-  // and swing recovery that pass before the explicit respawn polling below.
-  await b.evaluate(`(() => {
-    const B = __ooga, props = B.headquarters.breakables;
-    window.__breakableHit = props.hit;
-    props.hit = function(...args) {
-      const r = args[1]?.owner?.breakable, broken = r?.broken;
-      const result = window.__breakableHit.apply(this, args);
-      if (r === window.__target && !broken && r.broken) window.__targetBrokenAt = B.renderOpts.time;
-      return result;
-    };
-  })()`);
-  for (const [prop, gap] of [["crate", 0.9], ["barrel", 0.9], ["rock", 1.175]]) {
-    const health = await b.evaluate(nextTo(prop, gap));
-    let n = 0;
-    while (n < 7 && !(await b.evaluate(`window.__target.broken`))) {
-      await tapKey(b, "v");
-      await b.evaluate(`window.__ooga.advance(0.65, 1 / 60)`);
-      n++;
-    }
-    swings[prop] = { health, n };
-  }
-  await b.evaluate(`__ooga.headquarters.breakables.hit = window.__breakableHit; delete window.__breakableHit`);
-  const back = await b.evaluate(`(() => {
-    const r = window.__target, B = window.__ooga, a = B.crew.player, origin = { ...r.owner.node.position };
-    const distance = () => Math.hypot(a.root.position.x - origin.x, a.root.position.z - origin.z);
-    const occupiedDistance = distance();
-    // A safe respawn cannot overlap the observer. Leave through normal
-    // navigation without advancing uncounted time before the same timed loop.
-    B.pilot.navigate({ position: { x: -8, y: 0, z: 16 }, yaw: -Math.PI / 2, pitch: 0.3, dist: 5 });
-    const clearedDistance = distance();
-    for (let i = 0; i < 650; i++) {
-      B.advance(0.1, 1 / 30);
-      if (!r.broken && !r.reveal) return { t: B.renderOpts.time - window.__targetBrokenAt, health: r.health, active: r.owner.active,
-        occupiedDistance, clearedDistance, footprint: r.owner.footprint, bodyRadius: a.bodyRadius };
-    }
-    return null;
-  })()`);
-  record("hub melee: one swing breaks a box, two a barrel and four a rock, and a broken rock is back whole within a minute", swings.crate.n === 1 && swings.barrel.n === 2 && swings.rock.n === 4 && !!back && back.t >= 30 && back.t <= 61 && back.health === swings.rock.health && back.active, JSON.stringify({ swings, back }));
   await b.evaluate(nextTo("rock", 1.175));
   const recharge = await b.evaluate(`(() => {
     const B = window.__ooga, crew = B.crew, a = crew.player, r = window.__target;
@@ -7397,11 +7362,11 @@ const hubMelee = { name: "hub melee", why: "rule: a ready swing does five damage
     && Math.abs(recharge.last - 5) < 1e-8 && recharge.switched === 0.25 && Math.abs(recharge.finalDamage - 1.25) < 1e-8
     && Math.abs(recharge.chargedDamage - 10) < 1e-8, JSON.stringify(recharge));
   record("hub melee: red damage numbers round full hit power to half points", ["5", "1.5", "3", "10"].every(text => recharge.labels.includes(text)), JSON.stringify(recharge.labels));
+  await b.evaluate(removeWeaponTarget);
 } };
 const AK_STATE = `(() => { const w = window.__ooga.crew.player.weapon; return { ammo: w.ammo, spares: w.spareAmmo.slice(), shots: w.shotsFired, aiming: w.aiming }; })()`;
 const hubAk = { name: "hub ak", why: "regression: R did nothing unless the player was aiming, so an AK emptied with V could not swap in its spare", run: async (b) => {
-  // The western shoulder ray crosses a neighbouring crate even though the
-  // muzzle clears it. Approach from the east for this barrel-hit fixture.
+  // Approach from the east and aim at the fixture through ordinary input.
   const barrel = await b.evaluate(nextTo("barrel", -3, 1.34, 0.12));
   await tapKey(b, "2");
   // Selecting a weapon preserves carry/combat. Establish shoulder combat
@@ -7430,13 +7395,14 @@ const hubAk = { name: "hub ak", why: "regression: R did nothing unless the playe
   const start = await b.evaluate(AK_STATE);
   const burst = async () => { await tapKey(b, "v"); await b.evaluate(`window.__ooga.advance(0.7, 1 / 60)`); return b.evaluate(AK_STATE); };
   const one = await burst(), two = await burst(), dry = await burst();
-  const hit = await b.evaluate(`window.__target.broken || window.__target.health < ${barrel}`);
+  const hit = await b.evaluate(`window.__target.health < ${barrel}`);
   // R must reload while carrying after the explicitly aimed firing checks.
   await b.evaluate(`(() => { const B = __ooga; if (B.pilot.aiming) B.pilot.modeAction("mode-toggle"); B.advance(0.3, 1 / 60); })()`);
   await tapKey(b, "r");
   await b.evaluate(`window.__ooga.advance(0.8, 1 / 60)`);
   const swapped = await b.evaluate(AK_STATE);
   record("hub ak: V fires a burst of three from the magazine, an empty magazine fires nothing, the bananas hit, and R swaps in the full spare without aiming", aimed && start.ammo === 6 && one.ammo === 3 && two.ammo === 0 && dry.shots === two.shots && hit && !swapped.aiming && swapped.ammo === 30 && swapped.spares.every((n) => n === 0), JSON.stringify({ aimed, start, one, two, dry, hit, swapped }));
+  await b.evaluate(removeWeaponTarget);
 } };
 const JET_STATE = `(() => { const c = window.__ooga.crew.player, J = window.__ooga.jetpack; return { worn: !!c.jet, owned: J.owned, fuel: +c.jetFuel.toFixed(3), feet: +(c.root.position.y - c.baseY).toFixed(2), pickup: !!(J.pickup && J.pickup.host), toast: (document.getElementById("toast") || {}).textContent }; })()`;
 const hubJetpack = { name: "hub jetpack", why: "rule: every Ooga permanently owns a J-toggleable jetpack, fueled steering recovers from thrown momentum, and abyss respawns remove only loaded and spare AK ammo", run: async (b) => {
@@ -7457,18 +7423,16 @@ const hubJetpack = { name: "hub jetpack", why: "rule: every Ooga permanently own
   await b.send("Input.dispatchKeyEvent", { type: "keyUp", key: "w", code: "KeyW" });
   const lost = await b.evaluate(JET_STATE);
   const permanent = await b.evaluate(`(() => {
-    const B = __ooga, a = B.crew.player, geometry = new Set();
-    B.headquarters.breakables.liveGeometry(geometry);
-    const rewardHasJetpack = geometry.has(BL.hubModels.jetpack());
+    const B = __ooga, a = B.crew.player;
     const ammo = a.weapon.ammo, spares = a.weapon.spareAmmo.length, everyOwned = B.crew.list.every(cave => cave.jetpackOwned);
     B.crew.collectMagazine(a); B.crew.damage(a, 25); B.advance(1 / 60, 1 / 60);
     const drops = a.stunGear.drops.filter(drop => drop.active).map(drop => ({ kind: drop.kind, label: drop.label }));
-    return { ammo, spares, everyOwned, rewardHasJetpack, drops, wornAfterStun: !!a.jet };
+    return { ammo, spares, everyOwned, drops, wornAfterStun: !!a.jet };
   })()`);
   record("hub jetpack: J takes the permanent pack off and on, Space climbs, fuel refills, and an abyss respawn keeps it while emptying loaded and spare AK magazines", !off.worn && on.worn && up.feet > 5 && up.fuel < 0.9 && down.feet < 0.5 && down.fuel === 1 && fell < -50
     && lost.owned && lost.worn && !lost.pickup && permanent.ammo === 0 && permanent.spares === 0 && permanent.everyOwned
     && lost.toast === "Spare magazines and loaded AK-47 ammo lost to the abyss", JSON.stringify({ off, on, up, down, fell, lost, permanent }));
-  record("hub jetpack: breakables and clouds contain no jetpack pickup, stun keeps the pack, and dropped magazines carry a +1 MAG tag", !permanent.rewardHasJetpack && permanent.wornAfterStun
+  record("hub jetpack: stun keeps the pack, and dropped magazines carry a +1 MAG tag", permanent.wornAfterStun
     && permanent.drops.length === 1 && permanent.drops[0].kind === "magazine" && permanent.drops[0].label === "+1 MAG", JSON.stringify(permanent));
   const recovery = [];
   for (const dt of [1 / 30, 1 / 60]) for (const mode of ["passive", "brake", "empty"]) recovery.push(await b.evaluate(`((dt, mode) => {
@@ -7865,7 +7829,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
         const nativeTab = (${nativeTabProbe.toString()})(true), detachedRight = (${carryRightProbe.toString()})(B);
         const shown = !portrait.hidden && H.retakeActor?.actor === a && !H.retakeActor.gorilla
           && portrait.dataset.gorilla === "false" && portrait.getAttribute("aria-label").includes(a.traits.display)
-          && bar.getAttribute("aria-label").startsWith("Ooga health:") && Number(bar.getAttribute("aria-valuemax")) === a.health.max;
+          && bar.hidden;
         C.target.x += 3; C.target.z -= 2;
         const before = snapshot(), saved = BL.pilot.saveLoginView(), raw = sessionStorage.getItem(loginKey), view = raw && JSON.parse(raw);
         const savedView = saved && raw.length <= 8192 && view.route === location.pathname + location.search
@@ -8358,8 +8322,7 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
     && [handoffs.combat, handoffs.reversed].every(r => r.after.mode === "birds-eye" && r.after.combat && r.after.down > 0.999999 && r.after.orthoMix === 1 && r.after.center < 0.02), JSON.stringify(handoffs));
   record("birds-eye combat: carry orbit stays still on W+A and W+D, and manual orbit rotation remains available", handoffs.diagonal.every(n => n < 1e-6) && handoffs.drag.yaw > 0.1 && handoffs.drag.down < 0.99 && handoffs.carry.after.cutoff >= 1e5, JSON.stringify({ diagonal: handoffs.diagonal, drag: handoffs.drag, cutoff: handoffs.carry.after.cutoff }));
   const falling = await b.evaluate(`(() => {
-    const B = __ooga, P = B.pilot, I = B.island, a = P.player, C = B.camera, clouds = BL.scenes.hub.debug.matrixCave.clouds;
-    const visible = clouds.map(c => c.node.visible), diagonal = -Math.SQRT1_2;
+    const B = __ooga, P = B.pilot, I = B.island, a = P.player, C = B.camera, diagonal = -Math.SQRT1_2;
     const key = (type, k) => window.dispatchEvent(new KeyboardEvent(type, { key: k, code: "Key" + k.toUpperCase(), bubbles: true }));
     let radius = 5; while (radius < 100 && I.onLand(diagonal * radius, diagonal * radius)) radius += 0.25;
     const x = diagonal * (radius - 1.5), z = x, start = { position: { x, y: I.surfaceAt(x, z), z }, yaw: Math.PI, pitch: 0.4, dist: 24 };
@@ -8413,15 +8376,11 @@ const hubBirdsEye = { name: "birds-eye combat camera", why: "regression: horizon
       return { trace, initial, aimDot, off, back, departure, low, center, follow, clearance, gravityError, ballisticError, gravityFrames, shown };
     };
     try {
-      // Moving cloud platforms are unrelated to camera mode; remove that
-      // time-dependent support from both runs, then restore their visibility.
-      for (const c of clouds) c.node.visible = false;
       const carry = run(false), bird = run(true); let error = 0;
       for (let i = 0; i < Math.min(carry.trace.length, bird.trace.length); i++) for (let j = 0; j < carry.trace[i].length; j++) error = Math.max(error, Math.abs(carry.trace[i][j] - bird.trace[i][j]));
       const summarize = r => { const { trace, ...rest } = r; return { ...rest, frames: trace.length }; };
       return { edge: radius < 100, sameActor: P.player === a, error, carry: summarize(carry), bird: summarize(bird) };
     } finally {
-      for (let i = 0; i < clouds.length; i++) clouds[i].node.visible = visible[i];
       P.navigate({ position: { x: -8, y: 0, z: 8 }, yaw: 0, pitch: 0.3, dist: 24 });
       if (!P.aiming) P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
     }
@@ -8717,7 +8676,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
       for (const down of [true, false]) {
         const source = down ? 0.08 : 0.92, destination = 1 - source, start = at(source);
         P.navigate({ position: start, yaw: 0, pitch: 0.3, dist: 8 }); B.advance(1, 1 / 60);
-        const early = cutRead(); let previous = early, maxStep = 0, clearance = Infinity, maxRegions = 0, positionError = 0, moving = 0, structureHidden = false, slicedVisible = false, visibleFrames = 0, wholeHidden = 0, wholeBarrels = 0, wholeGorillas = 0, wholeComplete = true, lowerFloorsOrdered = lowerFloorOrdered(), lowerActorRoofChecks = 0, lowerActorRoofCovered = 0;
+        const early = cutRead(); let previous = early, maxStep = 0, clearance = Infinity, maxRegions = 0, positionError = 0, moving = 0, structureHidden = false, slicedVisible = false, visibleFrames = 0, wholeHidden = 0, wholeGorillas = 0, wholeComplete = true, lowerFloorsOrdered = lowerFloorOrdered(), lowerActorRoofChecks = 0, lowerActorRoofCovered = 0;
         const initialLowerMix = Math.max(pathState.mix[2], pathState.mix[3]), lowerGate = H.ceiling - 0.06 - paths.unit;
         const inactiveLowerCovered = () => [2, 3].every(channel => channel === D.cutawayTravelChannel
           || pathState.mix[channel] === 0 || pathState.hi[channel] <= paths.initial[channel]);
@@ -8745,7 +8704,6 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
           structureHidden ||= !!D.headquarters.node.cutawayWholeHidden || D.headquarters.entrances.some(entry => entry.node.cutawayWholeHidden);
           if (!a.root.cutawayWholeHidden) visibleFrames++;
           wholeHidden = Math.max(wholeHidden, B.crew.list.filter(cave => cave.root.cutawayWholeHidden).length + D.props.filter(prop => prop.node.cutawayWholeHidden).length);
-          wholeBarrels = Math.max(wholeBarrels, D.props.filter(prop => prop.prop === "barrel" && prop.node.cutawayWholeHidden).length);
           wholeGorillas = Math.max(wholeGorillas, B.clankers.list.filter(entry => entry.root.cutawayWholeHidden).length);
           wholeComplete = wholeComplete && D.props.every(prop => !prop.node.cutawayWholeHidden || prop.node.cameraHidden)
             && B.clankers.list.every(entry => !entry.root.cutawayWholeHidden || entry.root.cameraHidden);
@@ -8777,7 +8735,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
         rampTravel.push({ name, down, upper, lower, early, middle, late, reversed, maxStep, clearance, maxRegions, positionError, moving, stopDrift, floorWindow, floorCenter,
           minimumSpan: linear.every(row => row.paths.every(path => path.hi >= path.initial)), caveRegionsOnly: linear.every(row => row.caveRegionsOnly),
           lowerMixMax, lowerRevealFrames, lowerRevealGuard, lowerFloorsOrdered, lowerActorRoofChecks, lowerActorRoofCovered,
-          structureHidden, slicedVisible, visibleFrames, wholeHidden, wholeBarrels, wholeGorillas, wholeComplete });
+          structureHidden, slicedVisible, visibleFrames, wholeHidden, wholeGorillas, wholeComplete });
       }
     }
     // Follow cumulative authored distance, including each route's flat tail.
@@ -9052,8 +9010,8 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     && state.rampTravel.every(r => r.lowerFloorsOrdered)
     && state.rampTravel.filter(r => r.name === "HQ-basement").every(r => r.lowerRevealGuard && r.lowerRevealFrames > 0 && r.lowerMixMax === 1 && r.lowerActorRoofChecks > 0 && r.lowerActorRoofCovered === 0), JSON.stringify({ rows: rows.map(r => ({ name: r.name, lower: r.paths.slice(2) })),
       travel: state.rampTravel.map(({ name, down, lowerMixMax, lowerRevealFrames, lowerRevealGuard, lowerActorRoofChecks, lowerActorRoofCovered }) => ({ name, down, lowerMixMax, lowerRevealFrames, lowerRevealGuard, lowerActorRoofChecks, lowerActorRoofCovered })) }));
-  record("birds-eye combat: the upper-floor scan hides sliced actors, gorillas and barrels as whole units without hiding structural rooms or entrances", state.rampTravel.every(r =>
-    !r.slicedVisible && r.visibleFrames > 0 && r.wholeHidden > 0 && r.wholeBarrels > 0 && r.wholeGorillas > 0 && r.wholeComplete && !r.structureHidden), JSON.stringify(state.rampTravel));
+  record("birds-eye combat: the upper-floor scan hides sliced actors and gorillas as whole units without hiding structural rooms or entrances", state.rampTravel.every(r =>
+    !r.slicedVisible && r.visibleFrames > 0 && r.wholeHidden > 0 && r.wholeGorillas > 0 && r.wholeComplete && !r.structureHidden), JSON.stringify(state.rampTravel));
   record("birds-eye combat: jetting above the surface restores ramp cover and the following fall keeps the actor centered with head clearance", state.flight.peak > 4 && state.flight.highFrames > 10
     && state.flight.fallFrames > 10 && state.flight.clearance >= 0.075 && state.flight.preserved && state.flight.centered && state.flight.landed, JSON.stringify(state.flight));
   record("birds-eye combat: inward zoom reaches shoulder with the same near-body head clearance on the surface, hills, HQ and basement", state.thresholds.length === 4
@@ -9179,7 +9137,7 @@ const hubBirdsEyeFloors = { name: "birds-eye lower floors", why: "regression: ra
     && r.weatherFade[2].pixel[0] > 20 && r.weatherFade[2].pixel[1] > 20
     && r.weatherFade.slice(1, 5).every((f, i) => f.pixel[0] < r.weatherFade[i].pixel[0] - 10 && f.pixel[1] > r.weatherFade[i].pixel[1] + 10)
     && r.weatherFade.slice(5).every((f, i) => f.pixel.every((v, channel) => Math.abs(v - r.weatherFade[3 - i].pixel[channel]) <= 1))), JSON.stringify({ weatherPreserved: state.weatherPreserved, renderers: rendering.map(({ kind, weatherFade, weatherUnchanged }) => ({ kind, weatherFade, weatherUnchanged })) }));
-  record("birds-eye combat: low-floor clouds render below the camera with a continuous visual offset while their world transforms and physical positions remain unchanged", rendering.every(r => r.cloudWorldUnchanged && r.cloudLowered[0] > 40 && r.cloudLowered[2] > 40
+  record("birds-eye combat: low-floor clouds render below the camera with a continuous visual offset while their world transforms and authored positions remain unchanged", rendering.every(r => r.cloudWorldUnchanged && r.cloudLowered[0] > 40 && r.cloudLowered[2] > 40
     && r.cloudLowered.every((v, i) => Math.abs(v - r.cloudReference[i]) <= 1) && r.cloudMiddle.every((v, i) => Math.abs(v - r.cloudMiddleReference[i]) <= 1)), JSON.stringify(rendering.map(({ kind, cloudLowered, cloudReference, cloudMiddle, cloudMiddleReference, cloudWorldUnchanged }) => ({ kind, cloudLowered, cloudReference, cloudMiddle, cloudMiddleReference, cloudWorldUnchanged }))));
 } };
 
@@ -9354,14 +9312,10 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
     const B = __ooga, P = B.pilot, S = BL.scene, root = BL.scenes.hub.root, a = P.player, H = B.island.headquarters;
     const lowerGeometry = BL.models.box({ w: 0.8, h: 1, d: 0.8, color: "#527545" });
     const upperGeometry = BL.models.box({ w: 3, h: 1, d: 3, color: "#aa5555" });
-    // Two real weapon-query targets share a footprint on separate floors. High
-    // health avoids loot/respawn randomness while retaining the real damage path.
-    const type = B.headquarters.breakables.list[0].type;
+    // Two real weapon-query targets share a footprint on separate floors.
     const make = (geometry, y) => {
-      const node = S.createNode({ geometry, position: { x: 6, y: y + 0.5, z: 0 } });
-      const owner = { kind: "prop", prop: "rock", node, active: true };
-      owner.breakable = { owner, type, health: 100, broken: false };
-      S.addChild(root, node); B.input.add(node, owner); return owner;
+      const target = (${hubWeaponTarget.toString()})(geometry, { x: 6, y: y + 0.5, z: 0 });
+      return target.owner;
     };
     const lower = make(lowerGeometry, H.basement.floor), upper = make(upperGeometry, H.floor);
     const pointAtLower = () => {
@@ -9389,11 +9343,11 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
     B.advance(1.5, 1 / 60);
     try {
       P.navigate({ position: { x: 6, y: H.basement.floor, z: -Math.max(6, B.crew.meleeReach(a) + 2) }, yaw: Math.PI, pitch: 0.3, dist: 8 }); B.advance(0.7, 1 / 60);
-      P.weaponAction("weapon-primary"); B.advance(0.5, 1 / 60); const far = aim(), farBefore = lower.breakable.health;
-      P.weaponAction("weapon-fire"); B.advance(0.65, 1 / 60); const farAfter = lower.breakable.health;
+      P.weaponAction("weapon-primary"); B.advance(0.5, 1 / 60); const far = aim(), farBefore = lower.cave.health.value;
+      P.weaponAction("weapon-fire"); B.advance(0.65, 1 / 60); const farAfter = lower.cave.health.value;
       P.navigate({ position: { x: 6, y: H.basement.floor, z: -0.95 }, yaw: Math.PI, pitch: 0.3, dist: 8 }); B.advance(0.7, 1 / 60);
-      const near = aim(), beforeMelee = lower.breakable.health;
-      P.weaponAction("weapon-fire"); B.advance(0.65, 1 / 60); const afterMelee = lower.breakable.health;
+      const near = aim(), beforeMelee = lower.cave.health.value;
+      P.weaponAction("weapon-fire"); B.advance(0.65, 1 / 60); const afterMelee = lower.cave.health.value;
       const jump = { peak: 0, peakTarget: false, orangeFrames: 0 }; B.crew.jumpPlayer();
       for (let i = 0; i < 60; i++) {
         B.advance(1 / 60, 1 / 60);
@@ -9402,7 +9356,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
       }
       P.weaponAction("weapon-secondary"); B.advance(0.4, 1 / 60); const firearm = aim(), shotsBefore = a.weapon.shotsFired;
       P.weaponAction("weapon-secondary"); B.advance(0.7, 1 / 60);
-      const afterShot = lower.breakable.health, shots = a.weapon.shotsFired - shotsBefore, mode = P.mode;
+      const afterShot = lower.cave.health.value, shots = a.weapon.shotsFired - shotsBefore, mode = P.mode;
       P.navigate({ position: { x: 6, y: H.basement.floor, z: -2 }, yaw: Math.PI, pitch: 0.3, dist: 8 }); B.advance(0.5, 1 / 60);
       P.hooks.onZoom(100); B.advance(1, 1 / 60); aim(); const fromHeight = P.birdsEyeHeight;
       P.hooks.onZoom(0.001);
@@ -9414,9 +9368,9 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
       const anchor = P.assistedTarget ? { x: P.assistedTarget.x, y: P.assistedTarget.y, z: P.assistedTarget.z } : null;
       const reticle = document.getElementById("weapon-reticle"), handoff = { mode: P.mode, mix: P.birdsEyeMix, frames, fromHeight, anchor,
         offset: Math.hypot(parseFloat(reticle.style.left) - B.renderer.size.width / 2, parseFloat(reticle.style.top) - B.renderer.size.height / 2),
-        before: lower.breakable.health, shotsBefore: a.weapon.shotsFired };
+        before: lower.cave.health.value, shotsBefore: a.weapon.shotsFired };
       P.weaponAction("weapon-fire"); B.advance(0.3, 1 / 60);
-      handoff.after = lower.breakable.health; handoff.shots = a.weapon.shotsFired - handoff.shotsBefore;
+      handoff.after = lower.cave.health.value; handoff.shots = a.weapon.shotsFired - handoff.shotsBefore;
       B.advance(1, 1 / 60);
       const held = P.assistedTarget, screen = anchor && B.renderer.project(anchor.x, anchor.y, anchor.z, {});
       handoff.targetError = anchor && held ? Math.hypot(anchor.x - held.x, anchor.y - held.y, anchor.z - held.z) : Infinity;
@@ -9487,7 +9441,7 @@ const hubBirdsEyeTargets = { name: "birds-eye lower-floor targets", why: "rule: 
       edge.targetError = edgeAnchor && edgeHeld ? Math.hypot(edgeAnchor.x - edgeHeld.x, edgeAnchor.y - edgeHeld.y, edgeAnchor.z - edgeHeld.z) : Infinity;
       edge.centerError = edgeScreen ? Math.hypot(edgeScreen.x - B.renderer.size.width / 2, edgeScreen.y - B.renderer.size.height / 2) : Infinity;
       return { far, farBefore, farAfter, near, firearm, jump, handoff, closeAim, edge, floor: H.basement.floor, beforeMelee, afterMelee, afterShot,
-        upperHealth: upper.breakable.health, shots, mode };
+        upperHealth: upper.cave.health.value, shots, mode };
     } finally {
       B.crew.stopBurst(a); B.crew.selectWeapon(1, a);
       for (const owner of [lower, upper]) { B.input.remove(owner.node); S.removeChild(root, owner.node); B.renderer.releaseGeometry(owner.node.geometry); }
@@ -12571,10 +12525,6 @@ scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1
       }
       return clearance;
     };
-    // Cloud platforms are valid landing places but are not part of this
-    // open-water throw contract. Hide them through the existing debug state.
-    const clouds = H.matrixCave.clouds, cloudVisibility = clouds.map(cloud => cloud.node.visible);
-    for (const cloud of clouds) cloud.node.visible = false;
     let selected;
     const controlledTarget = controlled ? { selected: false, retained: true, released: false, initial: null,
       maxDrift: 0, minFeet: initialFloor, maxFeet: initialFloor } : null;
@@ -12925,7 +12875,6 @@ scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1
               controlledTarget.released = !B.pilot.player && !B.crew.player && !c.humanControlled;
             }
           } finally {
-            for (let i = 0; i < clouds.length; i++) clouds[i].node.visible = cloudVisibility[i];
             if (contactProp) { solids.remove(contactProp); S.removeChild(root, contactProp); solids.sync(); }
           }
         }

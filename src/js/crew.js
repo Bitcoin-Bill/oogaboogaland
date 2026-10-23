@@ -631,7 +631,6 @@
         jetpackFlameGeometry: null,
         jetFuel: 1,
         jetRecovering: false,
-        cloudSupport: null,
         riding: { support: null, x: 0, y: 0, z: 0, vy: 0, updated: false, continuous: false },
         grabbedBy: null,
         viewLift: 0,
@@ -1049,7 +1048,6 @@
       travel.plan = null;
       travel.route = route;
       travel.mode = route ? "walk" : "waiting";
-      if (route) cave.cloudSupport = null;
       travel.retry = 1;
     };
     const stepPlans = () => {
@@ -1096,7 +1094,6 @@
       travel.toBed = toBed;
       travel.bed = bed;
       travel.mode = airborne ? "landing" : travel.route ? "walk" : "waiting";
-      if (travel.route) cave.cloudSupport = null;
       travel.retry = 1;
       cave.walk = null;
       cave.act.kind = toBed ? "bed" : "return";
@@ -1108,7 +1105,6 @@
       if (lying) {
         cave.hop = cave.hopV = cave.jumps = 0;
         cave.leap.vx = cave.leap.vz = cave.leap.land = 0;
-        cave.cloudSupport = null;
       }
       cave.cheer = cave.catchT = 0;
       travel.mode = "";
@@ -3702,7 +3698,6 @@
         if (ctx.npcRecoverySpot(cave, NPC_RECOVERY_SPOT)) {
           setVec(p, NPC_RECOVERY_SPOT.x, cave.baseY + NPC_RECOVERY_SPOT.y, NPC_RECOVERY_SPOT.z);
           cave.hop = cave.hopV = cave.jumps = 0; cave.leap.vx = cave.leap.vz = cave.leap.land = 0;
-          cave.cloudSupport = null;
           resetWalkerRoute(cave);
           if (cave.state === "chilling") { cave.walk = null; startWander(cave); }
           progress.x = p.x; progress.z = p.z;
@@ -3773,7 +3768,7 @@
         if (occupied) continue;
         // Last resort only: preserve activity and possessions, and place the
         // feet on nearby verified support, never another floor or body.
-        setVec(p, x, cave.baseY + y, z); cave.cloudSupport = null;
+        setVec(p, x, cave.baseY + y, z);
         cave.hop = cave.hopV = cave.jumps = 0; cave.leap.vx = cave.leap.vz = cave.leap.land = 0;
         resetWalkerRoute(cave);
         if (travel.mode === "walk" && ctx.bedRoute) startBedRoute(cave, travel.toBed ? cave.bedroll : travel.bed, travel.toBed);
@@ -4040,7 +4035,6 @@
           else setVec(p, walkIn.x, cave.baseY + groundAt(walkIn.x, walkIn.z, Infinity, Infinity, cave), walkIn.z);
           cave.hop = cave.hopV = cave.jumps = 0;
           cave.leap.vx = cave.leap.vz = 0; cave.leap.thrown = cave.leap.rageThrown = false;
-          cave.cloudSupport = null;
         }
         if (grounded(cave)) startBedRoute(cave, travel.toBed ? cave.bedroll : travel.bed, travel.toBed);
         return;
@@ -4787,7 +4781,7 @@
         const drop = wasGround - groundY(cave);
         if (drop > STEP) {
           cave.hop += drop;
-          if (!onGorilla && !cave.cloudSupport && !inBananas(cave)) {
+          if (!onGorilla && !inBananas(cave)) {
             cave.hopV = Math.max(cave.hopV, WALK.ledgeRise);
             // Aim may face away from travel. Leaving the same ledge must
             // carry the same motion in combat and carry views.
@@ -4802,8 +4796,6 @@
       // A fresh ledge fall is still above the cave roof; query the ceiling at that world height, not the apron's.
       clampPlayerCeiling(cave, ground, ground - cave.baseY + cave.hop);
       cave.root.position.y = ground + cave.hop;
-      // Movement can acquire a cloud after the pre-gravity support query; keep that layer if it drifts next frame.
-      if (ctx.cloudAt) cave.cloudSupport = ctx.cloudAt(p.x, p.z, p.y - cave.baseY);
       if (grounded(cave)) cave.jumps = 0;
       else cave.jumps = Math.max(1, cave.jumps);
       if (cave.hop === 0 && (leap.vx || leap.vz || leap.thrown)) {
@@ -4909,7 +4901,6 @@
     const updateCaveman = (cave, dt) => {
       clearHeadLook(cave);
       const parts = cave.parts;
-      if (ctx.prepareCloudSupport && (!cave.bedTravel.mode || cave.bedTravel.mode === "landing" || cave.bedTravel.mode === "waiting")) ctx.prepareCloudSupport(cave);
       if (!(cave.ladder && cave.ladder.plane) && cave.root.visible && (cave.state === "working" || cave.state === "chilling" || cave.bedTravel.mode === "landing" || cave.bedTravel.mode === "waiting" || cave.bedTravel.mode === "walk")) {
         // Hop is relative to support but the body lives at a world height; rebase before gravity when support changes.
         const floor = groundY(cave), p = cave.root.position;
@@ -5012,7 +5003,6 @@
         cave.hop = cave.hopV = cave.jumps = 0;
         cave.leap.vx = cave.leap.vz = 0;
         standPose(cave);
-        cave.cloudSupport = null;
         // A scene's respawn location takes priority over work and wander slots.
         if (ctx.respawnSpot) {
           setVec(cave.root.position, NPC_RECOVERY_SPOT.x, cave.baseY + NPC_RECOVERY_SPOT.y, NPC_RECOVERY_SPOT.z);
@@ -5581,7 +5571,6 @@
       cave.rocketJumpTime = cave.rocketPuff = 0;
       cave.rocketJumpHeld = false;
       if (cave.traits.footRockets && !cave.jet) cave.parts.jetpack.visible = cave.parts.jetFlame.visible = false;
-      cave.cloudSupport = null;
       cave.jumps = 0;
       cave.leap.vx = cave.leap.vz = cave.leap.land = 0;
       cave.leap.thrown = cave.leap.rageThrown = false;

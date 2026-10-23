@@ -358,7 +358,7 @@
 
     // ---------- the island cleared for the hunt ----------
     // Every Ooga nobody drives goes away (as one a remote player drives does) and comes back where it was; the visitor's
-    // own Ooga stays, and one picked during the hunt comes back for it (`release`). Boxes and barrels go with them.
+    // own Ooga stays, and one picked during the hunt comes back for it (`release`).
     const overrides = new Map();
     const clearIsland = () => {
       const own = net.ownCharacter(), mine = own && crew.cavemen.get(own.handle);
@@ -369,10 +369,8 @@
         cave.override = "away";
       }
       crew.refreshStates(false);
-      hub.clearProps(true, (x, y, z) => fx.burst(x, y + 0.4, z, 4, ECTO, 1.6));
     };
     const restoreIsland = () => {
-      hub.clearProps(false);
       if (!overrides.size) return;
       // An Ooga someone else took to drive meanwhile stays theirs: what it had before the hunt is what it goes back to
       // when they let go, not now.

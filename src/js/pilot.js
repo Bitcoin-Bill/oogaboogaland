@@ -235,7 +235,6 @@
     let closeWanted = false, shoulderView = false, closeMix = 0, closeVelocity = 0, closeRate = CLOSE_RATE, distanceVelocity = 0, closeExitScale = 1, closeCave = null, hiddenHead = null, hiddenHeadCameraHidden = false, viewPitch = orbit.pitch;
     let groundView = 0, groundTarget = 0, groundX = 0, groundZ = 0, groundZone = 0, groundValid = false, groundLift = 0, groundEasing = false;
     let freeFeetY = 0, freeFloorY = 0, freeFallV = 0, freeLeapX = 0, freeLeapZ = 0, freeFallValid = false, freeFalling = false;
-    let freeCloud = null;
     let sleepingView = false, trailingPitchChosen = false;
     let lyingView = 0, lyingCave = null, lyingYaw = 0, lyingPitch = 0;
     const sleepForward = new Float64Array(3), sleepUp = new Float64Array(3);
@@ -267,7 +266,6 @@
     const resetFreeFall = () => {
       freeFallV = freeLeapX = freeLeapZ = 0;
       freeFallValid = freeFalling = false;
-      freeCloud = null;
     };
     const bind = (systems) => {
       crew = systems.crew;
@@ -3057,10 +3055,6 @@
             freeFallValid = true;
           }
           previousFloor = freeFloorY;
-          if (dt > 0 && freeCloud && !freeFalling && !freeCloud.wrapped && freeCloud.node.visible && freeCloud.node.parent) {
-            eyeX += freeCloud.dx; eyeZ += freeCloud.dz;
-            freeTarget.x += freeCloud.dx; freeTarget.z += freeCloud.dz;
-          }
           const previousFeet = freeFeetY;
           if (freeFalling) {
             freeFallV -= WALK.gravity * dt;
@@ -3069,9 +3063,9 @@
           const ground = close.groundAt(eyeX, eyeZ, freeFeetY, Math.max(previousFeet, freeFeetY));
           if (!freeFalling && freeFloorY - ground > WALK.step) {
             freeFalling = freeLedge = true;
-            freeFallV = freeCloud ? 0 : WALK.ledgeRise;
-            freeLeapX = freeCloud ? 0 : -Math.sin(orbit.yaw) * WALK.ledgeSpeed;
-            freeLeapZ = freeCloud ? 0 : -Math.cos(orbit.yaw) * WALK.ledgeSpeed;
+            freeFallV = WALK.ledgeRise;
+            freeLeapX = -Math.sin(orbit.yaw) * WALK.ledgeSpeed;
+            freeLeapZ = -Math.cos(orbit.yaw) * WALK.ledgeSpeed;
           }
           if (!freeFalling) freeFeetY = ground;
           else freeFeetY = Math.max(ground, freeFeetY);
@@ -3121,7 +3115,6 @@
         } else if (freeFalling && freeFallV > 0 && feet < freeFeetY - 1e-6) freeFallV = 0;
         freeFeetY = feet;
         freeFloorY = ground;
-        freeCloud = !freeFalling && close.cloudAt ? close.cloudAt(camera.position.x, camera.position.z, feet) : null;
         freeTarget.y = camera.position.y;
       }
       if (collided && !cave && orbit.target === freeTarget) {
