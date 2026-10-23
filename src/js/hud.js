@@ -719,7 +719,7 @@
       detachedNameShown = true;
       el.modeDestinationName.classList.add("show");
     };
-    let gorillaEntry = null, gorillaView = "orbit", gorillaCombat = false;
+    let gorillaEntry = null, gorillaView = "orbit", gorillaCombat = false, gorillaCombatEnabled = true;
     let modeName = "", modeGeometry = null, modeSelected = false, modeCombat = false, modeView = "detached", modeHealth = -1, modeHealthMax = 0, modeGorilla = false;
     let modeCave = null, modeVisible = true, retakePortraitActor = null, retakeGeometry = null, retakePortraitGeometry = null, retakeHealth = -1, retakeHealthMax = 0;
     const retake = { actor: null, gorilla: false };
@@ -758,17 +758,18 @@
     };
     // Legacy account updates never replace the last actor successfully controlled.
     const setOwnOoga = () => syncRetakeActor();
-    const setMode = (cave, combat = false, view = cave ? "orbit" : "detached", visible = true) => {
+    let modeCombatEnabled = true;
+    const setMode = (cave, combat = false, view = cave ? "orbit" : "detached", visible = true, combatEnabled = true) => {
       const gorilla = gorillaEntry ? gorillaEntry.gorilla : null;
       modeCave = gorilla ? null : cave;
       modeVisible = visible;
       if (gorillaEntry || cave) { retake.actor = gorillaEntry || cave; retake.gorilla = !!gorillaEntry; }
       syncRetakeActor();
-      if (gorilla) { cave = gorillaEntry.owner; combat = gorillaCombat; view = gorillaView; visible = true; }
+      if (gorilla) { cave = gorillaEntry.owner; combat = gorillaCombat; view = gorillaView; visible = true; combatEnabled = gorillaCombatEnabled; }
       const selected = !!cave, name = selected ? cave.traits.name : "", shown = selected ? cave.traits.display : "";
       if (!visible) fadeDetachedName(true);
       const identityChanged = selected !== modeSelected || selected && name !== modeName || !!gorilla !== modeGorilla;
-      const stateChanged = combat !== modeCombat || view !== modeView;
+      const stateChanged = combat !== modeCombat || view !== modeView || combatEnabled !== modeCombatEnabled;
       const showMode = visible && selected;
       if (el.mode.hidden === showMode) el.mode.hidden = !showMode;
       const showDestinations = visible && destinationNames.length > 0;
@@ -800,18 +801,20 @@
           el.modeHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
         }
       }
-      if (stateChanged) { modeCombat = combat; modeView = view; }
+      if (stateChanged) { modeCombat = combat; modeView = view; modeCombatEnabled = combatEnabled; }
       if (identityChanged || stateChanged) {
-        el.mode.dataset.shooter = String(selected && combat);
-        el.mode.dataset.combat = String(selected && combat);
+        el.mode.dataset.shooter = String(selected && combat && combatEnabled);
+        el.mode.dataset.combat = String(selected && combat && combatEnabled);
         el.mode.dataset.view = selected ? view : "detached";
         el.mode.setAttribute("aria-pressed", String(selected && combat));
+        const look = combatEnabled ? combat ? "combat" : "carry" : combat ? "cursor look" : "drag to look";
+        const change = combatEnabled ? "combat or carry mode" : "cursor look or click-and-drag look";
         el.mode.setAttribute("aria-label", gorilla
-          ? `${shown}'s gorilla; ${view} view; ${combat ? "combat" : "carry"} mode. Press to switch combat or carry mode; hold to detach`
+          ? `${shown}'s gorilla; ${view} view; ${look}. Press to switch ${change}; hold to detach`
           : selected
-          ? `${shown}; ${view} view; ${combat ? "combat" : "carry"} mode. Press to switch combat or carry mode; hold to detach`
+          ? `${shown}; ${view} view; ${look}. Press to switch ${change}; hold to detach`
           : `${DETACHED_NAMES[detachedPreset]} detached view. Press to cycle destinations`);
-        el.mode.title = gorilla ? `${shown}'s gorilla · ${view} · ${combat ? "combat" : "carry"} · hold to detach` : selected ? `${shown} · ${view} · ${combat ? "combat" : "carry"} · hold to detach` : `${DETACHED_NAMES[detachedPreset]} · detached`;
+        el.mode.title = gorilla ? `${shown}'s gorilla · ${view} · ${look} · hold to detach` : selected ? `${shown} · ${view} · ${look} · hold to detach` : `${DETACHED_NAMES[detachedPreset]} · detached`;
       }
     };
     setDetachedView(detachedPreset);
@@ -1029,13 +1032,14 @@
       el.jetpackCompactFuel.setAttribute("aria-valuenow", String(percent));
       el.jetpackFuelValue.firstChild.data = `${percent}%`;
     };
-    const setGorilla = (entry, view = "orbit", combat = false) => {
-      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat) { syncRetakeActor(); return; }
+    const setGorilla = (entry, view = "orbit", combat = false, combatEnabled = true) => {
+      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat && combatEnabled === gorillaCombatEnabled) { syncRetakeActor(); return; }
       if (entry !== gorillaEntry) finishPrimary(true);
       gorillaEntry = entry;
       gorillaView = view;
       gorillaCombat = combat;
-      el.gorillaSmash.hidden = !entry;
+      gorillaCombatEnabled = combatEnabled;
+      el.gorillaSmash.hidden = !entry || !combatEnabled;
       el.primary.hidden = !primaryShown || !!entry;
       el.weapon.hidden = !weaponShown || !!entry;
       el.jetpack.hidden = !jetpackShown || !!entry;

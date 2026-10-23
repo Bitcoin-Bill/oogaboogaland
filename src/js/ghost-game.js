@@ -390,6 +390,7 @@
       if (!cave || ammo.has(cave)) return;
       ammo.set(cave, cave.weapon.unlimited);
       cave.weapon.unlimited = true;
+      if (cave === crew.player && !hub.gorillaActive()) hub.readyGun();
     };
     const disarmHunters = () => {
       for (const [cave, was] of ammo) cave.weapon.unlimited = was;
@@ -421,7 +422,7 @@
       audio.open();
       if (npcSync.role === "follow") sync.ready();
       else sim.ready(myId());
-      // Ready means ready: the rifle out in combat (inside the press, so the mouse can be taken for aiming).
+      // Take the aiming view inside the press; the rifle becomes available when the hunt enables combat.
       if (crew.player && !hub.gorillaActive()) hub.readyGun();
     };
     let declined = false;

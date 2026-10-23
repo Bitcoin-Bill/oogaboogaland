@@ -366,7 +366,7 @@
     let carryPickActor = null;
     let peekTarget = 0, peekMix = 0;
     let aimCave = null, aimMix = 0, aimVelocity = 0, adsMix = 0, ads = false, disposed = false;
-    let aimLeftAccepted = false, aimLeftFocused = false, aimReleaseEvent = null;
+    let aimLeftAccepted = false, aimLeftFocused = false, aimReleaseEvent = null, attackReleaseBlocked = false;
     let rightDownAt = -Infinity, rightTapAt = -Infinity, rightTravel = 0, rightExitHeld = false;
     let rightCarry = false, rightCarryPointer = -1, rightCarryX = 0, rightCarryY = 0;
     let primaryButtonCave = null;
@@ -542,7 +542,7 @@
       if (externalControl && !disposed) return;
       carryCursor.endAim();
       if (disposed) retireAimLock();
-      if (!disposed && armed()) hud.hint("Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view");
+      if (!disposed && armed()) hud.hint(crew.combatEnabled ? "Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view" : "Click the island for mouse look · X for click-and-drag look · scroll to change view");
     };
     const lockAim = () => {
       if (externalControl || coarse || disposed || !armed()) return;
@@ -1489,6 +1489,7 @@
         }
         resumePose();
         if (e.button === 0) {
+          attackReleaseBlocked = !crew.combatEnabled;
           if (player().weapon.primaryEquipped) crew.swingWeapon(player(), true, ads);
           else {
             const w = player().weapon, before = w.shotsFired + w.triggerQueued;
@@ -1499,7 +1500,7 @@
         }
         if (e.button === 2) {
           ads = true;
-          if (e.buttons & 1 && !player().weapon.primaryEquipped && crew.setWeaponTrigger(true, true)) aimLeftAccepted = true;
+          if (!attackReleaseBlocked && e.buttons & 1 && !player().weapon.primaryEquipped && crew.setWeaponTrigger(true, true)) aimLeftAccepted = true;
         }
       } else if (e.type === "pointerup" || e.type === "pointermove") {
         if (e.button === 0) {
@@ -1556,8 +1557,9 @@
       // some browsers report only the release while right-click remains held.
       // Count that release as the click only when its press did not already
       // fire or queue a focused single shot.
-      if (cave && cave.weapon.equipped && focused && !aimLeftAccepted && armed()) crew.setWeaponTrigger(true, true);
+      if (!attackReleaseBlocked && cave && cave.weapon.equipped && focused && !aimLeftAccepted && armed()) crew.setWeaponTrigger(true, true);
       crew.setWeaponTrigger(false);
+      attackReleaseBlocked = false;
       aimLeftAccepted = aimLeftFocused = false;
     };
     const aimMouseUp = (e) => {
@@ -1846,12 +1848,12 @@
       else hud.setJetpack(!!(cave && cave.jet), !!(cave && cave.jet), cave ? cave.jetFuel : 0);
     };
     const syncModeHud = () => {
-      if (hud.setMode) hud.setMode(player(), armed(), viewMode());
+      if (hud.setMode) hud.setMode(player(), armed(), viewMode(), true, !!crew?.combatEnabled);
     };
     let reloadPrompt = false;
     const syncWeaponHud = () => {
       const cave = player(), weapon = cave && cave.weapon;
-      const ready = !!weapon && !cave.grabbedBy && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
+      const ready = !!crew?.combatEnabled && !!weapon && !cave.grabbedBy && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
       const primaryReady = ready && weapon.primaryOwned;
       const secondaryReady = ready && weapon.secondaryOwned;
       if (primaryButtonCave && (primaryButtonCave !== cave || !primaryReady || !weapon.primaryEquipped)) {
@@ -1892,7 +1894,7 @@
         return true;
       }
       const cave = player();
-      if (!active || !cave || cave.grabbedBy || crew.sleeping) return false;
+      if (!active || !crew.combatEnabled || !cave || cave.grabbedBy || crew.sleeping) return false;
       resumePose();
       if (action === "weapon-primary" || action === "weapon-primary-down") {
         const alreadyHeld = !cave.weapon.equipped;
@@ -1951,7 +1953,7 @@
       return true;
     };
     const weaponMode = (slot) => {
-      if (!active) return false;
+      if (!active || !crew?.combatEnabled) return false;
       const cave = player();
       if (!cave) return false;
       if (slot === 0) return true;
@@ -3587,6 +3589,17 @@
       orbit.yaw = orbit.tYaw = Math.atan2(dx, dz);
       orbit.pitch = orbit.tPitch = Math.atan2(dy, Math.hypot(dx, dz));
     }
+    const refreshCombat = () => {
+      if (!crew) return;
+      if (!crew.combatEnabled) {
+        const cave = player();
+        if (cave) { crew.stopBurst(cave); crew.stopReload(cave, true); crew.releaseSwing(cave, true); }
+        primaryButtonCave = null;
+        aimLeftAccepted = aimLeftFocused = false; aimReleaseEvent = null;
+        attackReleaseBlocked = true;
+      }
+      syncWeaponHud(); syncModeHud();
+    };
     const saveLoginView = () => {
       try {
         window.sessionStorage.removeItem(LOGIN_VIEW_KEY);
@@ -3611,7 +3624,7 @@
       get birdsEye() { return birdsEye(); }, get birdsEyeMix() { return camera.orthoMix || 0; }, get birdsEyeHeight() { return overheadHeight; }, get birdsEyeNorthUp() { return overheadNorthUp; },
       get birdsEyeCeiling() { return overheadCeiling; },
       get shoulderEntryMix() { return aimMix; },
-      bind, setActive, readInput, update, goPreset, resetCamera, freeCursor, navigate, travelRefusal, travel, transformView, pickCarryTarget, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
+      bind, setActive, refreshCombat, readInput, update, goPreset, resetCamera, freeCursor, navigate, travelRefusal, travel, transformView, pickCarryTarget, enterClose, exitClose, possess, release, escape, action, modeAction, weaponAction, weaponMode, showAct, dispose, get player() {
       return player();
     }, get assistedTarget() {
       if (birdsEye() && assistedTargetActive) return assistedTargetHit;

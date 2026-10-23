@@ -415,6 +415,7 @@
   };
   const create = (ctx) => {
     const { root, input, hud, game, world, bedrolls, viewYaw, buildSpots, walkIn, wanderSpot } = ctx;
+    let combatEnabled = ctx.combatEnabled === true;
     // playerName creates one playable actor without roster scheduling, beds or a pile.
     // groundAt takes the caveman's current height: support is layered, so the answer depends on where he is.
     const groundAt = ctx.groundAt || (() => 0);
@@ -469,6 +470,7 @@
       health.delay = Math.max(0, Number.isFinite(health.delay) ? health.delay : 0);
       health.stunned = health.value <= 0 || health.stunned === true && health.value < HEALTH_MAX;
       health.recovering = health.stunned && health.value >= HEALTH_MAX;
+      if (!combatEnabled) { health.value = HEALTH_MAX; health.delay = 0; health.stunned = health.recovering = false; }
       const stunBirds = createNode({ position: { x: 0, y: cave.headOffset + 0.42 * h, z: 0 }, visible: false, sightHidden: true });
       for (let bird = 0; bird < 3; bird++) {
         const angle = bird / 3 * Math.PI * 2;
@@ -562,6 +564,7 @@
         slot: null,
         pileApproach: false,
         index: i,
+        animation: { due: true, dt: 0, pending: 0, at: 0, interval: 0, state: "", kind: "", bed: "", updates: 0 },
         bedroll: null,
         bedTravel: { mode: "", route: null, plan: null, index: 0, toBed: false, bed: null, manual: false, pose: "left", roll: 1, phase: 0, blocked: 0, retry: 0, fromX: 0, fromY: 0, fromZ: 0, fromYaw: 0, fromHeadX: 0, fromHeadY: 0, fromHeadZ: 0, fromArmRX: 0, fromArmLX: 0, fromArmRZ: 0, fromArmLZ: 0, armRX: 0, armLX: 0, armRZ: 0, armLZ: 0, compression: SLEEP_COMPRESSION, fromCompression: SLEEP_COMPRESSION, restY: 0, restZ: 0, pitch: 0, headDrop: 0, headDropX: 0, headDropY: 0, headDropZ: 0 },
         sleepHead: { x: 0, y: 0, z: 0 },
@@ -1549,7 +1552,7 @@
     const clearProjectiles = () => { for (const b of bulletPool) { b.life = 0; b.node.visible = false; b.source = null; } throwCooldown = 0; };
     // Throws share the capped projectile pool, collision callbacks and disposal with gun rounds.
     const throwTomato = () => {
-      const cave = player; if (!cave || cave.grabbedBy || throwCooldown > 0 || cave.health.stunned || cave.state === "sleeping") return false;
+      const cave = player; if (!combatEnabled || !cave || cave.grabbedBy || throwCooldown > 0 || cave.health.stunned || cave.state === "sleeping") return false;
       if (!tomatoGeometry) tomatoGeometry = models.merge(models.box({ w: .28, h: .24, d: .28, color: "#e34d32" }), models.box({ w: .13, h: .07, d: .13, color: "#578544", offset: { x: 0, y: .15, z: 0 } }));
       const b = bulletPool[bulletIdx++ % bulletPool.length], p = cave.root.position;
       setVec(b.from, p.x, p.y + cave.traits.height * .45, p.z);
@@ -1656,7 +1659,7 @@
         const absorbed = ctx.absorbProjectile && ctx.absorbProjectile(x, y, z, p, step, bullet.source, bullet.workShot);
         if (absorbed) bullet.life = 0;
         let impacted = false, dx = 0, dy = 0, dz = 0, distance = 0;
-        if (!absorbed && !bullet.feedback && !bullet.workShot && !bullet.tomato && input.weaponTargets
+        if (combatEnabled && !absorbed && !bullet.feedback && !bullet.workShot && !bullet.tomato && input.weaponTargets
           && (bullet.source === player || BL.net && BL.net.state.resolved && !BL.net.state.me)) {
           dx = p.x - x; dy = p.y - y; dz = p.z - z; distance = Math.hypot(dx, dy, dz);
           if (distance > 1e-6 && input.weaponTargets.ray(weaponHit, x, y, z, dx / distance, dy / distance, dz / distance, distance + (bullet.life ? 0 : bullet.reach) + 1e-5, bullet.source)) {
@@ -1733,6 +1736,7 @@
       return Math.min(AMMO_PER_BANANA, cave.weapon.ammo < AMMO_MAX ? AMMO_MAX - cave.weapon.ammo : index >= 0 ? AMMO_MAX - cave.weapon.spareAmmo[index] : 0);
     };
     const canReload = (cave = player) => {
+      if (!combatEnabled && cave === player) return false;
       if (!cave || cave.grabbedBy || cave !== player && cave.state !== "working" || cave.weapon.swapTime > 0 || cave.weapon.reloadHandoff < 0) return false;
       const missing = reloadMissing(cave);
       return missing > 0 && (ctx.reloadPolicy ? ctx.reloadPolicy.available(cave, reloadBite(cave)) : world.level >= reloadBite(cave) / AMMO_PER_BANANA) && nearReload(cave);
@@ -1799,6 +1803,7 @@
       return changed;
     };
     const swingWeapon = (cave = player, held = false, focused = false) => {
+      if (!combatEnabled) return false;
       if (!cave || cave.grabbedBy || cave.health.stunned || !cave.weapon.primaryOwned || !cave.weapon.primaryEquipped || cave !== player && (cave.camp.burning || cave.camp.rolling) || cave.camp.seat || cave.bedTravel.mode) return false;
       const w = cave.weapon, arm = cave.parts.armR, club = cave.parts.club;
       if (w.meleeHeld) return false;
@@ -1841,6 +1846,7 @@
       return true;
     };
     const bashWeapon = (cave = player) => {
+      if (!combatEnabled) return false;
       if (!cave || cave.grabbedBy || cave !== player || cave.health.stunned || cave.state === "sleeping" || !cave.root.visible
         || !cave.weapon.equipped || cave.weapon.reloading || cave.weapon.swapTime || cave.weapon.reloadHandoff
         || cave.weapon.bashTime || cave.camp.seat || cave.bedTravel.mode) return false;
@@ -1852,6 +1858,7 @@
       return true;
     };
     const releaseSwing = (cave = player, cancel = false, focused = null, quick = false) => {
+      if (!combatEnabled) cancel = true;
       if (!cave) return false;
       const w = cave.weapon;
       if (!w.meleeHeld) return false;
@@ -2422,10 +2429,10 @@
       w.reloadFire = w.reloadFireHeld = false;
       w.reloadFireRounds = BURST_ROUNDS;
     };
-    const weaponReady = (cave) => !!cave && !cave.grabbedBy && cave.root.visible && !cave.health.stunned && cave.weapon.secondaryOwned && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff && !cave.weapon.bashTime && (cave.weapon.unlimited || cave.weapon.ammo > 0)
+    const weaponReady = (cave) => !!cave && (combatEnabled || cave !== player && (cave.work.phase === "shoot" || cave.build)) && !cave.grabbedBy && cave.root.visible && !cave.health.stunned && cave.weapon.secondaryOwned && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff && !cave.weapon.bashTime && (cave.weapon.unlimited || cave.weapon.ammo > 0)
       && cave.state !== "sleeping" && (cave === player || !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active) && !cave.bedTravel.mode && !seatBlocksWeapons(cave);
     const canFire = (cave = player) => weaponReady(cave) && cave.weapon.cooldown <= 0 && !cave.weapon.burstRemaining;
-    const canSwapMagazine = (cave = player) => hasMagazine(cave) && cave.weapon.secondaryOwned && (cave === player || cave.state === "working") && cave.root.visible && !cave.health.stunned
+    const canSwapMagazine = (cave = player) => (combatEnabled || cave !== player) && hasMagazine(cave) && cave.weapon.secondaryOwned && (cave === player || cave.state === "working") && cave.root.visible && !cave.health.stunned
       && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff
       && cave.state !== "sleeping" && !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active && !cave.bedTravel.mode && !seatBlocksWeapons(cave);
     const swapMagazine = (cave = player, index = null) => {
@@ -2479,7 +2486,7 @@
       return true;
     };
     const interruptReloadToFire = (cave) => {
-      if (cave !== player || !cave || !cave.root.visible || !cave.weapon.equipped || !cave.weapon.unlimited && cave.weapon.ammo <= 0 || cave.weapon.swapTime
+      if (!combatEnabled || cave !== player || !cave || !cave.root.visible || !cave.weapon.equipped || !cave.weapon.unlimited && cave.weapon.ammo <= 0 || cave.weapon.swapTime
         || cave.state === "sleeping" || cave.bedTravel.mode || seatBlocksWeapons(cave)) return false;
       if (cave.weapon.reloading) { stopReload(cave); poseWeapon(cave); }
       return cave.weapon.reloadHandoff < 0;
@@ -2506,6 +2513,7 @@
       return true;
     };
     const setWeaponTrigger = (held, single = false) => {
+      if (held && !combatEnabled) return false;
       if (!player) return false;
       const w = player.weapon;
       if (!held) {
@@ -2762,6 +2770,7 @@
       parts.torso.rotation.x = parts.torso.rotation.z = 0;
     };
     const prepareDragged = (cave) => {
+      if (!combatEnabled) return false;
       if (cave === player) elevatePlayer(0);
       clearHeadLook(cave);
       clearShoulder(cave);
@@ -2893,6 +2902,7 @@
       }
     };
     const ignite = (cave) => {
+      if (!combatEnabled || !cave) return false;
       const c = cave.camp;
       if (c.burning || c.rolling || c.cooldown > 0 || !cave.root.visible || cave.state === "away") return false;
       if (cave.grabbedBy && ctx.releaseGrabbed) ctx.releaseGrabbed(cave);
@@ -4143,8 +4153,10 @@
           p.y += lift;
         }
       }
-      cave.parts.torso.scale.y = 1 + Math.sin(elapsed * 1.4 + cave.phase) * 0.015;
-      updateSleepHead(cave);
+      if (cave.animation.due) {
+        cave.parts.torso.scale.y = 1 + Math.sin(elapsed * 1.4 + cave.phase) * 0.015;
+        updateSleepHead(cave);
+      }
       if (travel.mode === "rest") {
         cave.zzzTimer -= dt;
         if (cave.zzzTimer <= 0) { cave.zzzTimer = 1.6; ctx.fx.zzzAt(cave.sleepHead.x, cave.sleepHead.y + 0.35, cave.sleepHead.z, cave); }
@@ -4495,13 +4507,13 @@
       const parts = cave.parts, a = cave.act;
       cave.root.position.y = groundY(cave) + cave.hop;
       const sitting = cave.state === "chilling" && a.spot.sit && cave.hop === 0;
-      parts.legR.rotation.x = parts.legL.rotation.x = sitting ? -Math.PI / 2 : 0;
+      if (cave.animation.due) parts.legR.rotation.x = parts.legL.rotation.x = sitting ? -Math.PI / 2 : 0;
       if (sitting) {
         // Only the resting pose is lowered; support and hops still use standing feet.
         cave.restLower = Math.max(0, cave.baseY - cave.traits.height * 0.08);
         cave.root.position.y -= cave.restLower;
       }
-      parts.torso.scale.y = 1 + Math.sin(elapsed * 2.2 + cave.phase) * 0.015;
+      if (cave.animation.due) parts.torso.scale.y = 1 + Math.sin(elapsed * 2.2 + cave.phase) * 0.015;
       if (cave.cheer > 0) {
         const wave = Math.sin(elapsed * 14 + cave.phase) * 0.35;
         parts.armR.rotation.x = -2.6 + wave;
@@ -4517,11 +4529,13 @@
         return;
       }
       if (cave.state !== "chilling" && runYawn(cave)) return;
-      parts.head.rotation.y = Math.sin(elapsed * 0.9 + cave.phase) * 0.55;
-      parts.head.rotation.x = 0.08 + Math.sin(elapsed * 0.5 + cave.phase) * 0.1;
-      const arm = sitting ? -0.75 : -0.2;
-      parts.armL.rotation.x = damp(parts.armL.rotation.x, arm, 10, dt);
-      parts.armR.rotation.x = damp(parts.armR.rotation.x, arm, 10, dt);
+      if (cave.animation.due) {
+        parts.head.rotation.y = Math.sin(elapsed * 0.9 + cave.phase) * 0.55;
+        parts.head.rotation.x = 0.08 + Math.sin(elapsed * 0.5 + cave.phase) * 0.1;
+        const arm = sitting ? -0.75 : -0.2, step = cave.animation.dt;
+        parts.armL.rotation.x = damp(parts.armL.rotation.x, arm, 10, step);
+        parts.armR.rotation.x = damp(parts.armR.rotation.x, arm, 10, step);
+      }
       if (!a.said && elapsed > a.sayAt) {
         a.said = true;
         if (Math.random() < 0.6) idleSay(cave);
@@ -4898,8 +4912,33 @@
       cave.tintHold = TINT_HOLD;
       return true;
     };
+    // Only settled cosmetic poses may wait. Work, travel, sleep marks and all
+    // other behavior still consume every frame's dt, independently of the view.
+    const prepareAnimation = (cave, dt) => {
+      const a = cave.animation, w = cave.weapon, bed = cave.bedTravel;
+      const resting = cave.state === "sleeping" && (!bed.mode || bed.mode === "rest" && bed.roll === 1)
+        || (cave.state === "working" || cave.state === "chilling") && cave.act.kind === "idle" && !bed.mode;
+      const quiet = resting && cave !== player && !cave.remoteControlled && !cave.walk && !cave.build
+        && !cave.hop && !cave.hopV && !cave.grabbedBy && !cave.health.stunned && !cave.ladder?.plane
+        && !cave.camp.seat && !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active
+        && cave.cheer <= 0 && cave.catchT <= 0 && cave.yawn <= 0 && !cave.traits.nunchaku
+        && !w.reloading && !w.reloadHandoff && !w.swapTime && !w.burstRemaining && !w.recoil
+        && !w.meleeTime && !w.bashTime && !cave.shoulder.attempted && Math.abs(cave.shoulder.yaw) < 1e-5;
+      const interval = quiet && ctx.animationInterval ? ctx.animationInterval(cave) : 0;
+      const changed = a.state !== cave.state || a.kind !== cave.act.kind || a.bed !== bed.mode;
+      a.pending += dt;
+      a.due = !interval || interval < a.interval || changed || elapsed >= a.at;
+      a.dt = a.due ? a.pending : 0;
+      if (a.due) {
+        a.pending = 0;
+        // Stagger first samples without drawing from the crew's behavior dice.
+        a.at = elapsed + interval * (a.interval ? 1 : 0.5 + cave.index * 0.61803398875 % 0.5);
+        a.updates++;
+      }
+      a.interval = interval; a.state = cave.state; a.kind = cave.act.kind; a.bed = bed.mode;
+    };
     const updateCaveman = (cave, dt) => {
-      clearHeadLook(cave);
+      if (cave.animation.due) clearHeadLook(cave);
       const parts = cave.parts;
       if (!(cave.ladder && cave.ladder.plane) && cave.root.visible && (cave.state === "working" || cave.state === "chilling" || cave.bedTravel.mode === "landing" || cave.bedTravel.mode === "waiting" || cave.bedTravel.mode === "walk")) {
         // Hop is relative to support but the body lives at a world height; rebase before gravity when support changes.
@@ -4910,7 +4949,7 @@
       cave.highlight = damp(cave.highlight, cave.highlightTarget, 12, dt);
       for (let i = 0; i < BODY_PARTS.length; i++) parts[BODY_PARTS[i]].highlight = cave.highlight;
       // A carved head breathes its candlelight from dim to bright
-      if (cave.traits.pumpkin) parts.head.glow = 0.62 + 0.38 * Math.sin(elapsed * 2.1 + cave.phase);
+      if (cave.animation.due && cave.traits.pumpkin) parts.head.glow = 0.62 + 0.38 * Math.sin(elapsed * 2.1 + cave.phase);
       if (cave.traits.nunchaku && (cave.meleeSwap -= dt) <= 0) {
         cave.meleeOut = !cave.meleeOut;
         cave.meleeSwap = swapWait(cave.meleeOut);
@@ -4961,15 +5000,15 @@
       if (cave.cheer > 0) cave.cheer -= dt;
       if (cave.yawn > 0) cave.yawn -= dt;
       if (cave.catchT > 0) cave.catchT = Math.max(0, cave.catchT - dt * 1.6);
-      for (let i = 0; i < cave.swagNodes.length; i++) {
+      if (cave.animation.due) for (let i = 0; i < cave.swagNodes.length; i++) {
         const node = cave.swagNodes[i];
         if (node.swag.float) node.position.y = (node.swag.offset ? node.swag.offset.y : 0) + Math.sin(elapsed * 2.5 + cave.phase) * 0.04;
-        for (let c = 0; c < node.children.length; c++) if (node.children[c].spin) node.children[c].rotation.y += dt * 9;
+        for (let c = 0; c < node.children.length; c++) if (node.children[c].spin) node.children[c].rotation.y += cave.animation.dt * 9;
       }
       if (cave.bedTravel.mode) { runBed(cave, dt); return; }
       if (cave.state !== "working" && cave.state !== "chilling") {
         if (cave.state === "sleeping" && cave.bedroll && !cave.bedroll.hidden) {
-          parts.torso.scale.y = 1 + Math.sin(elapsed * 1.4 + cave.phase) * 0.03;
+          if (cave.animation.due) parts.torso.scale.y = 1 + Math.sin(elapsed * 1.4 + cave.phase) * 0.03;
           cave.zzzTimer -= dt;
           if (cave.zzzTimer <= 0) {
             cave.zzzTimer = 1.6;
@@ -5263,6 +5302,7 @@
       return true;
     };
     const damage = (cave, power = 1, showDamage = false) => {
+      if (!combatEnabled) return false;
       if (!cave || !cave.root.visible || cave.health.stunned || power <= 0) return false;
       const health = cave.health;
       const p = cave.root.position;
@@ -5681,7 +5721,7 @@
       if (player.camp.burning) return dropRoll();
       if (player.camp.seat) return standPlayer();
       if (player.bedTravel.manual) return wakePlayer();
-      if (!player.weapon.reloading && !player.weapon.swapTime && !player.weapon.reloadHandoff && player.weapon.equipped && reloadMissing(player) > 0 && nearReload(player)) {
+      if (combatEnabled && !player.weapon.reloading && !player.weapon.swapTime && !player.weapon.reloadHandoff && player.weapon.equipped && reloadMissing(player) > 0 && nearReload(player)) {
         if (!startReload(player)) hud.hint("No bananas in the pile");
         return true;
       }
@@ -5765,6 +5805,7 @@
     };
     // Dropped ammo's labels; drawn by fx.drawOverlay.
     const drawDrops = (ctx2d, project) => {
+      if (!combatEnabled) return;
       ctx2d.save();
       ctx2d.font = "bold 13px ui-monospace, monospace";
       ctx2d.textAlign = "center";
@@ -6021,7 +6062,8 @@
       if (riding.updated) return;
       if (riding.support) updateMember(riding.support, dt);
       const p = cave.root.position, x = p.x, y = p.y, z = p.z;
-      if (updateHealth(cave, dt)) {
+      prepareAnimation(cave, dt);
+      if (combatEnabled && updateHealth(cave, dt)) {
         riding.continuous = false;
         riding.updated = true;
         return;
@@ -6046,7 +6088,7 @@
       // Only the forward stroke can hit. Held wind-up and recovery never
       // repeatedly disturb a surface, and idle actors do no contact work.
       const meleeStep = dt * (cave.traits.nunchaku ? NUNCHAKU_RATE : 1);
-      const striking = dt > 0 && (ctx.onMeleeStrike || input.weaponTargets || ctx.fireReachable) && cave === player && w.primaryEquipped && !w.meleeHeld && !w.meleeHit
+      const striking = combatEnabled && dt > 0 && (ctx.onMeleeStrike || input.weaponTargets || ctx.fireReachable) && cave === player && w.primaryEquipped && !w.meleeHeld && !w.meleeHit
         && w.meleeTime > MELEE_RECOVER && w.meleeTime - meleeStep < meleeRelease && (!w.meleeQuick || w.meleeTime <= meleeRelease)
         && !cave.camp.seat && !cave.bedTravel.mode;
       if (striking) {
@@ -6072,12 +6114,14 @@
       const axeMoving = Math.hypot(p.x - x, p.z - z) > 1e-5 || cave.hop > 1e-4 || Math.abs(cave.hopV) > 1e-4
         || cave.catchT > 0 || cave.yawn > 0;
       w.axeIdle = carryingStoneAxe(cave) && !axeMoving ? Math.min(AXE_STICK_DELAY + AXE_STICK_BLEND, w.axeIdle + dt) : 0;
-      poseShoulder(cave, dt);
-      if (cave.parts.chuk) poseNunchaku(cave, dt);
-      if (cave === player) posePeek(cave, dt);
-      poseWeapon(cave);
+      if (cave.animation.due) {
+        poseShoulder(cave, cave.animation.dt);
+        if (cave.parts.chuk) poseNunchaku(cave, cave.animation.dt);
+        if (cave === player) posePeek(cave, cave.animation.dt);
+        poseWeapon(cave);
+      }
       if (cave.ladder && cave.ladder.plane) ladderPose(cave);
-      if (bashBefore > GUN_BASH_IMPACT && w.bashTime <= GUN_BASH_IMPACT && cave === player && w.equipped && !w.reloading && !w.swapTime && !w.reloadHandoff && !cave.health.stunned && !cave.camp.seat && !cave.bedTravel.mode) {
+      if (combatEnabled && bashBefore > GUN_BASH_IMPACT && w.bashTime <= GUN_BASH_IMPACT && cave === player && w.equipped && !w.reloading && !w.swapTime && !w.reloadHandoff && !cave.health.stunned && !cave.camp.seat && !cave.bedTravel.mode) {
         weaponOrigin(weaponStart, cave, true);
         hitMeleeTarget(cave, GUN_BASH_POWER);
       }
@@ -6152,7 +6196,7 @@
         const continuous = Math.hypot(p.x - x, p.z - z) <= speed * dt + 1e-5;
         s.motionX = continuous ? (p.x - x) / dt : 0; s.motionZ = continuous ? (p.z - z) / dt : 0;
       }
-      updateCampEffects(cave, dt);
+      if (combatEnabled) updateCampEffects(cave, dt);
       runMaskBreath(cave, dt);
       packMaskSmoke(cave);
       if (wasInBananas && dt > 0 && cave.root.visible && (cave.state === "working" || cave.state === "chilling") && !inBananas(cave) && ctx.pile.spill) {
@@ -6202,14 +6246,69 @@
         const cave = crewList[i];
         cave.riding.support = ctx.characterSupportAt(cave);
       }
-      if (dt > 0) updateFireContacts();
-      updateFireThreats();
+      if (combatEnabled && dt > 0) updateFireContacts();
+      if (combatEnabled) updateFireThreats();
       for (let i = 0; i < crewList.length; i++) if (!crewList[i].puppet) updateMember(crewList[i], dt);
-      updateStunGear(dt);
+      if (combatEnabled) updateStunGear(dt);
       syncMagazine();
-      if (dt > 0) updateFireContacts();
+      if (combatEnabled && dt > 0) updateFireContacts();
       // Collision exclusions belong to this ordered update only; input and relocation see ordinary bodies.
       for (let i = 0; i < crewList.length; i++) crewList[i].riding.support = null;
+    };
+    const setCombatEnabled = (on) => {
+      on = on === true;
+      if (on === combatEnabled) return;
+      combatEnabled = on;
+      if (on) return;
+      // Game state ends synchronously; ordinary work and its decorative shots continue.
+      for (const bullet of bulletPool) if (!bullet.workShot && !bullet.visual) {
+        bullet.life = 0; bullet.node.visible = false; bullet.source = null;
+      }
+      throwCooldown = 0;
+      for (const cave of crewList) {
+        const w = cave.weapon, health = cave.health, camp = cave.camp;
+        if (cave.grabbedBy && ctx.releaseGrabbed) ctx.releaseGrabbed(cave);
+        cave.grabbedBy = null;
+        if (cave.leap.thrown) {
+          cave.leap.vx = cave.leap.vz = cave.leap.land = 0;
+          cave.hopV = Math.min(0, cave.hopV);
+          cave.leap.thrown = cave.leap.rageThrown = false;
+          recoverDragged(cave);
+        }
+        if (cave === player || !w.burstWork) { stopBurst(cave); cave.parts.gunFlash.visible = false; }
+        if (cave === player) stopReload(cave, true);
+        releaseSwing(cave, true); clearGunBashThrust(cave); clearMeleeThrust(cave);
+        w.meleeTime = w.meleeReadyTime = w.meleeComboTime = w.bashTime = 0;
+        w.meleeTarget.node = w.meleeTarget.owner = null;
+        w.meleeAimX = w.meleeAimY = w.meleeAimZ = 0;
+        w.meleeQuick = false;
+        for (const drop of cave.stunGear.drops) {
+          if (drop.active) collectStunDrop(drop, cave);
+          drop.active = drop.returning = false;
+          if (drop.node) drop.node.visible = false;
+        }
+        health.value = HEALTH_MAX; health.delay = 0;
+        if (health.stunned) finishStun(cave);
+        health.stunned = health.recovering = false; cave.stunBirds.visible = false;
+        if (camp.rolling) {
+          cave.root.quaternion = null; cave.root.rotation.x = cave.root.rotation.z = 0;
+          standPose(cave); cave.root.position.y = groundY(cave);
+        }
+        camp.burning = camp.contactBurning = camp.rolling = false;
+        camp.burnAge = camp.rollTime = camp.soot = camp.fadeTime = camp.puff = camp.smokeTime = camp.cooldown = 0;
+        camp.spread.fill(0); camp.burnTime.fill(0); camp.scorch.fill(0); camp.rollScorch.fill(0);
+        for (const key of BODY_PARTS) {
+          const part = cave.parts[key];
+          part.ember = part.scorch = 0;
+          if (part === cave.parts.head) for (const child of part.children) {
+            if (child !== cave.parts.hat && child !== cave.parts.face) child.ember = child.scorch = 0;
+          }
+        }
+        cave.parts.fingersR.ember = cave.parts.fingersR.scorch = cave.parts.fingersL.ember = cave.parts.fingersL.scorch = 0;
+        camp.panic.memory.fill(0); camp.panic.gorillaMemory.fill(0); camp.panic.remembered = false;
+        if (camp.panic.active) finishPanic(cave);
+        camp.panic.threat = null;
+      }
     };
     const dispose = () => {
       window.clearTimeout(recipeTimer);
@@ -6256,7 +6355,8 @@
     }
     const stats = () => ({ built: builtEquipment.length, tomatoesThrown, projectiles: bulletPool.reduce((n, b) => n + (b.life > 0 ? 1 : 0), 0) });
     return {
-      showShot, setTint, spotOccupied,
+      showShot, setTint, spotOccupied, setCombatEnabled,
+      get combatEnabled() { return combatEnabled; },
       cavemen, list: crewList, fanSlots, stateOf, stateCounts, workingCavemen, eatingCavemen, workingCount, eatingCount, feedableCavemen, refreshStates, refreshRosterRow, updateFan, rush, headWorldOf, applyAllSwag, wornBy, renderLocker, pokeCave, idleSay, drawDrops,
       throwTomato, clearProjectiles, control, release, relocatePlayer, sleepPlayer, wakePlayer, sitPlayer, standPlayer, clearHeadLook, prepareDragged, recoverDragged, ignite, dropRoll, damage, fireView, steer: steerPlayer, look: lookPlayer, elevate: elevatePlayer, playerAction, jumpPlayer, poseWeapon, wearJetpack, removeJetpack, setJetpackOwnership, thrust, holdRocketJump, update, dispose, stats,
       actorClear, builtInJetpack, toggleTint, twirl, toggleWeapon, selectWeapon, configureWeapon, swingWeapon, bashWeapon, releaseSwing, fireWeapon, setWeaponTrigger, canFire, weaponOrigin, meleeReach, meleePower, nearReload, canReload, startReload, stopReload, stopBurst, canSwapMagazine, swapMagazine, collectMagazine, collectGroundMagazine, collectAmmo, removeMagazines, hasMagazine, magazineCount, magazineAmmo, totalAmmo, workSites,

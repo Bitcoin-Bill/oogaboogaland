@@ -3231,6 +3231,21 @@
     const dx = p.x - mempoolIsland.place.x, dz = p.z - mempoolIsland.place.z;
     return dx * dx + dz * dz <= radius * radius;
   };
+  // Only local poses may run less often. A host's limb transforms are the poses every following page receives.
+  const animationInterval = (actor) => {
+    const net = BL.net.state;
+    if (gameMode || actor.controlled || actor.remoteControlled || actor === crew?.player
+      || net.room === "live" && net.hostId === net.selfId && net.followers > 0) return 0;
+    const p = actor.root.position, eye = camera.position, target = camera.target;
+    let distance2 = Math.min((p.x - eye.x) ** 2 + (p.y - eye.y) ** 2 + (p.z - eye.z) ** 2,
+      (p.x - target.x) ** 2 + (p.y - target.y) ** 2 + (p.z - target.z) ** 2);
+    const player = clankerPlay?.player || crew?.player;
+    if (player) {
+      const q = player.root.position;
+      distance2 = Math.min(distance2, (p.x - q.x) ** 2 + (p.y - q.y) ** 2 + (p.z - q.z) ** 2);
+    }
+    return distance2 <= 20 * 20 ? 0 : distance2 <= 40 * 40 ? 0.1 : 0.2;
+  };
   const updatePoolEffectsActivity = () => {
     const radius = poolEffectsActive ? POOL_EFFECTS_FAR : POOL_EFFECTS_NEAR;
     const player = clankerPlay?.player || pilot?.player;
@@ -3592,6 +3607,7 @@
     syncMirrorDamage();
   };
   const weaponImpact = (source, hit, dx, dy, dz, power = 1, projectile = null) => {
+    if (!gameMode) return;
     if (source && source.controlled && source.actionControlled && source.combat && !source.combat.powerSpent) {
       const combat = source.combat;
       source.poundPower *= 0.25 + 0.75 * clamp((now - combat.lastHitAt - 0.1) / 0.1, 0, 1);
@@ -4109,6 +4125,7 @@
     }
   };
   const beginClankerCapture = (entry, cave, autonomous) => {
+    if (!gameMode) return false;
     const rec = entry.capture;
     if (!rec || rec.cave || cave.grabbedBy) return false;
     rec.cave = cave; rec.autonomous = autonomous; rec.throwing = rec.posed = false;
@@ -4129,7 +4146,7 @@
     return true;
   };
   const grabClankerRider = (entry) => {
-    if (!entry || rageCaptive(entry) || !clankerMeshes || !crew) return false;
+    if (!gameMode || !entry || rageCaptive(entry) || !clankerMeshes || !crew) return false;
     grabSupportEntry = entry;
     let nearest = Infinity, rider = null;
     for (let i = 0; i < crew.list.length; i++) {
@@ -4270,7 +4287,7 @@
     return -1;
   };
   const rageWarpTarget = (entry, cave) => {
-    if (!BL.clankerRage.signedOut() || !entry?.rage?.active || entry.controlled
+    if (!gameMode || !BL.clankerRage.signedOut() || !entry?.rage?.active || entry.controlled
       || !rageCaptureEligible(entry, cave) || rageCaptive(entry) || !rageWarpRequired(entry, cave)) return false;
     const spotIndex = rageWarpHomeSpot(entry, cave, true);
     if (spotIndex < 0) return false;
@@ -4383,6 +4400,7 @@
     return false;
   };
   const finishClankerRider = (entry, throwing, charge = 0, aim = null, carryX = 0, carryZ = 0) => {
+    throwing = throwing && gameMode;
     const rec = entry?.capture, cave = rec?.cave;
     if (!cave) return false;
     if (cave.grabbedBy !== entry) return false;
@@ -4457,7 +4475,7 @@
   const releaseClankerRider = (entry, throwing, charge = 0, aim = null) => {
     const rec = entry?.capture;
     if (!rec?.cave) return false;
-    if (!throwing) return finishClankerRider(entry, false);
+    if (!throwing || !gameMode) return finishClankerRider(entry, false);
     if (rec.throwing || rec.warpVisit) return false;
     rec.throwing = true; rec.time = 0; rec.charge = charge;
     rec.aimed = !!aim;
@@ -8106,7 +8124,7 @@
     critters.update(dt, elapsed, RENDER_OPTS.day, RENDER_OPTS.stars, fire.k, 1);
     if (!gameMode) updateClouds(dt);
     solids.sync();
-    updateRageThrowMap();
+    if (gameMode) updateRageThrowMap();
     updateSleepingSolids();
     if (!chalkboard.openNow) {
       if (clankerPlay.active) clankerPlay.readInput(dt);
@@ -8120,8 +8138,8 @@
     if (bifrostIsle) bifrostGate(dt, elapsed);
     if (bcaMouth) bcaVeil(dt, elapsed);
     if (factoryDeparting || bifrostDeparting) return; // The Ooga through a shield and its camera hold through the director fade.
-    prepareClankerStrike();
-    for (let i = 0; i < clankerCaptures.length; i++) {
+    if (gameMode) prepareClankerStrike();
+    for (let i = 0; gameMode && i < clankerCaptures.length; i++) {
       const rec = clankerCaptures[i];
       if (!rec.cave) continue;
       if (!captureValid(rec)) { finishClankerRider(rec.entry, false); continue; }
@@ -8132,7 +8150,7 @@
       rec.entry.motion.throwProgress = Math.min(1, rec.time / THROW_SWING_TIME);
     }
     clankers.update(dt);
-    for (let i = 0; i < clankerCaptures.length; i++) {
+    for (let i = 0; gameMode && i < clankerCaptures.length; i++) {
       const rec = clankerCaptures[i], entry = rec.entry, cave = rec.cave;
       if (!cave) continue;
       if (!captureValid(rec)) { finishClankerRider(entry, false); continue; }
@@ -8171,12 +8189,12 @@
       }
       if (!found) throw new Error("No clear gorilla respawn at pile");
     }
-    if (dt > 0) updateClankerFireContacts(clankerFireReachable);
+    if (gameMode && dt > 0) updateClankerFireContacts(clankerFireReachable);
     if (debugSelectedGorilla && (!debugSelectedGorilla.active || !debugSelectedGorilla.root.visible || !DEBUG_GORILLA_RAGE && pilot.player || clankerPlay.active
       || DEBUG_GORILLA_RAGE && !debugSelectedGorilla.rage.debug)) selectDebugGorilla(null);
     updateLabEquipment(dt);
     clankerMeshes.sync();
-    updateClankerEffects(dt);
+    if (gameMode) updateClankerEffects(dt);
     if (timechainIsland) {
       if (!gameMode) timechainIsland.site.turn((elapsed % TIMECHAIN_OUTER_PERIOD) * Math.PI * 2 / TIMECHAIN_OUTER_PERIOD);
       timechainIsland.show(dt);
@@ -8402,6 +8420,13 @@
     on = !!on;
     if (on === gameMode) return;
     gameMode = on;
+    if (!on) for (const rec of clankerCaptures) if (rec.cave) finishClankerRider(rec.entry, false);
+    crew.setCombatEnabled(on);
+    clankers.setCombatEnabled(on);
+    pilot.refreshCombat();
+    clankerPlay.refreshCombat();
+    resetRageThrowMap(on);
+    if (!on) updateClankerEffects(0);
     clankers.setAway(on);
     RENDER_OPTS.windTime = on ? performance.now() * 0.001 % 3600 : NaN;
     // The act button and the hint pill under the play area (JUMP!, the controls' reminders) stand down too.
@@ -10735,6 +10760,7 @@
     critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt, activeAt: effectsActiveAt });
     mark("props");
     const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, overlayVisible: matrixOverlayVisible, zzzVisible: sleepMarksVisible, tickerAt: TICKER_AT, buildSpots: buildSpotsList, walkIn: WALK_IN, clampDrag, viewYaw: PILE_VIEW.yaw, bedrolls, pileScale: PILE_SCALE, pileY: ALTAR_HEIGHT + 0.02, matrixLivingPile: true, onLayout: layoutPile, crateRadius: () => Math.max(4.4, altar.platformRadius + 0.8), groundAt: playerSupportAt, ceilingAt, wanderSpot, walkable, flyable, glideJetCeiling, useNear, abyssAt, abyssRespawnY: ABYSS_RESPAWN_Y, seaY: SEA_Y, jetpackAllowed, reticleTarget, phase: () => phase };
+    shared.animationInterval = animationInterval;
     shared.deliverySource = factoryMouth ? factoryMouth.deliverySource : null;
     shared.reloadSlotRadius = () => island.path.debug.ringLoadingRadius;
     shared.reloadRadius = () => island.path.debug.ringCenterRadius;
@@ -11026,7 +11052,7 @@
     // crew's effects, shots and work hooks pass through the sync, which notes them while this page hosts;
     // a following page replays them into the same effects and gorillas.
     npcSync = BL.npcSync.create({
-      crew, fx,
+      crew, fx, animationInterval,
       onPlan: (cave, site) => clankers && clankers.plan(cave, site),
       onHit: (cave) => clankers && clankers.hit(cave),
       onModelChange: (cave) => {
@@ -11143,7 +11169,7 @@
     }
     const labSiteIndex = shared.workSites.findIndex(site => site.mouth === entropyLab.mouth);
     clankers = BL.clankers.create({
-      root, crew, sites: shared.workSites, loungeRoofs, loungeAreas, climbRoofs, chillZones, descentWalls,
+      root, crew, animationInterval, sites: shared.workSites, loungeRoofs, loungeAreas, climbRoofs, chillZones, descentWalls,
       rageLandAt, rageEdgeAt, rageEdgeHeading, rageEdgeGoal, rageApproach, rageWarpRequired, rageWarpTarget, rageWarpPose, rageWarpHome, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear, rageCarryClear, rageCaptureEligible, rageJumpPoseClear,
       rageHuntRange: entry => entry.radius + BODY_RADIUS + 0.35,
       sleep: clankerBeds(),
@@ -11175,7 +11201,7 @@
       entry.netMotion = new Float64Array(6);
       registerClanker(entry);
     }
-    resetRageThrowMap();
+    resetRageThrowMap(false);
     clankerPlay = BL.clankerPlay.create({
       canvas: ctx.canvas, camera, pilot, hud, clankers, input, renderer, reticleTarget,
       grabOoga: grabClankerRider, releaseOoga: releaseClankerRider,
@@ -11357,6 +11383,8 @@
     Object.assign(hubScene, {
       root, camera, input,
       debug: {
+        setGameMode, animationInterval,
+        get gameMode() { return gameMode; },
         selectDebugGorilla,
         get timechainIsland() { return timechainIsland; },
         get factory() { return factoryMouth && factoryMouth.hall ? factoryMouth.hall.debug : null; },

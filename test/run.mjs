@@ -7302,6 +7302,72 @@ const nextTo = (prop, gap, yaw = "-Math.PI / 2", pitch = 0.3) => `(() => {
   B.advance(0.3, 1 / 60); return window.__target.health;
 })()`;
 const removeWeaponTarget = `(() => { const B = __ooga, node = window.__target.owner.node; B.hud.tooltip.hide(); B.input.remove(node); BL.scene.removeChild(BL.scenes.hub.root, node); B.renderer.releaseGeometry(node.geometry); delete window.__target; })()`;
+// Attack regressions exercise the shared game capability explicitly. Keep companions
+// present for capture fixtures even though the ghost hunt normally sends them away.
+const gameCombat = step => ({ ...step, run: async b => {
+  await b.evaluate(`(() => { const B = __ooga; BL.scenes.hub.debug.setGameMode(true); B.clankers.setAway(false); })()`);
+  try { await step.run(b); }
+  finally { await b.evaluate(`BL.scenes.hub.debug.setGameMode(false)`); }
+} });
+const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visits retain both look modes while attacks, health simulation, rage and grabs stay off, and ending a game clears its transient combat state", run: async b => {
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, H = BL.scenes.hub.debug, C = B.clankers, P = B.pilot, a = B.cavemen.get("portlandhodl"), e = C.list.find(entry => entry.owner === a);
+    const w = a.weapon, saved = { ammo: w.ammo, spare: w.spareAmmo.slice(), slot: w.selectedSlot }, out = {};
+    const key = (type, key, code) => document.getElementById("scene").dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }));
+    const press = (name, code) => { key("keydown", name, code); key("keyup", name, code); B.advance(1 / 60, 1 / 60); };
+    try {
+      P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+      B.crew.configureWeapon(a, 2, 6); e.active = e.root.visible = true;
+      out.defaultOff = !H.gameMode && !B.crew.combatEnabled && !C.combatEnabled;
+      const aiming = P.aiming; press("x", "KeyX"); const toggled = P.aiming !== aiming; press("x", "KeyX");
+      out.look = toggled && P.aiming === aiming && !document.getElementById("mode-hud").hidden;
+      const shots = w.shotsFired, ammo = w.ammo, health = a.health.value, gorillaHealth = e.health.value;
+      out.refused = !B.crew.fireWeapon(a, { x: 0, y: 30, z: 0 }, 1) && !B.crew.swingWeapon(a)
+        && !B.crew.bashWeapon(a) && !B.crew.throwTomato() && !B.crew.startReload(a) && !B.crew.swapMagazine(a)
+        && !B.crew.damage(a, 100, true) && !C.damage(e, 100) && !C.debugRage(e, true);
+      for (let serial = 1; serial <= 43; serial++) C.bananaHit(e, B.cavemen.get("w-s-bitcoin"), serial);
+      out.untouched = health === a.health.value && gorillaHealth === e.health.value && !a.health.stunned
+        && !a.stunGear.drops.some(drop => drop.active) && !e.rage.active && !e.rage.count && w.shotsFired === shots && w.ammo === ammo;
+      a.health.value = 37; a.health.delay = 0; e.health.value = 71; e.health.delay = 0;
+      B.advance(0.25, 1 / 60);
+      out.noRegeneration = a.health.value === 37 && e.health.value === 71;
+      a.health.value = BL.crew.HEALTH_MAX; e.health.value = e.health.max;
+      H.setGameMode(true); C.setAway(false); e.active = e.root.visible = true;
+      out.game = H.gameMode && B.crew.combatEnabled && C.combatEnabled && C.damage(e, 1)
+        && e.health.value < e.health.max && B.crew.damage(a, 100) && a.health.stunned && a.stunGear.drops.some(drop => drop.active);
+      H.setGameMode(false);
+      out.reset = !H.gameMode && !B.crew.combatEnabled && !C.combatEnabled && a.health.value === BL.crew.HEALTH_MAX
+        && !a.health.stunned && !a.health.recovering && !a.stunBirds.visible && e.health.value === e.health.max
+        && !a.stunGear.drops.some(drop => drop.active || drop.node?.visible) && !w.burstRemaining && !w.meleeTime && !w.bashTime;
+      // A real rider on a posed gorilla is a valid grab target in either mode.
+      P.release(true); C.release();
+      a.override = a.state = "chilling"; a.root.visible = true; a.root.quaternion = null; a.walk = null; a.bedTravel.mode = "";
+      a.camp.seat = null; a.camp.burning = a.camp.rolling = false; a.hop = a.hopV = a.jumps = 0;
+      a.act.kind = "idle"; a.act.until = Infinity;
+      Object.assign(e, { active: true, phase: "chill", mode: "chilling", route: "", fromSite: -1, lounge: "", loungeDepart: false,
+        parked: true, biped: true, recover: 0, rest: 120, pound: 0, beat: 0, stand: 0, heading: 0, speed: 0, footprintMode: "stand" });
+      e.jump.active = e.climb.active = e.drive.airborne = e.fire.burning = e.fire.rolling = false;
+      Object.assign(e.motion, { lab: false, climb: 0, climbBlend: NaN, mantle: 0, supportOffset: 0, landing: 0, takeoff: 0 });
+      Object.assign(e.root.position, { x: -8, y: 0, z: 8 });
+      e.gorilla.poseManaged(2, -8, 0, 8, 0, 0, false, true, "", e.motion);
+      BL.scene.updateWorld(BL.scenes.hub.root); B.headquarters.solids.companions.sync();
+      Object.assign(a.root.position, { x: -8, z: 8.7, y: a.baseY + B.headquarters.solids.companions.supportAt(-8, 8.7, Infinity, 0, 0.3) });
+      B.clankerPlay.possess(e, true); BL.scene.updateWorld(BL.scenes.hub.root); B.headquarters.solids.companions.sync();
+      key("keydown", "g", "KeyG"); B.advance(1 / 60, 1 / 60); key("keyup", "g", "KeyG");
+      out.noGrab = !a.grabbedBy && !e.capture.cave && !e.motion.dragging;
+      H.setGameMode(true); C.setAway(false);
+      key("keydown", "g", "KeyG"); B.advance(1 / 60, 1 / 60);
+      out.grab = a.grabbedBy === e && e.capture.cave === a;
+      H.setGameMode(false);
+      out.release = !a.grabbedBy && !e.capture.cave && !e.capture.throwing && !e.motion.dragging && !a.leap.thrown;
+      return out;
+    } finally {
+      key("keyup", "g", "KeyG"); H.setGameMode(false); B.clankerPlay.release(); P.possess(a);
+      B.crew.configureWeapon(a, saved.slot, saved.ammo); w.spareAmmo.splice(0, w.spareAmmo.length, ...saved.spare);
+    }
+  })()`);
+  record("hub game-only combat: attacks, regeneration, knockouts, dropped gear, rage and grabbing stay off outside a game; X keeps both look modes, and game exit restores health and releases held Oogas", Object.values(r).every(Boolean), JSON.stringify(r));
+} };
 const hubMelee = { name: "hub melee", why: "rule: focused quick taps recover their strike power over time, changing weapons cannot bypass recovery, and a charged strike doubles damage", run: async (b) => {
   await tapKey(b, "1");
   // The preceding AK check deliberately leaves carry mode. These contacts
@@ -9938,32 +10004,26 @@ const factoryRailingJump = { name: "factory railing jumps", why: "regression: ri
   })()`);
   record("factory railings: empty or partly used rifles jump off four platforms, land clear on the floor below and keep walking; falling over a channel tank also leaves movement clear", r.scene === "factory" && r.rows.length === 4 && r.rows.every(row => row.jumped && row.crossed && row.airborne && row.grounded && row.landedBelow && row.floor >= 0 && row.clear && row.walked > 0.5) && r.tankLanding.grounded && r.tankLanding.clear && r.tankLanding.walked > 0.5, JSON.stringify(r));
 } };
-const factoryWeapons = { name: "factory weapon selection", why: "regression: the factory omitted the keyboard and HUD handlers for selecting melee and rifle weapons", run: async (b) => {
+const factoryWeapons = { name: "factory weapon selection", why: "rule: the factory refuses game-only weapon controls while both look modes and their camera transitions remain available", run: async (b) => {
   const r = await b.evaluate(`(() => {
-    const B = __ooga, a = B.cavemen.get("portlandhodl");
-    if (B.crew.player !== a) B.pilot.possess(a);
-    B.crew.configureWeapon(a, 1); B.crew.configureWeapon(a, 2, 30);
-    // A previous scene's birdseye cursor can leave an offset on the shared HUD
-    // before this pilot has ever written (or cached) reticle coordinates.
-    const reticle = document.getElementById("weapon-reticle");
-    reticle.style.left = "83%"; reticle.style.top = "46%";
-    const key = slot => {
-      for (const type of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(type, { key: String(slot), code: "Digit" + slot, bubbles: true }));
-      B.advance(0.1, 1 / 60);
-    };
-    key(1); const meleeKey = a.weapon.primaryEquipped && !a.weapon.equipped;
-    key(2); const rifleKey = a.weapon.equipped && !a.weapon.primaryEquipped;
+    const B = __ooga, a = B.cavemen.get("portlandhodl"), P = B.pilot;
+    if (B.crew.player !== a) P.possess(a);
+    B.crew.configureWeapon(a, 1); B.crew.configureWeapon(a, 2, 6);
+    const slot = a.weapon.selectedSlot, ammo = a.weapon.ammo, shots = a.weapon.shotsFired;
+    const key = (key, code) => { for (const type of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true })); };
+    key("1", "Digit1"); key("2", "Digit2"); key("v", "KeyV"); B.advance(0.3, 1 / 60);
+    const rejected = !P.weaponMode(1) && !P.weaponAction("weapon-fire")
+      && !B.crew.fireWeapon(a, { x: 0, y: 20, z: 0 }, 1) && !B.crew.swingWeapon(a) && !B.crew.bashWeapon(a) && !B.crew.throwTomato();
     const primary = document.getElementById("primary-hud"), secondary = document.getElementById("weapon-hud");
-    const visible = !primary.hidden && !secondary.hidden;
-    primary.dispatchEvent(new PointerEvent("pointerdown", { button: 0, buttons: 1, pointerId: 77, bubbles: true }));
-    primary.dispatchEvent(new PointerEvent("pointerup", { button: 0, buttons: 0, pointerId: 77, bubbles: true }));
-    B.advance(0.1, 1 / 60); const meleeButton = a.weapon.primaryEquipped && !a.weapon.equipped;
-    secondary.click(); B.advance(0.1, 1 / 60);
-    return { scene: B.scene, meleeKey, rifleKey, visible, meleeButton, rifleButton: a.weapon.equipped && !a.weapon.primaryEquipped,
+    const reticle = document.getElementById("weapon-reticle"); reticle.style.left = "83%"; reticle.style.top = "46%";
+    if (!P.aiming) P.modeAction("mode-toggle");
+    P.hooks.onZoom(0.001, "factory-look"); B.advance(1, 1 / 60);
+    return { scene: B.scene, off: !B.crew.combatEnabled, rejected, hidden: primary.hidden && secondary.hidden,
+      unchanged: slot === a.weapon.selectedSlot && ammo === a.weapon.ammo && shots === a.weapon.shotsFired,
       centered: !reticle.style.left && !reticle.style.top };
   })()`);
-  record("factory weapons: 1 and 2 and both HUD buttons select melee and rifle weapons without leaving the factory", r.scene === "factory" && r.meleeKey && r.rifleKey && r.visible && r.meleeButton && r.rifleButton, JSON.stringify(r));
-  record("factory weapons: the crosshair clears inherited birdseye coordinates and returns to the screen centre", r.centered, JSON.stringify(r));
+  record("factory weapons: keyboard, HUD actions and direct attacks cannot fire, swing or spend ammunition outside a game", r.scene === "factory" && r.off && r.rejected && r.hidden && r.unchanged, JSON.stringify(r));
+  record("factory views: the crosshair clears inherited birdseye coordinates and returns to the screen centre", r.centered, JSON.stringify(r));
   const views = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = P.player, reticle = document.getElementById("weapon-reticle"), rows = [];
     const key = () => {
@@ -9983,7 +10043,7 @@ const factoryWeapons = { name: "factory weapon selection", why: "regression: the
     press(); const carryButton = !P.aiming && reticle.hidden;
     press(); const combatButton = P.aiming && !reticle.hidden;
     for (const slot of [1, 2]) {
-      P.weaponMode(slot); const ammo = a.weapon.ammo;
+      B.crew.selectWeapon(slot, a); const ammo = a.weapon.ammo;
       P.hooks.onZoom(1.2, {}); B.advance(1.5, 1 / 60);
       const overhead = P.mode === "birds-eye" && !reticle.hidden;
       P.hooks.onZoom(0.001, {}); B.advance(2, 1 / 60);
@@ -9997,7 +10057,7 @@ const factoryWeapons = { name: "factory weapon selection", why: "regression: the
     }
     return { carryKey, combatKey, carryButton, combatButton, rows };
   })()`);
-  record("factory views: X and the mode button share mainland carry/combat behavior; zoom crosses birdseye, shoulder and first person without changing the held weapon or ammo, and close views center the crosshair",
+  record("factory views: X and the mode button share mainland cursor-look/drag-look behavior; zoom crosses birdseye, shoulder and first person without changing the held weapon or ammo, and close views center the crosshair",
     views.carryKey && views.combatKey && views.carryButton && views.combatButton && views.rows.length === 2
     && views.rows.every(row => row.overhead && row.shoulder && row.first && row.returned && row.held && row.ammo), JSON.stringify(views));
   const hits = await b.evaluate(`(() => {
@@ -10005,6 +10065,9 @@ const factoryWeapons = { name: "factory weapon selection", why: "regression: the
     const hum = s.tunnels.map(t => t.hum), gateHum = s.gate.hum;
     for (const t of s.tunnels) t.hum = Infinity;
     s.gate.hum = Infinity;
+    // The reusable portal contact path remains available to games; the ordinary
+    // factory visit above never enables it.
+    B.crew.setCombatEnabled(true); B.pilot.refreshCombat();
     try {
       for (let i = 0; i <= s.tunnels.length; i++) {
         const t = s.tunnels[i], at = t ? t.at : { x: 0, y: BL.factoryModels.LAYOUT.entrance.y, z: BL.factoryModels.HALL.front - 0.6, turn: Math.PI };
@@ -10019,6 +10082,7 @@ const factoryWeapons = { name: "factory weapon selection", why: "regression: the
         rows.push({ i, fired, hits: ripple.hits - before, active: ripple.active, bounded: ripple.active <= BL.mirrorRipples.CAPACITY });
       }
     } finally {
+      B.crew.setCombatEnabled(false); B.pilot.refreshCombat();
       s.tunnels.forEach((t, i) => t.hum = hum[i]); s.gate.hum = gateHum;
     }
     return rows;
@@ -10769,6 +10833,49 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
     && clouds.seconds > 145 && clouds.laps >= 2 && clouds.radialDrift < 1e-8 && clouds.heightDrift === 0 && clouds.maxTravelExcess < 1e-7 && clouds.minGap > 0 && clouds.spacingDrift < 1e-8
     && clouds.cutaway?.selected && clouds.cutaway.view === "birds-eye" && clouds.cutaway.combat && clouds.cutaway.active && clouds.cutaway.mix === 0 && clouds.cutaway.heights
     && state.horizon.every(row => row.clouds.length === 30 && row.clouds.every(c => c.visible && c.moving)), JSON.stringify(clouds));
+  const animation = await b.evaluate(`(() => {
+    const B = __ooga, P = B.pilot, H = BL.scenes.hub.debug, a = B.cavemen.get("portlandhodl"), e = B.clankers.list.find(entry => entry.owner === a);
+    const net = BL.net, st = net.state, saved = { room: st.room, hostId: st.hostId, selfId: st.selfId, followers: st.followers };
+    const send = net.sendNpc, override = a.override, out = {}; let sent = 0, current = true;
+    const view = (p) => { P.navigate({ position: { x: p.x, y: p.y + 3, z: p.z + 4 }, target: p, yaw: 0, pitch: 0.2, dist: 5 }); B.advance(0.2, 1 / 60); };
+    const far = () => view({ x: 500, y: 300, z: 500 });
+    const sample = () => {
+      const ooga = a.animation.updates, gorilla = e.animation.updates, p = a.root.position, q = e.root.position;
+      const position = [p.x, p.y, p.z, q.x, q.y, q.z], head = a.parts.head.rotation.y, chest = e.gorilla.chest.scale.y;
+      B.advance(1, 1 / 60);
+      return { ooga: a.animation.updates - ooga, gorilla: e.animation.updates - gorilla,
+        stationary: position.every((v, i) => v === [p.x, p.y, p.z, q.x, q.y, q.z][i]),
+        changed: head !== a.parts.head.rotation.y || chest !== e.gorilla.chest.scale.y };
+    };
+    try {
+      P.release(true); B.clankerPlay.release(); B.poolIsland.preview.sleep(a.traits.name, true);
+      // The same production initial-sleep path puts this named companion in its assigned bed.
+      e.active = e.root.visible = false; e.sleep.stage = "";
+      far(); B.advance(2, 1 / 60);
+      out.sleeping = a.state === "sleeping" && a.bedTravel.mode === "rest" && e.sleep.stage === "asleep";
+      out.far = sample(); view(a.root.position); out.nearOoga = sample(); view(e.root.position); out.nearGorilla = sample();
+      net.sendNpc = bytes => {
+        sent++;
+        const header = new Uint32Array(bytes.buffer, bytes.byteOffset, 4), f = new Float32Array(bytes.buffer, bytes.byteOffset, 4 + header[2] * BL.npcSync.RECORD);
+        for (let i = 0; i < header[2]; i++) { const at = 4 + i * BL.npcSync.RECORD;
+          if (f[at] === a.index) current &&= Math.abs(f[at + 34] - a.parts.head.rotation.y) < 1e-5;
+        }
+        return true;
+      };
+      Object.assign(st, { room: "live", hostId: 71, selfId: 71, followers: 1 }); far(); out.host = sample();
+      out.network = sent >= 3 && current && B.npcSync.role === "host";
+      Object.assign(st, saved); B.advance(1 / 60, 1 / 60);
+      P.possess(a); B.crew.wakePlayer(); far(); out.controlled = sample().ooga;
+      return out;
+    } finally {
+      net.sendNpc = send; Object.assign(st, saved); P.release(true); a.override = override;
+      B.crew.refreshStates(true); P.goPreset("pile"); B.advance(0.1, 1 / 60);
+    }
+  })()`);
+  record("hub distant animations: settled Oogas and gorillas sample less often while far away, resume full-rate poses nearby or controlled, and a host publishes current full-rate poses regardless of its camera",
+    animation.sleeping && animation.far.stationary && animation.far.changed && animation.far.ooga > 0 && animation.far.ooga < 12
+      && animation.far.gorilla > 0 && animation.far.gorilla < 12 && animation.nearOoga.ooga >= 58 && animation.nearGorilla.gorilla >= 58
+      && animation.host.ooga >= 58 && animation.host.gorilla >= 58 && animation.network && animation.controlled >= 58, JSON.stringify(animation));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
 scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
@@ -12204,7 +12311,7 @@ scene("hub", { label: "gorilla carry jump", query: "status=chillin", steps: [{ n
   record("gorilla carry jump: parked recovery cannot swallow takeoff; both jumps hold the Ooga's right foot and a charged click releases them in midair without smashing",
     state.grabbed && state.pendingRecovery && state.tookOff && state.grip < 0.04 && state.secondJump && state.charged
       && state.rightReleaseHeld && state.chordReleased && state.heldThroughRelease && state.thrownInAir && state.smashUnchanged, JSON.stringify(state));
-} }] });
+} }].map(gameCombat) });
 scene("hub", { label: "gorilla lab carry jump", exclusive: true, query: "character=gorilla-portlandhodl&status=clankin&gorillarage=1", steps: [{ name: "gorilla lab carry jump", why: "regression: EntropyLab rejected running carry jumps and reapplied its worker pose and coat during autonomous rage capture", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, e = B.clankers.player, cave = e.owner, p = e.root.position;
@@ -12397,7 +12504,7 @@ scene("hub", { label: "gorilla lab carry jump", exclusive: true, query: "charact
       && rage.pursuit.frames >= 6 && rage.pursuit.bounded && rage.pursuit.noWarp && rage.pursuit.heldInside
       && rage.identity && rage.cleanPose && rage.released,
     JSON.stringify({ ...state, rage }));
-} }] });
+} }].map(gameCombat) });
 scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1", steps: [{ name: "gorilla rage throw", why: "playthrough: an autonomous gorilla carries past nearby Oogas and rocks, visibly grabs raised outer targets before returning them to flat ground, pursues ordinary ground targets on foot, then throws with real terrain clearance before hunting again", run: async (b) => {
   const states = [], sceneryVisibility = await b.evaluate(`__ooga.props.map(prop => prop.node.visible)`);
   // Complete the production map with all scenery present before isolating
@@ -13158,7 +13265,7 @@ scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1
       // over the outer hills is what proves the real terrain clearance.
       && states.some(state => !state.hill && !state.regional && state.highestFlightFloor > state.initialFloor + 0.5),
     JSON.stringify(states));
-} }] });
+} }].map(gameCombat) });
 scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1", steps: [{ name: "gorilla prop traversal", why: "regression: a box lost its supporting contact before the collision body cleared its side, low props interrupted the gallop, and a stale motion envelope trapped gorillas beneath trees", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, S = BL.scene, root = BL.scenes.hub.root, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl"), solids = B.headquarters.solids.props;
@@ -14400,7 +14507,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     labTransition.every(row => row.maxStep < 0.3 && Math.abs(row.after - row.settled) < 0.025
       && (row.entering ? row.gait === "upright" && row.before - row.after > 0.65 && row.workRaise > 0.4
         : row.gait === "knuckle" && row.after - row.before > 0.65)), JSON.stringify(labTransition));
-} }] });
+} }].map(step => ["gorilla prop traversal", "gorilla rage contacts"].includes(step.name) ? gameCombat(step) : step) });
 scene("hub", { label: "mirror clanker", query: "solo=1&character=portlandhodl&status=clankin", steps: [{ name: "mirror clanker stays inside", why: "regression: a clanker turned around after crossing the mirror, poked its head back out, and worked beside a glowing generic box", run: async (b) => {
   const state = await b.evaluate(`(() => { const B = __ooga, C = B.clankers, siteIndex = C.sites.findIndex(s => s.mirrorRoom), site = C.sites[siteIndex], m = site.mouth, e = C.list[0], localX = p => (p.x - m.x) * site.cr - (p.z - m.z) * site.sr, localZ = p => (p.x - m.x) * site.sr + (p.z - m.z) * site.cr, place = (x, z) => ({ x: m.x + site.cr * x + site.sr * z, y: m.floorY, z: m.z - site.sr * x + site.cr * z }); e.owner.state = "working"; e.owner.work.site = e.owner.work.plannedSite = e.site = siteIndex; e.pendingSite = -1; e.hasSlot = true; e.slotIndex = 0; Object.assign(e, { slotX: place(0, -4.92).x, slotY: m.floorY, slotZ: place(0, -4.92).z, phase: "travel", route: "enter", fromSite: -1, entryTurn: false, blocked: 0, retry: 0 }); Object.assign(e.root.position, place(0, 0)); e.heading = m.ry + Math.PI; B.advance(0.25, 1 / 60); const entry = { turn: e.entryTurn, goal: localZ({ x: e.goalX, z: e.goalZ }) }; Object.assign(e.root.position, place(0, -4.92)); e.phase = "work"; e.route = ""; e.goalX = e.slotX; e.goalY = e.slotY; e.goalZ = e.slotZ; let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, distance = 0, lastX = e.root.position.x, lastZ = e.root.position.z; for (let t = 0; t < 18; t += 1 / 30) { B.advance(1 / 30, 1 / 30); const x = localX(e.root.position), z = localZ(e.root.position); minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); distance += Math.hypot(e.root.position.x - lastX, e.root.position.z - lastZ); lastX = e.root.position.x; lastZ = e.root.position.z; } const control = B.matrixGate.button, lever = B.matrixGate.lever; return { room: m.room, entry, minX, maxX, minZ, maxZ, distance, recoveries: e.stuck.recoveries, equipment: C.equipment.filter(item => item.site === siteIndex).length, leverY: control.position.y, leverScale: control.scale.y, leverZ: control.position.z, leverTagged: control.geometry.matrixCave !== undefined && control.children.every(node => node.geometry.matrixCave !== undefined) && lever.children.every(node => node.geometry.matrixCave !== undefined), leverNative: !!control.matrixNative, leverParts: control.children.filter(node => !node.matrixLiving).length, leverLabels: control.children.filter(node => node.matrixLiving && node.geometry.verts === BL.hubModels.matrixLeverLabels().verts).length, gripParts: lever.children.length }; })()`);
   record("mirror clanker: the safe chamber expands, entry continues straight inward, runs cross from side to side at varied depths behind the glass, and a compact glyphed lever is mounted within reach on the back wall", state.room.w > 6 && state.room.to > 6.5 && Math.abs(state.entry.goal + 3.5) < 0.01 && state.maxZ <= -1.85 + 1e-6 && state.minX < -0.8 && state.maxX > 0.8 && state.maxZ - state.minZ > 1 && state.distance > 8 && state.equipment === 0 && state.leverY >= 1 && state.leverY < 1.5 && state.leverScale < 1 && state.leverZ < -state.room.to + 0.3 && state.leverTagged && !state.leverNative && state.leverParts === 3 && state.leverLabels === 1 && state.gripParts === 1, JSON.stringify(state));
@@ -14543,13 +14650,13 @@ scene("poker", { opts: PHONE_SIZE, steps: [phone("poker", { card: '[data-intro="
   record("poker phone: nine seat choices and two private cards fit the panel", r.fits && r.seats === 9 && r.cards === 2, JSON.stringify(r));
   if (process.env.POKER_SHOTS) await b.screenshot(join(process.env.POKER_SHOTS, "poker-phone.png"));
 } }] });
-scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubAk, hubMelee, hubJetpack] });
+scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubCombatGate, ...[hubAk, hubMelee, hubJetpack].map(gameCombat)] });
 // Her greeting comes once a page, to a fresh landing nothing has moved, so the guide has its own page.
 scene("hub", { label: "guide", query: "character=portlandhodl&jetpack=1", steps: [hubGuide] });
 // Native pointer-lock assertions need sole focus; another browser lane can
 // steal capture and spend this long scenario's deadline waiting for it back.
 scene("hub", { label: "birds-eye combat", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", exclusive: true, steps: [hubBirdsEye] });
-scene("hub", { label: "birds-eye combat projection and targets", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeProjection, hubBirdsEyeTargets, hubCombatReplay] });
+scene("hub", { label: "birds-eye combat projection and targets", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeProjection, gameCombat(hubBirdsEyeTargets), hubCombatReplay] });
 scene("hub", { label: "birds-eye lower floors", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeFloors] });
 scene("hub", { label: "mirror", steps: [hubJumbotron, hubMatrix, hubMirror] });
 scene("hub", { label: "oogatron popups", url: hubPage(dist, "pos=0"), steps: [oogatronPopups] });
@@ -15995,6 +16102,8 @@ const maxisChecks = BL => {
   const I=BL.dsbInteriors.create({root,exterior:{visible:true},land,weather:{shared:{state:{muted:true}},setInterior:noop},relocate:noop,lock:noop,onChange:noop});
   I.review("maxis-club",true);I.update(.4);const R=I.active.room;
   const C=BL.crew.create({root,world:{level:0},playerName:"YellowBrokeIt",input:{add:n=>targets.add(n),remove:n=>targets.delete(n)},hud:{setRosterRow:noop},game:{state:{assignments:{},inventory:[]}},viewYaw:0,groundAt:I.groundAt,walkable:I.walkable,fx:{say:noop,zzzAt:noop,burst:noop,puff:noop,spawnParticle:noop,damageNumber:noop}});
+  // Exercise the reusable seated attack path with the game capability enabled.
+  C.setCombatEnabled(true);
   const A=C.cavemen.get("YellowBrokeIt");C.control(A);
   const clear=(ax,az,bx=ax,bz=az)=>I.walkable(ax,az,bx,bz,R.groundAt(ax,az),A.bodyHeight,A);
   record("Maxis: 50 reusable seats fit measured Yellow scale",R.seats.length===50&&A.bodyHeight>1.3&&A.bodyHeight<1.5&&R.seats.every(s=>s.allowWeapons&&s.lockMovement&&clear(s.walkAt.x,s.walkAt.z)),JSON.stringify({height:A.bodyHeight,radius:A.bodyRadius,blocked:R.seats.map((s,i)=>!clear(s.walkAt.x,s.walkAt.z)?i:null).filter(i=>i!==null)}));
@@ -18184,7 +18293,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     // Regression: a player's hit on an Ooga referenced an unbound effects
     // object and threw before completing the damage/recovery update.
     const root = BL.scene.createNode(), noop = () => {}, hits = [];
-    const crew = BL.crew.create({ root, world: { level: 0 }, playerName: "portlandhodl", viewYaw: 0, input: { add: noop, remove: noop }, hud: { setRosterRow: noop },
+    const crew = BL.crew.create({ root, combatEnabled: true, world: { level: 0 }, playerName: "portlandhodl", viewYaw: 0, input: { add: noop, remove: noop }, hud: { setRosterRow: noop },
       game: { state: { assignments: {}, inventory: [] } }, groundAt: () => 0, walkable: () => true,
       fx: { say: noop, zzzAt: noop, burst: noop, puff: noop, spawnParticle: noop, damageNumber: (x, y, z, amount) => hits.push({ x, y, z, amount }) } });
     try {
@@ -19266,6 +19375,9 @@ scene("dsb",{label:"nature checkpoint",query:"&overview=1&weather=clear&time=120
 scene("dsb",{label:"nature checkpoint phone",query:"&overview=1&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[dsbNatureCheckpoint]});
 
 const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Studio seating preserves locomotion lock, aim/fire and throws; archive and environment dispose through repeated visits",run:async b=>{
+  // The seat/impact fixture opts into game controls; ordinary DSB keeps them disabled.
+  await b.evaluate("__ooga.crew.setCombatEnabled(true);__ooga.pilot.refreshCombat()");
+  try {
   const step=()=>b.evaluate('for(let i=0;i<48;i++)BL.scenes.dsb.update(1/60,i/60)');
   const tap=async selector=>{
     const p=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
@@ -19316,6 +19428,7 @@ const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Stud
   await b.evaluate('__ooga.go("bifrost",null,true);__ooga.advance(.05);__ooga.go("dsb",null,true);__ooga.advance(.05)');
   const fresh=await b.evaluate('({rooms:__ooga.dsb.interiors.rooms.size,seat:!!__ooga.dsb.avatar.camp.seat})');
   record("Studio: leaving DSB and reentering starts with no room built and no seat held",fresh.rooms===0&&!fresh.seat,JSON.stringify(fresh));
+  } finally { await b.evaluate("__ooga.crew.setCombatEnabled(false);__ooga.pilot.refreshCombat()"); }
 }};
 scene("dsb",{label:"studio checkpoint",query:"&view=studio-door&weather=storm&time=1200",steps:[dsbStudioCheckpoint]});
 scene("dsb",{label:"studio checkpoint phone",query:"&view=studio-door&weather=storm&time=1200",opts:{w:390,h:844,mobile:true},steps:[dsbStudioCheckpoint]});
