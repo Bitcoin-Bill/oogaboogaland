@@ -255,6 +255,10 @@
       lootCount: $("loot-count"),
       worldLootHint: $("world-loot-hint"),
       subtitle: $("subtitle"),
+      topbar: document.querySelector(".topbar"), brand: document.querySelector(".brand"),
+      clock: $("world-clock"), block: $("world-block"),
+      equipment: $("equipment-hud"), equipmentRow: document.querySelector(".weapon-equipment-row"),
+      micNote: $("mic-note"),
       actions: [...document.querySelectorAll("[data-action]")],
       board: $("board-modal"), boardTitle: $("board-title"), boardScreen: $("board-screen"), boardCaption: $("board-caption"), boardNote: $("board-note"),
       boardDots: $("board-dots"), boardPrev: $("board-prev"), boardNext: $("board-next"), boardHelp: $("board-help"),
@@ -383,6 +387,63 @@
       target.addEventListener(type, fn, opts);
       listeners.push(() => target.removeEventListener(type, fn, opts));
     };
+    // Fit the HUB controls between the title and clock when their actual visible widths allow it.
+    // Observers only schedule a pass after layout or equipment changes; ammo and animation never poll it.
+    if (document.body.dataset.activeScene === "hub") {
+      let bannerFrame = 0;
+      const bannerStyle = (node, property, value) => {
+        if (node.style.getPropertyValue(property) !== value) node.style.setProperty(property, value);
+      };
+      const fitBanner = () => {
+        bannerFrame = 0;
+        if (document.body.dataset.activeScene !== "hub") return;
+        const brand = el.brand.getBoundingClientRect(), clock = el.clock.getBoundingClientRect(), block = el.block.getBoundingClientRect();
+        const topbar = getComputedStyle(el.topbar), row = getComputedStyle(el.equipmentRow);
+        const fontSize = parseFloat(getComputedStyle(el.clock).fontSize) || 22;
+        const scale = Math.max(0.7, Math.min(0.85, 0.7 + (fontSize - 13) / 60));
+        const leftEdge = brand.right + 12, available = Math.min(clock.left, block.left) - 12 - leftEdge;
+        let compactWidth = 0, count = 0, expanded = false;
+        for (const button of el.equipmentRow.children) {
+          if (button.hidden || getComputedStyle(button).display === "none") continue;
+          compactWidth += button === el.weapon ? 78 : button.offsetWidth;
+          if (button === el.weapon) expanded = button.dataset.equipped === "true";
+          count++;
+        }
+        compactWidth += Math.max(0, count - 1) * (parseFloat(row.columnGap) || 0);
+        const banner = (compactWidth + (expanded ? 140 : 0)) * scale <= available ? "full"
+          : compactWidth * scale <= available ? "compact" : "below";
+        const paddingLeft = parseFloat(topbar.paddingLeft) || 0, paddingRight = parseFloat(topbar.paddingRight) || 0;
+        const topEdge = Math.min(brand.top, clock.top, block.top), bottomEdge = Math.max(brand.bottom, clock.bottom, block.bottom);
+        const top = banner === "below" ? bottomEdge + 12 : (topEdge + bottomEdge - 52 * scale) / 2;
+        if (el.equipment.dataset.banner !== banner) el.equipment.dataset.banner = banner;
+        bannerStyle(el.equipment, "--hub-equipment-scale", String(scale));
+        bannerStyle(el.equipment, "--hub-equipment-left", `${banner === "below" ? paddingLeft : leftEdge}px`);
+        bannerStyle(el.equipment, "--hub-equipment-top", `${top}px`);
+        bannerStyle(el.equipment, "--hub-equipment-width", `${Math.max(0, window.innerWidth - paddingLeft - paddingRight) / scale}px`);
+        const bottom = `${top + el.equipmentRow.offsetHeight * scale + 8}px`;
+        bannerStyle(el.messageStack, "--hub-equipment-bottom", bottom);
+        bannerStyle(el.micNote, "--hub-equipment-bottom", bottom);
+      };
+      const scheduleBanner = () => {
+        if (!bannerFrame) bannerFrame = window.requestAnimationFrame(fitBanner);
+      };
+      const bannerResize = new ResizeObserver(scheduleBanner), bannerEquipment = new MutationObserver(scheduleBanner);
+      for (const node of [el.brand, el.clock, el.block, el.equipmentRow]) bannerResize.observe(node);
+      for (const button of el.equipmentRow.children) bannerEquipment.observe(button, {
+        attributes: true, attributeFilter: button === el.weapon ? ["hidden", "data-equipped"] : ["hidden"]
+      });
+      on(window, "resize", scheduleBanner);
+      listeners.push(() => {
+        bannerResize.disconnect();
+        bannerEquipment.disconnect();
+        window.cancelAnimationFrame(bannerFrame);
+        delete el.equipment.dataset.banner;
+        for (const property of ["--hub-equipment-scale", "--hub-equipment-left", "--hub-equipment-top", "--hub-equipment-width"]) el.equipment.style.removeProperty(property);
+        el.messageStack.style.removeProperty("--hub-equipment-bottom");
+        el.micNote.style.removeProperty("--hub-equipment-bottom");
+      });
+      scheduleBanner();
+    }
     let hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
     let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null, onlineCount = 0, onlineShown = -1;

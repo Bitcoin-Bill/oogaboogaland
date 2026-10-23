@@ -5602,56 +5602,78 @@ body.orbit-dragging #tooltip {
   }
 }
 
-/* Keep the HUB clock at the right edge before the equipment row fits beside the title. */
-@media (min-width: 721px) {
-  body[data-active-scene="hub"] .world-clock,
-  body[data-active-scene="hub"] .world-block {
-    right: calc(16px + var(--safe-right));
-    left: auto;
-    margin: 0;
-  }
-
-  body[data-active-scene="hub"] .world-block {
-    justify-content: flex-end;
-  }
+/* Scale the HUB banner continuously from phone to desktop; hud.js fits the visible controls. */
+body[data-active-scene="hub"] {
+  --hub-title-font: clamp(13px, calc(8.62px + 1.2162vw), 22px);
+  --hub-meta-font: clamp(10.5px, calc(9.77px + 0.2027vw), 12px);
+  --hub-banner-gutter: clamp(8px, 1.5vw, 16px);
 }
 
-/* Keep the HUB equipment row beside its title while the banner has room. */
-@media (min-width: 960px) and (min-height: 501px) {
-  body[data-active-scene="hub"] .topbar {
-    min-height: calc(64px + var(--safe-top));
-  }
-
-  body[data-active-scene="hub"] .equipment-hud {
-    top: calc(8px + var(--safe-top));
-    left: calc(232px + var(--safe-left));
-  }
-
-  body[data-active-scene="hub"] .weapon-equipment-row {
-    transform: scale(0.85);
-    transform-origin: top left;
-  }
-
-  body[data-active-scene="hub"] .sheet[data-dock="side"] {
-    top: calc(72px + var(--safe-top));
-  }
-
-  body[data-active-scene="hub"] .mic-note {
-    top: calc(72px + var(--safe-top));
-  }
+body[data-active-scene="hub"] .topbar {
+  min-height: calc(52px + var(--safe-top));
+  padding-left: calc(var(--hub-banner-gutter) + var(--safe-left));
+  padding-right: calc(var(--hub-banner-gutter) + var(--safe-right));
 }
 
-/* Keep the controls in the banner longer by using the AK's compact ammo count. */
-@media (min-width: 960px) and (width < 1100px) and (min-height: 501px) {
-  body[data-active-scene="hub"] .weapon-hud[data-equipped="true"] { width: 78px; }
-  body[data-active-scene="hub"] .weapon-hud[data-equipped="true"] .weapon-readout {
-    opacity: 0;
-    visibility: hidden;
-  }
-  body[data-active-scene="hub"] .weapon-hud[data-equipped="true"] .weapon-compact {
-    opacity: 1;
-    visibility: visible;
-    transition-delay: 0s;
+body[data-active-scene="hub"] .brand { width: max-content; }
+body[data-active-scene="hub"] .brand h1 { font-size: var(--hub-title-font); white-space: nowrap; }
+body[data-active-scene="hub"] .brand p { font-size: var(--hub-meta-font); }
+
+body[data-active-scene="hub"] .world-clock,
+body[data-active-scene="hub"] .world-block {
+  right: calc(var(--hub-banner-gutter) + var(--safe-right));
+  left: auto;
+  margin: 0;
+}
+
+body[data-active-scene="hub"] .world-clock { font-size: var(--hub-title-font); }
+body[data-active-scene="hub"] .world-block {
+  top: calc(15px + var(--hub-title-font) + var(--safe-top));
+  width: max-content;
+  justify-content: flex-end;
+  font-size: var(--hub-meta-font);
+}
+
+body[data-active-scene="hub"] #equipment-hud {
+  top: var(--hub-equipment-top, calc(62px + var(--safe-top)));
+  left: var(--hub-equipment-left, calc(var(--hub-banner-gutter) + var(--safe-left)));
+  grid-template-columns: max-content;
+}
+
+body[data-active-scene="hub"] .weapon-equipment-row {
+  width: max-content;
+  gap: clamp(4px, calc(2px + 0.55vw), 8px);
+  flex-wrap: nowrap;
+  transform: scale(var(--hub-equipment-scale, 0.85));
+  transform-origin: top left;
+}
+
+body[data-active-scene="hub"] .weapon-equipment-row .magazine-hud { margin-right: 0; }
+body[data-active-scene="hub"] .weapon-hud { transition: background 0.15s ease, transform 0.15s ease; }
+
+body[data-active-scene="hub"] .equipment-hud[data-banner="below"] .weapon-equipment-row {
+  width: var(--hub-equipment-width);
+  flex-wrap: wrap;
+}
+
+body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] { width: 78px; }
+body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-readout {
+  opacity: 0;
+  visibility: hidden;
+}
+body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-compact {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+body[data-active-scene="hub"] .sheet[data-dock="side"] { top: calc(72px + var(--safe-top)); }
+body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(72px + var(--safe-top))); }
+
+@media (max-width: 720px) {
+  body[data-active-scene="hub"] #equipment-hud~.bottom-hud>#message-stack {
+    top: var(--hub-equipment-bottom, calc(118px + var(--safe-top)));
+    left: calc(var(--hub-banner-gutter) + var(--safe-left));
   }
 }
 
@@ -5668,8 +5690,7 @@ body.orbit-dragging #tooltip {
     font-size: 10.5px;
   }
 
-  .brand h1,
-  .topbar:has(.presets[data-scene="hub"]:not([hidden])) .brand h1 {
+  .brand h1 {
     font-size: 13px;
   }
 
