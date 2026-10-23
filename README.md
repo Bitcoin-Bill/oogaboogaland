@@ -45,7 +45,9 @@ Click, shoot or club the restless ghost to open the ghost-hunt lobby. Its menu f
 - **Reset:** **Right Shift + R** resets saved progress. **Left Shift + R** keeps running while swapping magazines.
 - **Jetpack:** **J** puts it on; hold **Space** to climb. After a throw, steer back toward the island to brake and reverse the launch momentum while fuel remains.
 
-Ordinary Ooga and gorilla portraits and nameplates show no health bars; games keep their own health displays. In the HUB, hover over an Ooga or gorilla to see its name, or control it to keep its name visible. Speech appears above the username. The hub has no loose boxes, barrels or breakable rocks, and donations and contributions no longer launch confetti or fireworks.
+Ordinary Ooga and gorilla portraits and nameplates show no health bars; games keep their own health displays. In the HUB, hover over an Ooga or gorilla to see its name, including the character you control. Speech appears above the username. The hub has no loose boxes, barrels or breakable rocks, and donations and contributions no longer launch confetti or fireworks.
+
+The Bananas/Oogas panel sits on the right from 1140px wide, and at the bottom below that (three times its 380px width). From 760px to 1139px, opening either of the first two tabs shows Bananas and Oogas side by side. Tabs tuck behind the panel and slide out on hover or keyboard focus; touch devices keep them visible. On screens taller than 500px, the HUB buttons stay beside the title from 960px wide, using the AK's compact ammo number below 1100px before the buttons move below the title. The clock and block height stay right-aligned.
 
 Roster colours show activity across every OogaBoogaX repo: yellow worked in the last hour, orange in the last day, gray asleep. Working Oogas load bananas at the pile and shoot them into their project's cave, where their gorilla companions build. HQ's ramps lead down to a basement of beds.
 

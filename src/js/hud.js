@@ -346,11 +346,27 @@
     else el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
     // Ooga Chat has a tab only where a backend answered (chat.js), which the director learns before any scene.
     const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) && (savedSheet.tab !== "chat" || BL.net.state.backend) ? savedSheet.tab : "roster";
+    // Dock below three times the 380px panel width; show two panels when two widths fit.
+    const bottomSheet = window.matchMedia("(width < 1140px)"), pairedSheet = window.matchMedia("(min-width: 760px)");
+    const showSheetPanels = (name) => {
+      const paired = bottomSheet.matches && pairedSheet.matches && (name === "bananas" || name === "roster");
+      el.sheet.dataset.dock = bottomSheet.matches ? "bottom" : "side";
+      el.sheet.dataset.paired = String(paired);
+      let moveFocus = false;
+      for (const panel of el.panels) {
+        const hidden = panel.dataset.panel !== name && !(paired && (panel.dataset.panel === "bananas" || panel.dataset.panel === "roster"));
+        if (hidden && panel.contains(document.activeElement)) moveFocus = true;
+        panel.hidden = hidden;
+      }
+      for (const tab of el.tabs) tab.setAttribute("aria-controls", paired && (tab.dataset.tab === "bananas" || tab.dataset.tab === "roster")
+        ? "bananas-panel roster-panel" : `${tab.dataset.tab}-panel`);
+      if (moveFocus) el.tabs.find((tab) => tab.dataset.tab === name)?.focus({ preventScroll: true });
+    };
     for (const tab of el.tabs) {
       tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
       tab.tabIndex = tab.dataset.tab === sheetTab ? 0 : -1;
     }
-    for (const panel of el.panels) panel.hidden = panel.dataset.panel !== sheetTab;
+    showSheetPanels(sheetTab);
     el.sheet.dataset.open = String(!!savedSheet?.open);
     el.primary.hidden = true;
     el.gorillaSmash.hidden = true;
@@ -2016,7 +2032,7 @@
         t.setAttribute("aria-selected", String(t.dataset.tab === name));
         t.tabIndex = t.dataset.tab === name ? 0 : -1;
       }
-      for (const p of el.panels) p.hidden = p.dataset.panel !== name;
+      showSheetPanels(name);
       setSheetOpen(true);
     };
     // A pull tab opens its own panel, and folds the sheet when that panel is already showing.
@@ -2037,7 +2053,6 @@
       selectTab(tabs[next].dataset.tab);
       tabs[next].focus({ preventScroll: true });
     });
-    const bottomSheet = window.matchMedia("(max-width: 720px), (max-height: 500px) and (orientation: landscape)");
     let sheetPointer = -1, sheetStartY = 0, sheetStartHeight = 0, sheetDirection = 1;
     const sheetLimits = () => {
       const safe = getComputedStyle(document.documentElement);
@@ -2090,6 +2105,13 @@
     on(el.sheetResize, "pointercancel", endSheetResize);
     on(el.sheetResize, "lostpointercapture", endSheetResize);
     on(window, "blur", finishSheetResize);
+    const layoutSheet = () => {
+      finishSheetResize();
+      showSheetPanels(selectedSheetTab());
+      showSheetHeight();
+    };
+    on(bottomSheet, "change", layoutSheet);
+    on(pairedSheet, "change", layoutSheet);
     on(window, "resize", () => { finishSheetResize(); showSheetHeight(); });
     on(el.sheetResize, "keydown", (e) => {
       if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;

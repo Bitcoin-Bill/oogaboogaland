@@ -319,7 +319,7 @@
       </nav>
     </header>
 
-    <aside class="sheet" id="sheet" data-open="false">
+    <aside class="sheet" id="sheet" data-open="false" data-dock="side" data-paired="false">
       <nav class="sheet-panels" role="tablist" aria-label="Island panels">
         <button type="button" class="sheet-toggle sheet-toggle-bananas" id="sheet-bananas" role="tab"
           data-tab="bananas" aria-selected="false" aria-controls="bananas-panel" aria-label="Bananas and top donors">
@@ -357,6 +357,8 @@
           </svg>
         </button>
       </nav>
+      <div class="sheet-body">
+      <div class="sheet-content">
       <section class="panel" data-panel="roster" id="roster-panel" role="tabpanel" aria-labelledby="sheet-toggle">
         <header class="panel-title">
           <h2><span data-sign>Ooga Boogas</span></h2>
@@ -457,6 +459,7 @@
           <button type="submit" class="chat-send" id="chat-send" disabled>Send</button>
         </form>
       </section>
+      </div>
       <footer class="sheet-foot">
         <span class="account" id="account" hidden>
           <span class="account-who">
@@ -479,6 +482,7 @@
       <div class="sheet-resize" id="sheet-resize" role="separator" tabindex="0" aria-label="Resize panel height"
         aria-orientation="horizontal" aria-valuemin="240" aria-valuemax="1000" aria-valuenow="520"
         title="Drag to resize · Up grows · Down shrinks · double-click to reset"></div>
+      </div>
     </aside>
 
     <div id="weapon-reticle" class="weapon-reticle" aria-hidden="true" hidden>
