@@ -754,8 +754,8 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 .sheet[data-dock="bottom"][data-open="false"] { transform: translateY(100%); }
 .sheet[data-dock="bottom"] .sheet-resize { top: 3px; bottom: auto; }
-.sheet[data-dock="bottom"][data-open="true"]~.joysticks,
-.sheet[data-dock="bottom"][data-open="true"]~.bottom-hud>.act { display: none; }
+.sheet[data-dock="bottom"][data-open="true"]:not([hidden])~.joysticks,
+.sheet[data-dock="bottom"][data-open="true"]:not([hidden])~.bottom-hud>.act { display: none; }
 
 .sheet[data-dock="bottom"] .sheet-toggle {
   top: -39px;
@@ -790,11 +790,11 @@ body[data-active-scene="arcade"] .magazine-hud {
 .sheet[data-paired="true"] #roster-panel > .feed-open { display: none; }
 .sheet[data-paired="true"] .panel { min-width: 0; }
 
-/* Open: hidden at rest, a strip on panel hover, fully out over the fixed tab area.
+/* Open: hidden at rest, fully out on panel or fixed tab-area hover.
    Closed panels and touch devices keep the whole tab. */
 @media (hover: hover) and (pointer: fine) {
   .sheet[data-open="true"] { --sheet-tab-slide: 100%; --sheet-tab-opacity: 0; }
-  .sheet[data-open="true"]:is(:hover, .virtual-hover) { --sheet-tab-slide: 28px; --sheet-tab-opacity: 1; }
+  .sheet[data-open="true"]:is(:hover, .virtual-hover) { --sheet-tab-slide: 0px; --sheet-tab-opacity: 1; }
   .sheet-panels:hover,
   .sheet-panels:has(.virtual-hover, :focus-visible) { --sheet-tab-slide: 0px; --sheet-tab-opacity: 1; }
 }

@@ -8438,6 +8438,7 @@
     RENDER_OPTS.windTime = on ? performance.now() * 0.001 % 3600 : NaN;
     // The act button and the hint pill under the play area (JUMP!, the controls' reminders) stand down too.
     document.body.classList.toggle("game-mode", on);
+    hud.setPanelsHidden(on);
     for (const cloud of clouds) cloud.node.visible = !on;
     weather.hold(on);
     updatePoolEffectsActivity();

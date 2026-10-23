@@ -598,7 +598,7 @@
     showVoices();
     // Value the donated sats at the current price; donor rankings retain their receipt prices.
     const showBananaRate = () => {
-      if (document.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
+      if (document.hidden || el.sheet.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
       const rate = currentDonationRate(), total = donationValueText();
       const tone = !rate ? "wait" : rate.stale ? "stale" : rate.live ? "live" : "idle";
       const label = tone === "live" ? "LIVE BTCUSD" : tone === "stale" ? "STALE BTCUSD" : "BTCUSD";
@@ -612,7 +612,7 @@
     };
     let stopBananaRate = null, pileValueVisible = false;
     const watchBananaRate = () => {
-      const visible = !document.hidden && (pileValueVisible || !el.bananaPanel.hidden && el.sheet.dataset.open === "true");
+      const visible = !document.hidden && (pileValueVisible || !el.sheet.hidden && !el.bananaPanel.hidden && el.sheet.dataset.open === "true");
       if (visible && !stopBananaRate) stopBananaRate = BL.donationRate.watch(showBananaRate);
       else if (!visible && stopBananaRate) { stopBananaRate(); stopBananaRate = null; }
       if (visible) showBananaRate();
@@ -624,7 +624,7 @@
     };
     const bananaRateObserver = new MutationObserver(watchBananaRate);
     bananaRateObserver.observe(el.bananaPanel, { attributes: true, attributeFilter: ["hidden"] });
-    bananaRateObserver.observe(el.sheet, { attributes: true, attributeFilter: ["data-open"] });
+    bananaRateObserver.observe(el.sheet, { attributes: true, attributeFilter: ["data-open", "hidden"] });
     on(document, "visibilitychange", watchBananaRate);
     listeners.push(() => {
       bananaRateObserver.disconnect();
@@ -1146,6 +1146,7 @@
       BL.donationPopup.open(!BL.donations.real);
     };
     const floatingBoards = [];
+    let panelsHidden = false;
     const stackBoards = () => {
       for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].setLayer(20 + i);
     };
@@ -1447,7 +1448,7 @@
       on(el.board, "lostpointercapture", endBoardPointer);
       on(window, "blur", finishBoardPointer);
       on(window, "resize", () => {
-        if (board?.floating) { layoutBoard(); placeBoard(); scheduleBoardSave(); }
+        if (board?.floating && !panelsHidden) { layoutBoard(); placeBoard(); scheduleBoardSave(); }
       });
       on(el.boardResize, "keydown", (e) => {
         let step;
@@ -1661,6 +1662,19 @@
       });
       const controller = {
         open: openBoard, close: closeBoard, update: updateBoard,
+        setHidden(on) {
+          if (el.board.hidden === on) return;
+          finishBoardPointer();
+          if (on && el.board.contains(document.activeElement)) document.activeElement.blur();
+          el.board.hidden = on;
+          if (!on && board) {
+            // Resume this screen's rotation from now, without changing its pause setting.
+            board.go(board.index);
+            updateBoard();
+            layoutBoard();
+            placeBoard();
+          }
+        },
         escape() { if (!el.boardFilterMenu.hidden) showFilters(false); else closeBoard(); },
         bounds: boardBounds,
         setLayer(layer) { el.board.style.zIndex = String(layer); },
@@ -1684,6 +1698,7 @@
       el.board.parentElement.append(node);
       floatingBoards.push(popup);
       popup.open(next.createReader(saved));
+      if (panelsHidden) popup.setHidden(true);
       stackBoards();
       return popup;
     };
@@ -1701,6 +1716,7 @@
     };
     const openBoard = (next) => {
       if (!next.floating) { mainBoard.open(next); return; }
+      if (panelsHidden) return;
       restoreBoards(next);
       lastBoard = openFloatingBoard(next);
       scheduleBoardSave();
@@ -1715,7 +1731,17 @@
     };
     const updateBoard = (elapsed) => {
       mainBoard.update(elapsed);
-      for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].update(elapsed);
+      if (!panelsHidden) for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].update(elapsed);
+    };
+    // A hunt borrows the play area without changing the visitor's saved panel choices.
+    const setPanelsHidden = (on) => {
+      on = !!on;
+      if (on === panelsHidden) return;
+      finishSheetResize();
+      if (on && el.sheet.contains(document.activeElement)) document.activeElement.blur();
+      panelsHidden = on;
+      el.sheet.hidden = on;
+      for (const popup of floatingBoards) popup.setHidden(on);
     };
     const openRecipe = () => {
       if (!el.recipe.open) el.recipe.showModal();
@@ -2069,7 +2095,7 @@
       if (e.target.id === "chat-input" || e.target.id === "chat-display") return;
       if (document.querySelector("dialog:modal") || e.target.closest && e.target.closest("dialog[open]")) return;
       let closed = false;
-      if (floatingBoards.length) {
+      if (!panelsHidden && floatingBoards.length) {
         floatingBoards[floatingBoards.length - 1].escape();
         closed = true;
       } else {
@@ -2313,6 +2339,7 @@
     // dispose removes only the rows and timers this instance added.
     const dispose = () => {
       finishSheetResize();
+      el.sheet.hidden = false;
       finishPrimary(true);
       window.clearTimeout(toastTimer);
       window.clearTimeout(toastHideTimer);
@@ -2354,7 +2381,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setPanelsHidden, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
