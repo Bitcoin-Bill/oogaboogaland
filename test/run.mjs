@@ -5544,9 +5544,52 @@ const hubBedState = (fresh = false) => {
   }
   return { failures, claimed: beds.filter(bed => bed.sleeper).length, sleeping: sleeping.length, overflow: overflow.length };
 };
-const hubArrival = { name: "hub initial bed occupancy", why: "regression: initial HQ and basement sleepers must never share a mattress or leave inconsistent bed reservations", run: async b => {
+// Capture the scene's real clearance rule once, without changing its construction or adding a scene visit.
+const hubSleepWire = () => {
+  const BL = window.BL = window.BL || {};
+  Object.defineProperty(BL, "headquartersSleep", { configurable: true, set(api) {
+    Object.defineProperty(BL, "headquartersSleep", { configurable: true, writable: true, value: api });
+    const outdoor = api.outdoor;
+    api.outdoor = (pool, clear, key) => {
+      api.outdoor = outdoor;
+      window.__outdoorSleep = { pool, clear };
+      return outdoor(pool, clear, key);
+    };
+  } });
+};
+const hubArrival = { name: "hub initial bed occupancy", why: "regression: initial sleepers must have exclusive beds, and transient visitors or shaken scenery must not change cached rainforest anchors", run: async b => {
   const state = await b.evaluate(`(${hubBedState.toString()})(true)`);
-  record("hub arrival: HQ and basement beds each belong to at most one Ooga, with separate sleeping bodies", state.failures.length === 0, JSON.stringify(state));
+  const traffic = await b.evaluate(`(() => {
+    const B = __ooga, fixture = window.__outdoorSleep, c = B.cavemen.get("portlandhodl") || B.crew.list[0];
+    const visible = B.crew.list.map(c => c.root.visible), position = { ...c.root.position }, rotation = { ...c.root.rotation }, quaternion = c.root.quaternion;
+    const tree = B.props.find(prop => prop.prop === "canopy" && prop.active).node, treePosition = { ...tree.position }, treeRotation = { ...tree.rotation };
+    const pose = bed => bed && [bed.x, bed.y, bed.z, bed.node.rotation.y];
+    try {
+      for (const actor of B.crew.list) actor.root.visible = false;
+      const baseline = BL.headquartersSleep.outdoor(fixture.pool, fixture.clear).more();
+      if (!baseline) return { empty: true };
+      Object.assign(c.root.position, { x: baseline.x, y: baseline.y + c.baseY, z: baseline.z });
+      Object.assign(c.root.rotation, { x: 0, y: 0, z: 0 }); c.root.quaternion = null; c.root.visible = true;
+      BL.scene.updateWorld(c.root, c.root.parent.world);
+      const key = {}, occupied = BL.headquartersSleep.outdoor(fixture.pool, fixture.clear, key).more();
+      c.root.visible = false;
+      const revisited = BL.headquartersSleep.outdoor(fixture.pool, fixture.clear, key).more();
+      // Move a real canopy across this anchor and sync the live walking shell. Bed layout must still use its authored pose.
+      Object.assign(tree.position, { x: fixture.pool.localX(baseline.x, baseline.z), y: baseline.y - fixture.pool.place.y, z: fixture.pool.localZ(baseline.x, baseline.z) });
+      tree.rotation.x += 0.08; B.headquarters.solids.props.sync();
+      const y = baseline.y + 0.03, liveBlocked = !B.headquarters.solids.props.segmentClear(baseline.x, y, baseline.z, baseline.x, y, baseline.z, 0.15, 1.5);
+      const shaken = BL.headquartersSleep.outdoor(fixture.pool, fixture.clear).more();
+      return { baseline: pose(baseline), occupied: pose(occupied), revisited: pose(revisited), shaken: pose(shaken), liveBlocked,
+        fixed: liveBlocked && !!occupied && !!revisited && !!shaken && pose(baseline).every((n, i) => n === pose(occupied)[i] && n === pose(revisited)[i] && n === pose(shaken)[i]) };
+    } finally {
+      Object.assign(c.root.position, position); Object.assign(c.root.rotation, rotation); c.root.quaternion = quaternion;
+      for (let i = 0; i < B.crew.list.length; i++) B.crew.list[i].root.visible = visible[i];
+      BL.scene.updateWorld(c.root, c.root.parent.world);
+      Object.assign(tree.position, treePosition); Object.assign(tree.rotation, treeRotation); B.headquarters.solids.props.sync();
+      delete window.__outdoorSleep;
+    }
+  })()`);
+  record("hub arrival: HQ and basement beds each belong to at most one Ooga, with separate sleeping bodies", state.failures.length === 0 && traffic.fixed, JSON.stringify({ ...state, traffic }));
 } };
 const hubWorkingArrival = { name: "hub working arrival", why: "regression: working Oogas must begin at their banana pile places instead of inheriting a sleeping pose underground", run: async b => {
   const state = await b.evaluate(`(() => {
@@ -10554,7 +10597,7 @@ const factoryCanvas = { name: "factory canvas2d", why: "contract: the Canvas 2D 
   record("factory canvas2d: with WebGL2 unavailable the factory still boots and paints, a tip's show in the air", r.kind === "canvas2d" && r.scene === "factory" && r.colours >= 4 && r.flying > 0, JSON.stringify(r));
 } };
 
-scene("hub", { steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
+scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });
 scene("hub", { label: "room sign", query: "pos=0", steps: [{ name: "room sign copies hash", why: "rule: tapping a room sign swings it and copies its displayed eight-character code with visible confirmation", run: async (b) => {
   const point = await b.evaluate(`(() => { const B = __ooga, sign = B.headquarters.roomSigns[0], n = sign.node; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (value) => { window.__roomHash = value; return Promise.resolve(); } } }); window.__roomSignBefore = sign.hits; B.pilot.release(true); B.pilot.navigate({ position: { x: n.position.x, y: n.position.y, z: n.position.z }, target: { x: n.position.x, y: n.position.y - 0.2, z: n.position.z }, yaw: n.rotation.y, pitch: 0, dist: 4 }); B.advance(0.6, 1 / 60); return B.project(n.position.x, n.position.y - 0.2, n.position.z, {}); })()`);
@@ -10914,7 +10957,7 @@ const sphereCrossing = { name: "timechain crossing", why: "playthrough: Enter wa
   record("timechain crossing: from the keypad into the room and from the Exit button out to the bridge every frame is the Ooga's own eye, and each scene swap is the same view on both sides",
     seams.frames > 30 && seams.far === 0 && seamless(seams.swapIn) && seamless(seams.swapOut), JSON.stringify(seams));
 } };
-const sphereAccount = { name: "timechain account", why: "rule: an account look that went unanswered lets the physical selected number retry or Enter continue solo and never guesses a shared room", run: async (b) => {
+const sphereAccount = { name: "timechain account", why: "regression: account Retry must keep the owned Ooga at the keypad; an unanswered account still offers a solo visit without guessing", run: async (b) => {
   await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; BL.net.state.resolved = false; ${sphereStand("0.7", "13.8")} })()`);
   await b.key(" ");
   await b.key("5");
@@ -10929,6 +10972,54 @@ const sphereAccount = { name: "timechain account", why: "rule: an account look t
   record("timechain account: Enter with the account unanswered asks rather than guesses, physical Enter commits a solo visit, Back keeps the room chosen and Escape lets go",
     asked.state === "account" && !asked.popup && asked.hint.includes("Enter continues solo") && solo.state === "preparing" && solo.mode === "solo"
       && cancelled.state === "keypad" && cancelled.selection === 5 && done.state === "idle" && done.scene === "hub", JSON.stringify({ asked, solo, cancelled, done }));
+  // Retry through the real account reader and subscriber chain while the gate owns the same Ooga.
+  // Snapshot inside the fetch and its account notification so no simulated movement hides a teleport.
+  await b.evaluate(`(() => {
+    const B = __ooga, cave = B.pilot.player, ${sphereLocal};
+    const W = window.__sphereAccount = { fetch: window.fetch, WebSocket: window.WebSocket, state: { ...BL.net.state }, calls: 0, before: null, after: null };
+    const read = () => ({ selected: B.pilot.player === cave, body: [cave.root.position.x, cave.root.position.y, cave.root.position.z],
+      eye: [B.camera.position.x, B.camera.position.y, B.camera.position.z], target: [B.camera.target.x, B.camera.target.y, B.camera.target.z],
+      mode: B.pilot.mode, lens: T.gate.debug.lens, held: B.pilot.travelRefusal() === "Finish the current interaction before travelling" });
+    window.fetch = (url, options) => {
+      if (String(url) === "/api/me") {
+        W.calls++;
+        return Promise.resolve({ ok: true, headers: { get: () => "application/json" }, json: async () => {
+          W.before = read(); return { player: { id: 274, login: "portlandhodl", display: "portlandhodl" } };
+        } });
+      }
+      if (String(url) === "/auth/logout") return Promise.resolve({ ok: true });
+      return W.fetch(url, options);
+    };
+    window.WebSocket = class { static OPEN = 1; constructor() { this.readyState = 0; } close() { this.readyState = 3; } send() {} };
+    W.unsubscribe = BL.net.subscribe(state => { if (state.me && !W.after) W.after = read(); });
+    BL.net.state.started = true; BL.net.state.resolved = false;
+    ${sphereStand("0.7", "13.8")}
+  })()`);
+  let retry, released;
+  try {
+    await b.key(" "); await b.key("5"); await b.key("Enter"); await b.key("5");
+    const answered = await untilPage(b, 'BL.net.state.resolved && BL.scenes.hub.debug.timechainIsland.gate.debug.state === "keypad"');
+    retry = await b.evaluate(`(() => { const W = window.__sphereAccount, G = BL.scenes.hub.debug.timechainIsland.gate;
+      return { calls: W.calls, before: W.before, after: W.after, state: G.debug.state, selection: G.debug.selection, login: BL.net.state.me?.login }; })()`);
+    retry.answered = answered;
+    await b.key("Escape");
+    released = await b.evaluate(`(() => { const B = __ooga, ${sphereLocal}; B.advance(0.6, 1 / 60);
+      return { state: T.gate.debug.state, selected: B.pilot.player?.traits.name, refusal: B.pilot.travelRefusal(),
+        near: Math.hypot(B.pilot.player.root.position.x - T.worldX(0.7, 13.8), B.pilot.player.root.position.z - T.worldZ(0.7, 13.8)) }; })()`);
+  } finally {
+    await b.evaluate(`(async () => { const W = window.__sphereAccount;
+      W.unsubscribe();
+      try { await BL.net.logout(); } finally {
+        Object.assign(BL.net.state, W.state); window.fetch = W.fetch; window.WebSocket = W.WebSocket;
+        BL.hud.showAccount(BL.net.state); delete window.__sphereAccount;
+      }
+    })()`);
+  }
+  const unchanged = retry.before && retry.after && ["body", "eye", "target"].every(key => retry.before[key].every((value, i) => Math.abs(value - retry.after[key][i]) < 1e-8));
+  record("timechain account: physical Retry resolves the owner without moving the held Ooga or its view, keeps the room chosen, and Escape restores control at the keypad",
+    retry.answered && retry.calls === 1 && retry.login === "portlandhodl" && retry.state === "keypad" && retry.selection === 5 && unchanged
+      && retry.before.selected && retry.after.selected && retry.before.held && retry.after.held && retry.before.mode === retry.after.mode && retry.after.lens === "eyes"
+      && released.state === "idle" && released.selected === "portlandhodl" && released.refusal === null && released.near < 2, JSON.stringify({ retry, released }));
 } };
 scene("hub", { label: "timechain doorway", query: "solo=1&character=portlandhodl&view=timechain&pos=0", opts: { motion: true }, steps: [sphereApproach, sphereThreshold, sphereKeypad, sphereCrossing, sphereAccount, trip("hub")] });
 scene("hub", { label: "timechain doorway canvas2d", exclusive: true, query: "solo=1&character=portlandhodl&view=timechain&pos=0&canvas2d=1", steps: [sphereApproach, sphereCrossing] });
@@ -17399,7 +17490,8 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     const pool = { layout: L, place, worldX: (x, z) => place.x + x * cos + z * sin,
       worldZ: (x, z) => place.z - x * sin + z * cos };
     const minimum = Math.max(0, BL.contributors.roster.length - island.headquarters.rooms.length - island.headquarters.basement.rooms.length);
-    const beds = BL.headquartersSleep.outdoorBeds(pool, undefined, minimum);
+    let fullChecks = 0;
+    const beds = BL.headquartersSleep.outdoorBeds(pool, () => { fullChecks++; return true; }, minimum);
     const supported = beds.every(b => {
       const dx = b.x - place.x, dz = b.z - place.z, x = dx * cos - dz * sin, z = dx * sin + dz * cos;
       const along = L.rampAngle(Math.atan2(x, z)) * L.RAMP.r;
@@ -17407,8 +17499,19 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     });
     const separate = beds.every((a, i) => beds.every((b, j) => i === j || Math.hypot(a.x - b.x, a.z - b.z) >= 1.79));
     const blocked = BL.headquartersSleep.outdoorBeds(pool, () => false, minimum).length === 0;
-    record("outdoor sleep: rainforest provides separate supported anchors for the whole HQ overflow and rejects blocked footprints", beds.length >= Math.max(8, minimum) && supported && separate && blocked,
-      JSON.stringify({ count: beds.length, minimum, supported, separate, blocked }));
+    const key = {}; let firstChecks = 0, nextChecks = 0;
+    const first = BL.headquartersSleep.outdoor(pool, () => { firstChecks++; return true; }, key);
+    const lazy = first.beds.length === 0 && firstChecks === 0, a = first.more(), firstCost = firstChecks;
+    const next = BL.headquartersSleep.outdoor(pool, () => { nextChecks++; return true; }, key);
+    const unsearched = next.beds.length === 0 && nextChecks === 0, b = next.more();
+    const same = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && a.z === b.z && a.node.rotation.y === b.node.rotation.y;
+    a.sleeper = { name: "previous visit" };
+    const fresh = a !== b && a.node !== b.node && b.sleeper === null && same(a, b) && same(a, beds[0]);
+    const reused = nextChecks === 0 && firstChecks === firstCost, c = next.more(), nextCost = nextChecks, d = first.more();
+    const extended = nextCost > 0 && nextChecks === nextCost && firstChecks === firstCost && c !== d && same(c, d) && same(c, beds[1]);
+    const demand = lazy && unsearched && first.beds.length === 2 && next.beds.length === 2 && firstCost > 0 && firstCost < fullChecks;
+    record("outdoor sleep: rainforest provides separate supported anchors for the whole HQ overflow and rejects blocked footprints", beds.length >= Math.max(8, minimum) && supported && separate && blocked && demand && fresh && reused && extended,
+      JSON.stringify({ count: beds.length, minimum, supported, separate, blocked, demand, fresh, reused, extended, fullChecks, firstCost, nextCost }));
   }
 
   {

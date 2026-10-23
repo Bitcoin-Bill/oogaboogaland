@@ -111,6 +111,8 @@ Hub world selection, the last-actor retake portrait and T validate the target be
 
 Pile arrivals leave room for both displayed remote bodies and the latest room poses, including a snapshot received before the remote pool updates. Joining does not reset the shared crew: the elected host keeps its simulation, and a follower's cached NPC frame cannot move an Ooga driven locally or by another player.
 
+If an unanswered account lookup succeeds on Retry while the Sphere's keypad holds the visitor's own Ooga, that interaction keeps its position, view, and selected room. Account recovery does not restart arrival at the pile.
+
 The room rejects accounts without an owned body before accepting their socket. Historical guest attachments are evicted when the room wakes, receives their next message, or runs its existing stale sweep, so they cannot keep chat, voice or NPC-host access. This adds no timer or background contributor lookup; an already accepted temporary contributor retains its verified attachment until reconnect.
 
 The page enforces ownership (`net.mayDrive`, checked by `pilot.possess` through the scene's `mayPossess`). The room independently enforces it (`claimRefusal` in `worker/src/protocol.js`, over the cast `npm run build:site` writes to `worker/src/characters.gen.json`), so a tampered page cannot take another contributor's Ooga; a refused claim answers `release { name, reason }` and is never shown to anyone. Without a backend (GitHub Pages, the test suite), any available Ooga can be driven locally.

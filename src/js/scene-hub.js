@@ -2784,16 +2784,23 @@
     const worldZ = (lx, lz) => place.z - lx * sin + lz * cos;
     const localX = (wx, wz) => (wx - place.x) * cos - (wz - place.z) * sin;
     const localZ = (wx, wz) => (wx - place.x) * sin + (wz - place.z) * cos;
-    const atNode = (kind, node, radius) => addProp(kind, node, worldX(node.position.x, node.position.z), worldZ(node.position.x, node.position.z), radius);
+    // Sleeping anchors use the planted scenery's original collision transforms, even while a tapped tree shakes.
+    const sleepSolids = BL.solidProps.create();
+    const atNode = (kind, node, radius) => {
+      const owner = addProp(kind, node, worldX(node.position.x, node.position.z), worldZ(node.position.x, node.position.z), radius);
+      if (SOLID_PROPS.has(kind)) sleepSolids.add(node);
+      return owner;
+    };
     addChild(root, site.node);
     placed.push(site.node);
     // Capped in a cut view only when the walker the view follows is on this island or about to be.
     addTerrainSection(site.ground.geometry.cutawaySource, site.node, place.y).when = () => Math.hypot(cutawayX - place.x, cutawayZ - place.z) < S.reach + 40;
     // The body, the smooth floors laid over its steps, the lake's membrane and the plank crossings are all walked on.
-    for (const node of [site.ground, site.floor, site.membrane, ...site.crossings]) solids.add(node);
+    for (const node of [site.ground, site.floor, site.membrane, ...site.crossings]) { solids.add(node); sleepSolids.add(node); }
     site.floor.sightHidden = true;
     for (const node of site.crossings) node.sightHidden = true;
     addProp("poolbridge", site.bridge, worldX(0, place.bridgeLocalZ + S.span / 2), worldZ(0, place.bridgeLocalZ + S.span / 2), S.width);
+    sleepSolids.add(site.bridge);
     addLamp(site.bridge, LAMP.lantern, worldX(0, place.bridgeLocalZ), place.y + 3.4, worldZ(0, place.bridgeLocalZ), false, 0, "poolbridge:lanterns").nightOnly = true;
     atNode("poolsign", site.sign, site.sign.geometry.signWidth * 0.55);
     signDetails.push({
@@ -3240,7 +3247,10 @@
     const boxSolid = boxIn(L.boxSolid), boxClear = boxIn(L.boxClear);
     // What is walked on here rather than walked round: the bridge and the island's own ground in all its pieces.
     const walked = new Set([site.bridge, site.ground, site.floor, site.membrane, ...site.crossings]);
-    return { site, place, centre, groundAt, rainAt, rainHit, wake, worldX, worldZ, localX, localZ, cos, sin, claimGround, wildlife, water, paintings, overAt, coveredAt, billboardOccludes, sightClear, solidAt, rockMaterialAt, boxSolid, boxClear, floatAt, afloat, walked, layout: L, preview };
+    // Sync once; later searches must not observe visitors, tree animations or this visit's visibility changes.
+    sleepSolids.sync();
+    const sleepClear = (x, y, z) => sleepSolids.segmentClear(x, y, z, x, y, z, 0.15, 1.5);
+    return { site, place, centre, groundAt, rainAt, rainHit, wake, worldX, worldZ, localX, localZ, cos, sin, claimGround, wildlife, water, paintings, overAt, coveredAt, billboardOccludes, sightClear, solidAt, rockMaterialAt, boxSolid, boxClear, floatAt, afloat, walked, sleepClear, layout: L, preview };
   };
   // Where the gorillas sleep while their Oogas do: the banana-leaf beds of the Mempool island's nests, and the dry
   // way to each from the home island, as x, z pairs: up the approach stair, over the bridge, across the court,
@@ -8732,6 +8742,12 @@
     }
     // Another tab of this account drives it: its remote copy has sent this one away.
     if (cave.remoteControlled || mayDriveOoga(cave)) return false;
+    // An account retry can identify the Ooga already held at the Sphere's keypad.
+    // Keep that doorway interaction and its view; a fresh sign-in has no held actor.
+    if (pilot.player === cave && timechainIsland?.gate?.busy) {
+      ownOogaClaimed = true;
+      return true;
+    }
     const previousOverride = pilot.player === cave ? cave.controlOverride : cave.override;
     if (crew.stateOf(cave) === "away") {
       cave.override = "chilling";
@@ -11324,8 +11340,9 @@
     });
     const sleepNavigation = headquarters.sleepNavigation = BL.headquartersSleep.create({ island, beds: bedrolls, walkable: sleepRouteClear, surfaceRoute: shared.npcPaths.route });
     // Overflow sleepers take the rainforest's fixed anchors in order, searched once a page and only as far as needed.
+    // Only scenery belongs in this cached search: a passing Ooga must not permanently change the anchor order.
     const forest = BL.headquartersSleep.outdoor(mempoolIsland,
-      (x, y, z) => physicalClearAt(x, y, z, 0.15, 1.5, null) && propSegmentClear(x, y, z, x, y, z, 0.15, 1.5, null), island);
+      (x, y, z) => island.clearAt(x, y, z, 0.15, 1.5) && mempoolIsland.sleepClear(x, y, z), island);
     shared.outdoorBedrolls = headquarters.outdoorBeds = forest.beds;
     shared.moreOutdoorBedrolls = forest.more;
     const sleepRouteFrom = { x: 0, y: 0, z: 0 };
