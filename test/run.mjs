@@ -10832,18 +10832,22 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
     const B = __ooga, D = BL.scenes.hub.debug.matrixCave, list = D.clouds, solids = B.headquarters.solids.props;
     const initial = list.map(c => {
       const bounds = BL.scene.boundsOf(c.node.geometry);
+      const halfLength = Math.max(Math.abs(bounds.min[0]), Math.abs(bounds.max[0])), halfDepth = Math.max(Math.abs(bounds.min[2]), Math.abs(bounds.max[2]));
       return { cloud: c, node: c.node, geometry: c.node.geometry, radius: Math.hypot(c.node.position.x, c.node.position.z), track: c.radius,
         y: c.node.position.y, speed: c.speed, x: c.node.position.x, z: c.node.position.z, turn: 0, low: bounds.min[1], high: bounds.max[1],
-        reach: Math.hypot(Math.max(Math.abs(bounds.min[0]), Math.abs(bounds.max[0])), Math.max(Math.abs(bounds.min[2]), Math.abs(bounds.max[2]))) };
+        minY: c.node.position.y, maxY: c.node.position.y, reach: Math.hypot(halfLength, halfDepth),
+        inner: c.radius - halfDepth, outer: Math.hypot(c.radius + halfDepth, halfLength) };
     });
     const pairs = [];
     for (let i = 0; i < initial.length; i++) for (let j = i + 1; j < initial.length; j++) {
       const a = initial[i], b = initial[j];
-      pairs.push({ a, b, sameLane: a.track === b.track && a.y === b.y, distance: Math.hypot(a.x - b.x, a.z - b.z) });
+      pairs.push({ a, b, sameLane: a.track === b.track, distance: Math.hypot(a.x - b.x, a.z - b.z) });
     }
-    const initialized = initial.length === 30 && initial.every(c => Number.isFinite(c.radius) && c.radius > 0 && Number.isFinite(c.speed) && c.speed > 0);
+    const initialized = initial.length === 30 && [36, 40].every(radius => initial.filter(c => c.track === radius).length === 15)
+      && initial.every(c => Number.isFinite(c.radius) && Math.abs(c.radius - c.track) < 1e-8 && Number.isFinite(c.speed) && c.speed > 0);
     const out = { count: initial.length, initialized, persistent: true, decorative: true, horizontal: true, tangent: true,
-      seconds: 0, laps: 0, radialDrift: 0, heightDrift: 0, maxStep: 0, maxTravelExcess: 0, minGap: Infinity, spacingDrift: 0 };
+      seconds: 0, laps: 0, radialDrift: 0, minHeight: Infinity, maxHeight: -Infinity, maxVerticalSpeed: 0,
+      maxStep: 0, maxTravelExcess: 0, minGap: Infinity, spacingDrift: 0 };
     if (!initialized || typeof D.advanceClouds !== "function") { out.initialized = false; return out; }
     const duration = Math.max(150, 4 * Math.PI * Math.max(...initial.map(c => c.radius / c.speed)) + 2);
     // Advance only the real cloud updater through two complete laps and past the former 145-second lifetime.
@@ -10858,23 +10862,26 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
           && n.scale.x === 1 && n.scale.y === 1 && n.scale.z === 1 && list[i].speed === c.speed && m.every(Number.isFinite);
         out.decorative &&= n.sightHidden && !solids.isActive(n) && !B.props.some(prop => prop.node === n);
         out.radialDrift = Math.max(out.radialDrift, Math.abs(Math.hypot(p.x, p.z) - c.radius));
-        out.heightDrift = Math.max(out.heightDrift, Math.abs(p.y - c.y));
+        c.minY = Math.min(c.minY, p.y); c.maxY = Math.max(c.maxY, p.y);
+        out.minHeight = Math.min(out.minHeight, p.y); out.maxHeight = Math.max(out.maxHeight, p.y);
         out.horizontal &&= Math.max(Math.abs(m[1]), Math.abs(m[4]), Math.abs(m[6]), Math.abs(m[9]), Math.abs(m[5] - 1)) < 1e-6;
         // The mesh's long local X axis must lie across the radius and point along its observed travel.
         out.tangent &&= Math.abs(m[0] * m[12] + m[2] * m[14]) / radius < 1e-5;
         if (dt) {
           out.maxStep = Math.max(out.maxStep, distance);
           out.maxTravelExcess = Math.max(out.maxTravelExcess, distance - c.speed * dt);
+          out.maxVerticalSpeed = Math.max(out.maxVerticalSpeed, Math.abs(p.y - c.y) / dt);
           out.tangent &&= distance > 0 && (m[0] * (p.x - c.x) + m[2] * (p.z - c.z)) / distance > 0.999;
           c.turn += Math.atan2(c.x * p.z - c.z * p.x, c.x * p.x + c.z * p.z);
         }
-        c.x = p.x; c.z = p.z;
+        c.x = p.x; c.y = p.y; c.z = p.z;
       }
       for (const pair of pairs) {
         const a = pair.a, b = pair.b, distance = Math.hypot(a.x - b.x, a.z - b.z);
-        // A whole cloud fits inside its horizontal bounding disk and authored height band.
-        // Either a vertical gap or disjoint disks guarantees these two meshes cannot touch.
-        out.minGap = Math.min(out.minGap, Math.max(a.y + a.low - b.y - b.high, b.y + b.low - a.y - a.high, distance - a.reach - b.reach));
+        // Each level, tangent cloud fits inside its current height band, horizontal disk and radial annulus.
+        // Any separated bound proves clearance, including nearby rings whose broad disks overlap.
+        out.minGap = Math.min(out.minGap, Math.max(a.y + a.low - b.y - b.high, b.y + b.low - a.y - a.high,
+          distance - a.reach - b.reach, a.inner - b.outer, b.inner - a.outer));
         if (pair.sameLane) out.spacingDrift = Math.max(out.spacingDrift, Math.abs(distance - pair.distance));
       }
     };
@@ -10884,6 +10891,8 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       D.advanceClouds(dt); sample(dt); out.seconds += dt;
     }
     out.laps = Math.min(...initial.map(c => c.turn / (Math.PI * 2)));
+    out.eachCloudDips = initial.every(c => c.minY < -3.9);
+    out.eachCloudRises = initial.every(c => c.maxY > 1.9);
     // The render-only cutaway offset used to lower every high cloud toward the walker,
     // collapsing separate lanes into buildings even though the node transforms stayed clear.
     const P = B.pilot, actor = B.cavemen.get("portlandhodl");
@@ -10894,12 +10903,14 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       P.modeAction("mode-toggle"); B.advance(1, 1 / 60);
       if (P.mode === "shoulder") { P.hooks.onZoom(1.2, {}); B.advance(1, 1 / 60); }
       out.cutaway = { selected: P.player === actor, view: P.mode, combat: P.aiming, active: B.renderOpts.birdsEyeCutaway,
-        mix: B.renderOpts.cutawayCloudMix, heights: initial.every(c => c.node.position.y === c.y && Math.abs(c.node.world[13] - c.y) < 1e-6) };
+        mix: B.renderOpts.cutawayCloudMix, heights: initial.every(c => Math.abs(c.node.world[13] - c.node.position.y) < 1e-6) };
     } finally { P.release(true); P.goPreset("pile"); B.advance(0.1, 1 / 60); }
     return out;
   })()`);
-  record("hub distant effects: all 30 decorative clouds keep size, orbit and spacing for two full laps, stay horizontal and tangent, and never become collision surfaces", clouds.initialized && clouds.persistent && clouds.decorative && clouds.horizontal && clouds.tangent
-    && clouds.seconds > 145 && clouds.laps >= 2 && clouds.radialDrift < 1e-8 && clouds.heightDrift === 0 && clouds.maxTravelExcess < 1e-7 && clouds.minGap > 0 && clouds.spacingDrift < 1e-8
+  record("hub distant effects: all 30 decorative clouds keep size, orbit and spacing for two full laps, dip and rise gently within their height band, stay horizontal and tangent, and never become collision surfaces", clouds.initialized && clouds.persistent && clouds.decorative && clouds.horizontal && clouds.tangent
+    && clouds.seconds > 145 && clouds.laps >= 2 && clouds.radialDrift < 1e-8 && clouds.eachCloudDips && clouds.eachCloudRises
+    && clouds.minHeight >= -4 && clouds.maxHeight <= 2 && clouds.maxVerticalSpeed <= 0.2
+    && clouds.maxTravelExcess < 1e-7 && clouds.minGap > 0 && clouds.spacingDrift < 1e-8
     && clouds.cutaway?.selected && clouds.cutaway.view === "birds-eye" && clouds.cutaway.combat && clouds.cutaway.active && clouds.cutaway.mix === 0 && clouds.cutaway.heights
     && state.horizon.every(row => row.clouds.length === 30 && row.clouds.every(c => c.visible && c.moving)), JSON.stringify(clouds));
   const animation = await b.evaluate(`(() => {

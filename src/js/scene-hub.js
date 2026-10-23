@@ -184,13 +184,11 @@
   const SCENERY_CLEARANCE = 0.25;
   const MEADOW_INNER = 5, MEADOW_OUTER = MEADOW - 1.5, CLIFF_INNER = MEADOW + 1.5, CLIFF_OUTER = RADIUS - 1;
   const DOCK_DEG = 75, LADDER_Z = -3.6, LADDER_LEAN = 0.65;
-  // Six clouds per lane, with full-lap clearance around the home rim, bridges and outlying islands.
+  // Two disjoint annuli keep the clouds close to the horizon without stacking five altitude bands.
+  // Fifteen clouds per ring leave room for the widest mesh; each ring keeps its angular spacing.
   const CLOUD_TRACKS = [
-    { radius: 36, y: -8, speed: 0.48, phase: 0.1 },
-    { radius: 40, y: -3, speed: 0.56, phase: 0.6 },
-    { radius: 38, y: 12, speed: 0.44, phase: 0.35 },
-    { radius: 42, y: 17, speed: 0.64, phase: 0.8 },
-    { radius: 46, y: 24, speed: 0.52, phase: 0.2 }
+    { radius: 36, speed: 0.48, phase: 0.1 },
+    { radius: 40, speed: 0.56, phase: 0.6 }
   ];
   const WANDER_COUNT = 36, WANDER_INNER = 5.5;
   const ALTAR_HEIGHT = 0.34, ALTAR_BLOCK_WIDTH = 0.2, ALTAR_BLOCK_ARC = 0.3, ALTAR_RING_GAP = 0.02, ALTAR_MAX_BLOCKS = 512;
@@ -5628,13 +5626,16 @@
   const placeCloud = (cloud) => {
     const p = cloud.node.position;
     p.x = Math.cos(cloud.angle) * cloud.radius; p.z = Math.sin(cloud.angle) * cloud.radius;
+    // Broad troughs pass below the north, Mempool and Timechain bridges; peaks rise between them.
+    // The fixed path spans -4..2m, with continuous position and slope at the end of every lap.
+    const wave = 1 - Math.sin(cloud.angle * 3);
+    p.y = -4 + 1.5 * wave * wave;
     cloud.node.rotation.y = -cloud.angle - Math.PI / 2;
   };
   const buildClouds = () => {
-    for (const track of CLOUD_TRACKS) for (let i = 0; i < 6; i++) {
+    for (const track of CLOUD_TRACKS) for (let i = 0; i < 15; i++) {
       const node = createNode({ geometry: hubModels.cloud(Math.min(2, clouds.length % 4)), matrixCloud: true, sightHidden: true });
-      node.position.y = track.y;
-      const cloud = { node, speed: track.speed, angle: track.phase + i * Math.PI / 3, radius: track.radius };
+      const cloud = { node, speed: track.speed, angle: track.phase + i * Math.PI * 2 / 15, radius: track.radius };
       placeCloud(cloud);
       addChild(root, node);
       placed.push(node);
