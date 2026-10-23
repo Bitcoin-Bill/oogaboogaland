@@ -14,6 +14,8 @@ import { allowed, clientIp, fromSite, json } from "./http.js";
 
 export const MODEL = "claude-haiku-5-5";
 const BODY_MAX = 1024, QUESTION_MAX = 200, SAY_MAX = 600, LINES_MAX = 4, KEEP_DAYS = 90, DAILY_CENTS = 50;
+// A call and its one retry end inside the 15 s the page waits, so nothing is paid for an answer nobody sees.
+const CALL_MS = 6000;
 // Millionths of a dollar a token: Haiku 5.5 at $0.10 a million in and $0.50 out, cache writes at 1.25x, reads at 0.1x.
 const PRICE = { input: 0.1, write: 0.125, read: 0.01, output: 0.5 };
 export const SYSTEM = `${RULES}\n\n${FACTS.text}`;
@@ -51,14 +53,24 @@ export const replyOf = (message) => {
   return say && say.length <= SAY_MAX ? { say, go: placeOf(out.go) } : null;
 };
 
-// The one call to Claude, shared with the eval (worker/eval/run.mjs). `about` is the place's title.
-export const ask = (env, question, about) => new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 12000 }).messages.create({
-  model: MODEL,
-  max_tokens: 1024,
-  system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-  messages: [{ role: "user", content: about ? `(They were last asking about ${about}.)\n${question}` : question }],
-  output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } }
-});
+// The one call to Claude, shared with the eval (worker/eval/run.mjs), on one client an isolate. `about` is the
+// place's title.
+let client = null, clientKey = null;
+export const ask = (env, question, about) => {
+  if (clientKey !== env.ANTHROPIC_API_KEY) {
+    client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: CALL_MS });
+    clientKey = env.ANTHROPIC_API_KEY;
+  }
+  return client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: about ? `(They were last asking about ${about}.)\n${question}` : question }],
+    output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } }
+  });
+};
+// TESS_DAILY_CENTS, or 50 when unset; 0 stops Claude for the day while kept answers still come.
+const capOf = (env) => env.TESS_DAILY_CENTS === undefined || env.TESS_DAILY_CENTS === "" ? DAILY_CENTS : Number(env.TESS_DAILY_CENTS);
 
 export const handleTess = async (request, env) => {
   if (request.method !== "POST") return json({ error: "method not allowed" }, 405, { allow: "POST" });
@@ -79,7 +91,7 @@ export const handleTess = async (request, env) => {
     return json({ say: kept.say, go: kept.go });
   }
   const spent = await db.prepare("SELECT micro_usd FROM tess_spend WHERE day = ?").bind(today).first("micro_usd");
-  if ((spent || 0) >= (Number(env.TESS_DAILY_CENTS) || DAILY_CENTS) * 1e4) return json({ error: "resting" }, 429);
+  if ((spent || 0) >= capOf(env) * 1e4) return json({ error: "resting" }, 429);
 
   let message;
   try {

@@ -25,11 +25,12 @@ const d1 = () => {
   return { sql, prepare: (query) => statement(query), batch: async (list) => Promise.all(list.map((s) => s.run())) };
 };
 
-// Claude answering from a script, one reply a call: a message, or an error to throw.
+// Claude answering from a script, one reply a call: a message, or an error to throw. `made` counts the clients built.
 const claude = (...replies) => {
-  const calls = [];
+  const calls = [], made = [];
   const Anthropic = class {
     constructor(options) {
+      made.push(options);
       this.messages = { create: async (params) => {
         calls.push({ options, params });
         const next = replies.shift();
@@ -39,7 +40,7 @@ const claude = (...replies) => {
       } };
     }
   };
-  return { Anthropic, calls };
+  return { Anthropic, calls, made };
 };
 const USAGE = { input_tokens: 40, cache_creation_input_tokens: 7000, cache_read_input_tokens: 0, output_tokens: 60 };
 const message = (out, stop = "end_turn") => ({ stop_reason: stop, usage: USAGE,
@@ -67,6 +68,8 @@ test("a question goes to Claude once, with the rules and facts as one cached pro
   assert.deepEqual(await first.json(), { say: "Ooga Arcade, at 3 o'clock!\nA cabinet for every game.", go: "arcade" });
   const { options, params } = stub.calls[0];
   assert.equal(options.apiKey, KEY);
+  // The call and its one retry end inside the 15 s the page waits.
+  assert.ok(options.timeout * (options.maxRetries + 1) < 15000, JSON.stringify(options));
   assert.equal(params.model, "claude-haiku-5-5");
   assert.deepEqual(params.system, [{ type: "text", text: `${RULES}\n\n${TESS_FACTS.text}`, cache_control: { type: "ephemeral" } }]);
   assert.deepEqual(params.messages, [{ role: "user", content: "Where can I play games?" }]);
@@ -95,6 +98,7 @@ test("the place she was last asked about goes with the question and keys its ans
   assert.equal(stub.calls[0].params.messages[0].content, "(They were last asking about Lightning Factory.)\nhow do I get inside");
   await ask(handleTess, env, { question: "how do I get inside", about: "the moon" });
   assert.equal(stub.calls[1].params.messages[0].content, "how do I get inside");
+  assert.equal(stub.made.length, 1);
   assert.deepEqual(kept(DB).map((row) => row.about).sort(), ["", "factory"]);
 });
 
@@ -114,7 +118,7 @@ test("an answer is checked for shape only: a place off the list is dropped, and 
   assert.equal(spend(DB).calls, 5);
 });
 
-test("a day's spend stops at its cap, while answers she kept still come", async () => {
+test("a day's spend stops at its cap, while answers she kept still come, and a cap of 0 stops Claude at once", async () => {
   const stub = claude(message({ say: "Bananas!", go: "pile" }));
   const { handleTess } = routeFixture({ anthropic: stub.Anthropic }), DB = d1();
   const env = { SITE_ORIGIN: SITE, DB, ANTHROPIC_API_KEY: KEY, TESS_DAILY_CENTS: "1" };
@@ -124,6 +128,9 @@ test("a day's spend stops at its cap, while answers she kept still come", async 
   assert.equal(resting.status, 429);
   assert.deepEqual(await resting.json(), { error: "resting" });
   assert.deepEqual(await (await ask(handleTess, env, { question: "Where is the pile?" })).json(), { say: "Bananas!", go: "pile" });
+  assert.equal(stub.calls.length, 1);
+  const off = await ask(handleTess, { ...env, DB: d1(), TESS_DAILY_CENTS: "0" }, { question: "what is a block" });
+  assert.deepEqual(await off.json(), { error: "resting" });
   assert.equal(stub.calls.length, 1);
 });
 

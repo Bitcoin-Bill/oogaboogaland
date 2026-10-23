@@ -8,8 +8,8 @@
 // browser has answered it; a tap on her brings it at any time. The view is the visitor's again when the tour ends.
 // Under her offer a visitor can type a question (#270). The page answers what it knows by itself (`answer`): a place
 // becomes a trip there and back, and a few common questions have their own lines. One it can't answer goes to the
-// page's Worker, which asks Claude (`/api/tess`), where there is one; elsewhere, and when that fails, she says her
-// offline line.
+// page's Worker, which asks Claude (`/api/tess`), where the Worker says it can (`net.state.tess`); elsewhere, and when
+// that fails, she says her offline line.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -345,7 +345,7 @@
       if (phase === "offer") {
         heading.textContent = news ? `${NAME} · what's new` : `${NAME} · island guide`;
         go.textContent = "Show me"; skip.textContent = "Not now";
-        help.textContent = `${coarse ? "Tap to choose, or ask" : "Enter starts · Esc closes"}${BL.net.state.backend ? "\nWhat I can't answer goes to Claude" : ""}`;
+        help.textContent = `${coarse ? "Tap to choose, or ask" : "Enter starts · Esc closes"}${BL.net.state.tess ? "\nWhat I can't answer goes to Claude" : ""}`;
       } else if (phase === "tour" && state.kind === "trip") {
         heading.textContent = `${NAME} · ${state.legs[state.stop].title}`;
         label(); skip.textContent = "Back";
@@ -536,7 +536,7 @@
       if (busy()) { toWork(); return; }
       const a = answer(text, state.place);
       state.asked = true; state.timer = OFFER_TIME;
-      if (!a) { if (BL.net.state.backend) consult(text); else say("unknown"); return; }
+      if (!a) { if (BL.net.state.tess) consult(text); else say("unknown"); return; }
       if (a.place !== null) state.place = a.place;
       if (a.tour) {
         if (state.kind === "island") answered();
@@ -562,7 +562,7 @@
       if (!reply || typeof reply.say !== "string") { say(FAILED[reply && reply.error] || "unknown"); return; }
       const go = STOPS.findIndex((stop) => stop.id === reply.go);
       if (go < 0) { rig.say(reply.say); return; }
-      if (busy()) { toWork(); return; }
+      if (busy()) { rig.hush(); toWork(); return; }
       state.place = go; state.kind = "trip";
       state.legs = [{ stop: go, title: STOPS[go].title, text: reply.say, lineAt: BL.fx.beatsOf(reply.say).map(() => null) }];
       startTour();
