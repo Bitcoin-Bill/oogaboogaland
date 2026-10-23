@@ -4947,8 +4947,15 @@ const ghostHuntChecks = async () => {
     if (z.state.state === ST.ACTIVE) z.debug.next();
     for (let i = 0; i < 20 && z.state.state === ST.ACTIVE; i++) tick();
     const back = me().seg === G.CONFIG.PLAYER_SEGMENTS && !(z.state.now < me().frozenUntil) && !!mate();
-    record("ghost hunt: a player gone down stays down for the rest of the round and is back whole when it ends",
-      round >= 1 && stayed && back, JSON.stringify({ round, stayed, back, seg: me().seg, state: z.state.state }));
+    // The sixth round gives way straight to the boss: one gone down in it is back for the boss's fight.
+    z.jump(ST.ACTIVE, 6);
+    for (let i = 0; i < 24000 && !(me().seg === 0) && z.state.state === ST.ACTIVE; i++) tick();
+    const downIn6 = me().seg === 0 && z.state.round === 6;
+    z.debug.next();
+    for (let i = 0; i < 20 && z.state.state === ST.ACTIVE; i++) tick();
+    const boss = z.state.state === ST.BOSS && me().seg === G.CONFIG.PLAYER_SEGMENTS && !(z.state.now < me().frozenUntil);
+    record("ghost hunt: a player gone down stays down for the rest of the round and is back whole when it ends, the sixth's into the boss's fight",
+      round >= 1 && stayed && back && downIn6 && boss, JSON.stringify({ round, stayed, back, downIn6, boss, seg: me().seg, state: z.state.state }));
   }
   {
     const lost = begin(3), states = new Set();

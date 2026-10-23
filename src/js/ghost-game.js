@@ -554,10 +554,12 @@
     };
 
     // ---------- night ----------
+    // Off: no hunt, or only its lobby. The walls, the night, the rocks and the closed island begin at LAP.
+    const off = (st) => st === ST.IDLE || st === ST.GATHER;
     let nightK = 0, h0 = NaN, dim = 0;
     const nightOf = (t) => {
       const st = S.state;
-      if (st === ST.IDLE) return 0;
+      if (off(st)) return 0;
       // The night lifts over the whole dawn, which is quick after a defeat.
       if (st === ST.DAWN) return 1 - clamp((t - (S.endsAt - sim.dawnMs())) / sim.dawnMs(), 0, 1);
       return clamp((t - (S.lapAt + nightAt)) / NIGHT_FADE_MS, 0, 1);
@@ -1003,7 +1005,7 @@
         const w = walls[i], s = w.stop;
         let k = 0;
         if (st === ST.DAWN) k = 1 - clamp((t - (S.endsAt - sim.dawnMs()) - i * sinkGap) / sinkMs, 0, 1);
-        else if (st !== ST.IDLE) k = ease.inOutQuad(clamp((t - S.lapAt - s.riseAt) / RISE_MS, 0, 1));
+        else if (!off(st)) k = ease.inOutQuad(clamp((t - S.lapAt - s.riseAt) / RISE_MS, 0, 1));
         const rising = st !== ST.DAWN && k > 0 && k < 1;
         if (rising && w.up <= 0) fx.burst(s.cx, s.base + 0.3, s.cz, 6, DIRT, 2);
         // Earth and ecto spray off the foot of a wall still grinding up.
@@ -1012,7 +1014,7 @@
           fx.burst(s.cx + s.nz * along, s.base + 0.1, s.cz - s.nx * along, 2, DIRT, 1.8);
         }
         w.up = k;
-        w.sealed = st !== ST.IDLE && st !== ST.DAWN && k > 0;
+        w.sealed = !off(st) && st !== ST.DAWN && k > 0;
         if (w.zone && w.zone.active !== w.sealed) {
           w.zone.active = w.sealed;
           const at = hub.closedZones.indexOf(w.zone);
@@ -1757,7 +1759,7 @@
       monkeyShot(from, to);
     };
     const busy = () => S.state !== ST.IDLE;
-    const refuseTravel = () => S.state !== ST.IDLE && S.state !== ST.DAWN ? "The ghost walls hold the island shut" : null;
+    const refuseTravel = () => !off(S.state) && S.state !== ST.DAWN ? "The ghost walls hold the island shut" : null;
     const liveGeometry = (set) => {
       for (let i = 0; i < used.length; i++) set.add(used[i]);
       for (const rig of rigs) rig.liveGeometry(set);
@@ -1804,9 +1806,9 @@
     return {
       update, drawOverlay, hit, shot, key, down, get waiting() { return spectating; }, rock: MODELS.rock(), hour, shade, shake, unshake, release, dispose, liveGeometry, refuseTravel, debug,
       get sealed() { return sealedCount > 0; },
-      get hunting() { return S.state !== ST.IDLE; },
+      get hunting() { return !off(S.state); },
       get busy() { return busy(); },
-      get quietSky() { return S.state !== ST.IDLE; },
+      get quietSky() { return !off(S.state); },
       get inMotion() { return S.state !== ST.IDLE || sim.alive() > 0; },
       stats: () => ({ ghosts: sim.alive() + sim.brutesAlive() })
     };

@@ -52,7 +52,8 @@
     // A lost hunt gives the island back sooner: a short banner and a quick dawn.
     DEFEAT_MS: 3000, DAWN_FAST_MS: 2500,
     // A player whose bar empties is down for the rest of the round (`DOWN_UNTIL`, past any round's end) and comes back
-    // whole as it ends (a round cleared, the next one called); in the boss's fight, until the hunt ends.
+    // whole as it ends (a round cleared, the next one called, the sixth giving way to the boss); in the boss's fight,
+    // until the hunt ends.
     DOWN_UNTIL: 1e12, PLAYER_SEGMENTS: 5, IFRAMES_MS: 1000,
     GHOST_RADIUS: 0.42, BIG: 1.5, PLAYER_RADIUS: 0.3, SHIELD_PAD: 0.4, BOUNCE_MS: 450, BOUNCE_SPEED: 2.5,
     KNOCK_MS: 140, KNOCK_SPEED: 8, HOVER: 0.3, CLIMB_RATE: 2,
@@ -451,15 +452,18 @@
     const enter = (state) => {
       const prev = s.state;
       s.state = state;
-      if (state === STATE.COUNTDOWN || state === STATE.BREAK) {
-        // A round over, or a new one called: everyone down is back, and everyone is whole again.
+      const roundOver = state === STATE.COUNTDOWN || state === STATE.BREAK || state === STATE.BOSS && prev === STATE.ACTIVE;
+      if (roundOver) {
+        // A round over (the sixth goes straight to the boss), or a new one called: everyone down is back, and everyone
+        // is whole again.
         for (const p of players) {
           if (!p.on) continue;
           if (frozen(p)) { p.frozenUntil = 0; p.invulnUntil = s.now + C.IFRAMES_MS; }
           p.seg = C.PLAYER_SEGMENTS;
         }
       }
-      if (state === STATE.COUNTDOWN) { s.endsAt = s.now + C.COUNTDOWN_MS; s.spawned = 0; s.healAt = s.now; }
+      if (state === STATE.COUNTDOWN || state === STATE.BOSS && prev === STATE.ACTIVE) s.healAt = s.now;
+      if (state === STATE.COUNTDOWN) { s.endsAt = s.now + C.COUNTDOWN_MS; s.spawned = 0; }
       else if (state === STATE.ACTIVE) {
         let n = 0;
         for (const p of players) if (p.on && p.here) n++;
