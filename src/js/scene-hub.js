@@ -3600,6 +3600,7 @@
   };
   const isPlayerAttack = source => !!source && (source === crew.player || source.controlled && source.actionControlled);
   const hitMirror = (power, x, y, z, source) => {
+    if (!gameMode) return;
     const damage = mirrorCave.damage;
     const scaledPower = power * 4;
     if (!damage.hit(scaledPower, x, y, z)) return;
@@ -10379,6 +10380,7 @@
     CAMERA_GLYPHS.time = MATRIX_WORLD.time;
     const gorilla = clankerPlay.active, player = controlledGuideActor();
     const closeWanted = gorilla ? clankerPlay.firstPerson : pilot.closeWanted, closeMix = gorilla ? (closeWanted ? 1 : 0) : pilot.closeMix;
+    hud.tooltip.setControlled(player, !gameMode && !closeWanted && closeMix < 1);
     const combatBirdsEye = gorilla ? clankerPlay.combat && clankerPlay.birdsEye : !!player && pilot.aiming && pilot.birdsEye;
     if (combatBirdsEye || RENDER_OPTS.birdsEyeCutaway) {
       // The actual scene is visible through its roof cut. Rock silhouettes and
@@ -10760,6 +10762,7 @@
     critters = crittersMod.create({ root, renderer, flowers: scenery.filter((o) => o.prop === "flower" && o.active), fire: firePos, secondaryFire: { x: 0, y: island.headquarters.floor, z: 0 }, meadowRadius: MEADOW, heightAt: island.surfaceAt, activeAt: effectsActiveAt });
     mark("props");
     const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, overlayVisible: matrixOverlayVisible, zzzVisible: sleepMarksVisible, tickerAt: TICKER_AT, buildSpots: buildSpotsList, walkIn: WALK_IN, clampDrag, viewYaw: PILE_VIEW.yaw, bedrolls, pileScale: PILE_SCALE, pileY: ALTAR_HEIGHT + 0.02, matrixLivingPile: true, onLayout: layoutPile, crateRadius: () => Math.max(4.4, altar.platformRadius + 0.8), groundAt: playerSupportAt, ceilingAt, wanderSpot, walkable, flyable, glideJetCeiling, useNear, abyssAt, abyssRespawnY: ABYSS_RESPAWN_Y, seaY: SEA_Y, jetpackAllowed, reticleTarget, phase: () => phase };
+    shared.weaponsEnabled = true;
     shared.animationInterval = animationInterval;
     shared.deliverySource = factoryMouth ? factoryMouth.deliverySource : null;
     shared.reloadSlotRadius = () => island.path.debug.ringLoadingRadius;

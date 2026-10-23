@@ -7309,7 +7309,7 @@ const gameCombat = step => ({ ...step, run: async b => {
   try { await step.run(b); }
   finally { await b.evaluate(`BL.scenes.hub.debug.setGameMode(false)`); }
 } });
-const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visits retain both look modes while attacks, health simulation, rage and grabs stay off, and ending a game clears its transient combat state", run: async b => {
+const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visits retain harmless weapons and both look modes while damage, health simulation, rage and grabs stay off, and ending a game clears its transient combat state", run: async b => {
   const r = await b.evaluate(`(() => {
     const B = __ooga, H = BL.scenes.hub.debug, C = B.clankers, P = B.pilot, a = B.cavemen.get("portlandhodl"), e = C.list.find(entry => entry.owner === a);
     const w = a.weapon, saved = { ammo: w.ammo, spare: w.spareAmmo.slice(), slot: w.selectedSlot }, out = {};
@@ -7317,17 +7317,36 @@ const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visit
     const press = (name, code) => { key("keydown", name, code); key("keyup", name, code); B.advance(1 / 60, 1 / 60); };
     try {
       P.possess(a); if (B.crew.sleeping) B.crew.wakePlayer();
+      B.crew.relocatePlayer({ x: -8, y: 0, z: 8 }, 0);
       B.crew.configureWeapon(a, 2, 6); e.active = e.root.visible = true;
-      out.defaultOff = !H.gameMode && !B.crew.combatEnabled && !C.combatEnabled;
+      out.defaultOff = !H.gameMode && B.crew.weaponsEnabled && !B.crew.combatEnabled && !C.combatEnabled;
+      // Pose resets used to expose the knockout birds as ordinary sleep equipment.
+      out.noKnockoutBirds = B.crew.list.every(cave => !cave.stunBirds.visible);
       const aiming = P.aiming; press("x", "KeyX"); const toggled = P.aiming !== aiming; press("x", "KeyX");
       out.look = toggled && P.aiming === aiming && !document.getElementById("mode-hud").hidden;
       const shots = w.shotsFired, ammo = w.ammo, health = a.health.value, gorillaHealth = e.health.value;
-      out.refused = !B.crew.fireWeapon(a, { x: 0, y: 30, z: 0 }, 1) && !B.crew.swingWeapon(a)
-        && !B.crew.bashWeapon(a) && !B.crew.throwTomato() && !B.crew.startReload(a) && !B.crew.swapMagazine(a)
-        && !B.crew.damage(a, 100, true) && !C.damage(e, 100) && !C.debugRage(e, true);
+      out.refused = !B.crew.throwTomato() && !B.crew.damage(a, 100, true) && !C.damage(e, 100) && !C.debugRage(e, true);
       for (let serial = 1; serial <= 43; serial++) C.bananaHit(e, B.cavemen.get("w-s-bitcoin"), serial);
+      out.rifle = P.weaponAction("weapon-secondary") && w.shotsFired === shots + 1 && w.ammo === ammo - 1;
+      B.advance(0.6, 1 / 60);
+      out.bash = P.weaponAction("weapon-bash") && w.bashTime > 0;
+      B.advance(0.6, 1 / 60);
+      B.crew.selectWeapon(1, a);
+      out.swing = P.weaponAction("weapon-primary-down") && w.meleeHeld;
+      out.swing = P.weaponAction("weapon-primary-up") && !w.meleeHeld && w.meleeTime > 0 && out.swing;
+      B.crew.selectWeapon(2, a);
+      const beforeSwap = w.ammo, spare = w.spareAmmo[0];
+      out.swap = P.weaponAction("magazine-swap") && w.swapTime > 0;
+      B.advance(0.6, 1 / 60);
+      out.swap = out.swap && w.ammo === spare && w.spareAmmo[0] === beforeSwap;
+      B.crew.configureWeapon(a, 2, 6);
+      B.crew.relocatePlayer({ x: B.path.ringCenterRadius, y: 0.34, z: 0 }, 0);
+      out.reload = P.weaponAction("weapon-reload") && w.reloading;
+      B.advance(1.3, 1 / 60);
+      out.reload = out.reload && w.ammo > 6;
+      B.crew.stopReload(a, true);
       out.untouched = health === a.health.value && gorillaHealth === e.health.value && !a.health.stunned
-        && !a.stunGear.drops.some(drop => drop.active) && !e.rage.active && !e.rage.count && w.shotsFired === shots && w.ammo === ammo;
+        && !a.stunGear.drops.some(drop => drop.active) && !e.rage.active && !e.rage.count;
       a.health.value = 37; a.health.delay = 0; e.health.value = 71; e.health.delay = 0;
       B.advance(0.25, 1 / 60);
       out.noRegeneration = a.health.value === 37 && e.health.value === 71;
@@ -7335,8 +7354,10 @@ const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visit
       H.setGameMode(true); C.setAway(false); e.active = e.root.visible = true;
       out.game = H.gameMode && B.crew.combatEnabled && C.combatEnabled && C.damage(e, 1)
         && e.health.value < e.health.max && B.crew.damage(a, 100) && a.health.stunned && a.stunGear.drops.some(drop => drop.active);
+      B.advance(1 / 60, 1 / 60);
+      out.gameKnockoutBirds = a.stunBirds.visible;
       H.setGameMode(false);
-      out.reset = !H.gameMode && !B.crew.combatEnabled && !C.combatEnabled && a.health.value === BL.crew.HEALTH_MAX
+      out.reset = !H.gameMode && B.crew.weaponsEnabled && !B.crew.combatEnabled && !C.combatEnabled && a.health.value === BL.crew.HEALTH_MAX
         && !a.health.stunned && !a.health.recovering && !a.stunBirds.visible && e.health.value === e.health.max
         && !a.stunGear.drops.some(drop => drop.active || drop.node?.visible) && !w.burstRemaining && !w.meleeTime && !w.bashTime;
       // A real rider on a posed gorilla is a valid grab target in either mode.
@@ -7360,13 +7381,15 @@ const hubCombatGate = { name: "hub game-only combat", why: "rule: ordinary visit
       out.grab = a.grabbedBy === e && e.capture.cave === a;
       H.setGameMode(false);
       out.release = !a.grabbedBy && !e.capture.cave && !e.capture.throwing && !e.motion.dragging && !a.leap.thrown;
+      B.clankerPlay.release(); P.possess(a); B.advance(1 / 60, 1 / 60);
+      out.noBirdsAfterPossession = B.crew.list.every(cave => !cave.stunBirds.visible);
       return out;
     } finally {
       key("keyup", "g", "KeyG"); H.setGameMode(false); B.clankerPlay.release(); P.possess(a);
       B.crew.configureWeapon(a, saved.slot, saved.ammo); w.spareAmmo.splice(0, w.spareAmmo.length, ...saved.spare);
     }
   })()`);
-  record("hub game-only combat: attacks, regeneration, knockouts, dropped gear, rage and grabbing stay off outside a game; X keeps both look modes, and game exit restores health and releases held Oogas", Object.values(r).every(Boolean), JSON.stringify(r));
+  record("hub game-only combat: HUB weapons fire, swing, swap magazines and reload without damage; regeneration, knockouts, dropped gear, rage and grabbing stay off, X keeps both look modes, and game exit restores health and releases held Oogas", Object.values(r).every(Boolean), JSON.stringify(r));
 } };
 const hubMelee = { name: "hub melee", why: "rule: focused quick taps recover their strike power over time, changing weapons cannot bypass recovery, and a charged strike doubles damage", run: async (b) => {
   await tapKey(b, "1");

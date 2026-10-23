@@ -306,6 +306,10 @@
       tooltipText: $("tooltip-text"),
       tooltipHealth: $("tooltip-health"),
       tooltipHealthFill: $("tooltip-health-fill"),
+      controlledName: $("controlled-name"),
+      controlledNameText: $("controlled-name-text"),
+      controlledNameHealth: $("controlled-name-health"),
+      controlledNameHealthFill: $("controlled-name-health-fill"),
       hint: $("hint"),
       sheet: $("sheet"),
       sheetToggle: $("sheet-toggle"),
@@ -1792,117 +1796,170 @@
       const panel = document.getElementById(b.dataset.fold);
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
-    let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
-    let tipVisibility = null, tipSpeechBottom = -Infinity;
-    const tipScreen = { x: 0, y: 0, depth: 0 };
-    // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
-    // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
-    // before never needs the offset reads' forced layout again. A 0x0 read is a drag-hid tooltip
-    // (body.orbit-dragging / mine-dragging): never cached, so the first real hover measures again.
-    const tipSizeCache = new Map();
-    const placeTooltip = (left, top) => {
-      left = Math.round(left); top = Math.round(top);
-      if (left === tipLeft && top === tipTop) return;
-      tipLeft = left; tipTop = top;
-      el.tooltip.style.transform = `translate(${left}px, ${top}px)`;
-    };
-    const tooltip = {
-      show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
-        if (cave !== tipCave) tipSpeechBottom = -Infinity;
-        tipCave = cave;
-        const name = !!cave;
-        const changed = text !== tipText || name !== tipName || el.tooltip.classList.contains("tooltip--no-status-dot") !== noStatusDot;
-        el.tooltip.classList.toggle("tooltip--no-status-dot", noStatusDot);
-        if (name !== tipName) {
-          tipName = name;
-          el.tooltip.classList.toggle("tooltip--name", name);
-          el.tooltipHealth.hidden = !healthEnabled || !name;
-          if (!name) {
-            tipState = "";
-            tipHealth = tipHealthMax = -1;
-            delete el.tooltip.dataset.state;
-            el.tooltip.removeAttribute("aria-label");
+    // Hover and the locally controlled body each own one bounded nameplate.
+    const createTooltip = (element, textElement, healthElement, healthFillElement, showHealth = healthEnabled) => {
+      let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
+      let tipVisibility = null, tipSpeechBottom = -Infinity, tipSuppressed = false, tipNoStatusDot = false, tipViewport = 0;
+      const tipScreen = { x: 0, y: 0, depth: 0 };
+      // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
+      // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
+      // before never needs the offset reads' forced layout again. A 0x0 read is a drag-hid tooltip
+      // (body.orbit-dragging / mine-dragging): never cached, so the first real hover measures again.
+      const tipSizeCache = new Map();
+      const measureTooltip = () => {
+        tipViewport = window.innerWidth;
+        const key = `${tipName}\0${tipNoStatusDot}\0${tipViewport}\0${tipText}`, size = tipSizeCache.get(key);
+        if (size) {
+          tipW = size.w; tipH = size.h;
+        } else {
+          tipW = element.offsetWidth; tipH = element.offsetHeight;
+          if (tipW || tipH) {
+            if (tipSizeCache.size >= 64) tipSizeCache.clear();
+            tipSizeCache.set(key, { w: tipW, h: tipH });
           }
         }
-        el.tooltip.hidden = false;
-        if (changed) {
-          tipText = text;
-          tipState = "";
-          el.tooltipText.textContent = text;
-          const size = tipSizeCache.get(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`);
-          if (size) {
-            tipW = size.w;
-            tipH = size.h;
-          } else {
-            tipW = el.tooltip.offsetWidth;
-            tipH = el.tooltip.offsetHeight;
-            if (tipW || tipH) {
-              if (tipSizeCache.size >= 64) tipSizeCache.clear();
-              tipSizeCache.set(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`, { w: tipW, h: tipH });
+      };
+      const placeTooltip = (left, top) => {
+        left = Math.round(left); top = Math.round(top);
+        if (left === tipLeft && top === tipTop) return;
+        tipLeft = left; tipTop = top;
+        element.style.transform = `translate(${left}px, ${top}px)`;
+      };
+      const tooltip = {
+        get actor() { return tipCave; },
+        suppress: (on) => {
+          if (on === tipSuppressed) return;
+          tipSuppressed = on;
+          if (tipCave) tooltip.update();
+        },
+        show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
+          if (cave !== tipCave) tipSpeechBottom = -Infinity;
+          tipCave = cave;
+          const name = !!cave;
+          const changed = text !== tipText || name !== tipName || element.classList.contains("tooltip--no-status-dot") !== noStatusDot;
+          element.classList.toggle("tooltip--no-status-dot", noStatusDot);
+          if (name !== tipName) {
+            tipName = name;
+            element.classList.toggle("tooltip--name", name);
+            healthElement.hidden = !showHealth || !name;
+            if (!name) {
+              tipState = "";
+              tipHealth = tipHealthMax = -1;
+              delete element.dataset.state;
+              element.removeAttribute("aria-label");
             }
           }
+          element.hidden = false;
+          if (changed) {
+            tipText = text;
+            tipState = "";
+            textElement.textContent = text;
+            tipNoStatusDot = noStatusDot;
+            measureTooltip();
+          }
+          if (cave) {
+            tooltip.update();
+            return;
+          }
+          const w = tipW, h = tipH;
+          const left = above ? Math.max(8, Math.min(window.innerWidth - w - 8, x - w / 2)) : Math.min(window.innerWidth - w - 8, x + 14);
+          const top = above ? Math.max(8, y - h - 10) : y + 18 + h > window.innerHeight ? y - h - 10 : y + 18;
+          placeTooltip(left, top);
+        },
+        setVisibility: (visibility) => {
+          tipVisibility = visibility;
+          if (!visibility) tooltip.hide();
+        },
+        beginFrame: () => {
+          tipSpeechBottom = -Infinity;
+          tooltip.update(false);
+        },
+        update: (place = true) => {
+          if (!tipCave) return;
+          const state = statusFor(tipCave);
+          let healthChanged = false;
+          if (showHealth) {
+            const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
+            const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
+            healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
+            if (healthChanged) {
+              tipHealth = health; tipHealthMax = healthMax;
+              healthFillElement.style.transform = `scaleX(${health / healthMax})`;
+              healthElement.setAttribute("aria-valuemax", String(healthMax));
+              healthElement.setAttribute("aria-valuenow", String(Math.ceil(health)));
+            }
+          }
+          if (state !== tipState || healthChanged) {
+            tipState = state;
+            element.dataset.state = state;
+            element.setAttribute("aria-label", showHealth
+              ? `${tipText}, ${STATE_LABELS[state]}, ${Math.ceil(tipHealth)} of ${tipHealthMax} health`
+              : `${tipText}, ${STATE_LABELS[state]}`);
+          }
+          element.hidden = tipSuppressed || !tipVisibility || !tipVisibility.anchor(tipCave, tipScreen);
+          if (element.hidden) return;
+          if (tipViewport !== window.innerWidth) measureTooltip();
+          if (!place) return;
+          // Speech can push the name down at the top edge, where the bubble has no room to rise.
+          const top = Math.max(8, tipScreen.y - 2 - tipH, tipSpeechBottom + 6);
+          placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), top);
+        },
+        // Speech sits above the name, which stays anchored to the head.
+        speechSpace: (cave) => cave && cave === tipCave && !element.hidden ? tipH + 6 : 0,
+        belowSpeech: (cave, bottom) => {
+          if (cave && cave === tipCave && bottom > tipSpeechBottom) tipSpeechBottom = bottom;
+        },
+        hide: () => {
+          tipCave = null;
+          tipSpeechBottom = -Infinity;
+          element.hidden = true;
+          element.classList.remove("tooltip--name");
+          healthElement.hidden = true;
+          delete element.dataset.state;
+          element.removeAttribute("aria-label");
+          tipName = false;
+          tipText = tipState = "";
+          tipHealth = tipHealthMax = -1;
         }
+      };
+      return tooltip;
+    };
+    const hoverTooltip = createTooltip(el.tooltip, el.tooltipText, el.tooltipHealth, el.tooltipHealthFill);
+    const controlledTooltip = createTooltip(el.controlledName, el.controlledNameText, el.controlledNameHealth, el.controlledNameHealthFill, false);
+    let controlledCave = null, controlledVisible = false;
+    const tooltip = {
+      show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
+        hoverTooltip.suppress(!!cave && cave === controlledCave);
+        hoverTooltip.show(text, x, y, cave, noStatusDot, above);
+      },
+      hide: hoverTooltip.hide,
+      setControlled: (cave, visible = true) => {
+        visible = !!cave && visible;
+        if (cave === controlledCave && visible === controlledVisible) return;
+        controlledCave = cave; controlledVisible = visible;
+        controlledTooltip.suppress(!visible);
         if (cave) {
-          tooltip.update();
-          return;
-        }
-        const w = tipW, h = tipH;
-        const left = above ? Math.max(8, Math.min(window.innerWidth - w - 8, x - w / 2)) : Math.min(window.innerWidth - w - 8, x + 14);
-        const top = above ? Math.max(8, y - h - 10) : y + 18 + h > window.innerHeight ? y - h - 10 : y + 18;
-        placeTooltip(left, top);
+          const owner = cave.tooltipOwner;
+          controlledTooltip.show(owner ? `🦍 ${owner.traits.display}` : cave.traits.display, 0, 0, cave, !!owner);
+        } else controlledTooltip.hide();
+        hoverTooltip.suppress(!!cave && cave === hoverTooltip.actor);
       },
       setVisibility: (visibility) => {
-        tipVisibility = visibility;
-        if (!visibility) tooltip.hide();
+        hoverTooltip.setVisibility(visibility);
+        controlledTooltip.setVisibility(visibility);
       },
       beginFrame: () => {
-        tipSpeechBottom = -Infinity;
-        tooltip.update(false);
+        hoverTooltip.beginFrame();
+        controlledTooltip.beginFrame();
       },
       update: (place = true) => {
-        if (!tipCave) return;
-        const state = statusFor(tipCave);
-        let healthChanged = false;
-        if (healthEnabled) {
-          const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
-          const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
-          healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
-          if (healthChanged) {
-            tipHealth = health; tipHealthMax = healthMax;
-            el.tooltipHealthFill.style.transform = `scaleX(${health / healthMax})`;
-            el.tooltipHealth.setAttribute("aria-valuemax", String(healthMax));
-            el.tooltipHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
-          }
-        }
-        if (state !== tipState || healthChanged) {
-          tipState = state;
-          el.tooltip.dataset.state = state;
-          el.tooltip.setAttribute("aria-label", healthEnabled
-            ? `${tipText}, ${STATE_LABELS[state]}, ${Math.ceil(tipHealth)} of ${tipHealthMax} health`
-            : `${tipText}, ${STATE_LABELS[state]}`);
-        }
-        el.tooltip.hidden = !tipVisibility.anchor(tipCave, tipScreen);
-        if (el.tooltip.hidden || !place) return;
-        // Speech can push the name down at the top edge, where the bubble has no room to rise.
-        const top = Math.max(8, tipScreen.y - 2 - tipH, tipSpeechBottom + 6);
-        placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), top);
+        hoverTooltip.update(place);
+        controlledTooltip.update(place);
       },
-      // Speech sits above the name, which stays anchored to the head.
-      speechSpace: (cave) => cave && cave === tipCave && !el.tooltip.hidden ? tipH + 6 : 0,
+      speechSpace: (cave) => Math.max(hoverTooltip.speechSpace(cave), controlledTooltip.speechSpace(cave)),
       belowSpeech: (cave, bottom) => {
-        if (cave && cave === tipCave && bottom > tipSpeechBottom) tipSpeechBottom = bottom;
-      },
-      hide: () => {
-        tipCave = null;
-        tipSpeechBottom = -Infinity;
-        el.tooltip.hidden = true;
-        el.tooltip.classList.remove("tooltip--name");
-        el.tooltipHealth.hidden = true;
-        delete el.tooltip.dataset.state;
-        el.tooltip.removeAttribute("aria-label");
-        tipName = false;
-        tipText = tipState = "";
-        tipHealth = tipHealthMax = -1;
+        hoverTooltip.belowSpeech(cave, bottom);
+        controlledTooltip.belowSpeech(cave, bottom);
       }
     };
     const hint = (text, ms = 4200) => {
@@ -2199,6 +2256,7 @@
       el.hint.classList.remove("show");
       el.hint.hidden = true;
       tooltip.hide();
+      tooltip.setControlled(null);
       clearModeHold();
       modePointer = -1;
       retake.actor = null; retake.gorilla = false;

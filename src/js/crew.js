@@ -416,6 +416,7 @@
   const create = (ctx) => {
     const { root, input, hud, game, world, bedrolls, viewYaw, buildSpots, walkIn, wanderSpot } = ctx;
     let combatEnabled = ctx.combatEnabled === true;
+    let weaponsEnabled = combatEnabled || ctx.weaponsEnabled === true;
     // playerName creates one playable actor without roster scheduling, beds or a pile.
     // groundAt takes the caveman's current height: support is layered, so the answer depends on where he is.
     const groundAt = ctx.groundAt || (() => 0);
@@ -571,7 +572,8 @@
         sleepWeapons: createNode({ visible: false }),
         headLookRotation: math.quat.create(), headLookPosition: { x: 0, y: 0, z: 0 },
         sleepRotation: math.quat.create(), sleepFromRotation: math.quat.create(), sleepTargetRotation: math.quat.create(),
-        sleepParts: { armRX: cave.parts.armR.position.x, armLX: cave.parts.armL.position.x, headX: cave.parts.head.position.x, headY: cave.parts.head.position.y, headZ: cave.parts.head.position.z, equipment: cave.root.children.filter((node) => !BODY_PARTS.some((key) => cave.parts[key] === node)) },
+        // Knockout effects are not equipment: waking or resetting a pose must never show them.
+        sleepParts: { armRX: cave.parts.armR.position.x, armLX: cave.parts.armL.position.x, headX: cave.parts.head.position.x, headY: cave.parts.head.position.y, headZ: cave.parts.head.position.z, equipment: cave.root.children.filter((node) => node !== stunBirds && !BODY_PARTS.some((key) => cave.parts[key] === node)) },
         phase: i * 1.37,
         baseY: cave.root.position.y,
         restLower: 0,
@@ -1467,6 +1469,7 @@
     };
     const strikeMeleePower = (cave) => cave.weapon.meleePower * MELEE_HIT_POWER * (cave.traits.nunchaku ? NUNCHAKU_POWER : 1);
     const hitMeleeTarget = (cave, powerOverride = null) => {
+      if (!combatEnabled) return false;
       const w = cave.weapon, hit = w.meleeTarget;
       if (!hit.node) return false;
       const dx = hit.x - weaponStart.x, dy = hit.y - weaponStart.y, dz = hit.z - weaponStart.z, distance = Math.hypot(dx, dy, dz);
@@ -1736,7 +1739,7 @@
       return Math.min(AMMO_PER_BANANA, cave.weapon.ammo < AMMO_MAX ? AMMO_MAX - cave.weapon.ammo : index >= 0 ? AMMO_MAX - cave.weapon.spareAmmo[index] : 0);
     };
     const canReload = (cave = player) => {
-      if (!combatEnabled && cave === player) return false;
+      if (!weaponsEnabled && cave === player) return false;
       if (!cave || cave.grabbedBy || cave !== player && cave.state !== "working" || cave.weapon.swapTime > 0 || cave.weapon.reloadHandoff < 0) return false;
       const missing = reloadMissing(cave);
       return missing > 0 && (ctx.reloadPolicy ? ctx.reloadPolicy.available(cave, reloadBite(cave)) : world.level >= reloadBite(cave) / AMMO_PER_BANANA) && nearReload(cave);
@@ -1803,7 +1806,7 @@
       return changed;
     };
     const swingWeapon = (cave = player, held = false, focused = false) => {
-      if (!combatEnabled) return false;
+      if (!weaponsEnabled) return false;
       if (!cave || cave.grabbedBy || cave.health.stunned || !cave.weapon.primaryOwned || !cave.weapon.primaryEquipped || cave !== player && (cave.camp.burning || cave.camp.rolling) || cave.camp.seat || cave.bedTravel.mode) return false;
       const w = cave.weapon, arm = cave.parts.armR, club = cave.parts.club;
       if (w.meleeHeld) return false;
@@ -1827,7 +1830,7 @@
       }
       w.meleeTarget.node = null;
       w.meleeAimX = w.meleeAimY = w.meleeAimZ = 0;
-      if (!held && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      if (combatEnabled && !held && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
       w.meleeReadyTime = 0;
       w.meleeTime = MELEE_TIME;
       w.meleeHeld = held;
@@ -1846,24 +1849,24 @@
       return true;
     };
     const bashWeapon = (cave = player) => {
-      if (!combatEnabled) return false;
+      if (!weaponsEnabled) return false;
       if (!cave || cave.grabbedBy || cave !== player || cave.health.stunned || cave.state === "sleeping" || !cave.root.visible
         || !cave.weapon.equipped || cave.weapon.reloading || cave.weapon.swapTime || cave.weapon.reloadHandoff
         || cave.weapon.bashTime || cave.camp.seat || cave.bedTravel.mode) return false;
       stopBurst(cave);
       const w = cave.weapon;
       w.meleeTarget.node = w.meleeTarget.owner = null;
-      if (ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      if (combatEnabled && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
       w.bashTime = GUN_BASH_TIME;
       return true;
     };
     const releaseSwing = (cave = player, cancel = false, focused = null, quick = false) => {
-      if (!combatEnabled) cancel = true;
+      if (!weaponsEnabled) cancel = true;
       if (!cave) return false;
       const w = cave.weapon;
       if (!w.meleeHeld) return false;
       w.meleeTarget.node = null;
-      if (!cancel && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
+      if (combatEnabled && !cancel && ctx.meleeTarget && !ctx.meleeTarget(w.meleeTarget, cave)) w.meleeTarget.node = null;
       w.meleeHeld = false;
       w.meleeQuick = quick && !cancel;
       w.meleeStrikeTime = w.meleeQuick ? MELEE_QUICK_STRIKE : MELEE_STRIKE * (1 + w.meleeCharge * 0.5);
@@ -2429,10 +2432,10 @@
       w.reloadFire = w.reloadFireHeld = false;
       w.reloadFireRounds = BURST_ROUNDS;
     };
-    const weaponReady = (cave) => !!cave && (combatEnabled || cave !== player && (cave.work.phase === "shoot" || cave.build)) && !cave.grabbedBy && cave.root.visible && !cave.health.stunned && cave.weapon.secondaryOwned && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff && !cave.weapon.bashTime && (cave.weapon.unlimited || cave.weapon.ammo > 0)
+    const weaponReady = (cave) => !!cave && (weaponsEnabled || cave !== player && (cave.work.phase === "shoot" || cave.build)) && !cave.grabbedBy && cave.root.visible && !cave.health.stunned && cave.weapon.secondaryOwned && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff && !cave.weapon.bashTime && (cave.weapon.unlimited || cave.weapon.ammo > 0)
       && cave.state !== "sleeping" && (cave === player || !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active) && !cave.bedTravel.mode && !seatBlocksWeapons(cave);
     const canFire = (cave = player) => weaponReady(cave) && cave.weapon.cooldown <= 0 && !cave.weapon.burstRemaining;
-    const canSwapMagazine = (cave = player) => (combatEnabled || cave !== player) && hasMagazine(cave) && cave.weapon.secondaryOwned && (cave === player || cave.state === "working") && cave.root.visible && !cave.health.stunned
+    const canSwapMagazine = (cave = player) => (weaponsEnabled || cave !== player) && hasMagazine(cave) && cave.weapon.secondaryOwned && (cave === player || cave.state === "working") && cave.root.visible && !cave.health.stunned
       && cave.weapon.equipped && !cave.weapon.reloading && !cave.weapon.swapTime && !cave.weapon.reloadHandoff
       && cave.state !== "sleeping" && !cave.camp.burning && !cave.camp.rolling && !cave.camp.panic.active && !cave.bedTravel.mode && !seatBlocksWeapons(cave);
     const swapMagazine = (cave = player, index = null) => {
@@ -2486,7 +2489,7 @@
       return true;
     };
     const interruptReloadToFire = (cave) => {
-      if (!combatEnabled || cave !== player || !cave || !cave.root.visible || !cave.weapon.equipped || !cave.weapon.unlimited && cave.weapon.ammo <= 0 || cave.weapon.swapTime
+      if (!weaponsEnabled || cave !== player || !cave || !cave.root.visible || !cave.weapon.equipped || !cave.weapon.unlimited && cave.weapon.ammo <= 0 || cave.weapon.swapTime
         || cave.state === "sleeping" || cave.bedTravel.mode || seatBlocksWeapons(cave)) return false;
       if (cave.weapon.reloading) { stopReload(cave); poseWeapon(cave); }
       return cave.weapon.reloadHandoff < 0;
@@ -2513,7 +2516,7 @@
       return true;
     };
     const setWeaponTrigger = (held, single = false) => {
-      if (held && !combatEnabled) return false;
+      if (held && !weaponsEnabled) return false;
       if (!player) return false;
       const w = player.weapon;
       if (!held) {
@@ -5721,7 +5724,7 @@
       if (player.camp.burning) return dropRoll();
       if (player.camp.seat) return standPlayer();
       if (player.bedTravel.manual) return wakePlayer();
-      if (combatEnabled && !player.weapon.reloading && !player.weapon.swapTime && !player.weapon.reloadHandoff && player.weapon.equipped && reloadMissing(player) > 0 && nearReload(player)) {
+      if (weaponsEnabled && !player.weapon.reloading && !player.weapon.swapTime && !player.weapon.reloadHandoff && player.weapon.equipped && reloadMissing(player) > 0 && nearReload(player)) {
         if (!startReload(player)) hud.hint("No bananas in the pile");
         return true;
       }
@@ -6259,6 +6262,7 @@
       on = on === true;
       if (on === combatEnabled) return;
       combatEnabled = on;
+      weaponsEnabled = on || ctx.weaponsEnabled === true;
       if (on) return;
       // Game state ends synchronously; ordinary work and its decorative shots continue.
       for (const bullet of bulletPool) if (!bullet.workShot && !bullet.visual) {
@@ -6357,6 +6361,7 @@
     return {
       showShot, setTint, spotOccupied, setCombatEnabled,
       get combatEnabled() { return combatEnabled; },
+      get weaponsEnabled() { return weaponsEnabled; },
       cavemen, list: crewList, fanSlots, stateOf, stateCounts, workingCavemen, eatingCavemen, workingCount, eatingCount, feedableCavemen, refreshStates, refreshRosterRow, updateFan, rush, headWorldOf, applyAllSwag, wornBy, renderLocker, pokeCave, idleSay, drawDrops,
       throwTomato, clearProjectiles, control, release, relocatePlayer, sleepPlayer, wakePlayer, sitPlayer, standPlayer, clearHeadLook, prepareDragged, recoverDragged, ignite, dropRoll, damage, fireView, steer: steerPlayer, look: lookPlayer, elevate: elevatePlayer, playerAction, jumpPlayer, poseWeapon, wearJetpack, removeJetpack, setJetpackOwnership, thrust, holdRocketJump, update, dispose, stats,
       actorClear, builtInJetpack, toggleTint, twirl, toggleWeapon, selectWeapon, configureWeapon, swingWeapon, bashWeapon, releaseSwing, fireWeapon, setWeaponTrigger, canFire, weaponOrigin, meleeReach, meleePower, nearReload, canReload, startReload, stopReload, stopBurst, canSwapMagazine, swapMagazine, collectMagazine, collectGroundMagazine, collectAmmo, removeMagazines, hasMagazine, magazineCount, magazineAmmo, totalAmmo, workSites,

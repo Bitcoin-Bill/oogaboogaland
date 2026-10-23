@@ -542,7 +542,7 @@
       if (externalControl && !disposed) return;
       carryCursor.endAim();
       if (disposed) retireAimLock();
-      if (!disposed && armed()) hud.hint(crew.combatEnabled ? "Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view" : "Click the island for mouse look · X for click-and-drag look · scroll to change view");
+      if (!disposed && armed()) hud.hint(crew.weaponsEnabled ? "Click the island to hide the cursor and aim · 1 melee · 2 AK · scroll to change view" : "Click the island for mouse look · X for click-and-drag look · scroll to change view");
     };
     const lockAim = () => {
       if (externalControl || coarse || disposed || !armed()) return;
@@ -1489,7 +1489,7 @@
         }
         resumePose();
         if (e.button === 0) {
-          attackReleaseBlocked = !crew.combatEnabled;
+          attackReleaseBlocked = !crew.weaponsEnabled;
           if (player().weapon.primaryEquipped) crew.swingWeapon(player(), true, ads);
           else {
             const w = player().weapon, before = w.shotsFired + w.triggerQueued;
@@ -1848,12 +1848,12 @@
       else hud.setJetpack(!!(cave && cave.jet), !!(cave && cave.jet), cave ? cave.jetFuel : 0);
     };
     const syncModeHud = () => {
-      if (hud.setMode) hud.setMode(player(), armed(), viewMode(), true, !!crew?.combatEnabled);
+      if (hud.setMode) hud.setMode(player(), armed(), viewMode(), true, !!crew?.weaponsEnabled);
     };
     let reloadPrompt = false;
     const syncWeaponHud = () => {
       const cave = player(), weapon = cave && cave.weapon;
-      const ready = !!crew?.combatEnabled && !!weapon && !cave.grabbedBy && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
+      const ready = !!crew?.weaponsEnabled && !!weapon && !cave.grabbedBy && !crew.sleeping && (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode;
       const primaryReady = ready && weapon.primaryOwned;
       const secondaryReady = ready && weapon.secondaryOwned;
       if (primaryButtonCave && (primaryButtonCave !== cave || !primaryReady || !weapon.primaryEquipped)) {
@@ -1894,7 +1894,7 @@
         return true;
       }
       const cave = player();
-      if (!active || !crew.combatEnabled || !cave || cave.grabbedBy || crew.sleeping) return false;
+      if (!active || !crew.weaponsEnabled || !cave || cave.grabbedBy || crew.sleeping) return false;
       resumePose();
       if (action === "weapon-primary" || action === "weapon-primary-down") {
         const alreadyHeld = !cave.weapon.equipped;
@@ -1953,7 +1953,7 @@
       return true;
     };
     const weaponMode = (slot) => {
-      if (!active || !crew?.combatEnabled) return false;
+      if (!active || !crew?.weaponsEnabled) return false;
       const cave = player();
       if (!cave) return false;
       if (slot === 0) return true;
