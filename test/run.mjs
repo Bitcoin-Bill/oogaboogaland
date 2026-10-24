@@ -3945,20 +3945,36 @@ const contributorActivityChecks = async () => {
 const canvasSurfaceCacheChecks = async () => {
   const source = await readFile(join(root, "src/js/canvas-renderer.js"), "utf8"), start = source.indexOf("  const createSurfaceShadeCache ="), end = source.indexOf("  const createRenderer =", start);
   if (start < 0 || end < 0) throw new Error("Canvas surface shade cache not found");
-  const canvases = [], document = { createElement() { const canvas = { width: 0, height: 0, getContext: () => ({}) }; canvases.push(canvas); return canvas; } };
+  // A backing store is allocated whenever a canvas dimension is assigned, even to the same value.
+  let allocations = 0;
+  const canvases = [], document = { createElement() {
+    let w = 0, h = 0;
+    const canvas = { get width() { return w; }, set width(v) { w = v; allocations++; }, get height() { return h; }, set height(v) { h = v; allocations++; }, getContext: () => ({}) };
+    canvases.push(canvas); return canvas;
+  } };
   const create = new Function("document", `${source.slice(start, end)} return createSurfaceShadeCache;`)(document);
   let paints = 0, failures = 0;
   const cache = create(canvas => { canvas.serial = ++paints; });
   const geometry = () => ({ imageSurface: { canvas: { width: 64, height: 32 }, version: 0, background: [10, 12, 10] } });
-  const a = geometry(), b = geometry(), rec = { canvasR: 0.8, canvasG: 0.9, canvasB: 1, canvasAddR: 0, canvasAddG: 0, canvasAddB: 0 };
+  const a = geometry(), b = geometry(), rec = { canvasR: 0.8, canvasG: 0.6, canvasB: 1, canvasAddR: 0, canvasAddG: 0, canvasAddB: 0 };
+  cache.frame();
   const first = cache.get(a, rec), serial = first.serial; cache.get(b, rec);
+  cache.frame();
   if (cache.get(a, rec) !== first || first.serial !== serial || paints !== 2) failures++;
+  // Light moves the 8-bit output: a step of one output level repaints in a later frame, a change under half a level
+  // does not, and within one frame the first face's light stands for the surface.
   for (const key of Object.keys(rec)) {
-    const before = paints; rec[key] += 0.125;
+    const step = key.startsWith("canvasAdd") ? 1 : 1 / 255;
+    cache.frame();
+    let before = paints; rec[key] += step;
     const fresh = cache.get(a, rec), painted = fresh.serial;
     if (paints !== before + 1 || cache.get(a, rec) !== fresh || fresh.serial !== painted) failures++;
+    cache.frame(); before = paints; rec[key] += step * 0.2;
+    if (cache.get(a, rec) !== fresh || paints !== before) failures++;
+    before = paints; rec[key] += step * 3;
+    if (cache.get(a, rec) !== fresh || paints !== before) failures++;
   }
-  const changed = mutate => { const before = paints; mutate(); cache.get(a, rec); if (paints !== before + 1) failures++; };
+  const changed = mutate => { cache.frame(); const before = paints; mutate(); cache.get(a, rec); if (paints !== before + 1) failures++; };
   changed(() => a.imageSurface.version++);
   changed(() => a.imageSurface.background[0]++);
   changed(() => { a.imageSurface.background = null; });
@@ -3970,18 +3986,38 @@ const canvasSurfaceCacheChecks = async () => {
   changed(() => { a.imageSurface.canvas.height++; });
   for (let i = 0; i < 40; i++) {
     const g = geometry(); g.imageSurface.canvas.width = g.imageSurface.canvas.height = 512;
-    cache.get(g, rec);
-    if (cache.size > 8 || cache.pixels > 1024 * 1024) failures++;
+    cache.frame(); cache.get(g, rec);
+    if (cache.size > 8 || cache.pixels > 2048 * 1024) failures++;
   }
-  const huge = geometry(); huge.imageSurface.canvas.width = huge.imageSurface.canvas.height = 2048;
+  const huge = geometry(); huge.imageSurface.canvas.width = 2048; huge.imageSurface.canvas.height = 2048;
   const before = paints, size = cache.size, pixels = cache.pixels;
-  cache.get(huge, rec); cache.get(huge, rec);
+  cache.frame(); cache.get(huge, rec); cache.frame(); cache.get(huge, rec);
   if (paints !== before + 2 || cache.size !== size || cache.pixels !== pixels) failures++;
   cache.release(new Set());
   if (cache.size || cache.pixels) failures++;
   cache.get(a, rec); cache.dispose();
   if (cache.size || cache.pixels || canvases.some(c => c.width || c.height) || canvases.length > 9) failures++;
   record("Canvas surface reuse: unchanged faces reuse exact shaded images, every content/lighting/dimension input invalidates, and eviction, scene release and disposal bound owned canvases", failures === 0, JSON.stringify({ failures, paints, canvases: canvases.length }));
+  // The curved jumbotron: a 1200x540 board drawn as ten faces a frame, each lit a little differently, under a sun
+  // that moves every frame. It shades at most once a frame, and a slot keeps its backing store across repaints.
+  const board = create(canvas => { canvas.serial = ++paints; }), slide = geometry();
+  slide.imageSurface.canvas.width = 1200; slide.imageSurface.canvas.height = 540; slide.imageSurface.tessellated = true;
+  const lit = { canvasR: 0, canvasG: 0, canvasB: 0, canvasAddR: 0, canvasAddG: 0, canvasAddB: 0 };
+  const curved = { paints: paints, allocations };
+  for (let frame = 0; frame < 60; frame++) {
+    board.frame();
+    for (let face = 0; face < 10; face++) {
+      lit.canvasR = 0.6 + face * 0.031 + frame * 0.0007; lit.canvasG = lit.canvasR * 0.97; lit.canvasB = lit.canvasR * 0.93;
+      board.get(slide, lit);
+    }
+  }
+  curved.paints = paints - curved.paints; curved.allocations = allocations - curved.allocations;
+  // Beside it, the four Mempool paintings and six Timechain boards each keep their own slot within the budget.
+  const small = Array.from({ length: 7 }, () => geometry()), still = { ...lit }, steady = { paints };
+  for (let frame = 0; frame < 10; frame++) { board.frame(); board.get(slide, still); for (const g of small) board.get(g, still); }
+  steady.paints = paints - steady.paints;
+  record("Canvas surface shading: a curved board drawn as ten faces under a moving sun shades at most once a frame and reallocates nothing, and the surfaces beside it keep their slots",
+    curved.paints <= 60 && curved.allocations <= 2 && steady.paints <= 8 && board.size === 8, JSON.stringify({ curved, steady, size: board.size }));
 };
 // Every file in src/characters/ must register once and build a whole Ooga, so a
 // new contributor is covered without editing this suite.
