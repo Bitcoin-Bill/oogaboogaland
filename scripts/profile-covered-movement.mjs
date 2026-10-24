@@ -1,13 +1,16 @@
 // Reuse the suite's exact workload and acceptance conditions; --cpu adds sampling overhead.
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 import { launch, dispose } from "../test/browser.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url)), cpu = process.argv.includes("--cpu");
 const source = readFileSync(new URL("../test/run.mjs", import.meta.url), "utf8");
 const first = source.indexOf("const wallPerformance ="), last = source.indexOf("const adaptiveQualityChecks =", first);
 if (first < 0 || last < 0) throw new Error("The suite's wallPerformance workload was not found");
+const hash = bytes => createHash("sha256").update(bytes).digest("hex");
+// The same field #194's captures record: a changed workload shows up as a changed hash.
+const workloadSha256 = hash(source.slice(first, last));
 const rows = [], run = new Function("record", source.slice(first, last) + ";return wallPerformance;")((name, pass, detail) => rows.push({ name, pass, details: JSON.parse(detail) }));
 const output = join(root, "untracked");
 mkdirSync(output, { recursive: true });
@@ -26,13 +29,19 @@ try {
   if (rows.length !== 2) throw new Error("The suite's ordinary and covered movement results were not both recorded");
   const hot = [];
   if (cpu) {
-    const { profile } = (await b.send("Profiler.stop")).result, samples = new Map();
+    const { profile } = (await b.send("Profiler.stop")).result, samples = new Map(), functions = new Map();
     for (const id of profile.samples || []) samples.set(id, (samples.get(id) || 0) + 1);
-    hot.push(...profile.nodes.map(node => ({ function: node.callFrame.functionName, line: node.callFrame.lineNumber + 1, samples: samples.get(node.id) || 0 })).sort((a, b) => b.samples - a.samples).slice(0, 30));
+    // A function reached by several call paths has a node per path: sum its self samples by function before ranking.
+    // Only the script's file name is kept, so a capture carries no local paths.
+    for (const node of profile.nodes) {
+      const frame = node.callFrame, key = `${frame.url} ${frame.functionName} ${frame.lineNumber}:${frame.columnNumber}`;
+      const row = functions.get(key) || { function: frame.functionName, file: basename((frame.url || "").split(/[?#]/)[0]), line: frame.lineNumber + 1, column: frame.columnNumber + 1, samples: 0, paths: 0 };
+      row.samples += samples.get(node.id) || 0; row.paths++; functions.set(key, row);
+    }
+    hot.push(...[...functions.values()].sort((a, b) => b.samples - a.samples).slice(0, 30));
     writeFileSync(join(output, "covered-movement.cpuprofile"), JSON.stringify(profile));
   }
-  const hash = bytes => createHash("sha256").update(bytes).digest("hex");
-  const evidence = { capturedAt: new Date().toISOString(), suiteSha256: hash(source), pageSha256: hash(readFileSync(new URL("../oogaboogaland.html", import.meta.url))), browser: (await b.send("Browser.getVersion")).result.product, cpuProfilerEnabled: cpu, rows, hot, stats: await b.evaluate("__ooga.headquarters.objectGuides.stats"), logs: b.logs };
+  const evidence = { capturedAt: new Date().toISOString(), workloadSha256, suiteSha256: hash(source), pageSha256: hash(readFileSync(new URL("../oogaboogaland.html", import.meta.url))), browser: (await b.send("Browser.getVersion")).result.product, cpuProfilerEnabled: cpu, rows, hot, stats: await b.evaluate("__ooga.headquarters.objectGuides.stats"), logs: b.logs };
   writeFileSync(join(output, "covered-movement-profile.json"), JSON.stringify(evidence, null, 2) + "\n");
   console.log(JSON.stringify(evidence, null, 2));
   if (rows.some(row => !row.pass) || b.logs.length) process.exitCode = 1;
