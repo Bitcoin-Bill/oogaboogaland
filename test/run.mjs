@@ -2840,8 +2840,9 @@ const { autoQualityProbe } = (() => {
     const source = readFileSync(new URL("../src/js/director.js", import.meta.url), "utf8");
     const controller = source.slice(source.indexOf("  const perf ="), source.indexOf("  const WARMUP"));
     const policy = source.slice(source.indexOf("  // One opt-in override"), source.indexOf("  const mark ="));
-    const keepHub = (memory, mode = "auto") => runInNewContext(`${policy}\nKEEP_HUB`, { DEVICE_MEMORY: memory, params: new URLSearchParams({ hubcache: mode }) });
-    const hubMemory = [0.25, 1, 2, 4].every(gb => !keepHub(gb)) && [8, 16, 32, undefined, 0, NaN].every(gb => keepHub(gb))
+    const keepHub = (memory, mode = "auto", coarse = false) => runInNewContext(`${policy}\nKEEP_HUB`, { DEVICE_MEMORY: memory, COARSE: coarse, params: new URLSearchParams({ hubcache: mode }) });
+    const hubMemory = [0.25, 1, 2, 4].every(gb => !keepHub(gb) && !keepHub(gb, "auto", true)) && [8, 16, 32, undefined, 0, NaN].every(gb => keepHub(gb))
+      && [8, 16].every(gb => keepHub(gb, "auto", true)) && [undefined, 0, NaN].every(gb => !keepHub(gb, "auto", true) && keepHub(gb, "keep", true))
       && keepHub(4, "keep") && !keepHub(32, "release");
     const opening = source.slice(source.indexOf("  const COARSE ="), source.indexOf("  const $ ="));
     const initial = (deviceMemory, coarse = false) => runInNewContext(`${opening}\nINITIAL_QUALITY`, { navigator: { deviceMemory }, window: { matchMedia: () => ({ matches: coarse }) } });
@@ -4986,7 +4987,12 @@ const ghostHuntChecks = async () => {
     // Compared while both still hunt: a finished hunt resets to IDLE and would hide any difference.
     play(a, at, 200000); play(handed, at, 200000);
     const same = JSON.stringify(a.snapshot()) === JSON.stringify(handed.snapshot()), hunting = a.state.state !== ST.IDLE;
-    record("ghost hunt: a seeded hunt repeats exactly, and one picked up from its snapshot mid-way (a new host) goes on the same", repeated && loaded && same && hunting && a.state.kills > 0, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills }));
+    // Pages either side of a deploy share a hunt: the player rows keep the 27 numbers (slot, presence, 25 fields) the
+    // deployed pages read, newer fields riding in `x`, and a snapshot without `x` (an older host's) still loads.
+    const snap = JSON.parse(JSON.stringify(a.snapshot())), rows = snap.p.length > 0 && snap.p.length % 27 === 0 && snap.x.length > 0;
+    delete snap.x;
+    const older = G.create({ seed: 5, spots, lapMs: 20000 }).load(snap);
+    record("ghost hunt: a seeded hunt repeats exactly, one picked up from its snapshot mid-way (a new host) goes on the same, and its rows stay readable across a deploy", repeated && loaded && same && hunting && a.state.kills > 0 && rows && older, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills, rows, older }));
   }
   {
     const sim = begin(11), rounds = [], drops = { 3: false, 4: false }, gorillas = [], skeletons = [], seenBrutes = new Set();
@@ -5040,7 +5046,8 @@ const ghostHuntChecks = async () => {
       JSON.stringify({ where, struck: struck.length, zapped }));
   }
   {
-    // A player takes the monkeys from where they fell; they stay with them until a ghost gets them.
+    // A player takes the monkeys from where they fell; they stay through the first hit and leave once the bar falls
+    // below POWER_KEEP_SEG.
     const z = begin(13);
     let now = T0;
     const tick = () => { now += FRAME; z.beginPresence(); z.present(1, 0, 0, 6); z.advance(now); };
@@ -5050,16 +5057,22 @@ const ghostHuntChecks = async () => {
     drop.x = 0; drop.z = 6;
     while (now < T0 + 120000 && drop.on) tick();
     const me = z.players.find((p) => p.id === 1), armed = me.monkeys === 1;
-    while (now < T0 + 600000 && me.seg === G.CONFIG.PLAYER_SEGMENTS) tick();
-    const lost = me.seg === G.CONFIG.PLAYER_SEGMENTS - 1 && me.monkeys === 0;
-    // Forty kills of their own bring them back; the next round's start makes them whole.
+    // Twenty kills of their own while still armed earn a pair that waits.
     z.debug.kills(1, G.CONFIG.MONKEY_EVERY_KILLS);
-    const gifted = me.monkeys === 1 && z.state.pickKind === G.MONKEY_DROP && z.state.pickBy === 1;
+    const held = me.monkeys === 1 && me.dropsGiven === 0;
+    while (now < T0 + 600000 && me.seg === G.CONFIG.PLAYER_SEGMENTS) tick();
+    const kept = me.seg === G.CONFIG.PLAYER_SEGMENTS - 1 && me.monkeys === 1;
+    while (now < T0 + 600000 && me.seg >= G.CONFIG.POWER_KEEP_SEG) tick();
+    const lost = me.seg === G.CONFIG.POWER_KEEP_SEG - 1 && me.monkeys === 0;
+    // The waiting pair comes down once the hit's blink is over; the next round's start makes them whole.
+    const blink = now + G.CONFIG.IFRAMES_MS + 500;
+    while (now < blink && !me.monkeys) tick();
+    const gifted = me.monkeys === 1 && me.dropsGiven === 1 && z.state.pickKind === G.MONKEY_DROP && z.state.pickBy === 1;
     z.debug.next();
     while (now < T0 + 900000 && z.state.state !== ST.COUNTDOWN) tick();
     const whole = me.frozenUntil > z.state.now || me.seg === G.CONFIG.PLAYER_SEGMENTS;
-    record("ghost hunt: the monkeys arm the player who takes them, the first hit takes them away, every 40 kills brings them back, and a round's start makes everyone standing whole",
-      armed && lost && gifted && whole, JSON.stringify({ armed, lost, gifted, whole, seg: me.seg, state: z.state.state }));
+    record("ghost hunt: the monkeys arm the player who takes them, stay through the first hit and leave once the bar is low, every 20 of their own kills brings them back (waiting while they are armed), and a round's start makes everyone standing whole",
+      armed && held && kept && lost && gifted && whole, JSON.stringify({ armed, held, kept, lost, gifted, whole, seg: me.seg, state: z.state.state }));
   }
   {
     // With every ghost slot held (dying ghosts keep theirs a moment), no ghost is counted as spawned; with every drop
@@ -5098,13 +5111,15 @@ const ghostHuntChecks = async () => {
   }
   {
     // A rescuer knocked down during an elixir revive must start a fresh hold after being brought back. A third
-    // hunter keeps the round alive while both are down.
+    // hunter keeps the round alive while both are down. The one being revived is found where they went down even once
+    // their page stops reporting them (a hidden Ooga under its grave), as on a shared island.
     const z = begin(29), C = G.CONFIG;
     z.ready(3);
-    let now = T0;
+    let now = T0, absent = 0;
     const tick = () => {
       now += C.TICK_MS; z.beginPresence();
       for (const [id, x, z0] of [[1, 0, 6], [2, 1, 6], [3, 21, 0]]) {
+        if (id === absent) continue;
         const p = z.present(id, x, 0, z0);
         if (p) p.invulnUntil = z.state.now + 60000;
       }
@@ -5112,7 +5127,8 @@ const ghostHuntChecks = async () => {
     };
     while (now < T0 + 60000 && z.state.state !== ST.ACTIVE) tick();
     const rescuer = z.playerById(1), down = z.playerById(2);
-    down.seg = 0; down.frozenUntil = C.DOWN_UNTIL; rescuer.elixir = 1;
+    down.seg = 0; down.frozenUntil = C.DOWN_UNTIL; down.downAt = z.state.now; down.downX = 1; down.downZ = 6; rescuer.elixir = 1;
+    absent = down.id;
     for (let i = 0; i < C.ELIXIR.reviveMs / C.TICK_MS / 2; i++) tick();
     const started = rescuer.reviveTarget === down.id && z.frozen(down);
     rescuer.seg = 0; rescuer.frozenUntil = C.DOWN_UNTIL;
@@ -5738,7 +5754,7 @@ const wallPerformance = async (b) => {
 };
 const adaptiveQualityChecks = async () => {
   const r = autoQualityProbe();
-  record("memory policy: devices below 8 GiB release the hub, 8 GiB or unknown memory retain it, and the explicit policy overrides either", r.hubMemory, JSON.stringify(r));
+  record("memory policy: devices below 8 GiB release the hub, 8 GiB retains it, unknown memory retains it with a fine pointer and releases it with a coarse one, and the explicit policy overrides either", r.hubMemory, JSON.stringify(r));
   record("adaptive quality: a GPU-bound machine is seen through delivered frames and loses a tier within two seconds", r.healthy && r.gpuBound && r.reactsFast, JSON.stringify(r));
   record("adaptive quality: warmup, transitions, background frames and isolated spikes do not lower quality", r.warmup && r.ignoresPauses && r.ignoresSpikes && r.fallback, JSON.stringify(r));
   record("adaptive quality: steps one tier at a time and stops at the lowest", r.bounded, JSON.stringify(r));
@@ -5860,7 +5876,7 @@ const trip = (id) => ({ name: `${id} round trip`, why: "contract: a scene left a
 const hudVisit = { name: "hub HUD lifetime", why: "regression: scene visits recreated roster SVGs and donor rows; their handlers must end on leave while the attached rows keep their identity", run: async (b) => {
   await b.evaluate(`(() => {
     const H = window.__hudVisit = { rows: [...document.querySelectorAll("#roster [data-name]")], leaders: [...document.getElementById("banana-leaders").children], signals: [], calls: 0 }, S = BL.scenes;
-    H.keep = new URLSearchParams(location.search).get("hubcache") !== "release";
+    H.keep = __ooga.hubPolicy === "keep";
     H.root = S.hub.root; H.pilot = __ooga.pilot; H.input = S.hub.input;
     H.solids = __ooga.headquarters.solids.props; H.guides = __ooga.headquarters.objectGuides;
     H.roof = S.hub.debug.terrainRampRoof; H.footsteps = __ooga.footsteps;
@@ -5905,6 +5921,45 @@ const hudVisit = { name: "hub HUD lifetime", why: "regression: scene visits recr
   } finally {
     await b.evaluate(`(() => { const H = window.__hudVisit; BL.scenes.lab.enter = H.enters[0]; BL.scenes.hub.enter = H.enters[1]; delete window.__hudVisit; })()`);
   }
+} };
+// A kept island left with fruit in the air and a tween running: both finish on the next visit, nothing hangs.
+const hubKeptDelivery = { name: "hub kept delivery", why: "regression: leaving a kept hub mid-delivery stranded its airborne bananas in mid-air for good (never landing, the pile stuck in motion) and left its other tweens, a prop's wobble among them, unfinished", run: async (b) => {
+  const start = await b.evaluate(`(() => {
+    const B = __ooga, D = B.delivery, H = window.__keptDelivery = { settled: false };
+    H.landed = D.totalLandedValue; H.owed = D.logicalOutstandingValue;
+    H.accepted = D.enqueue(12);
+    B.advance(0.3, 1 / 30);
+    BL.scene.addTween({ dur: 5, update() {}, done() { H.settled = true; } });
+    return { keep: B.hubPolicy === "keep", accepted: H.accepted, airborne: B.drops.filter(s => s.moving && s.node.visible).length };
+  })()`);
+  await tourGo(b, "lab");
+  await tourGo(b, "hub");
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, D = B.delivery, H = window.__keptDelivery;
+    for (let i = 0; i < 600 && D.logicalOutstandingValue; i++) B.advance(1 / 30, 1 / 30);
+    const r = { landed: D.totalLandedValue - H.landed - H.owed, outstanding: D.logicalOutstandingValue, airborne: D.airborneVisualDropCount, moving: B.drops.filter(s => s.moving).length,
+      hanging: B.drops.filter(s => s.node.visible).length, settled: H.settled };
+    delete window.__keptDelivery;
+    return r;
+  })()`);
+  record("hub kept delivery: bananas in the air when a kept hub is left fall again on return and all land, none hangs, the pile comes to rest and the hub's running tweens finish",
+    start.airborne > 0 && start.accepted === 12 && r.outstanding === 0 && r.airborne === 0 && r.moving === 0 && r.hanging === 0
+      && (!start.keep || r.landed === 12 && r.settled), JSON.stringify({ start, r }));
+} };
+// A room's address redirected to the island (signed in, or the account still unknown) chooses that room at the keypad.
+const hubKeypadRedirect = { name: "hub keypad redirect", why: "regression: a kept hub resumed without reading the room a redirected room address chose, so the keypad ignored it and the choice lingered", run: async (b) => {
+  await tourGo(b, "lab");
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, net = BL.net.state, resolved = net.resolved;
+    net.resolved = false;
+    try {
+      B.go("timechain", "3");
+      for (let i = 0; i < 150 && (B.transitioning || B.scene !== "hub"); i++) B.advance(1 / 30, 1 / 30);
+    } finally { net.resolved = resolved; }
+    B.advance(0.3, 1 / 30);
+    return { scene: B.scene, policy: B.hubPolicy, preselected: BL.scenes.hub.debug.timechainIsland.gate.preselected };
+  })()`);
+  record("hub keypad redirect: a room address redirected to the island, kept or rebuilt, has that room chosen at the keypad", r.scene === "hub" && r.preselected === 3, JSON.stringify(r));
 } };
 const play = (id, what, code) => ({ name: `${id} playthrough`, why: "playthrough: the game reaches its result, shown and saved", run: async (b) => {
   const r = await b.evaluate(code);
@@ -11530,7 +11585,7 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       && animation.host.ooga >= 58 && animation.host.gorilla >= 58 && animation.network && animation.controlled >= 58, JSON.stringify(animation));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
-scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
+scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubKeptDelivery, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, hubKeypadRedirect, trip("hub"), factoryActivityRouting] });
 // The same ownership contract exercises complete destruction on memory-limited devices.
 scene("hub", { label: "release policy", query: "hubcache=release", steps: [hudVisit, trip("hub")] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });
@@ -11620,7 +11675,7 @@ const hubScratchChecks = async () => {
 };
 
 // Regression: Tess's hub-tagged cached meshes survived the last rig's departure.
-const tessCacheChecks = BL => {
+const tessCacheChecks = async BL => {
   const parent = BL.scene.createNode(), input = { add() {}, remove() {} }, fx = {};
   const make = () => BL.tess.create({ parent, input, fx, coarse: false });
   BL.models.setScope("tess-lifecycle");
@@ -11628,11 +11683,16 @@ const tessCacheChecks = BL => {
   const core = rig => rig.root.children[0].children[0].geometry;
   const shared = core(a) === core(b); a.dispose();
   const c = make(), held = core(c) === core(b); c.dispose(); b.dispose();
+  // A scene change leaves one scene and enters the next in one task (the hub's guide, then the Factory's greeter).
+  const e = make(), swapped = new Set(); e.liveGeometry(swapped);
+  const reused = [...swapped].every(mesh => before.has(mesh)); e.dispose();
+  await Promise.resolve();
   const d = make(), after = new Set(); d.liveGeometry(after);
   const rebuilt = [...after].every(mesh => !before.has(mesh)); d.dispose();
+  await Promise.resolve();
   BL.models.setScope(null);
-  record("Tess caches: live rigs share all tiers; the last disposal releases them and the next visit rebuilds every tier", shared && held && rebuilt && before.size === 36 && after.size === 36 && parent.children.length === 0,
-    JSON.stringify({ shared, held, rebuilt, tiers: before.size, children: parent.children.length }));
+  record("Tess caches: live rigs share all tiers, a Tess entered as the last one leaves reuses them, and once a change of scene ends with none they are released and the next visit rebuilds every tier", shared && held && reused && rebuilt && before.size === 36 && swapped.size === 36 && after.size === 36 && parent.children.length === 0,
+    JSON.stringify({ shared, held, reused, rebuilt, tiers: before.size, children: parent.children.length }));
 };
 
 // Regression: one hub variant pinned every other index built by a later scene.
@@ -18473,7 +18533,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     }
   }
   const BL = globalThis.BL;
-  tessCacheChecks(BL);
+  await tessCacheChecks(BL);
   variantCacheChecks(BL);
   modelResidencyChecks(BL);
   if(ARGS.includes("water-baseline")){
