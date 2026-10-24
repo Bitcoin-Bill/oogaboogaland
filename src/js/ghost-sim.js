@@ -484,6 +484,7 @@
           if (!p.on) continue;
           if (frozen(p)) { p.frozenUntil = 0; p.invulnUntil = s.now + C.IFRAMES_MS; }
           p.seg = C.PLAYER_SEGMENTS;
+          p.reviveTarget = p.reviveSince = 0;
         }
       }
       if (state === STATE.COUNTDOWN || state === STATE.BOSS && prev === STATE.ACTIVE) { s.healAt = s.now; s.elixirsTaken = 0; }
@@ -706,23 +707,24 @@
       }
 
       // The gorillas: when a round is down to its last two ghosts they are called down, one beside each of the nearest
-      // players; then each falls, lands shaking, comes on, leaps and slams the ground beside them.
-      if (s.state === STATE.ACTIVE && !s.brutesSent && s.spawned >= r.ghosts && alive() <= 2) {
-        s.brutesSent = 1;
-        for (let i = 0; i < C.BRUTE.perRound[s.round - 1]; i++) {
+      // players; then each falls, lands shaking, comes on, leaps and slams the ground beside them. Only arrivals with
+      // a free slot count: skeletons share the pool, and dying bodies still hold their slots for a moment.
+      const gorillas = C.BRUTE.perRound[s.round - 1] || 0;
+      if (s.state === STATE.ACTIVE && s.brutesSent < gorillas && s.spawned >= r.ghosts && alive() <= 2) {
+        for (let i = s.brutesSent; i < gorillas; i++) {
           let best = null;
           for (const p of players) if (active(p) && (!best || rand() < 0.5)) best = p;
-          addBrute(best);
+          if (!addBrute(best)) break;
+          s.brutesSent++;
         }
       }
       // The skeletons, each at its own share of the round's ghosts having come (the k-th of n at k / (n + 1)), beside
       // one of the players.
       const bones = bonesFor(s.round, s.players);
       if (s.state === STATE.ACTIVE && s.bonesSent < bones && s.spawned >= r.ghosts * (s.bonesSent + 1) / (bones + 1)) {
-        s.bonesSent++;
         let best = null;
         for (const p of players) if (active(p) && (!best || rand() < 0.5)) best = p;
-        addBrute(best, 1);
+        if (addBrute(best, 1)) s.bonesSent++;
       }
       for (const b of brutes) {
         if (!b.on) continue;
@@ -802,8 +804,8 @@
 
       // The elixirs: taken from the totems by whoever reaches one empty-handed; carried, held beside someone down for
       // ELIXIR.reviveMs, it brings them back.
-      if (fighting()) for (const p of players) {
-        if (!active(p)) continue;
+      for (const p of players) {
+        if (!fighting() || !active(p)) { p.reviveTarget = p.reviveSince = 0; continue; }
         if (!p.elixir) {
           for (let i = 0; i < elixirs.length && i < C.ELIXIR.max; i++) {
             if (s.elixirsTaken & (1 << i) || Math.hypot(p.x - elixirs[i].x, p.z - elixirs[i].z) > C.ELIXIR.pickR) continue;
@@ -878,7 +880,7 @@
       else if (st === STATE.COUNTDOWN) { if (now >= s.endsAt) enter(STATE.ACTIVE); }
       else if (st === STATE.ACTIVE) {
         if (anyHere && !anyActive) enter(STATE.DEFEAT);
-        else if (s.spawned >= r.ghosts && alive() === 0 && brutesAlive() === 0 && (s.brutesSent || !C.BRUTE.perRound[s.round - 1])) enter(s.round >= ROUNDS.length ? STATE.BOSS : STATE.BREAK);
+        else if (s.spawned >= r.ghosts && alive() === 0 && brutesAlive() === 0 && s.brutesSent >= gorillas && s.bonesSent >= bones) enter(s.round >= ROUNDS.length ? STATE.BOSS : STATE.BREAK);
       } else if (st === STATE.BOSS) {
         if (anyHere && !anyActive) enter(STATE.DEFEAT);
         else if (s.bossDyingAt && now - s.bossDyingAt >= C.BOSS.burnMs) { s.bossOn = 0; enter(STATE.VICTORY); }
@@ -1108,7 +1110,11 @@
       dropBot: () => { const b = playerById(REVIVE_BOT); if (b) b.on = b.here = false; },
       /** The round ends: everything spawned and gone (or the wait cut short). */
       next: () => {
-        if (s.state === STATE.ACTIVE) { s.spawned = settings().ghosts; s.brutesSent = 1; for (const g of ghosts) g.on = false; for (const b of brutes) b.on = false; }
+        if (s.state === STATE.ACTIVE) {
+          s.spawned = settings().ghosts; s.brutesSent = C.BRUTE.perRound[s.round - 1] || 0; s.bonesSent = bonesFor(s.round, s.players);
+          for (const g of ghosts) g.on = false;
+          for (const b of brutes) b.on = false;
+        }
         else if (s.state !== STATE.IDLE) s.endsAt = s.now;
       },
       /** Every ghost on the field burns, no kills credited. */

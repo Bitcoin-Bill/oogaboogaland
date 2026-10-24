@@ -678,7 +678,8 @@
         tessHolder = 0; tessGone = 0;
         clearIsland();
         // GAME MODE's ring round the meadow stands up once the walls have risen.
-        hub.gameMode(true, (RISE_AT + RISE_MS) / 1000);
+        hub.ringDelay((RISE_AT + RISE_MS) / 1000);
+        hub.gameMode(true);
         cackled = beamed = rumbled = false;
         segShown = -1;
         // The hunt's playlist comes with the hunt, in a new random order (each track fetched as it comes up).
@@ -1936,7 +1937,8 @@
     // The visitor's own health while a round is in play (a round, or the boss's fight): a cell a hit point on a little
     // plank sign held over their Ooga's head in the lobby card's wood, green, red at two or fewer, filling back a cell
     // at a time in an orange glow as a round starts. None for anyone not hunting with an Ooga, nor while down. An
-    // elixir carried bobs beside it (a revive under way shows as a ring over the grave, `drawReviveRings`).
+    // elixir carried bobs beside it (a revive under way shows as a ring over the grave, `drawReviveRings`). In first
+    // person, or with the head off screen, the same sign stays just below the crosshair.
     const HEALTH = { cell: 13, cellH: 7, gap: 3, pad: 5, lift: 0.45, glowMs: 1800, stepMs: 200 };
     const WOOD = { edge: "#4a3319", plank: "#a9773f", wood: "#8a6236", nail: "#3a2a18", empty: "rgba(0,0,0,0.5)", on: "#3ce65a", low: "#ff453a", glow: "#ff8a1f" };
     const drawHealth = (ctx2d, project) => {
@@ -1944,10 +1946,13 @@
       const me = sim.playerById(myId()), t = huntTime();
       if (me && t < me.frozenUntil) return;
       if (!me || !crew.player || waiting() || hub.gorillaActive() || !localHere || !standing(me.id)) return;
-      const p = project(STANDS.x, STANDS.y + STANDS.h + HEALTH.lift, STANDS.z);
-      if (!p) return;
       const n = C.PLAYER_SEGMENTS, w = n * HEALTH.cell + (n - 1) * HEALTH.gap + HEALTH.pad * 2, h = HEALTH.cellH + HEALTH.pad * 2;
-      const x = Math.round(p.x - w / 2), y = Math.round(p.y - h), half = Math.round(h / 2);
+      const img = me.elixir ? MODELS.picture("elixir") : null, ih = h + 16, iw = img ? ih * img.naturalWidth / img.naturalHeight : 0;
+      const p = crew.player.parts.head.cameraHidden ? null : project(STANDS.x, STANDS.y + STANDS.h + HEALTH.lift, STANDS.z);
+      const size = renderer.size, extra = img ? iw + 5 : 0, vertical = img ? 10 : 0;
+      const inView = p && p.x - w / 2 >= 12 && p.x + w / 2 + extra <= size.width - 12
+        && p.y - h - vertical >= 12 && p.y + vertical <= size.height - 12;
+      const x = Math.round((inView ? p.x : size.width / 2) - w / 2), y = Math.round(inView ? p.y - h : size.height / 2 + 48), half = Math.round(h / 2);
       const since = S.healAt ? t - S.healAt : Infinity, glow = clamp(1 - since / HEALTH.glowMs, 0, 1);
       if (glow > 0) {
         ctx2d.globalAlpha = glow;
@@ -1974,10 +1979,7 @@
         ctx2d.fillStyle = on ? lit : WOOD.empty;
         ctx2d.fillRect(x + HEALTH.pad + i * (HEALTH.cell + HEALTH.gap), y + HEALTH.pad, HEALTH.cell, HEALTH.cellH);
       }
-      if (!me.elixir) return;
-      const img = MODELS.picture("elixir");
       if (img) {
-        const ih = h + 16, iw = ih * img.naturalWidth / img.naturalHeight;
         ctx2d.shadowColor = WOOD.glow;
         ctx2d.shadowBlur = 10;
         ctx2d.drawImage(img, x + w + 5, Math.round(y + h / 2 - ih / 2 + Math.sin(t / 300) * 2), iw, ih);
@@ -2078,8 +2080,8 @@
     const hit = (source, h, power, byPlayer, shot = false) => {
       const o = h.owner;
       if (!byPlayer) return;
-      // Only a shot wakes the herald; a club passes through it.
-      if (o.role === "herald") { if (shot) tapHerald(); return; }
+      // Only a shot wakes the herald; the rest of a burst must not ready the visitor in the lobby it just opened.
+      if (o.role === "herald") { if (shot && S.state === ST.IDLE) tapHerald(); return; }
       hitAs(o.role, o.slot, h.x, h.y, h.z, Math.max(1, Math.min(20, Math.round(power * 4))));
     };
     /** `damage` to the ghost or gorilla in `slot`, or the boss, landing at (x, y, z), for this page's player. */

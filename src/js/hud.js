@@ -1916,30 +1916,10 @@
       }, MESSAGE_FADE_MS);
     };
     const selectedSheetTab = () => el.tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.dataset.tab || "roster";
-    // GAME MODE (scene-hub.js `setGameMode`): the sheet never keeps the keys from play. A tab clicked and the sheet
-    // folding take focus off it, a press anywhere off it (but in a dialog it opened) folds it, and I opens or folds
-    // it without letting go of the aim's pointer lock.
-    const gameMode = () => document.body.classList.contains("game-mode");
-    const releaseSheetFocus = () => {
-      if (el.sheet.contains(document.activeElement)) document.activeElement.blur();
-    };
     const setSheetOpen = (open) => {
       el.sheet.dataset.open = String(open);
-      if (!open && gameMode()) releaseSheetFocus();
       writeSheetState(open, selectedSheetTab(), sheetHeight);
     };
-    on(document, "pointerdown", (e) => {
-      if (!gameMode() || el.sheet.contains(e.target) || e.target.closest && e.target.closest("dialog")) return;
-      if (el.sheet.dataset.open === "true") setSheetOpen(false);
-      else releaseSheetFocus();
-    }, true);
-    on(window, "keydown", (e) => {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.key.toLowerCase() !== "i" || !gameMode()) return;
-      const t = e.target;
-      if (t.isContentEditable || t.closest && t.closest("input, textarea, select, dialog") || !el.sheet.getClientRects().length) return;
-      e.preventDefault();
-      pull(selectedSheetTab());
-    });
     // Registered before actor controls: a popup or the sheet takes one Escape
     // before cursor capture or possession can change. Dialogs keep their own
     // nested Escape actions (for example a board's filter menu).
@@ -1983,10 +1963,7 @@
       if (showing) setSheetOpen(false);
       else selectTab(name);
     };
-    for (const tab of el.tabs) on(tab, "click", (e) => {
-      pull(tab.dataset.tab);
-      if (e.detail > 0 && gameMode()) tab.blur();
-    });
+    for (const tab of el.tabs) on(tab, "click", () => pull(tab.dataset.tab));
     on(el.sheetPanels, "keydown", (e) => {
       let step = 0;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") step = 1;

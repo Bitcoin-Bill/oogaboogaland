@@ -3,7 +3,7 @@
 // /rally answers from rally.html and an unknown path from 404.html; `/src/` is the unbundled source tree,
 // which gives DevTools real file names while the same flags apply to both.
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync, watch } from "node:fs";
+import { readFileSync, statSync, watch } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,7 +98,10 @@ const server = createServer((req, res) => {
   }
   const file = normalize(join(site, pathname));
   if (!file.startsWith(site + sep)) return send(res, 403, "forbidden");
-  for (const candidate of [file, `${file}.html`]) if (existsSync(candidate) && statSync(candidate).isFile()) return serveFile(res, candidate);
+  for (const candidate of [file, `${file}.html`]) {
+    const body = readOrNull(candidate);
+    if (body) return send(res, 200, body, TYPES[extname(candidate)] || "application/octet-stream");
+  }
   const missing = readOrNull(join(site, "404.html"));
   if (missing) send(res, 404, missing, TYPES[".html"]);
   else send(res, 404, "not found");

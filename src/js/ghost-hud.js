@@ -18,8 +18,8 @@
 
   // How to play, on the lobby: each line its keys and what they do, for a keyboard and mouse or for touch.
   const INTRO = {
-    keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["X"], "Switch to your weapon"], [["I"], "Open or close the menu"]],
-    touch: [[["Left stick"], "Move your Ooga"], [["Combat"], "Switch to your weapon"], [["Hold fire"], "Shoot the ghosts"]]
+    keys: [[["W", "A", "S", "D"], "Move your Ooga"], [["Mouse"], "Aim, and click to fire"], [["G"], "Switch weapons"]],
+    touch: [[["Left stick"], "Move your Ooga"], [["Ready"], "Start in combat mode"], [["Hold fire"], "Shoot the ghosts"]]
   };
   /**
    * The HUD; `coarse` for touch words, `onMusic` when the visitor flips the mini player's switch, `onSkip` when they
@@ -33,6 +33,7 @@
       boss: document.getElementById("ghost-boss"), bar: document.getElementById("ghost-boss-bar"), flash: document.getElementById("ghost-flash"),
       player: document.getElementById("ghost-player"), playerTitle: document.getElementById("ghost-player-title"), playerToggle: document.getElementById("ghost-player-toggle"),
       playerSkip: document.getElementById("ghost-player-skip"), minimap: document.getElementById("ghost-minimap"),
+      topbar: document.querySelector(".topbar"), equipment: document.getElementById("equipment-hud"),
       lobby: document.getElementById("ghost-lobby"), lobbyGoal: document.getElementById("ghost-lobby-goal"), lobbyPlayers: document.getElementById("ghost-lobby-players"),
       lobbyNote: document.getElementById("ghost-lobby-note"), lobbyHow: document.getElementById("ghost-lobby-how"), lobbyReady: document.getElementById("ghost-lobby-ready"), lobbyDecline: document.getElementById("ghost-lobby-decline")
     };
@@ -67,17 +68,34 @@
       last[key] = value;
       node.textContent = value;
     };
-    // The minimap's canvas, sized to its box at the screen's pixel density as it is shown; `map.font` its letters.
+    // The minimap follows the actual banner and touch fire button, including a wrapped equipment row. Layout is
+    // measured on show and layout changes only, never by the hunt's frame loop; `map.font` is its canvas lettering.
     const map = { canvas: el.minimap, font: "" };
-    const sizeMap = () => {
+    let mapFrame = 0;
+    const layoutMap = () => {
+      mapFrame = 0;
+      if (el.minimap.hidden) return;
+      if (coarse) {
+        const top = `${Math.ceil(Math.max(el.topbar.getBoundingClientRect().bottom, el.equipment.getBoundingClientRect().bottom) + 12)}px`;
+        if (el.minimap.style.getPropertyValue("--ghost-map-top") !== top) el.minimap.style.setProperty("--ghost-map-top", top);
+      }
       const k = Math.min(2, window.devicePixelRatio || 1), w = Math.round(el.minimap.clientWidth * k);
-      if (w > 0 && el.minimap.width !== w) { el.minimap.width = el.minimap.height = w; map.font = `700 ${Math.round(10 * k)}px sans-serif`; }
+      if (w > 0 && (el.minimap.width !== w || el.minimap.height !== w)) el.minimap.width = el.minimap.height = w;
+      map.font = `700 ${Math.round(10 * k)}px sans-serif`;
     };
+    const scheduleMap = () => { if (!el.minimap.hidden && !mapFrame) mapFrame = window.requestAnimationFrame(layoutMap); };
+    const mapResize = new ResizeObserver(scheduleMap), mapEquipment = new MutationObserver(scheduleMap);
+    mapResize.observe(el.topbar);
+    mapResize.observe(el.equipment);
+    mapEquipment.observe(el.equipment, { attributes: true, attributeFilter: ["style", "data-banner"] });
+    window.addEventListener("resize", scheduleMap);
     const show = (on) => {
       if (last.shown === on) return;
       last.shown = on;
       el.hud.hidden = el.minimap.hidden = !on;
-      if (on) sizeMap();
+      window.cancelAnimationFrame(mapFrame);
+      mapFrame = 0;
+      if (on) layoutMap();
       if (!on) { banner(null); boss(-1); player(null); el.flash.hidden = true; }
     };
     const banner = (title, sub = "") => {
@@ -161,6 +179,11 @@
       else if (el.flash.dataset.kind === "soul" && !el.flash.hidden) el.flash.hidden = true;
     };
     const dispose = () => {
+      mapResize.disconnect();
+      mapEquipment.disconnect();
+      window.removeEventListener("resize", scheduleMap);
+      window.cancelAnimationFrame(mapFrame);
+      el.minimap.style.removeProperty("--ghost-map-top");
       el.lobbyReady.removeEventListener("click", readyUp);
       el.lobbyDecline.removeEventListener("click", decline);
       el.lobby.removeEventListener("keydown", lobbyKey);

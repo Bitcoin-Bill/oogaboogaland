@@ -2253,7 +2253,7 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
 
 @media (pointer: coarse) {
   .ghost-minimap {
-    top: calc(70px + var(--safe-top, 0px));
+    top: var(--ghost-map-top, calc(70px + var(--safe-top, 0px)));
     bottom: auto;
     width: 128px;
     height: 128px;

@@ -4894,8 +4894,54 @@ const ghostHuntChecks = async () => {
     z.drops[0].on = false;
     for (let i = 0; i < 6; i++) tick();
     const came = !!z.state.lightningSent && z.drops.some((d) => d.on && d.kind === G.LIGHTNING_DROP);
-    record("ghost hunt: a full ghost pool counts no ghost as spawned, and a round's lightning waits for a free drop slot rather than being lost",
-      pooled && waited && came, JSON.stringify({ pooled, waited, came }));
+    // Skeletons and gorillas share a pool. A full one must hold the round open; one freed slot sends one gorilla,
+    // and the rest of both waves must still come once their slots free.
+    z.jump(ST.ACTIVE, 6);
+    z.state.spawned = z.settings().ghosts;
+    for (const b of z.brutes) { b.on = true; b.dying = G.DYING.SHOT; b.dyingAt = z.state.now; }
+    for (let i = 0; i < 6; i++) tick();
+    const enemiesWaited = z.state.state === ST.ACTIVE && z.state.brutesSent === 0 && z.state.bonesSent === 0;
+    z.brutes[0].on = false;
+    for (let i = 0; i < 6; i++) tick();
+    const partialWave = z.state.brutesSent === 1 && z.state.bonesSent === 0;
+    for (const b of z.brutes) if (b.dying) b.on = false;
+    for (let i = 0; i < 40; i++) tick();
+    const enemiesCame = z.state.state === ST.ACTIVE && z.brutes.filter((b) => b.on && !b.kind).length === G.CONFIG.BRUTE.perRound[5]
+      && z.brutes.filter((b) => b.on && b.kind).length === G.bonesFor(6, z.state.players);
+    record("ghost hunt: full pools defer ghosts, lightning, skeletons and gorillas until slots free, including a partly sent gorilla wave, without ending the round early",
+      pooled && waited && came && enemiesWaited && partialWave && enemiesCame, JSON.stringify({ pooled, waited, came, enemiesWaited, partialWave, enemiesCame }));
+  }
+  {
+    // A rescuer knocked down during an elixir revive must start a fresh hold after being brought back. A third
+    // hunter keeps the round alive while both are down.
+    const z = begin(29), C = G.CONFIG;
+    z.ready(3);
+    let now = T0;
+    const tick = () => {
+      now += C.TICK_MS; z.beginPresence();
+      for (const [id, x, z0] of [[1, 0, 6], [2, 1, 6], [3, 21, 0]]) {
+        const p = z.present(id, x, 0, z0);
+        if (p) p.invulnUntil = z.state.now + 60000;
+      }
+      z.advance(now);
+    };
+    while (now < T0 + 60000 && z.state.state !== ST.ACTIVE) tick();
+    const rescuer = z.playerById(1), down = z.playerById(2);
+    down.seg = 0; down.frozenUntil = C.DOWN_UNTIL; rescuer.elixir = 1;
+    for (let i = 0; i < C.ELIXIR.reviveMs / C.TICK_MS / 2; i++) tick();
+    const started = rescuer.reviveTarget === down.id && z.frozen(down);
+    rescuer.seg = 0; rescuer.frozenUntil = C.DOWN_UNTIL;
+    for (let i = 0; i < C.ELIXIR.reviveMs / C.TICK_MS + 1; i++) tick();
+    const interrupted = rescuer.reviveTarget === 0 && rescuer.reviveSince === 0 && z.frozen(down);
+    z.debug.unfreeze(rescuer.id);
+    tick();
+    const restarted = rescuer.reviveTarget === down.id && rescuer.reviveSince === z.state.now && z.frozen(down);
+    for (let i = 0; i < C.ELIXIR.reviveMs / C.TICK_MS - 1; i++) tick();
+    const held = z.frozen(down) && rescuer.elixir === 1;
+    tick();
+    const revived = !z.frozen(down) && down.seg === C.PLAYER_SEGMENTS && rescuer.elixir === 0;
+    record("ghost hunt: a knocked-down rescuer loses revive progress and must hold the elixir beside their teammate for a fresh full duration",
+      started && interrupted && restarted && held && revived, JSON.stringify({ started, interrupted, restarted, held, revived }));
   }
   {
     // The lobby: player 1 wakes the ghost (its host) and readies, player 2 is there but never readies; at the lobby's
