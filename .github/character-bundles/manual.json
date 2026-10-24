@@ -3,5 +3,15 @@
   "lane": "manual",
   "openedOn": "2026-10-24",
   "round": "7245ec34d9912921396b227e46a0401db82cc06c",
-  "entries": []
+  "entries": [
+    {
+      "pr": 215,
+      "head": "7cff982927c9d8e5a51bacadb41c43e099c3fa19",
+      "author": "johnstackton21m",
+      "path": "src/characters/johnstackton21m.js",
+      "base": null,
+      "hash": "d49aa270603513fd46e6754baf559d37965295158b3b362b694a3972ead1e937",
+      "lane": "manual"
+    }
+  ]
 }
