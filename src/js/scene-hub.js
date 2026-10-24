@@ -10812,7 +10812,7 @@
       pilot.possess(cave);
       if (ctx.from === "factory") crew.selectWeapon(cave.weapon.selectedSlot, cave);
     }
-    ownOogaClaimed = !!world.pilotDetached; world.pilotDetached = false;
+    ownOogaClaimed = !!world.pilotDetached || !!(returningCharacter && BL.net.state.me); world.pilotDetached = false;
     claimOwnOoga();
     unsubscribeActivity = contributors.subscribe(() => crew.refreshStates());
     unsubscribeAccount = BL.net.subscribe(onAccountChange);
