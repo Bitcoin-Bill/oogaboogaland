@@ -7466,6 +7466,23 @@ const hubMirror = { name: "hub mirror", why: "rule: 500 damage shatters the mirr
   const r = await b.evaluate(`(() => { const B = window.__ooga, M = B.mirrorCave, g = M.gate, w = M.node.world, G = B.matrixGate, m = M.mouth; const A = { x: m.x + Math.sin(m.ry) * 1.5, y: m.floorY, z: m.z + Math.cos(m.ry) * 1.5 }, E = { x: m.x - Math.sin(m.ry), y: m.floorY + 1.6, z: m.z - Math.cos(m.ry) }, dh = Math.hypot(E.x - A.x, E.z - A.z); B.pilot.navigate({ position: A, yaw: Math.atan2(E.x - A.x, E.z - A.z), pitch: Math.atan2(E.y - (A.y + 1.53), dh), dist: dh }); B.advance(1, 1 / 60); const before = { broken: M.damage.broken, locked: g.locked, hint: M.guides.state.doorway }; M.damage.hit(499 - M.damage.damage, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const whole = { broken: M.damage.broken, locked: g.locked }; M.damage.hit(1, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const u0 = M.guides.state.doorwayUpdates; B.advance(1, 1 / 60); const after = { broken: M.damage.broken, shattered: M.shattered, locked: g.locked, reveal: M.node.mirrorReveal, hint: M.guides.state.doorway, frozen: M.guides.state.doorwayUpdates === u0 }; B.go("lab"); let n = 0; while ((B.transitioning || B.scene !== "pool") && n++ < 600) B.advance(1 / 30, 1 / 30); B.go("hub"); n = 0; while ((B.transitioning || B.scene !== "hub") && n++ < 600) B.advance(1 / 30, 1 / 30); B.advance(0.5, 1 / 60); const N = B.mirrorCave; return { before, whole, after, back: { broken: N.damage.broken, shattered: N.shattered, locked: N.gate.locked, reveal: N.node.mirrorReveal, hint: N.guides.state.doorway } }; })()`);
   record("hub mirror: 499 damage leaves it whole and locked, 500 shatters it open with its gate unlocked and the glyph hint stopped, and it is still broken after a trip away", !r.before.broken && r.before.locked && r.before.hint && !r.whole.broken && r.whole.locked && r.after.broken && r.after.shattered && !r.after.locked && r.after.reveal === 1 && !r.after.hint && r.after.frozen && r.back.broken && r.back.shattered && !r.back.locked && r.back.reveal === 1 && !r.back.hint, JSON.stringify(r));
 } };
+// Medium captures the mirror only while its pane reads; one that shrinks below that must drop its capture.
+const hubMirrorMedium = { name: "hub mirror medium size", why: "regression: on medium a mirror whose pane shrank under the capture size kept drawing its last capture, frozen, instead of its authored face", run: async (b) => {
+  const r = await b.evaluate(`(() => {
+    const B = window.__ooga, R = B.renderer, M = B.mirrorCave, root = BL.scenes.hub.root;
+    if (R.kind !== "webgl2") return { kind: R.kind };
+    const tier = R.quality, w = M.node.world, n = Math.hypot(w[8], w[9], w[10]) || 1, cam = BL.scene.createCamera({ far: 120 });
+    cam.position.x = w[12] + w[8] / n * 3.5; cam.position.y = w[13] + w[9] / n * 3.5; cam.position.z = w[14] + w[10] / n * 3.5;
+    cam.target.x = w[12]; cam.target.y = w[13]; cam.target.z = w[14];
+    R.setQuality("medium");
+    // A wide lens at the same spot shrinks the pane on screen without moving the camera behind any rock.
+    const look = fov => { cam.fov = fov * Math.PI / 180; for (let i = 0; i < 4; i++) R.render(root, cam, B.renderOpts); const m = R.mirror; return { reason: m.skipReason, valid: m.captureValid, drawn: m.surfaceDrawn }; };
+    const near = look(50), small = look(170), back = look(50);
+    R.setQuality(tier);
+    return { kind: R.kind, near, small, back };
+  })()`);
+  record("hub mirror medium size: a readable pane captures and draws its reflection, shrunk below the capture size it drops the capture for its authored face, and it captures again when it reads", r.kind === "webgl2" && r.near.valid && r.near.drawn && r.small.reason === "quality-size" && !r.small.valid && !r.small.drawn && r.back.valid && r.back.drawn, JSON.stringify(r));
+} };
 // The Canvas 2D fallback, for a device without WebGL2: every scene, entered in one page, paints real
 // colour (sampled small, after the arrival fade) and keeps the leave contract; the console stays clean.
 const canvasTour = { name: "canvas2d tour", why: "contract: the Canvas 2D fallback boots and draws every scene with the leave contract kept", run: async (b) => {
@@ -15394,7 +15411,7 @@ scene("hub", { label: "guide", query: "character=portlandhodl&jetpack=1", steps:
 scene("hub", { label: "birds-eye combat", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", exclusive: true, steps: [hubBirdsEye] });
 scene("hub", { label: "birds-eye combat projection and targets", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeProjection, gameCombat(hubBirdsEyeTargets), hubCombatReplay] });
 scene("hub", { label: "birds-eye lower floors", query: "solo=1&character=portlandhodl&weapon=1&mode=shoulder&combat=1", steps: [hubBirdsEyeFloors] });
-scene("hub", { label: "mirror", steps: [hubJumbotron, hubMatrix, hubMirror] });
+scene("hub", { label: "mirror", steps: [hubJumbotron, hubMirrorMedium, hubMatrix, hubMirror] });
 scene("hub", { label: "oogatron popups", url: hubPage(dist, "pos=0"), steps: [oogatronPopups] });
 scene("hub", { label: "oogatron popups phone", url: hubPage(dist, "pos=0"), opts: PHONE_SIZE, steps: [oogatronPopups] });
 scene("hub", { label: "reset storage race", steps: [{ name: "reset storage race", why: "regression: a page timer or pagehide storage write once survived the pooled browser reset and leaked state into the next task", run: async () => {
