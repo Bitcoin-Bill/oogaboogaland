@@ -350,7 +350,13 @@
         }
         if (i % 12 === 6) round.push(turnedZ(moved(sphere(0.0018, COPPER), 0, r, 0.01), a));
       }
-      // The 0.35 mm fine ticks were subpixel even in her close view; the larger radial marks carry the scale.
+      if (fine) for (let i = 0; i < 192; i++) {
+        const a = i * TAU / 192;
+        marks.push(turnedZ(bevelBox({
+          w: 0.00035, h: 0.0025, d: 0.0004,
+          bevel: 0.0001, color: COPPER, offset: { y: r - 0.005, z: 0.0087 }
+        }), a));
+      }
       return shaded(round, marks);
     });
     return {
