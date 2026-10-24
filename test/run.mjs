@@ -16617,6 +16617,36 @@ const tileGpuChecks = async () => {
   record("tile-based GPU: only a named Apple silicon GPU skips the depth prepass; Intel, AMD, Safari's generic \"Apple GPU\" and a missing debug extension keep it",
     rows.every(row => row.got === row.expected) && asked === 7, JSON.stringify(rows.filter(row => row.got !== row.expected)));
 };
+const meshIndexChecks = () => {
+  // Regression: WebGL 2 reserves 65535 for primitive restart, including when rig sources are joined.
+  const source = readFileSync(join(root, "src/js/gl-renderer.js"), "utf8");
+  const extract = (name, next) => source.slice(source.indexOf(`    const ${name} =`), source.indexOf(next, source.indexOf(`    const ${name} =`)));
+  const writers = runInNewContext(`${source.match(/const MESH_WORDS = \d+;/)[0]}
+${extract("indexArray", "    const meshLayout =")}
+${extract("buildMeshPart", "    const buildRigPart =")}
+${extract("buildRigPart", "    const LINE_CORNERS =")}
+({ buildMeshPart, buildRigPart });`, {
+    meshLayout: () => [], makePart: (_data, _stride, _layout, _ibo, indices) => ({ indices, count: indices.length })
+  });
+  const triangle = { i: [0, 1, 2], color: [255, 255, 255] };
+  const geometry = corners => {
+    const faces = Array(Math.floor(corners / 3) - 1).fill(triangle);
+    faces.push({ ...triangle, i: Array.from({ length: corners - faces.length * 3 }, (_, i) => i) });
+    return { verts: [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, -1, 0.5, 0], faces };
+  };
+  const rows = [];
+  for (const [corners, bytes] of [[65535, 2], [65536, 4], [65537, 4]]) {
+    const mesh = writers.buildMeshPart(geometry(corners), null);
+    const rig = writers.buildRigPart({ sources: [geometry(32766), geometry(corners - 32766)] }, null);
+    for (const [kind, part] of [["mesh", mesh], ["rig", rig]]) {
+      const indices = part.indices, restart = indices.BYTES_PER_ELEMENT === 2 ? 65535 : 4294967295;
+      rows.push({ kind, corners, bytes: indices.BYTES_PER_ELEMENT, last: indices.at(-1),
+        valid: indices.BYTES_PER_ELEMENT === bytes && indices.at(-1) === corners - 1
+          && indices.every(index => index !== restart) && (kind === "rig" || part.plainCount === indices.length) });
+    }
+  }
+  record("mesh indices: boundary faces and joined rigs retain their last corner without a primitive restart, and plainCount counts indices", rows.every(row => row.valid), JSON.stringify(rows));
+};
 const raceRigChecks = async () => {
   const context = { window: {}, location: { search: "?debug=1&rain=0" }, URLSearchParams, crypto: webcrypto };
   for (const name of ["math", "scene", "models", "caves", "contributor-identities", "activity-repos", "characters"]) runInNewContext(await readFile(new URL(`../src/js/${name}.js`, import.meta.url), "utf8"), context);
@@ -17356,6 +17386,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   const emptyPeers = await emptyPeerPreviewProof();
   record("peer pose previews: certified empty terrain preserves exact poses and peer rejection while omitting vertex probes", emptyPeers.cases === 291 && emptyPeers.failures === 0 && emptyPeers.samples > 0 && emptyPeers.callbacks > 0 && emptyPeers.contact.length === 4 && emptyPeers.arms.length === 8 && emptyPeers.rollback.length === 6, JSON.stringify(emptyPeers));
   await raceRigChecks();
+  meshIndexChecks();
   await qualityFramebufferChecks();
   await tileGpuChecks();
   const north = await northTrajectoryProof();

@@ -2211,8 +2211,8 @@ void main() {
       if (part.index) gl.drawElementsInstanced(gl.TRIANGLES, count, part.index, first * part.indexSize, instances);
       else gl.drawArraysInstanced(gl.TRIANGLES, first, count, instances);
     };
-    // Indices for `vertices` corners, in the narrowest type that holds them.
-    const indexArray = (vertices, length) => vertices <= 65536 ? new Uint16Array(length) : new Uint32Array(length);
+    // Indices for `vertices` corners, reserving the type's maximum index for WebGL 2 primitive restart.
+    const indexArray = (vertices, length) => vertices <= 65535 ? new Uint16Array(length) : new Uint32Array(length);
     // A packed mesh vertex (MESH_WORDS), and an extra float attribute after it: [location, size].
     const meshLayout = (extra) => {
       const layout = [[0, 3, gl.FLOAT, false, 0], [1, 4, gl.INT_2_10_10_10_REV, true, 12], [2, 4, gl.UNSIGNED_BYTE, true, 16], [10, 1, gl.FLOAT, false, 20]];
