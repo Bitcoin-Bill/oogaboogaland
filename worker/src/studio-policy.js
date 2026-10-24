@@ -5,7 +5,7 @@ export const STUDIO_ZONE = "dsb-studio";
 export const validateStudioCatalogue = globalThis.BL.studioMedia.validate;
 export const STUDIO_SOURCES = validateStudioCatalogue(globalThis.BL && globalThis.BL.studioMedia && globalThis.BL.studioMedia.sources);
 export const studioSource = (id) => STUDIO_SOURCES.find(row => row.id === id) || null;
-export const studioState = (now = Date.now()) => ({ hostId: 0, mode: "suspended", revision: 0, epoch: 0, source: STUDIO_SOURCES.length ? STUDIO_SOURCES[0].id : null, playing: false, position: 0, at: now, volume: .65, hands: [], invited: [] });
+export const studioState = (now = Date.now()) => ({ hostId: 0, mode: "suspended", revision: 0, playbackRevision: 0, epoch: 0, source: STUDIO_SOURCES.length ? STUDIO_SOURCES[0].id : null, playing: false, position: 0, at: now, volume: .65, hands: [], invited: [] });
 export const studioHostAllowed = (env, id) => {
   if (!Number.isSafeInteger(id) || id <= 0) return false;
   const configured = env && env.STUDIO_HOST_IDS;
@@ -28,13 +28,16 @@ export const studioSeatAllowed = (p, seat, players) => {
   const a = studioSeats[seat];
   return !!a && p.zone === STUDIO_ZONE && !!p.body && Math.hypot(p.x - a.x, p.z - a.z) <= 3 && Math.abs(p.y - a.y) <= 2 && ![...players].some(q => q !== p && q.zone === STUDIO_ZONE && q.studioSeat === seat);
 };
+// The host commands that act on what the program is doing: each checks the sender's view of the playback's own
+// revision, which only they, a host transfer and a suspension move.
+export const STUDIO_TRANSPORT = ["play", "pause", "seek", "source"];
 export const parseStudioCommand = (m) => {
   const actions = ["claim", "release", "seat", "stand", "mode", "source", "play", "pause", "seek", "volume", "transfer", "revoke", "raise", "lower", "invite", "restore"];
   if (!actions.includes(m.action)) return null;
-  if (m.revision !== undefined && (!Number.isSafeInteger(m.revision) || m.revision < 0)) return null;
+  if (m.playback !== undefined && (!Number.isSafeInteger(m.playback) || m.playback < 0)) return null;
   if (m.commandId !== undefined && (typeof m.commandId !== "string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(m.commandId))) return null;
   const out = { t: "studio", action: m.action };
-  if (m.revision !== undefined) out.revision = m.revision;
+  if (m.playback !== undefined) out.playback = m.playback;
   if (m.commandId !== undefined) out.commandId = m.commandId;
   if (m.action === "seat") { if (!Number.isInteger(m.seat) || m.seat < 0 || m.seat >= 39) return null; out.seat = m.seat; }
   if (m.action === "mode") { if (!["discussion", "presentation", "qa"].includes(m.mode)) return null; out.mode = m.mode; }

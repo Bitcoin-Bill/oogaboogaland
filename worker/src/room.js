@@ -28,7 +28,7 @@ import {
 import { sha256Hex } from "./crypto.js";
 import { getPlayer } from "./db.js";
 import { sfuClient } from "./sfu.js";
-import { STUDIO_ZONE, studioState, studioHostAllowed, studioCanSpeak, studioPosition, studioSeatAllowed, studioSource } from "./studio-policy.js";
+import { STUDIO_TRANSPORT, STUDIO_ZONE, studioState, studioHostAllowed, studioCanSpeak, studioPosition, studioSeatAllowed, studioSource } from "./studio-policy.js";
 import CAST_ROWS from "./characters.gen.json";
 
 const CAST = castIndex(CAST_ROWS);
@@ -62,7 +62,7 @@ export class Room extends DurableObject {
     this.loopEpoch = 0;
     ctx.blockConcurrencyWhile(async () => {
       this.studio = (await ctx.storage.get("studio")) || this.studio;
-      if (!studioSource(this.studio.source)) { this.studio.source = studioState().source; this.studio.position = 0; this.studio.playing = false; this.studio.at = Date.now(); this.studio.revision++; await ctx.storage.put("studio", this.studio); }
+      if (!studioSource(this.studio.source)) { this.studio.source = studioState().source; this.studio.position = 0; this.studio.playing = false; this.studio.at = Date.now(); this.studio.revision++; this.studio.playbackRevision = (this.studio.playbackRevision || 0) + 1; await ctx.storage.put("studio", this.studio); }
       this.studio.position = studioPosition(this.studio, this.studio.at);
       const seated = id => { const p = this.players.get(id); return !!p && p.zone === STUDIO_ZONE && !!p.body && Number.isInteger(p.studioSeat) && !p.studioRevoked && !(this.studio.restrictedIds || []).includes(id); };
       this.studio.hands = [...new Set((Array.isArray(this.studio.hands) ? this.studio.hands : []).filter(seated))].slice(0, MAX_PLAYERS);
@@ -74,7 +74,13 @@ export class Room extends DurableObject {
       await ctx.storage.put("loopEpoch", this.loopEpoch);
       await ctx.storage.put("sweepAt", this.sweepAt);
       if (this.studio.hostId && (!this.players.has(this.studio.hostId) || this.players.get(this.studio.hostId).zone !== STUDIO_ZONE || !studioHostAllowed(env, this.studio.hostId))) this.suspendStudio();
-      await this.retryCleanup();
+      // Stored cleanup retries from an alarm due now, never inside this block: each SFU call may take its 10 s, and a
+      // block past 30 s resets the island's only room, presence and voice with it.
+      if (this.cleanupJobs.length) {
+        this.cleanupAt = Date.now();
+        const set = await ctx.storage.getAlarm();
+        if (set === null || set > this.cleanupAt) await ctx.storage.setAlarm(this.cleanupAt);
+      }
     });
     // A woken room rebuilds its roster from the attachments its sockets carry.
     for (const ws of ctx.getWebSockets()) {
@@ -108,7 +114,7 @@ export class Room extends DurableObject {
   }
 
   attachment(p) {
-    return { id: p.id, login: p.login, display: p.display, contributor: p.contributor, body: p.body, connectionToken: p.connectionToken, studioSeat: p.studioSeat, studioRevoked: !!p.studioRevoked, studioResults: p.studioResults, x: p.x, y: p.y, z: p.z, yaw: p.yaw, g: p.g, voice: p.voice, muted: p.muted, hp: p.hp, ko: p.ko, sent: p.sent, zone: p.zone, pokerVoice: p.pokerVoice, inHub: p.inHub, joinedAt: p.joinedAt, door: p.door, passes: p.passes };
+    return { id: p.id, login: p.login, display: p.display, contributor: p.contributor, body: p.body, connectionToken: p.connectionToken, studioSeat: p.studioSeat, studioRevoked: !!p.studioRevoked, x: p.x, y: p.y, z: p.z, yaw: p.yaw, g: p.g, voice: p.voice, muted: p.muted, hp: p.hp, ko: p.ko, sent: p.sent, zone: p.zone, pokerVoice: p.pokerVoice, inHub: p.inHub, joinedAt: p.joinedAt, door: p.door, passes: p.passes };
   }
 
   view(p) {
@@ -735,12 +741,13 @@ export class Room extends DurableObject {
 
   persistStudio() {
     if (this.ctx && this.ctx.storage) this.ctx.waitUntil(this.ctx.storage.put("studio", this.studio));
-    for (const p of this.players.values()) this.sendStudio(p);
+    // Only the Studio needs it; entering the zone sends the current state.
+    for (const p of this.players.values()) if (p.zone === STUDIO_ZONE) this.sendStudio(p);
   }
 
   suspendStudio() {
     this.studio.position = studioPosition(this.studio, Date.now());
-    this.studio.at = Date.now(); this.studio.playing = false;
+    this.studio.at = Date.now(); this.studio.playing = false; this.studio.playbackRevision = (this.studio.playbackRevision || 0) + 1;
     this.studio.hostId = 0; this.studio.mode = "suspended";
     this.studio.hands = []; this.studio.invited = [];
     this.studio.epoch++; this.studio.revision++;
@@ -764,16 +771,17 @@ export class Room extends DurableObject {
     if (!this.studio) this.studio = studioState();
     const s = this.studio;
     const reply = error => {
-      const result = { t: "studio-result", action: msg.action, commandId: msg.commandId, ok: !error, error, revision: s.revision };
-      if (msg.commandId) { p.studioResults = (p.studioResults || []).slice(-31); p.studioResults.push(result); p.ws.serializeAttachment(this.attachment(p)); }
-      this.send(p.ws, result); this.sendStudio(p);
+      // The id only names the command in its result: nothing resends a command, so none is replayed.
+      this.send(p.ws, { t: "studio-result", action: msg.action, commandId: msg.commandId, ok: !error, error, revision: s.revision });
+      this.sendStudio(p);
     };
-    const prior = msg.commandId && (p.studioResults || []).find(r => r.commandId === msg.commandId);
-    if (prior) { this.send(p.ws, prior); this.sendStudio(p); return; }
     if (!p.studioBucket) p.studioBucket = { tokens: 8, at: Date.now() };
     if (!takeToken(p.studioBucket, 8, Date.now())) return reply("Please wait before another Studio command");
     if (p.zone !== STUDIO_ZONE) return reply("Enter the Studio first");
-    if (msg.revision !== undefined && msg.revision !== s.revision) return reply("Studio state changed; try again");
+    // Only transport acts on what the program was doing, so only it checks a view, and against the playback's own
+    // revision: seats, stands and hands never refuse it, and seat and hand commands keep their own checks.
+    const transport = STUDIO_TRANSPORT.includes(msg.action);
+    if (transport && msg.playback !== undefined && msg.playback !== (s.playbackRevision || 0)) return reply("The program changed; try again");
     const host = p.id === s.hostId;
     if (host && !studioHostAllowed(this.env, p.id)) { this.suspendStudio(); return reply("Studio hosting is disabled for this account"); }
     if (msg.action === "seat") {
@@ -797,12 +805,13 @@ export class Room extends DurableObject {
       if (msg.action === "seek") { const source = studioSource(s.source); if (!source || msg.position > source.duration) return reply("Position exceeds the selected video"); s.position = msg.position; }
       if (msg.action === "volume") s.volume = msg.volume;
       if (msg.action === "source") { if (!studioSource(msg.source)) return reply("Choose a reviewed Studio video"); s.source = msg.source; s.position = 0; s.playing = false; }
+      if (transport) s.playbackRevision = (s.playbackRevision || 0) + 1;
       if (msg.action === "transfer") {
         const q = this.players.get(msg.id);
         if (!q || q.zone !== STUDIO_ZONE || !studioHostAllowed(this.env, q.id) || q.studioRevoked || (s.restrictedIds || []).includes(q.id)) return reply("Choose an unrestricted approved host inside the Studio; restore speaking first if needed");
         this.background(this.clearVoiceKind(p, "pub")); this.background(this.clearVoiceKind(q, "pub"));
         this.send(p.ws, { t: "studio-mic-revoked" }); this.send(q.ws, { t: "studio-mic-revoked" });
-        s.hostId = q.id; q.studioRevoked = false; s.epoch++; s.playing = false; s.hands = []; s.invited = [];
+        s.hostId = q.id; q.studioRevoked = false; s.epoch++; s.playing = false; s.playbackRevision = (s.playbackRevision || 0) + 1; s.hands = []; s.invited = [];
       }
       if (msg.action === "invite") {
         const q = this.players.get(msg.id);

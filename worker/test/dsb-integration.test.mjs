@@ -22,11 +22,11 @@ test("every DSB venue isolates voice from other venues, hub and Bifrost", () => 
 });
 
 // Execute the real room methods with a minimal Cloudflare host, sockets and SFU mocked.
-const roomClass = () => {
+const roomClass = (extra = {}) => {
   const source = readFileSync(new URL("../src/room.js", import.meta.url), "utf8")
     .replace(/import\s+[\s\S]*?from\s+"[^"]+";/g, "")
     .replace("export class Room", "class Room") + "\nglobalThis.Room = Room;";
-  const context = { ...protocol, ...studio, getPlayer, DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }, WebSocketRequestResponsePair: class {}, sfuClient, CAST_ROWS: [{ handle: "YellowBrokeIt", github_login: "YellowBrokeIt" }], Date, Map, Set, Response, Promise, setTimeout, clearTimeout };
+  const context = { ...protocol, ...studio, getPlayer, DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }, WebSocketRequestResponsePair: class {}, sfuClient, CAST_ROWS: [{ handle: "YellowBrokeIt", github_login: "YellowBrokeIt" }], Date, Map, Set, Response, Promise, setTimeout, clearTimeout, ...extra };
   runInNewContext(source, context);
   return context.Room;
 };
@@ -144,8 +144,6 @@ test("Studio host, seat, playback and transfer permissions remain separate from 
   room.hostId = 2;
   room.studioCommand(attendee, { action: "claim" }); assert.equal(room.studio.hostId, 0);
   room.studioCommand(host, { action: "claim", commandId: "claim1" }); assert.equal(room.studio.hostId, 1);
-  const revision = room.studio.revision;
-  room.studioCommand(host, { action: "claim", commandId: "claim1" }); assert.equal(room.studio.revision, revision);
   room.studioCommand(attendee, { action: "seat", seat: 0 }); assert.equal(attendee.studioSeat, 0);
   room.studioCommand(next, { action: "seat", seat: 0 }); assert.equal(next.studioSeat, undefined);
   assert.equal(studio.studioCanSpeak(room.studio, attendee), true);
@@ -570,4 +568,66 @@ test("the alarm wakes at the earliest of sweep, door expiry and cleanup retry, a
   await room.alarm();
   assert.equal(attempts, 1); assert.equal(room.cleanupJobs.length, 0); assert.equal(room.cleanupAt, 0);
   assert.equal(alarms.at(-1), room.sweepAt);
+});
+
+// Regression (#193 review): stored cleanup made SFU calls inside the constructor's blockConcurrencyWhile, where two
+// stuck 10 s jobs pass the 30 s limit and reset the island's only room. The block loads the jobs; an alarm due now retries.
+test("a woken room makes no SFU call inside its constructor's block and retries stored cleanup from an alarm due now", async () => {
+  let inBlock = false, callsInBlock = 0, closed = 0;
+  const sfu = {
+    getSession: async () => { if (inBlock) callsInBlock++; return { tracks: [] }; },
+    closeTracks: async (_session, mids) => { if (inBlock) callsInBlock++; closed++; return { tracks: mids.map(mid => ({ mid })) }; },
+  };
+  const Room = roomClass({ sfuClient: () => sfu });
+  const saved = new Map([["voiceCleanup", [{ session: "stored", revision: 0, mids: ["0"], midVersions: { 0: 0 }, inspect: true, inspectUntil: 0 }]]]);
+  const alarms = []; let block = null;
+  const ctx = {
+    setWebSocketAutoResponse() {}, getWebSockets: () => [], getWebSocketAutoResponseTimestamp: () => null, waitUntil() {},
+    blockConcurrencyWhile: fn => { inBlock = true; block = fn().finally(() => { inBlock = false; }); return block; },
+    storage: { get: async key => Array.isArray(key) ? null : structuredClone(saved.get(key)), put: async (k, v) => saved.set(k, structuredClone(v)), getAlarm: async () => alarms.at(-1) ?? null, setAlarm: async at => alarms.push(at) },
+  };
+  const before = Date.now(), room = new Room(ctx, {});
+  await block;
+  assert.equal(callsInBlock, 0, "no SFU call inside the block");
+  assert.equal(room.cleanupJobs.length, 1, "the stored job is loaded");
+  assert.ok(alarms.length && alarms.at(-1) <= Date.now() && alarms.at(-1) >= before, "an alarm is set for now");
+  await room.alarm();
+  assert.equal(closed, 1); assert.equal(room.cleanupJobs.length, 0); assert.deepEqual(saved.get("voiceCleanup"), []);
+});
+
+// Regression (#193 review): command ids restart at studio-1 with each DSB visit's controller, and the room replayed the
+// last visit's results for them, so a seat came back "ok" with nobody seated. Nothing resends a command; none is replayed.
+test("a command id seen on an earlier visit is a new command: it acts, and nothing about it rides the attachment", () => {
+  const { room, add } = studioRoom(), attendee = add(2);
+  room.studioCommand(attendee, { action: "seat", seat: 0, commandId: "studio-1" }); assert.equal(attendee.studioSeat, 0);
+  room.studioCommand(attendee, { action: "stand", commandId: "studio-2" }); assert.equal(attendee.studioSeat, undefined);
+  room.studioCommand(attendee, { action: "seat", seat: 0, commandId: "studio-1" });
+  assert.equal(attendee.studioSeat, 0, "the second visit's first command is not answered with the first visit's");
+  const results = attendee.ws.sent.filter(m => m.t === "studio-result");
+  assert.deepEqual(results.map(r => r.commandId), ["studio-1", "studio-2", "studio-1"], "each result still names its command");
+  assert.equal("studioResults" in room.attachment(attendee), false);
+});
+
+// Regression (#193 review): every command carried the room-wide revision, which seats, stands and hands bump, so a host's
+// pause failed whenever someone sat down, and two attendees sitting at once got one refusal. Only transport checks a view.
+test("seat and hand changes never refuse host transport or another seat; a stale playback view is refused", () => {
+  const { room, add } = studioRoom(), host = add(1), a = add(2), b = add(4);
+  room.studioCommand(host, { action: "claim" });
+  const view = { revision: room.studio.revision, playback: room.studio.playbackRevision };
+  room.studioCommand(a, { action: "seat", seat: 0, ...view }); room.studioCommand(b, { action: "seat", seat: 1, ...view });
+  assert.equal(a.studioSeat, 0); assert.equal(b.studioSeat, 1, "two attendees sitting from one view both sit");
+  room.studioCommand(host, { action: "play", ...view }); assert.equal(room.studio.playing, true, "a seat change does not refuse play");
+  room.studioCommand(host, { action: "pause", ...view });
+  assert.equal(room.studio.playing, true, "a view from before the play is stale for transport");
+  assert.equal(host.ws.sent.filter(m => m.t === "studio-result").at(-1).ok, false);
+  room.studioCommand(host, { action: "pause", revision: room.studio.revision, playback: room.studio.playbackRevision }); assert.equal(room.studio.playing, false);
+});
+
+// Regression (#193 review): every Studio change sent studio-state to every player on the island.
+test("Studio state goes to players in the Studio only; entering sends it", () => {
+  const { room, add } = studioRoom(), host = add(1), outside = add(5, { zone: "dsb-outside" });
+  room.studioCommand(host, { action: "claim" });
+  room.studioCommand(host, { action: "mode", mode: "presentation" });
+  assert.equal(outside.ws.sent.filter(m => m.t === "studio-state").length, 0);
+  assert.ok(host.ws.sent.some(m => m.t === "studio-state"));
 });

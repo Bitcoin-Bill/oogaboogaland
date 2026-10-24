@@ -17997,13 +17997,13 @@ const studioSessionProof = async () => {
   voice.stats.permission="requesting";voice.stats.preflightPending=false;voiceEvent();const previewReleaseDisabledForPublication=panel.querySelector("[data-cancel-preflight]").disabled;voice.stats.permission="unknown";voiceEvent();
   voice.stats.blocked=true;voiceEvent();const blocked=session.stats.soundState==="blocked"&&video.muted;voice.stats.blocked=false;voiceEvent();
   panel.querySelector("[data-mic]").fire("click");const forbidden=calls.enable===0;
-  accept({t:"studio",state:{...snapshot,revision:3,mode:"discussion",canSpeak:true,playing:false}});
+  accept({t:"studio",state:{...snapshot,revision:3,playbackRevision:6,mode:"discussion",canSpeak:true,playing:false}});
   panel.querySelector("[data-mic]").fire("click");const discussion=calls.enable===1;
   for(let i=0;i<8;i++)await Promise.resolve();voice.stats.publishing=true;voice.stats.muted=true;voiceEvent();
   panel.querySelector("[data-mic]").fire("click");const mutedPublisherUnmutes=calls.toggle===1&&!voice.stats.muted&&calls.enable===1;
   voice.stats.publishing=false;
   session.seat("audience-0");accept({t:"studio-result",action:"seat",ok:false,error:"occupied"});
-  const rejection=calls.rejected===1&&panel.querySelector("[data-error]").textContent==="occupied"&&calls.commands.at(-1).revision===3;
+  const rejection=calls.rejected===1&&panel.querySelector("[data-error]").textContent==="occupied"&&calls.commands.at(-1).playback===6&&calls.commands.at(-1).revision===undefined;
   accept({t:"studio",state:snapshot});const stale=session.stats.mode==="discussion";
   panel.querySelector("[data-next]").fire("click");const nextCommand=calls.commands.at(-1).action==="source"&&calls.commands.at(-1).source==="sample-quiet";
   accept({t:"studio",state:{...snapshot,revision:4,source:"sample-quiet",playing:false,position:7}});const catalogueSwap=session.stats.source==="sample-quiet"&&video.src==="/media/studio-quiet.mp4"&&panel.querySelector("[data-seek]").max==="8";

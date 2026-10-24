@@ -10,7 +10,8 @@ import { parseStudioCommand, studioCanSpeak, STUDIO_ZONE } from "./studio-policy
 //                 { t: "hp", v, ko }             the driven body's health (normalized 0-100) and knockout flag
 //                 pose.g                         optional gorilla locomotion: [flags, speed, stride, climb, side, swim]
 //                 { t: "chat", text, clientId? }            a line for Ooga Chat (see Chat below)
-//                 { t: "studio", action, revision?, commandId?, ... }  a DSB Studio seat or host command
+//                 { t: "studio", action, playback?, commandId?, ... }  a DSB Studio seat or host command; transport
+//                                checks `playback` against the state's playbackRevision
 //                                (`parseStudioCommand` in studio-policy.js; see docs/dsb-studio-session.md)
 //                 { t: "ghost", k, g?, d?, h? }  HALLOWEEN: the ghost hunt's `start`, `ready` or `pause`, or `hits` h, for the host
 //                 binary                         the NPC host's frame of every Ooga's pose, relayed as is
