@@ -5671,7 +5671,7 @@ const hubWorkingArrival = { name: "hub working arrival", why: "regression: worki
 } };
 // Away and back twice. The director's ?debug=1 leave contract throws inside advance on a broken leave,
 // and the second visit may hold no more GPU records, nodes, input targets or DOM than the first.
-const trip = (id) => ({ name: `${id} round trip`, why: "contract: inactive input is released, repeated visits stay bounded, and the active scene takes a donation whenever one arrives", run: async (b) => {
+const trip = (id) => ({ name: `${id} round trip`, why: "contract: a scene left and entered again keeps nothing from the last visit, and takes a donation whenever one arrives", run: async (b) => {
   const away = id === "hub" ? "lab" : "hub", laps = [], beds = [];
   for (let i = 0; i < 2; i++) {
     await tourGo(b, away);

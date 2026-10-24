@@ -1966,6 +1966,7 @@
           tipVisibility = visibility;
           if (!visibility) tooltip.hide();
         },
+        get visibility() { return tipVisibility; },
         beginFrame: () => {
           tipSpeechBottom = -Infinity;
           tooltip.update(false);
@@ -2347,8 +2348,8 @@
     return {
       // Engines keep this facade while a retained scene takes a fresh visit signal and sheet state.
       renew(signal) {
-        const next = create({ roster, catalog, tierColors, renderIcon, lootEnabled, signal });
-        next.tooltip.setVisibility(tipVisibility);
+        const next = create({ roster, catalog, tierColors, renderIcon, lootEnabled, healthEnabled, signal });
+        next.tooltip.setVisibility(this.tooltip.visibility);
         next.onAction(actionHandler); next.onPreset(presetHandler); next.onAssign(assignHandler); next.onUnassign(unassignHandler);
         Object.defineProperties(this, Object.getOwnPropertyDescriptors(next));
         return this;

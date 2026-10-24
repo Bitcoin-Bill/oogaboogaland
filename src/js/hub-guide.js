@@ -712,9 +712,9 @@
     };
     let suspended = false;
     const suspend = () => {
-      if (state.ask) { state.ask.abort(); pending(null); }
       if (suspended) return;
       suspended = true;
+      if (state.ask) { state.ask.abort(); pending(null); }
       window.removeEventListener("keydown", captureKey, true);
       if (state.holding) release();
       state.still = false;

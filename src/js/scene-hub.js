@@ -10649,6 +10649,14 @@
   };
   const onTotem = (event) => { if (event.fresh) flareTotem(event.index); };
   const suspendHub = () => {
+    // A kept island ends its hunt and its game as a full leave does, and lowers the ring at once.
+    ghostVisit++;
+    if (ghosts) { ghosts.dispose(); ghosts = null; }
+    ghostLoading = false; ghostSeal = null;
+    setGameMode(false);
+    gameRingK = gameRingWait = 0; gameRing.scale.y = 0; gameRing.visible = false;
+    for (const node of ringLanterns) node.visible = false;
+    ringLanternsShown = false;
     actorTransition.sourceRoot = actorTransition.sourceHead = null;
     if (factoryMouth && factoryMouth.snap) snapFactoryView();
     if (bifrostIsle && bifrostIsle.snap) snapBifrostView();
@@ -10722,6 +10730,11 @@
     hubScene.debug.weather = weather;
     weather.apply(chain.snapshot); mempoolIsland.water.apply(chain.snapshot);
     mempoolIsland.paintings.refresh(chain.snapshot); refreshChainSign();
+    // As enter does: the distant island rests until the first proximity check below wakes it.
+    poolEffectsActive = false; poolEffectsTime = 0;
+    if (factoryMouth) factoryMouth.roofEffectsActive = false;
+    weather.update(0, null);
+    weather.pause(true);
     unsubscribeChain = chain.subscribe(onChain);
     unsubscribeMempool = mempool.subscribe(onMempool);
     oogatronUnsub = oogatronLive.subscribe(onOogatron);
@@ -10764,6 +10777,7 @@
       positionDebug.addEventListener("click", copyPositionDebug, { signal: ctx.signal });
       updatePositionDebug(true);
     }
+    updatePoolEffectsActivity();
   };
   const enter = (ctx) => {
     reuseHub = ctx.hubPolicy === "keep";

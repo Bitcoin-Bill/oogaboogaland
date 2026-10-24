@@ -6264,6 +6264,7 @@
       // Collision exclusions belong to this ordered update only; input and relocation see ordinary bodies.
       for (let i = 0; i < crewList.length; i++) crewList[i].riding.support = null;
     };
+    const pause = () => { window.clearTimeout(recipeTimer); recipeTimer = 0; };
     const setCombatEnabled = (on) => {
       on = on === true;
       if (on === combatEnabled) return;
@@ -6320,7 +6321,6 @@
         camp.panic.threat = null;
       }
     };
-    const pause = () => { window.clearTimeout(recipeTimer); recipeTimer = 0; };
     const dispose = () => {
       pause();
       planQueue.length = 0;
