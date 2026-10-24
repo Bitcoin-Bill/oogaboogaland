@@ -11424,8 +11424,10 @@
     pilot.bind(shared);
     // The doorway draws the island once from inside the passage for the way back out (`renderView`), sets the
     // sphere's heartbeat going while a room readies slowly (`show`), and hands a crossing the island's own meshes to
-    // keep on the GPU while the visit lasts (`keep`).
+    // keep on the GPU while the visit lasts (`keep`). Only a kept island is worth keeping: under `release` the island
+    // and its caches are rebuilt on the way back out, so the old meshes would only sit pinned and unused.
     const keepGeometry = () => {
+      if (!reuseHub) return null;
       const kept = new Set(), walk = (node) => { if (node.geometry) kept.add(node.geometry); for (const child of node.children) walk(child); };
       walk(root);
       liveGeometry(kept);
