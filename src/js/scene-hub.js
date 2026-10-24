@@ -10724,6 +10724,8 @@
     if (bifrostIsle && bifrostIsle.snap) snapBifrostView();
     if (factoryMouth) factoryMouth.snap = false;
     if (bifrostIsle) bifrostIsle.snap = false;
+    // Heimdall's horn closes its sound as a full leave does; his next blast opens it again.
+    if (bifrostIsle) bifrostIsle.heimdall.dispose();
     if (enteringTween) enteringTween.alive = false;
     enteringTween = null;
     // The director clears every tween after leave without running its `done`. The pile's fruit in the air goes back
