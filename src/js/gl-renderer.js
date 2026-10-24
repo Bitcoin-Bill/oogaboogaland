@@ -1658,8 +1658,8 @@ void main() {
     const DRAW_BOTH = [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1];
     let settings = QUALITY[quality] || QUALITY.high;
     let qualityName = QUALITY[quality] ? quality : "high";
-    // The explicit A/B override applies on every GPU and tier; rigs retain their own programs.
-    const prepassOverride = new URLSearchParams(location.search).get("prepass");
+    // The explicit A/B override, under debug only, applies on every GPU and tier; rigs retain their own programs.
+    const pageParams = new URLSearchParams(location.search), prepassOverride = pageParams.has("debug") ? pageParams.get("prepass") : null;
     let collectNear = 0.2;
     // Firefox names the GPU in RENDERER (and warns about the debug extension); Chrome and Safari mask it there and
     // answer through the extension.
