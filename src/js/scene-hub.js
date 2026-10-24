@@ -10709,7 +10709,14 @@
     if (ghosts) { ghosts.dispose(); ghosts = null; }
     ghostLoading = false; ghostSeal = null;
     setGameMode(false);
-    gameRingK = gameRingWait = 0; gameRing.scale.y = 0; gameRing.visible = false;
+    gameRingK = gameRingWait = ringPulseWait = 0; gameRing.visible = false;
+    // The veils' waves and glyph outlines end with the visit as leave ends them; an outline is made again where a body
+    // next touches its veil (`ringBodies`).
+    for (const node of ringPanels) {
+      const ripples = node.mirrorRipples;
+      ripples.waves.fill(0); ripples.active = 0; ripples.time = 0;
+      if (node.mirrorBody) node.mirrorBody.dispose();
+    }
     for (const node of ringLanterns) node.visible = false;
     ringLanternsShown = false;
     actorTransition.sourceRoot = actorTransition.sourceHead = null;
