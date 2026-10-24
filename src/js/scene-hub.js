@@ -3255,6 +3255,7 @@
     weather.pause(!active);
     if (active) {
       // The feed stays live while the geometry rests; paint only its latest reading on return.
+      mempoolIsland.water.resume();
       mempoolIsland.paintings.refresh(chain.snapshot);
       refreshChainSign();
     }
@@ -3599,7 +3600,7 @@
   };
   const isPlayerAttack = source => !!source && (source === crew.player || source.controlled && source.actionControlled);
   const hitMirror = (power, x, y, z, source) => {
-    if (!gameMode) return;
+    if (!gameMode && !isPlayerAttack(source)) return;
     const damage = mirrorCave.damage;
     const scaledPower = power * 4;
     if (!damage.hit(scaledPower, x, y, z)) return;
@@ -3612,7 +3613,10 @@
       ghosts.hit(source, hit, power, isPlayerAttack(source));
       return;
     }
-    if (!gameMode) return;
+    if (!gameMode) {
+      if (hit.node === mirrorCave.node) hitMirror(power, hit.x, hit.y, hit.z, source);
+      return;
+    }
     if (source && source.controlled && source.actionControlled && source.combat && !source.combat.powerSpent) {
       const combat = source.combat;
       source.poundPower *= 0.25 + 0.75 * clamp((now - combat.lastHitAt - 0.1) / 0.1, 0, 1);
@@ -8595,7 +8599,7 @@
   };
   const drawExtra = (ctx2d, project) => {
     crew.drawDrops(ctx2d, project);
-    remotes.drawNames(ctx2d, project);
+    remotes.drawNames(ctx2d, project, gameMode);
     if (ghosts) ghosts.drawOverlay(ctx2d, project); // HALLOWEEN
     if (debugSelectedGorilla) {
       const entry = debugSelectedGorilla, move = entry.debugMove, p = entry.root.position;
@@ -10891,7 +10895,8 @@
       const t = from / (from - to);
       hitMirror(1, lerp(ax, bx, t), lerp(ay, by, t), lerp(az, bz, t), source);
     };
-    shared.weaponInteraction = owner => !!ghosts && !ghosts.busy && owner.kind === "halloween" && owner.role === "herald" && owner.active;
+    shared.weaponInteraction = (owner, node) => node === mirrorCave.node
+      || !!ghosts && !ghosts.busy && owner.kind === "halloween" && owner.role === "herald" && owner.active;
     shared.onWeaponImpact = weaponImpact;
     shared.onMeleeStrike = mirrorCave.ripples.strike;
     shared.aimSurface = mirrorCave.ripples.aimAt;

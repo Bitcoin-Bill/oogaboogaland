@@ -1561,7 +1561,7 @@
     const clearProjectiles = () => { for (const b of bulletPool) { b.life = 0; b.node.visible = false; b.source = null; } throwCooldown = 0; };
     // Throws share the capped projectile pool, collision callbacks and disposal with gun rounds.
     const throwTomato = () => {
-      const cave = player; if (!combatEnabled || !cave || cave.grabbedBy || throwCooldown > 0 || cave.health.stunned || cave.state === "sleeping") return false;
+      const cave = player; if (!(combatEnabled || weaponsEnabled && ctx.tomatoContact) || !cave || cave.grabbedBy || throwCooldown > 0 || cave.health.stunned || cave.state === "sleeping") return false;
       if (!tomatoGeometry) tomatoGeometry = models.merge(models.box({ w: .28, h: .24, d: .28, color: "#e34d32" }), models.box({ w: .13, h: .07, d: .13, color: "#578544", offset: { x: 0, y: .15, z: 0 } }));
       const b = bulletPool[bulletIdx++ % bulletPool.length], p = cave.root.position;
       setVec(b.from, p.x, p.y + cave.traits.height * .45, p.z);

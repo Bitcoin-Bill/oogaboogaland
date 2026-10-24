@@ -306,10 +306,6 @@
       tooltipText: $("tooltip-text"),
       tooltipHealth: $("tooltip-health"),
       tooltipHealthFill: $("tooltip-health-fill"),
-      controlledName: $("controlled-name"),
-      controlledNameText: $("controlled-name-text"),
-      controlledNameHealth: $("controlled-name-health"),
-      controlledNameHealthFill: $("controlled-name-health-fill"),
       hint: $("hint"),
       sheet: $("sheet"),
       sheetToggle: $("sheet-toggle"),
@@ -881,11 +877,11 @@
       if (stateChanged) { modeCombat = combat; modeView = view; modeCombatEnabled = combatEnabled; }
       if (identityChanged || stateChanged) {
         el.mode.dataset.shooter = String(selected && combat && combatEnabled);
-        el.mode.dataset.combat = String(selected && combat && combatEnabled);
+        el.mode.dataset.combat = String(selected && combat);
         el.mode.dataset.view = selected ? view : "detached";
         el.mode.setAttribute("aria-pressed", String(selected && combat));
-        const look = combatEnabled ? combat ? "combat" : "carry" : combat ? "cursor look" : "drag to look";
-        const change = combatEnabled ? "combat or carry mode" : "cursor look or click-and-drag look";
+        const look = combatEnabled || gorilla ? combat ? "combat" : "carry" : combat ? "cursor look" : "drag to look";
+        const change = combatEnabled || gorilla ? "combat or carry mode" : "cursor look or click-and-drag look";
         el.mode.setAttribute("aria-label", gorilla
           ? `${shown}'s gorilla; ${view} view; ${look}. Press to switch ${change}; hold to detach`
           : selected
@@ -1891,10 +1887,10 @@
       const panel = document.getElementById(b.dataset.fold);
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
-    // Hover and the locally controlled body each own one bounded nameplate.
+    // Hover owns one bounded nameplate.
     const createTooltip = (element, textElement, healthElement, healthFillElement, showHealth = healthEnabled) => {
       let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
-      let tipVisibility = null, tipSpeechBottom = -Infinity, tipSuppressed = false, tipNoStatusDot = false, tipViewport = 0;
+      let tipVisibility = null, tipSpeechBottom = -Infinity, tipNoStatusDot = false, tipViewport = 0;
       const tipScreen = { x: 0, y: 0, depth: 0 };
       // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
       // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
@@ -1921,12 +1917,6 @@
         element.style.transform = `translate(${left}px, ${top}px)`;
       };
       const tooltip = {
-        get actor() { return tipCave; },
-        suppress: (on) => {
-          if (on === tipSuppressed) return;
-          tipSuppressed = on;
-          if (tipCave) tooltip.update();
-        },
         show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
           if (cave !== tipCave) tipSpeechBottom = -Infinity;
           tipCave = cave;
@@ -1991,7 +1981,7 @@
               ? `${tipText}, ${STATE_LABELS[state]}, ${Math.ceil(tipHealth)} of ${tipHealthMax} health`
               : `${tipText}, ${STATE_LABELS[state]}`);
           }
-          element.hidden = tipSuppressed || !tipVisibility || !tipVisibility.anchor(tipCave, tipScreen);
+          element.hidden = !tipVisibility || !tipVisibility.anchor(tipCave, tipScreen);
           if (element.hidden) return;
           if (tipViewport !== window.innerWidth) measureTooltip();
           if (!place) return;
@@ -2019,44 +2009,7 @@
       };
       return tooltip;
     };
-    const hoverTooltip = createTooltip(el.tooltip, el.tooltipText, el.tooltipHealth, el.tooltipHealthFill);
-    const controlledTooltip = createTooltip(el.controlledName, el.controlledNameText, el.controlledNameHealth, el.controlledNameHealthFill, false);
-    let controlledCave = null, controlledVisible = false;
-    const tooltip = {
-      show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
-        hoverTooltip.suppress(!!cave && cave === controlledCave);
-        hoverTooltip.show(text, x, y, cave, noStatusDot, above);
-      },
-      hide: hoverTooltip.hide,
-      setControlled: (cave, visible = true) => {
-        visible = !!cave && visible;
-        if (cave === controlledCave && visible === controlledVisible) return;
-        controlledCave = cave; controlledVisible = visible;
-        controlledTooltip.suppress(!visible);
-        if (cave) {
-          const owner = cave.tooltipOwner;
-          controlledTooltip.show(owner ? `🦍 ${owner.traits.display}` : cave.traits.display, 0, 0, cave, !!owner);
-        } else controlledTooltip.hide();
-        hoverTooltip.suppress(!!cave && cave === hoverTooltip.actor);
-      },
-      setVisibility: (visibility) => {
-        hoverTooltip.setVisibility(visibility);
-        controlledTooltip.setVisibility(visibility);
-      },
-      beginFrame: () => {
-        hoverTooltip.beginFrame();
-        controlledTooltip.beginFrame();
-      },
-      update: (place = true) => {
-        hoverTooltip.update(place);
-        controlledTooltip.update(place);
-      },
-      speechSpace: (cave) => Math.max(hoverTooltip.speechSpace(cave), controlledTooltip.speechSpace(cave)),
-      belowSpeech: (cave, bottom) => {
-        hoverTooltip.belowSpeech(cave, bottom);
-        controlledTooltip.belowSpeech(cave, bottom);
-      }
-    };
+    const tooltip = createTooltip(el.tooltip, el.tooltipText, el.tooltipHealth, el.tooltipHealthFill);
     const hint = (text, ms = 4200) => {
       window.clearTimeout(hintTimer);
       window.clearTimeout(hintHideTimer);
@@ -2358,7 +2311,6 @@
       el.hint.classList.remove("show");
       el.hint.hidden = true;
       tooltip.hide();
-      tooltip.setControlled(null);
       clearModeHold();
       modePointer = -1;
       retake.actor = null; retake.gorilla = false;

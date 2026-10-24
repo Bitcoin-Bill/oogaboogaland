@@ -777,7 +777,7 @@ body[data-active-scene="arcade"] .magazine-hud {
 .sheet[data-dock="bottom"] .sheet-toggle-bananas .sheet-tab-face { padding: 4px 18px 0; }
 .sheet[data-dock="bottom"] .sheet-toggle-loot { left: 144px; }
 .sheet[data-dock="bottom"] .sheet-toggle-chat { left: var(--sheet-chat-left); }
-.sheet[data-dock="bottom"][data-open="false"] .sheet-toggle { top: calc(-39px - var(--safe-bottom)); }
+.sheet[data-dock="bottom"][data-open="false"] .sheet-toggle { top: calc(-45px - var(--safe-bottom)); }
 
 .sheet[data-paired="true"] .sheet-content {
   display: grid;

@@ -7090,7 +7090,22 @@ const hubMatrix = { name: "hub matrix", why: "rule: pulling the room lever down 
     && carved.sealed.length === 1 && carved.sealed.map(entry => entry.id).sort().join() === "c9" && carved.sealed.every(entry => entry.visible && Number.isFinite(entry.stop)), JSON.stringify(carved));
 } };
 const hubMirror = { name: "hub mirror", why: "rule: 500 damage shatters the mirror, unlocks its gate and ends the glyph hint; a short scene trip preserves the broken mirror before its repair delay", run: async (b) => {
-  const r = await b.evaluate(`(() => { const B = window.__ooga, M = B.mirrorCave, g = M.gate, w = M.node.world, G = B.matrixGate, m = M.mouth; const A = { x: m.x + Math.sin(m.ry) * 1.5, y: m.floorY, z: m.z + Math.cos(m.ry) * 1.5 }, E = { x: m.x - Math.sin(m.ry), y: m.floorY + 1.6, z: m.z - Math.cos(m.ry) }, dh = Math.hypot(E.x - A.x, E.z - A.z); B.pilot.navigate({ position: A, yaw: Math.atan2(E.x - A.x, E.z - A.z), pitch: Math.atan2(E.y - (A.y + 1.53), dh), dist: dh }); B.advance(1, 1 / 60); const before = { broken: M.damage.broken, locked: g.locked, hint: M.guides.state.doorway }; M.damage.hit(499, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const whole = { broken: M.damage.broken, locked: g.locked }; M.damage.hit(1, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const u0 = M.guides.state.doorwayUpdates; B.advance(1, 1 / 60); const after = { broken: M.damage.broken, shattered: M.shattered, locked: g.locked, reveal: M.node.mirrorReveal, hint: M.guides.state.doorway, frozen: M.guides.state.doorwayUpdates === u0 }; B.go("lab"); let n = 0; while ((B.transitioning || B.scene !== "pool") && n++ < 600) B.advance(1 / 30, 1 / 30); B.go("hub"); n = 0; while ((B.transitioning || B.scene !== "hub") && n++ < 600) B.advance(1 / 30, 1 / 30); B.advance(0.5, 1 / 60); const N = B.mirrorCave; return { before, whole, after, back: { broken: N.damage.broken, shattered: N.shattered, locked: N.gate.locked, reveal: N.node.mirrorReveal, hint: N.guides.state.doorway } }; })()`);
+  const physical = await b.evaluate(`(() => {
+    const B = __ooga, M = B.mirrorCave, m = M.mouth, a = B.cavemen.get("portlandhodl");
+    B.pilot.possess(a); B.crew.configureWeapon(a, 2, 30);
+    const A = { x: m.x + Math.sin(m.ry) * 3.5, y: m.floorY, z: m.z + Math.cos(m.ry) * 3.5 };
+    const E = { x: m.x - Math.sin(m.ry), y: m.floorY + 1.6, z: m.z - Math.cos(m.ry) };
+    const dh = Math.hypot(E.x - A.x, E.z - A.z);
+    B.pilot.navigate({ position: A, yaw: Math.atan2(E.x - A.x, E.z - A.z), pitch: Math.atan2(E.y - (A.y + 1.53), dh), dist: dh });
+    B.advance(0.3, 1 / 60); BL.scene.updateWorld(BL.scenes.hub.root);
+    const w = M.node.world, before = M.damage.damage, health = a.health.value, shots = a.weapon.shotsFired;
+    const fired = B.crew.fireWeapon(a, { x: w[12], y: w[13], z: w[14] }, 1);
+    B.advance(0.5, 1 / 60);
+    return { fired, damage: M.damage.damage - before, shots: a.weapon.shotsFired - shots,
+      harmless: !B.crew.combatEnabled && !BL.scenes.hub.debug.gameMode && health === a.health.value };
+  })()`);
+  record("hub mirror: an ordinary visitor can damage the glass with a real rifle shot without enabling character damage", physical.fired && physical.damage > 0 && physical.shots === 1 && physical.harmless, JSON.stringify(physical));
+  const r = await b.evaluate(`(() => { const B = window.__ooga, M = B.mirrorCave, g = M.gate, w = M.node.world, G = B.matrixGate, m = M.mouth; const A = { x: m.x + Math.sin(m.ry) * 1.5, y: m.floorY, z: m.z + Math.cos(m.ry) * 1.5 }, E = { x: m.x - Math.sin(m.ry), y: m.floorY + 1.6, z: m.z - Math.cos(m.ry) }, dh = Math.hypot(E.x - A.x, E.z - A.z); B.pilot.navigate({ position: A, yaw: Math.atan2(E.x - A.x, E.z - A.z), pitch: Math.atan2(E.y - (A.y + 1.53), dh), dist: dh }); B.advance(1, 1 / 60); const before = { broken: M.damage.broken, locked: g.locked, hint: M.guides.state.doorway }; M.damage.hit(499 - M.damage.damage, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const whole = { broken: M.damage.broken, locked: g.locked }; M.damage.hit(1, w[12], w[13], w[14]); B.advance(1 / 60, 1 / 60); const u0 = M.guides.state.doorwayUpdates; B.advance(1, 1 / 60); const after = { broken: M.damage.broken, shattered: M.shattered, locked: g.locked, reveal: M.node.mirrorReveal, hint: M.guides.state.doorway, frozen: M.guides.state.doorwayUpdates === u0 }; B.go("lab"); let n = 0; while ((B.transitioning || B.scene !== "pool") && n++ < 600) B.advance(1 / 30, 1 / 30); B.go("hub"); n = 0; while ((B.transitioning || B.scene !== "hub") && n++ < 600) B.advance(1 / 30, 1 / 30); B.advance(0.5, 1 / 60); const N = B.mirrorCave; return { before, whole, after, back: { broken: N.damage.broken, shattered: N.shattered, locked: N.gate.locked, reveal: N.node.mirrorReveal, hint: N.guides.state.doorway } }; })()`);
   record("hub mirror: 499 damage leaves it whole and locked, 500 shatters it open with its gate unlocked and the glyph hint stopped, and it is still broken after a trip away", !r.before.broken && r.before.locked && r.before.hint && !r.whole.broken && r.whole.locked && r.after.broken && r.after.shattered && !r.after.locked && r.after.reveal === 1 && !r.after.hint && r.after.frozen && r.back.broken && r.back.shattered && !r.back.locked && r.back.reveal === 1 && !r.back.hint, JSON.stringify(r));
 } };
 // The Canvas 2D fallback, for a device without WebGL2: every scene, entered in one page, paints real
@@ -7411,7 +7426,7 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
     return { accepted, state: G.state, combat: B.crew.combatEnabled, game: H.gameMode, health: a.health.value === health,
       shots: a.weapon.shotsFired - before, shown: !document.getElementById("ghost-lobby").hidden,
       aiming: B.pilot.aiming, reticle: document.getElementById("weapon-reticle").hidden,
-      labelsHidden: ["tooltip", "controlled-name"].every(id => getComputedStyle(document.getElementById(id)).visibility === "hidden") };
+      labelsHidden: getComputedStyle(document.getElementById("tooltip")).visibility === "hidden" };
   })()`);
   record(`ghost entry: ${melee ? "a club" : "an AK burst"} opens the lobby without readying automatically or enabling HUB damage`, entry.accepted && entry.state === "GATHER" && entry.shown && entry.health && !entry.game && !entry.combat && (melee || entry.shots > 0 && entry.shots <= 3), JSON.stringify(entry));
   if (!entry.shown) return;
@@ -7420,7 +7435,7 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
   const button = await b.evaluate(`(() => { const r = document.getElementById("ghost-lobby-${melee ? "decline" : "ready"}").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await b.click(button.x, button.y);
   const closed = await untilPage(b, 'document.getElementById("ghost-lobby").hidden');
-  record("ghost lobby: world-name visibility is restored after closing", await b.evaluate('["tooltip", "controlled-name"].every(id => getComputedStyle(document.getElementById(id)).visibility !== "hidden")'));
+  record("ghost lobby: world-name visibility is restored after closing", await b.evaluate('getComputedStyle(document.getElementById("tooltip")).visibility !== "hidden"'));
   const resumed = await b.evaluate(`({ aiming: __ooga.pilot.aiming, focus: document.body.classList.contains("aim-cursor-focused") || document.pointerLockElement === document.getElementById("scene"), reticle: !document.getElementById("weapon-reticle").hidden, combat: __ooga.crew.combatEnabled, game: BL.scenes.hub.debug.gameMode })`);
   record(`ghost lobby: ${melee ? "declining keeps carry mode and a free cursor" : "Ready starts the hunt and restores crosshair control"}`, closed && (melee ? !resumed.aiming && !resumed.focus && !resumed.reticle && !resumed.game : resumed.aiming && resumed.focus && resumed.reticle && resumed.combat && resumed.game), JSON.stringify(resumed));
   if (melee || !resumed.game) return;
@@ -10087,26 +10102,32 @@ const factoryRailingJump = { name: "factory railing jumps", why: "regression: ri
   })()`);
   record("factory railings: empty or partly used rifles jump off four platforms, land clear on the floor below and keep walking; falling over a channel tank also leaves movement clear", r.scene === "factory" && r.rows.length === 4 && r.rows.every(row => row.jumped && row.crossed && row.airborne && row.grounded && row.landedBelow && row.floor >= 0 && row.clear && row.walked > 0.5) && r.tankLanding.grounded && r.tankLanding.clear && r.tankLanding.walked > 0.5, JSON.stringify(r));
 } };
-const factoryWeapons = { name: "factory weapon selection", why: "rule: the factory refuses game-only weapon controls while both look modes and their camera transitions remain available", run: async (b) => {
+const factoryWeapons = { name: "factory weapon selection", why: "regression: factory weapon controls remain available while damage stays off", run: async (b) => {
   const r = await b.evaluate(`(() => {
-    const B = __ooga, a = B.cavemen.get("portlandhodl"), P = B.pilot;
-    if (B.crew.player !== a) P.possess(a);
-    B.crew.configureWeapon(a, 1); B.crew.configureWeapon(a, 2, 6);
-    const slot = a.weapon.selectedSlot, ammo = a.weapon.ammo, shots = a.weapon.shotsFired;
-    const key = (key, code) => { for (const type of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true })); };
-    key("1", "Digit1"); key("2", "Digit2"); key("v", "KeyV"); B.advance(0.3, 1 / 60);
-    const rejected = !P.weaponMode(1) && !P.weaponAction("weapon-fire")
-      && !B.crew.fireWeapon(a, { x: 0, y: 20, z: 0 }, 1) && !B.crew.swingWeapon(a) && !B.crew.bashWeapon(a) && !B.crew.throwTomato();
+    const B = __ooga, a = B.cavemen.get("portlandhodl");
+    if (B.crew.player !== a) B.pilot.possess(a);
+    B.crew.configureWeapon(a, 1); B.crew.configureWeapon(a, 2, 30);
+    // A previous scene's birdseye cursor can leave an offset on the shared HUD
+    // before this pilot has ever written (or cached) reticle coordinates.
+    const reticle = document.getElementById("weapon-reticle");
+    reticle.style.left = "83%"; reticle.style.top = "46%";
+    const key = slot => {
+      for (const type of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(type, { key: String(slot), code: "Digit" + slot, bubbles: true }));
+      B.advance(0.1, 1 / 60);
+    };
+    key(1); const meleeKey = a.weapon.primaryEquipped && !a.weapon.equipped;
+    key(2); const rifleKey = a.weapon.equipped && !a.weapon.primaryEquipped;
     const primary = document.getElementById("primary-hud"), secondary = document.getElementById("weapon-hud");
-    const reticle = document.getElementById("weapon-reticle"); reticle.style.left = "83%"; reticle.style.top = "46%";
-    if (!P.aiming) P.modeAction("mode-toggle");
-    P.hooks.onZoom(0.001, "factory-look"); B.advance(1, 1 / 60);
-    return { scene: B.scene, off: !B.crew.combatEnabled, rejected, hidden: primary.hidden && secondary.hidden,
-      unchanged: slot === a.weapon.selectedSlot && ammo === a.weapon.ammo && shots === a.weapon.shotsFired,
-      centered: !reticle.style.left && !reticle.style.top };
+    const visible = !primary.hidden && !secondary.hidden;
+    primary.dispatchEvent(new PointerEvent("pointerdown", { button: 0, buttons: 1, pointerId: 77, bubbles: true }));
+    primary.dispatchEvent(new PointerEvent("pointerup", { button: 0, buttons: 0, pointerId: 77, bubbles: true }));
+    B.advance(0.1, 1 / 60); const meleeButton = a.weapon.primaryEquipped && !a.weapon.equipped;
+    secondary.click(); B.advance(0.1, 1 / 60);
+    return { scene: B.scene, harmless: !B.crew.combatEnabled, meleeKey, rifleKey, visible, meleeButton,
+      rifleButton: a.weapon.equipped && !a.weapon.primaryEquipped, centered: !reticle.style.left && !reticle.style.top };
   })()`);
-  record("factory weapons: keyboard, HUD actions and direct attacks cannot fire, swing or spend ammunition outside a game", r.scene === "factory" && r.off && r.rejected && r.hidden && r.unchanged, JSON.stringify(r));
-  record("factory views: the crosshair clears inherited birdseye coordinates and returns to the screen centre", r.centered, JSON.stringify(r));
+  record("factory weapons: 1 and 2 and both HUD buttons select melee and rifle weapons without enabling damage", r.scene === "factory" && r.harmless && r.meleeKey && r.rifleKey && r.visible && r.meleeButton && r.rifleButton, JSON.stringify(r));
+  record("factory weapons: the crosshair clears inherited birdseye coordinates and returns to the screen centre", r.centered, JSON.stringify(r));
   const views = await b.evaluate(`(() => {
     const B = __ooga, P = B.pilot, a = P.player, reticle = document.getElementById("weapon-reticle"), rows = [];
     const key = () => {
@@ -10126,7 +10147,7 @@ const factoryWeapons = { name: "factory weapon selection", why: "rule: the facto
     press(); const carryButton = !P.aiming && reticle.hidden;
     press(); const combatButton = P.aiming && !reticle.hidden;
     for (const slot of [1, 2]) {
-      B.crew.selectWeapon(slot, a); const ammo = a.weapon.ammo;
+      P.weaponMode(slot); const ammo = a.weapon.ammo;
       P.hooks.onZoom(1.2, {}); B.advance(1.5, 1 / 60);
       const overhead = P.mode === "birds-eye" && !reticle.hidden;
       P.hooks.onZoom(0.001, {}); B.advance(2, 1 / 60);
@@ -10842,6 +10863,27 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
   record("hub distant effects: all four portals and the bridge rest and resume locally while the paused window retains parallax", state.portals.length === 4 && state.portals.every(row => Object.values(row).every(Boolean)) && state.bridgeRested && state.bridgeResumed && state.projected && state.windowResumed, JSON.stringify({ portals: state.portals, bridgeRested: state.bridgeRested, bridgeResumed: state.bridgeResumed, projected: state.projected, windowResumed: state.windowResumed }));
   record("hub distant effects: daytime and newly populated nighttime insects and embers keep valid visible poses, rest at distance and resume without a jump", state.daylight && state.night && state.batches.length >= 5 && state.batches.every(row => Object.values(row).every(Boolean)), JSON.stringify({ daylight: state.daylight, night: state.night, batches: state.batches }));
   record("hub distant effects: every horizon bird and all five boats keep moving from the pile and far away", state.horizon.length === 2 && state.horizon.every(row => row.birds.length === 2 && row.birds.reduce((n, batch) => n + batch.count, 0) === 32 && row.birds.every(batch => batch.initialized && batch.visible && batch.count === batch.moving) && row.sails.length === 5 && row.sails.every(boat => Object.values(boat).every(Boolean))), JSON.stringify(state.horizon));
+  const water = await b.evaluate(`(() => {
+    const B = __ooga, M = BL.scenes.hub.debug.poolIsland, W = M.water;
+    B.pilot.release(true); B.clankerPlay.release();
+    W.apply({ vsize: 1, backlogAt: Date.now() }); W.resume(); W.update(0, 0, Date.now());
+    const before = W.state.shown;
+    B.pilot.navigate({ position: { x: 500, y: 300, z: 500 }, target: { x: 500, y: 300, z: 500 }, yaw: 0, pitch: 0.1, dist: 3 });
+    B.advance(1 / 60, 1 / 60);
+    const paused = !M.effectsActive;
+    W.apply({ vsize: BL.poolWater.HYDRO.FULL_VB, backlogAt: Date.now() });
+    B.advance(1 / 60, 1 / 60);
+    const held = !M.effectsActive && W.state.shown === before && W.state.target > before;
+    B.pilot.navigate({ position: { x: M.place.x, y: M.place.y + 2, z: M.place.z },
+      target: { x: M.place.x, y: M.place.y + 2, z: M.place.z }, yaw: 0, pitch: 0.2, dist: 5 });
+    B.advance(1 / 60, 1 / 60);
+    const resumed = M.effectsActive && Math.abs(W.state.level - W.state.target) < 1e-6
+      && Math.abs(W.state.shown - W.state.target) < 1e-6 && W.state.stage === 2;
+    const result = { paused, held, resumed, before, target: W.state.target, shown: W.state.shown };
+    B.pilot.goPreset("pile"); B.advance(0.1, 1 / 60);
+    return result;
+  })()`);
+  record("hub distant effects: a changed backlog holds while the Mempool island rests and its water reaches the latest level on the first nearby frame", water.paused && water.held && water.resumed, JSON.stringify(water));
   const clouds = await b.evaluate(`(() => {
     const B = __ooga, D = BL.scenes.hub.debug.matrixCave, list = D.clouds, solids = B.headquarters.solids.props;
     const initial = list.map(c => {
@@ -10950,11 +10992,19 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
         changed: head !== a.parts.head.rotation.y || chest !== e.gorilla.chest.scale.y };
     };
     try {
-      P.release(true); B.clankerPlay.release(); B.poolIsland.preview.sleep(a.traits.name, true);
-      // The same production initial-sleep path puts this named companion in its assigned bed.
+      P.release(true); B.clankerPlay.release();
+      // An Ooga first seen sleeping starts in its assigned bed; a waking Ooga
+      // would instead walk there before it could qualify as a settled actor.
+      a.state = "away"; a.root.visible = false;
+      B.poolIsland.preview.sleep(a.traits.name, true);
       e.active = e.root.visible = false; e.sleep.stage = "";
-      far(); B.advance(2, 1 / 60);
+      far();
+      for (let elapsed = 0; elapsed < 10 && !(a.bedTravel.mode === "rest" && e.sleep.stage === "asleep"); elapsed += 0.5) {
+        B.advance(0.5, 1 / 60);
+      }
       out.sleeping = a.state === "sleeping" && a.bedTravel.mode === "rest" && e.sleep.stage === "asleep";
+      if (!out.sleeping) out.sleepDetail = { state: a.state, bed: a.bedTravel.mode, gorilla: e.sleep.stage,
+        actor: { x: a.root.position.x, y: a.root.position.y, z: a.root.position.z }, active: e.active };
       out.far = sample(); view(a.root.position); out.nearOoga = sample(); view(e.root.position); out.nearGorilla = sample();
       net.sendNpc = bytes => {
         sent++;
@@ -13887,6 +13937,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       tap("x"); sample("carry orbit");
       tap("x"); sample("combat birds-eye again");
       const gestures = [], accountBefore = BL.net.state.me, backendBefore = BL.net.state.backend;
+      BL.scenes.hub.debug.setGameMode(true); C.setAway(false);
       const pointer = (type, button = 2, buttons = type === "pointerdown" ? 2 : 0) => {
         const rect = canvas.getBoundingClientRect();
         canvas.dispatchEvent(new PointerEvent(type, { pointerId: 91, pointerType: "mouse", isPrimary: true, button, buttons,
@@ -14023,7 +14074,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           }
           gestures.push({ signedIn, carry, rightCarry, nativeTab, carryRight, doubleCarry, firstReturns, aimed, rightChord, recapture, interrupted, tabs, chord, returned, stops });
         }
-      } finally { BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore; }
+      } finally {
+        BL.net.state.me = accountBefore; BL.net.state.backend = backendBefore;
+        BL.scenes.hub.debug.setGameMode(false);
+      }
       const mapRows = [], mapCrowds = [], map = document.getElementById("destination-hud"), label = document.getElementById("detached-destination-name");
       // Camera-only updates above do not finish the preceding charged smash.
       // Travel is tested from an idle body, after the world advances its recovery.
@@ -19478,9 +19532,6 @@ scene("dsb",{label:"nature checkpoint",query:"&overview=1&weather=clear&time=120
 scene("dsb",{label:"nature checkpoint phone",query:"&overview=1&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[dsbNatureCheckpoint]});
 
 const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Studio seating preserves locomotion lock, aim/fire and throws; archive and environment dispose through repeated visits",run:async b=>{
-  // The seat/impact fixture opts into game controls; ordinary DSB keeps them disabled.
-  await b.evaluate("__ooga.crew.setCombatEnabled(true);__ooga.pilot.refreshCombat()");
-  try {
   const step=()=>b.evaluate('for(let i=0;i<48;i++)BL.scenes.dsb.update(1/60,i/60)');
   const tap=async selector=>{
     const p=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
@@ -19488,7 +19539,7 @@ const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Stud
   };
   await b.key(" ");await step();
   const layout=await b.evaluate(`(()=>{const B=__ooga,D=B.dsb,R=D.interiors.active?.room;return {id:R?.id,seats:R?.seats.length,entry:R?.groundAt(0,17),lower:R?.groundAt(0,-6),stage:R?.groundAt(0,-12),exterior:D.exterior.visible,rain:D.weather.shared.state.drops,master:D.weather.shared.state.masterLevel,lights:R?.lighting.lightCount};})()`);
-  record("Studio: correct door reveals upper entrance, descending room and isolated stage",layout.id==="dsb-studio"&&layout.seats===39&&layout.entry===3&&layout.lower===0&&layout.stage===.6&&!layout.exterior&&layout.rain===0&&layout.master===0&&layout.lights===3,JSON.stringify(layout));
+  record("Studio: correct door reveals upper entrance, descending room and isolated stage",layout.id==="dsb-studio"&&layout.seats===39&&layout.entry===3&&layout.lower===0&&layout.stage===.6&&!layout.exterior&&layout.rain===0&&layout.master===0&&layout.lights===3&&!await b.evaluate("__ooga.crew.combatEnabled"),JSON.stringify(layout));
   const routes=await b.evaluate(`(()=>{const B=__ooga,D=B.dsb,R=D.interiors.active.room,A=D.avatar,clear=(a,b)=>D.interiors.walkable(a[0],a[1],b[0],b[1],3,2,A);return {left:R.jukeboxAt.x<0,booth:clear([0,12],[5,12])&&clear([5,12],[5,15.5]),corridor:clear([0,17],[0,8.5]),balcony:clear([0,8.5],[13.5,8.5])&&clear([13.5,8.5],[12.5,6.8]),seats:R.seats.every(s=>clear([s.walkAt.x,s.walkAt.z],[s.walkAt.x,s.walkAt.z]))};})()`);
   record("Studio: left archive, enterable right booth, corridor and balcony approaches stay clear",Object.values(routes).every(Boolean),JSON.stringify(routes));
   const seatRoundTrip=await b.evaluate(`(()=>{const B=__ooga,R=B.dsb.interiors.active.room;return R.seats.every(s=>{B.pilot.navigate({position:{x:s.walkAt.x,y:s.floor,z:s.walkAt.z},yaw:s.viewYaw??0,pitch:.12,dist:3});return B.crew.sitPlayer(s)&&B.crew.standPlayer()&&!s.sitter;});})()`);
@@ -19531,7 +19582,6 @@ const dsbStudioCheckpoint = {name:"dsb studio checkpoint",why:"playthrough: Stud
   await b.evaluate('__ooga.go("bifrost",null,true);__ooga.advance(.05);__ooga.go("dsb",null,true);__ooga.advance(.05)');
   const fresh=await b.evaluate('({rooms:__ooga.dsb.interiors.rooms.size,seat:!!__ooga.dsb.avatar.camp.seat})');
   record("Studio: leaving DSB and reentering starts with no room built and no seat held",fresh.rooms===0&&!fresh.seat,JSON.stringify(fresh));
-  } finally { await b.evaluate("__ooga.crew.setCombatEnabled(false);__ooga.pilot.refreshCombat()"); }
 }};
 scene("dsb",{label:"studio checkpoint",query:"&view=studio-door&weather=storm&time=1200",steps:[dsbStudioCheckpoint]});
 scene("dsb",{label:"studio checkpoint phone",query:"&view=studio-door&weather=storm&time=1200",opts:{w:390,h:844,mobile:true},steps:[dsbStudioCheckpoint]});
