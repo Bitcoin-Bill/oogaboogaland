@@ -32,7 +32,7 @@ anthropic = class { constructor() { throw new Error("Unexpected Claude call"); }
   const auth = load("auth", { ...cookies, ...crypto, ...db, ...http, ...access, fetch: fetcher }, ["handleAuth"]);
   const api = load("api", { ...cookies, ...db, ...http }, ["handleApi"]);
   const donations = load("donations", http, ["handleDonations"]);
-  const tess = load("tess", { ...http, Anthropic: anthropic, FACTS: facts, RULES }, ["handleTess", "pruneTess"]);
+  const tess = load("tess", { ...http, Anthropic: anthropic, FACTS: facts, RULES }, ["handleTess", "pruneTess", "ask", "RESERVE"]);
   const main = load("index", { ...http, ...db, ...auth, ...api, ...donations, ...tess }, ["worker"]);
   return { ...http, ...auth, ...api, ...donations, ...tess, ...main };
 };

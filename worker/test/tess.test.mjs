@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import Anthropic from "@anthropic-ai/sdk";
 import { routeFixture, TESS_FACTS } from "./routes.mjs";
 import { RULES } from "../src/tess-rules.js";
 
@@ -31,8 +32,8 @@ const claude = (...replies) => {
   const Anthropic = class {
     constructor(options) {
       made.push(options);
-      this.messages = { create: async (params) => {
-        calls.push({ options, params });
+      this.messages = { create: async (params, opts) => {
+        calls.push({ options, params, opts });
         const next = replies.shift();
         if (!next) throw new Error("Unexpected Claude call");
         if (next instanceof Error) throw next;
@@ -68,8 +69,8 @@ test("a question goes to Claude once, with the rules and facts as one cached pro
   assert.deepEqual(await first.json(), { say: "Ooga Arcade, at 3 o'clock!\nA cabinet for every game.", go: "arcade" });
   const { options, params } = stub.calls[0];
   assert.equal(options.apiKey, KEY);
-  // The call and its one retry end inside the 15 s the page waits.
-  assert.ok(options.timeout * (options.maxRetries + 1) < 15000, JSON.stringify(options));
+  // One signal ends the whole call, retries and backoff included (below, with the real SDK).
+  assert.ok(stub.calls[0].opts.signal instanceof AbortSignal);
   assert.equal(params.model, "claude-haiku-5-5");
   assert.deepEqual(params.system, [{ type: "text", text: `${RULES}\n\n${TESS_FACTS.text}`, cache_control: { type: "ephemeral" } }]);
   assert.deepEqual(params.messages, [{ role: "user", content: "Where can I play games?" }]);
@@ -134,6 +135,33 @@ test("a day's spend stops at its cap, while answers she kept still come, and a c
   assert.equal(stub.calls.length, 1);
 });
 
+test("concurrent questions can't pass the cap between them: each reserves its most before Claude is called", async () => {
+  const replies = Array.from({ length: 5 }, (_, i) => message({ say: `Answer ${i}.`, go: null }));
+  const stub = claude(...replies), fixture = routeFixture({ anthropic: stub.Anthropic }), DB = d1();
+  const env = { SITE_ORIGIN: SITE, DB, ANTHROPIC_API_KEY: KEY, TESS_DAILY_CENTS: "1" }, cap = 10000;
+  // Room for two reservations and a half.
+  DB.sql.prepare("INSERT INTO tess_spend VALUES (?, ?, 0)").run(new Date().toISOString().slice(0, 10), cap - Math.floor(fixture.RESERVE * 2.5));
+  const answers = await Promise.all(Array.from({ length: 5 }, (_, i) => ask(fixture.handleTess, env, { question: `question number ${i}` })));
+  assert.deepEqual(answers.map((r) => r.status).sort(), [200, 200, 429, 429, 429]);
+  assert.equal(stub.calls.length, 2);
+  assert.ok(spend(DB).micro_usd <= cap, JSON.stringify(spend(DB)));
+  assert.equal(spend(DB).calls, 2);
+});
+
+test("one deadline ends a call, its backoff and its retry, so no request goes out after it", async () => {
+  const sent = [];
+  const fetch = async () => {
+    sent.push(Date.now());
+    return new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }),
+      { status: 429, headers: { "content-type": "application/json", "retry-after": "16" } });
+  };
+  const Real = class extends Anthropic { constructor(options) { super({ ...options, fetch }); } };
+  const { ask: call } = routeFixture({ anthropic: Real }), started = Date.now();
+  await assert.rejects(call({ ANTHROPIC_API_KEY: KEY }, "what is a block", null, AbortSignal.timeout(200)));
+  assert.equal(sent.length, 1);
+  assert.ok(Date.now() - started < 2000, String(Date.now() - started));
+});
+
 test("a question is one short line of text, in a small body", async () => {
   const { handleTess } = routeFixture(), env = { SITE_ORIGIN: SITE, DB: d1(), ANTHROPIC_API_KEY: KEY };
   for (const body of [{ question: "x".repeat(201) }, { question: "?!…" }, { question: 42 }, {}, null, "{nope"]) {
@@ -164,7 +192,8 @@ test("Claude failing leaves her own line to the page and costs nothing", async (
     assert.deepEqual(await res.json(), { error: "unavailable" });
   } finally { console.error = log; }
   assert.deepEqual(errors, ["tess: Claude failed 529 overloaded"]);
-  assert.equal(spend(DB), undefined);
+  // Its reservation is given back whole.
+  assert.deepEqual({ ...spend(DB) }, { micro_usd: 0, calls: 0 });
 });
 
 test("the daily prune drops questions not asked for 90 days, and the Worker routes /api/tess to her", async () => {
