@@ -620,7 +620,7 @@
     appendMagazineShell(pieces, 1, GUN_PALETTE);
     const geo = merge(...pieces);
     for (let i = 0; i < geo.verts.length; i += 3) { geo.verts[i + 1] += 0.1825; geo.verts[i + 2] -= 0.0675; }
-    return geo;
+    return characterGeometry(geo);
   });
   const spareMagazine = () => {
     const node = createNode({ geometry: spareMagazineShell() }), bananas = [];
