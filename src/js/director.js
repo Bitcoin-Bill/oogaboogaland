@@ -698,6 +698,7 @@
       game,
       renderer,
       startLevel: START_BANANAS,
+      hubPolicy: ctx.hubPolicy,
       lootEnabled: LOOT_ENABLED,
       testBananas: TEST_BANANAS,
       project: renderer.project,

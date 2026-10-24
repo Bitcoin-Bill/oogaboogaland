@@ -10719,6 +10719,11 @@
     if (bifrostIsle) bifrostIsle.snap = false;
     if (enteringTween) enteringTween.alive = false;
     enteringTween = null;
+    // The director clears every tween after leave without running its `done`. The pile's fruit in the air goes back
+    // to its queue; the island's other tweens (a prop's wobble, a crate opening, a build coming down) finish now, so
+    // nothing is left tilted, busy or half-shrunk for the next visit.
+    pile.suspend();
+    for (let pass = 0; pass < 8 && tweenCount(); pass++) stepTweens(1e3);
     clearCutawayHidden();
     selectDebugGorilla(null);
     window.clearInterval(stateTimer); stateTimer = 0;

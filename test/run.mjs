@@ -5749,6 +5749,30 @@ const hudVisit = { name: "hub HUD lifetime", why: "regression: scene visits recr
     await b.evaluate(`(() => { const H = window.__hudVisit; BL.scenes.lab.enter = H.enters[0]; BL.scenes.hub.enter = H.enters[1]; delete window.__hudVisit; })()`);
   }
 } };
+// A kept island left with fruit in the air and a tween running: both finish on the next visit, nothing hangs.
+const hubKeptDelivery = { name: "hub kept delivery", why: "regression: leaving a kept hub mid-delivery stranded its airborne bananas in mid-air for good (never landing, the pile stuck in motion) and left its other tweens, a prop's wobble among them, unfinished", run: async (b) => {
+  const start = await b.evaluate(`(() => {
+    const B = __ooga, D = B.delivery, H = window.__keptDelivery = { settled: false };
+    H.landed = D.totalLandedValue; H.owed = D.logicalOutstandingValue;
+    H.accepted = D.enqueue(12);
+    B.advance(0.3, 1 / 30);
+    BL.scene.addTween({ dur: 5, update() {}, done() { H.settled = true; } });
+    return { keep: B.hubPolicy === "keep", accepted: H.accepted, airborne: B.drops.filter(s => s.moving && s.node.visible).length };
+  })()`);
+  await tourGo(b, "lab");
+  await tourGo(b, "hub");
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, D = B.delivery, H = window.__keptDelivery;
+    for (let i = 0; i < 600 && D.logicalOutstandingValue; i++) B.advance(1 / 30, 1 / 30);
+    const r = { landed: D.totalLandedValue - H.landed - H.owed, outstanding: D.logicalOutstandingValue, airborne: D.airborneVisualDropCount, moving: B.drops.filter(s => s.moving).length,
+      hanging: B.drops.filter(s => s.node.visible).length, settled: H.settled };
+    delete window.__keptDelivery;
+    return r;
+  })()`);
+  record("hub kept delivery: bananas in the air when a kept hub is left fall again on return and all land, none hangs, the pile comes to rest and the hub's running tweens finish",
+    start.airborne > 0 && start.accepted === 12 && r.outstanding === 0 && r.airborne === 0 && r.moving === 0 && r.hanging === 0
+      && (!start.keep || r.landed === 12 && r.settled), JSON.stringify({ start, r }));
+} };
 const play = (id, what, code) => ({ name: `${id} playthrough`, why: "playthrough: the game reaches its result, shown and saved", run: async (b) => {
   const r = await b.evaluate(code);
   record(`${id} playthrough: ${what}`, r.ok, JSON.stringify(r));
@@ -11267,7 +11291,7 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       && animation.host.ooga >= 58 && animation.host.gorilla >= 58 && animation.network && animation.controlled >= 58, JSON.stringify(animation));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
-scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
+scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubKeptDelivery, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
 // The same ownership contract exercises complete destruction on memory-limited devices.
 scene("hub", { label: "release policy", query: "hubcache=release", steps: [hudVisit, trip("hub")] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });
