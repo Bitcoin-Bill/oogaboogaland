@@ -17703,8 +17703,9 @@ const raceRigChecks = async () => {
     // Depth pre-pass "no image change" rendering core: the shared vertex and fragment
     // bytes the depth-only and plain variants derive from, plus the untouched shadow path.
     "6bed3532a26c98c3e5a9218674dbe75c789324168104f6b0eb7fb5c88872a012",
-    // 487d99ac909f added uObjectSlab2 for the Factory roof bore; removing its
-    // declaration plus the intentional canvas/foliage atlas sampling restores the previous b82d02f4 baseline (was f5f71f79).
+    // The fragment shader, re-baselined on purpose: 487d99ac909f added uObjectSlab2 for the Factory roof bore
+    // (b82d02f4 to f5f71f79), ab4ebcd sampled retained canvas surfaces (to c98cc70d) and e32e91e sampled the
+    // foliage LOD atlas (to fb12fd53). Removing those additions would not restore b82d02f4 alone.
     "fb12fd53216aa902750f5bf315e44a6334c9b24fb58afb12f28a4f5e85233677",
     "37030f053de422aa157f017ceedef0812ed57a17c9e1b2af4aab017c0b645364"
   ];
