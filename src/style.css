@@ -3461,6 +3461,14 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
   outline: none;
 }
 
+/* While she thinks over one question, Ask and the suggestions wait. */
+.greeter-choice:disabled,
+.greeter-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* While her tour holds the view the touch sticks do nothing, so they step aside for her panel. */
 body.tess-touring #joy-move,
 body.tess-touring #joy-look {

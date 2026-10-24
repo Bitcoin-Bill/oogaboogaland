@@ -329,15 +329,25 @@
     }
     panel.append(heading, row, form, chips, help);
     document.body.append(panel);
+    // A question out with the Worker: Ask and the suggestions wait until her answer is in.
+    const pending = (ask) => {
+      state.ask = ask; send.disabled = !!ask;
+      for (const chip of chips.children) chip.disabled = !!ask;
+    };
     go.addEventListener("click", () => { go.blur(); forward(); });
     skip.addEventListener("click", () => { skip.blur(); back(); });
-    // Asking blurs the box, so the keyboard folds away and her answer shows; Escape there only leaves the box.
-    form.addEventListener("submit", (e) => { e.preventDefault(); const text = field.value; field.value = ""; field.blur(); question(text); });
+    // Asking blurs the box, so the keyboard folds away and her answer shows; Escape there only leaves the box. While she
+    // thinks over one question, the box keeps the next as a draft.
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (state.ask) return;
+      const text = field.value; field.value = ""; field.blur(); question(text);
+    });
     field.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); field.blur(); } });
     const show = (phase) => {
       state.phase = phase;
       // Moving on from her offer drops a question still out with the Worker.
-      if (phase !== "offer" && state.ask) { state.ask.abort(); state.ask = null; }
+      if (phase !== "offer" && state.ask) { state.ask.abort(); pending(null); }
       panel.hidden = phase !== "offer" && phase !== "tour";
       panel.classList.toggle("greeter-tour", phase === "tour");
       form.hidden = chips.hidden = phase !== "offer";
@@ -548,7 +558,8 @@
     // The Worker's answer: what she says, a line a bubble, and a place to fly the visitor to, or none. She thinks aloud
     // while it comes; one that comes after she has moved on is dropped, and a failure gets one of her own lines.
     const consult = async (text) => {
-      const ask = state.ask = new AbortController(), timer = setTimeout(() => ask.abort(), ASK_TIME);
+      const ask = new AbortController(), timer = setTimeout(() => ask.abort(), ASK_TIME);
+      pending(ask);
       rig.flare(); rig.say(LINES.thinking, true);
       let reply = null;
       try {
@@ -558,7 +569,7 @@
       } catch { /* Offline, too slow, dropped or no JSON: her offline line. */ }
       clearTimeout(timer);
       if (state.ask !== ask) return;
-      state.ask = null; state.timer = OFFER_TIME;
+      pending(null); state.timer = OFFER_TIME;
       if (!reply || typeof reply.say !== "string") { say(FAILED[reply && reply.error] || "unknown"); return; }
       const go = STOPS.findIndex((stop) => stop.id === reply.go);
       if (go < 0) { rig.say(reply.say); return; }
@@ -700,7 +711,7 @@
       rig.update(dt, elapsed);
     };
     const dispose = () => {
-      if (state.ask) { state.ask.abort(); state.ask = null; }
+      if (state.ask) { state.ask.abort(); pending(null); }
       window.removeEventListener("keydown", captureKey, true);
       if (state.holding) release();
       rig.dispose();
