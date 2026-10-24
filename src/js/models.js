@@ -508,7 +508,7 @@
     const source = bananaGeometry();
     // Crop the hidden ends of each oversized indicator so a lower row cannot
     // stick past the magazine's narrower curve above it.
-    return { ...source, verts: source.verts.map((v, i) => i % 3 === 0 ? Math.max(-0.3, Math.min(0.3, v)) : i % 3 === 1 ? Math.min(0.25, v) : v) };
+    return characterGeometry({ ...source, verts: source.verts.map((v, i) => i % 3 === 0 ? Math.max(-0.3, Math.min(0.3, v)) : i % 3 === 1 ? Math.min(0.25, v) : v) });
   });
   // Deliberate near-duplicate of bananaGeometry: full depth and dimensions of a carried banana.
   // Its origin is recentred so pile tiles sit evenly across the mound surface.
