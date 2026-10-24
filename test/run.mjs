@@ -11397,7 +11397,7 @@ const hubScratchChecks = async () => {
 };
 
 // Regression: Tess's hub-tagged cached meshes survived the last rig's departure.
-const tessCacheChecks = BL => {
+const tessCacheChecks = async BL => {
   const parent = BL.scene.createNode(), input = { add() {}, remove() {} }, fx = {};
   const make = () => BL.tess.create({ parent, input, fx, coarse: false });
   BL.models.setScope("tess-lifecycle");
@@ -11405,11 +11405,16 @@ const tessCacheChecks = BL => {
   const core = rig => rig.root.children[0].children[0].geometry;
   const shared = core(a) === core(b); a.dispose();
   const c = make(), held = core(c) === core(b); c.dispose(); b.dispose();
+  // A scene change leaves one scene and enters the next in one task (the hub's guide, then the Factory's greeter).
+  const e = make(), swapped = new Set(); e.liveGeometry(swapped);
+  const reused = [...swapped].every(mesh => before.has(mesh)); e.dispose();
+  await Promise.resolve();
   const d = make(), after = new Set(); d.liveGeometry(after);
   const rebuilt = [...after].every(mesh => !before.has(mesh)); d.dispose();
+  await Promise.resolve();
   BL.models.setScope(null);
-  record("Tess caches: live rigs share all tiers; the last disposal releases them and the next visit rebuilds every tier", shared && held && rebuilt && before.size === 36 && after.size === 36 && parent.children.length === 0,
-    JSON.stringify({ shared, held, rebuilt, tiers: before.size, children: parent.children.length }));
+  record("Tess caches: live rigs share all tiers, a Tess entered as the last one leaves reuses them, and once a change of scene ends with none they are released and the next visit rebuilds every tier", shared && held && reused && rebuilt && before.size === 36 && swapped.size === 36 && after.size === 36 && parent.children.length === 0,
+    JSON.stringify({ shared, held, reused, rebuilt, tiers: before.size, children: parent.children.length }));
 };
 
 // Regression: one hub variant pinned every other index built by a later scene.
@@ -18185,7 +18190,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     }
   }
   const BL = globalThis.BL;
-  tessCacheChecks(BL);
+  await tessCacheChecks(BL);
   variantCacheChecks(BL);
   modelResidencyChecks(BL);
   if(ARGS.includes("water-baseline")){
