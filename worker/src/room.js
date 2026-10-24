@@ -794,6 +794,7 @@ export class Room extends DurableObject {
     } else if (msg.action === "lower") this.removeStudioSpeaker(p.id);
     else if (msg.action === "claim") {
       if (!studioHostAllowed(this.env, p.id) || (s.hostId && !host)) return reply("An approved host must claim an available session");
+      if (host) return reply(); // already the host: a repeated claim (a double click) changes nothing
       s.hostId = p.id; s.mode = "discussion"; s.epoch++; s.restrictedIds = []; s.hands = []; s.invited = []; p.studioRevoked = false;
     } else {
       if (!host) return reply("Only the Studio host may do that");

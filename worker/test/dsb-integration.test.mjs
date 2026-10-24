@@ -144,6 +144,9 @@ test("Studio host, seat, playback and transfer permissions remain separate from 
   room.hostId = 2;
   room.studioCommand(attendee, { action: "claim" }); assert.equal(room.studio.hostId, 0);
   room.studioCommand(host, { action: "claim", commandId: "claim1" }); assert.equal(room.studio.hostId, 1);
+  const { revision, epoch } = room.studio;
+  room.studioCommand(host, { action: "claim", commandId: "claim2" });
+  assert.equal(room.studio.revision, revision, "a second claim by the host (a double click) changes nothing"); assert.equal(room.studio.epoch, epoch);
   room.studioCommand(attendee, { action: "seat", seat: 0 }); assert.equal(attendee.studioSeat, 0);
   room.studioCommand(next, { action: "seat", seat: 0 }); assert.equal(next.studioSeat, undefined);
   assert.equal(studio.studioCanSpeak(room.studio, attendee), true);
