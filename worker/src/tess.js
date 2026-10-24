@@ -5,7 +5,8 @@
 // the version of the prompt and model, so a deploy that changes what she knows retires them. Questions are kept without
 // identity (no address, login or user agent) and pruned 90 days after they were last asked. A day's spend, counted from
 // each answer's token usage, stops at TESS_DAILY_CENTS (default 50): every call reserves the most it could cost before
-// it starts, so concurrent questions can't pass the cap between them. Past it, or without ANTHROPIC_API_KEY, the page
+// it starts, so concurrent questions can't pass the cap between them, and keeps that charge unless it ends in an error
+// the API answered with, the one outcome that is never billed. Past the cap, or without ANTHROPIC_API_KEY, the page
 // says its own lines.
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -15,9 +16,9 @@ import { allowed, clientIp, fromSite, json } from "./http.js";
 
 export const MODEL = "claude-haiku-5-5";
 const BODY_MAX = 1024, QUESTION_MAX = 200, SAY_MAX = 600, LINES_MAX = 4, KEEP_DAYS = 90, DAILY_CENTS = 50, MAX_TOKENS = 1024;
-// Each attempt times out at CALL_MS, and one signal ends the whole call, its backoff and its retry included, at
-// DEADLINE_MS, inside the 15 s the page waits, so nothing is paid for an answer nobody sees.
-const CALL_MS = 6000, DEADLINE_MS = 12000;
+// One paid attempt a question, ended with its body at DEADLINE_MS, inside the 15 s the page waits. The SDK retries
+// nothing: an attempt that timed out may still be billed, and its retry would be paid for again.
+const DEADLINE_MS = 12000;
 // Millionths of a dollar a token: Haiku 5.5 at $0.10 a million in and $0.50 out, cache writes at 1.25x, reads at 0.1x.
 const PRICE = { input: 0.1, write: 0.125, read: 0.01, output: 0.5 };
 export const SYSTEM = `${RULES}\n\n${FACTS.text}`;
@@ -59,11 +60,11 @@ export const replyOf = (message) => {
 };
 
 // The one call to Claude, shared with the eval (worker/eval/run.mjs), on one client an isolate. `about` is the
-// place's title; `signal` ends the call, retries and all.
+// place's title; `signal` ends the call, its body included.
 let client = null, clientKey = null;
 export const ask = (env, question, about, signal) => {
   if (clientKey !== env.ANTHROPIC_API_KEY) {
-    client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: CALL_MS });
+    client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: DEADLINE_MS });
     clientKey = env.ANTHROPIC_API_KEY;
   }
   return client.messages.create({
@@ -95,8 +96,8 @@ export const handleTess = async (request, env) => {
     await db.prepare("UPDATE tess_answers SET asked = asked + 1, last_day = ? WHERE version = ? AND question = ? AND about = ?").bind(today, ...where).run();
     return json({ say: kept.say, go: kept.go });
   }
-  // One statement reserves the call's most against the cap, or nothing when that would pass it; the call's real cost
-  // then takes the reservation's place, and a call that fails gives it all back.
+  // One statement reserves the call's most against the cap, or nothing when that would pass it; an answer's real cost
+  // then takes the reservation's place.
   const reserved = await db.prepare("INSERT INTO tess_spend (day, micro_usd, calls) SELECT ?1, ?2, 1 WHERE ?2 <= ?3 "
     + "ON CONFLICT (day) DO UPDATE SET micro_usd = micro_usd + excluded.micro_usd, calls = calls + 1 "
     + "WHERE micro_usd + excluded.micro_usd <= ?3 RETURNING day").bind(today, RESERVE, capOf(env) * 1e4).first();
@@ -108,7 +109,9 @@ export const handleTess = async (request, env) => {
   try {
     message = await ask(env, question, about && FACTS.titles[about], AbortSignal.timeout(DEADLINE_MS));
   } catch (err) {
-    await settle(0, 0);
+    // Only an error the API answered with (it carries a status) is unbilled, and gives the reservation back. A timeout,
+    // a dropped connection or a body cut off may still be charged, so its reservation stays spent.
+    if (typeof err.status === "number") await settle(0, 0);
     console.error("tess: Claude failed", err.status || "", err.message);
     return json({ error: "unavailable" }, 502);
   }

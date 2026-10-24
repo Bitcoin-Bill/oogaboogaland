@@ -69,7 +69,8 @@ test("a question goes to Claude once, with the rules and facts as one cached pro
   assert.deepEqual(await first.json(), { say: "Ooga Arcade, at 3 o'clock!\nA cabinet for every game.", go: "arcade" });
   const { options, params } = stub.calls[0];
   assert.equal(options.apiKey, KEY);
-  // One signal ends the whole call, retries and backoff included (below, with the real SDK).
+  // One paid attempt a question: the SDK retries nothing, and one signal ends the call (below, with the real SDK).
+  assert.equal(options.maxRetries, 0);
   assert.ok(stub.calls[0].opts.signal instanceof AbortSignal);
   assert.equal(params.model, "claude-haiku-5-5");
   assert.deepEqual(params.system, [{ type: "text", text: `${RULES}\n\n${TESS_FACTS.text}`, cache_control: { type: "ephemeral" } }]);
@@ -145,21 +146,54 @@ test("concurrent questions can't pass the cap between them: each reserves its mo
   assert.deepEqual(answers.map((r) => r.status).sort(), [200, 200, 429, 429, 429]);
   assert.equal(stub.calls.length, 2);
   assert.ok(spend(DB).micro_usd <= cap, JSON.stringify(spend(DB)));
+  // The two answers settle to their own costs: 4 + 875 + 30 millionths of a dollar each.
+  assert.equal(spend(DB).micro_usd, cap - Math.floor(fixture.RESERVE * 2.5) + 2 * 909);
   assert.equal(spend(DB).calls, 2);
 });
 
-test("one deadline ends a call, its backoff and its retry, so no request goes out after it", async () => {
-  const sent = [];
-  const fetch = async () => {
-    sent.push(Date.now());
-    return new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }),
-      { status: 429, headers: { "content-type": "application/json", "retry-after": "16" } });
-  };
-  const Real = class extends Anthropic { constructor(options) { super({ ...options, fetch }); } };
-  const { ask: call } = routeFixture({ anthropic: Real }), started = Date.now();
-  await assert.rejects(call({ ANTHROPIC_API_KEY: KEY }, "what is a block", null, AbortSignal.timeout(200)));
-  assert.equal(sent.length, 1);
+// The real SDK with only its fetch mocked: each call records when it went out.
+const realClaude = (answer) => {
+  const sent = [], fetch = (url, init) => { sent.push(Date.now()); return answer(init); };
+  return { sent, Anthropic: class extends Anthropic { constructor(options) { super({ ...options, fetch }); } } };
+};
+const quietly = async (run) => {
+  const log = console.error;
+  console.error = () => {};
+  try { return await run(); } finally { console.error = log; }
+};
+
+test("one deadline ends a call that hangs, and nothing is retried", async () => {
+  const hung = realClaude((init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
+  const started = Date.now();
+  await assert.rejects(routeFixture({ anthropic: hung.Anthropic }).ask({ ANTHROPIC_API_KEY: KEY }, "what is a block", null, AbortSignal.timeout(200)));
+  assert.equal(hung.sent.length, 1);
   assert.ok(Date.now() - started < 2000, String(Date.now() - started));
+  // A 429 asking for a 16 s wait ends at once: no backoff, no second request.
+  const limited = realClaude(async () => new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }),
+    { status: 429, headers: { "content-type": "application/json", "retry-after": "16" } }));
+  await assert.rejects(routeFixture({ anthropic: limited.Anthropic }).ask({ ANTHROPIC_API_KEY: KEY }, "what is a block", null, AbortSignal.timeout(20000)));
+  assert.equal(limited.sent.length, 1);
+});
+
+test("a call that may still be billed keeps its reservation, and only an error the API answered gives it back", async () => {
+  // Room for exactly one reservation: a call cut off before its answer spends it, so the next four rest.
+  const cut = realClaude(async () => { throw new DOMException("aborted", "AbortError"); });
+  const timedOut = routeFixture({ anthropic: cut.Anthropic }), DB = d1();
+  const env = { SITE_ORIGIN: SITE, DB, ANTHROPIC_API_KEY: KEY, TESS_DAILY_CENTS: String(timedOut.RESERVE / 1e4) };
+  const statuses = [];
+  await quietly(async () => { for (let i = 0; i < 5; i++) statuses.push((await ask(timedOut.handleTess, env, { question: `question number ${i}` })).status); });
+  assert.deepEqual(statuses, [502, 429, 429, 429, 429]);
+  assert.equal(cut.sent.length, 1);
+  assert.deepEqual({ ...spend(DB) }, { micro_usd: timedOut.RESERVE, calls: 1 });
+  // An overloaded API answers 529, which is never billed: each reservation comes back and the next question still goes.
+  const busy = realClaude(async () => new Response(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }),
+    { status: 529, headers: { "content-type": "application/json" } }));
+  const refused = routeFixture({ anthropic: busy.Anthropic }), DB2 = d1();
+  const env2 = { ...env, DB: DB2 }, again = [];
+  await quietly(async () => { for (let i = 0; i < 2; i++) again.push((await ask(refused.handleTess, env2, { question: `question number ${i}` })).status); });
+  assert.deepEqual(again, [502, 502]);
+  assert.equal(busy.sent.length, 2);
+  assert.deepEqual({ ...spend(DB2) }, { micro_usd: 0, calls: 0 });
 });
 
 test("a question is one short line of text, in a small body", async () => {
