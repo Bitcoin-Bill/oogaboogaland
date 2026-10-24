@@ -2797,8 +2797,9 @@ const { autoQualityProbe } = (() => {
     const source = readFileSync(new URL("../src/js/director.js", import.meta.url), "utf8");
     const controller = source.slice(source.indexOf("  const perf ="), source.indexOf("  const WARMUP"));
     const policy = source.slice(source.indexOf("  // One opt-in override"), source.indexOf("  const mark ="));
-    const keepHub = (memory, mode = "auto") => runInNewContext(`${policy}\nKEEP_HUB`, { DEVICE_MEMORY: memory, params: new URLSearchParams({ hubcache: mode }) });
-    const hubMemory = [0.25, 1, 2, 4].every(gb => !keepHub(gb)) && [8, 16, 32, undefined, 0, NaN].every(gb => keepHub(gb))
+    const keepHub = (memory, mode = "auto", coarse = false) => runInNewContext(`${policy}\nKEEP_HUB`, { DEVICE_MEMORY: memory, COARSE: coarse, params: new URLSearchParams({ hubcache: mode }) });
+    const hubMemory = [0.25, 1, 2, 4].every(gb => !keepHub(gb) && !keepHub(gb, "auto", true)) && [8, 16, 32, undefined, 0, NaN].every(gb => keepHub(gb))
+      && [8, 16].every(gb => keepHub(gb, "auto", true)) && [undefined, 0, NaN].every(gb => !keepHub(gb, "auto", true) && keepHub(gb, "keep", true))
       && keepHub(4, "keep") && !keepHub(32, "release");
     const opening = source.slice(source.indexOf("  const COARSE ="), source.indexOf("  const $ ="));
     const initial = (deviceMemory, coarse = false) => runInNewContext(`${opening}\nINITIAL_QUALITY`, { navigator: { deviceMemory }, window: { matchMedia: () => ({ matches: coarse }) } });
@@ -5581,7 +5582,7 @@ const wallPerformance = async (b) => {
 };
 const adaptiveQualityChecks = async () => {
   const r = autoQualityProbe();
-  record("memory policy: devices below 8 GiB release the hub, 8 GiB or unknown memory retain it, and the explicit policy overrides either", r.hubMemory, JSON.stringify(r));
+  record("memory policy: devices below 8 GiB release the hub, 8 GiB retains it, unknown memory retains it with a fine pointer and releases it with a coarse one, and the explicit policy overrides either", r.hubMemory, JSON.stringify(r));
   record("adaptive quality: a GPU-bound machine is seen through delivered frames and loses a tier within two seconds", r.healthy && r.gpuBound && r.reactsFast, JSON.stringify(r));
   record("adaptive quality: warmup, transitions, background frames and isolated spikes do not lower quality", r.warmup && r.ignoresPauses && r.ignoresSpikes && r.fallback, JSON.stringify(r));
   record("adaptive quality: steps one tier at a time and stops at the lowest", r.bounded, JSON.stringify(r));
