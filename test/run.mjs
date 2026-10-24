@@ -5704,7 +5704,7 @@ const trip = (id) => ({ name: `${id} round trip`, why: "contract: a scene left a
 const hudVisit = { name: "hub HUD lifetime", why: "regression: scene visits recreated roster SVGs and donor rows; their handlers must end on leave while the attached rows keep their identity", run: async (b) => {
   await b.evaluate(`(() => {
     const H = window.__hudVisit = { rows: [...document.querySelectorAll("#roster [data-name]")], leaders: [...document.getElementById("banana-leaders").children], signals: [], calls: 0 }, S = BL.scenes;
-    H.keep = new URLSearchParams(location.search).get("hubcache") !== "release";
+    H.keep = __ooga.hubPolicy === "keep";
     H.root = S.hub.root; H.pilot = __ooga.pilot; H.input = S.hub.input;
     H.solids = __ooga.headquarters.solids.props; H.guides = __ooga.headquarters.objectGuides;
     H.roof = S.hub.debug.terrainRampRoof; H.footsteps = __ooga.footsteps;
