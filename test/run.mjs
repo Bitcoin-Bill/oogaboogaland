@@ -3988,7 +3988,12 @@ const canvasSurfaceCacheChecks = async () => {
 const characterChecks = async () => {
   const context = { window: {}, URLSearchParams, location: { search: "" } };
   for (const name of CONTRIBUTOR_SOURCES) runInNewContext(await readFile(new URL(`../src/js/${name}.js`, import.meta.url), "utf8"), context);
-  const BL = context.window.BL, all = BL.characters.all(), hooks = ["torso", "club", "gear", "skull", "crown", "eyes", "mark", "hatY", "headgear", "extras", "tint"];
+  const BL = context.window.BL, all = BL.characters.all(), hooks = ["torso", "club", "gear", "skull", "crown", "eyes", "mark", "hatY", "headgear", "extras", "tint"], mirrorGeometries = new Set();
+  const collect = node => {
+    if (node.geometry) mirrorGeometries.add(node.geometry);
+    if (node.skins) for (const skin of Object.values(node.skins)) mirrorGeometries.add(skin);
+    for (const child of node.children) collect(child);
+  };
   const rows = all.map((c) => {
     BL.models.setScope("character-rebuild");
     const traits = BL.contributors.traitsFor(c.handle), m = BL.models.caveman(traits);
@@ -4003,6 +4008,9 @@ const characterChecks = async () => {
     const visit = node => { if (node.geometry) geometries.add(node.geometry); for (const child of node.children) visit(child); };
     visit(rebuilt.root);
     if (rebuilt.tint) for (const [original, twin] of rebuilt.tint) geometries.add(original).add(twin);
+    collect(rebuilt.root);
+    for (const geo of geometries) mirrorGeometries.add(geo);
+    for (const weapon of Object.values(rebuilt.skins)) for (const skin of Object.values(weapon)) mirrorGeometries.add(skin);
     const palette = [...geometries].every(geo => geo.faces.every(face => face.color && face.color.length === 3 && face.color.every(Number.isFinite)));
     BL.models.release("character-rebuild", []); BL.models.setScope(null);
     return { palette, handle: c.handle, joined: c.joined > 1.7e9 && c.joined < 4e9, built: m.headOpen.faces.length > 0 && m.headClosed.faces.length > 0 && m.headOpen !== m.headClosed,
@@ -4013,6 +4021,50 @@ const characterChecks = async () => {
   const unique = new Set(all.map((c) => c.handle.toLowerCase())).size === all.length;
   const ordered = all.every((c, i) => !i || all[i - 1].joined <= c.joined);
   record("characters: every src/characters file registers one handle, builds a whole Ooga and uses only known hooks", rows.length === CAST && CAST === BL.contributors.roster.length && unique && ordered && rows.every((r) => r.joined && r.built && r.parts && r.hooks && r.tint && r.voice && r.display && r.palette), JSON.stringify(rows.filter((r) => !(r.joined && r.built && r.parts && r.hooks && r.tint && r.voice && r.display && r.palette))));
+  for (const item of BL.models.SWAG) collect(item.buildNode());
+  Object.assign(BL, { pilot: { WALK: { speed: 2.8, gravity: 9.8 } }, crew: { JUMP_SPEED: 4 } });
+  for (const name of ["convex", "agent"]) runInNewContext(await readFile(join(root, `src/js/${name}.js`), "utf8"), context);
+  const mouth = { x: 0, z: 0, ry: 0, floorY: 0 }, coatClip = BL.agent.labCoatClip(mouth), suitClip = BL.agent.suitClip(mouth);
+  for (const clip of [coatClip, suitClip]) for (const part of Object.values(clip)) {
+    if (part?.ape) mirrorGeometries.add(part.ape).add(part.code);
+  }
+  for (const suit of suitClip.suits) for (const geo of Object.values(suit)) mirrorGeometries.add(geo);
+  for (const suitColor of [null, ...Array.from({ length: BL.agent.SUIT_COLORS }, (_, i) => i)]) {
+    const rig = BL.agent.create({ groundAt: () => 0, managed: true, coatClip, ...(suitColor === null ? {} : { suitClip, suitColor }) });
+    for (const form of ["ape", "code"]) { rig.setForm(form); collect(rig.root); }
+    rig.dispose();
+  }
+  for (const variant of [undefined, 0, 1]) {
+    const flask = BL.agent.labFlaskGeometry(variant);
+    mirrorGeometries.add(flask).add(flask.glassShell);
+  }
+  // The worn jetpack and its flame come from the hub's kit, not the caveman builder (#290 review).
+  Object.assign(context, { document: { createElement: () => ({ getContext: () => null }) }, performance, console });
+  for (const name of ["terrain", "hub-models"]) runInNewContext(await readFile(join(root, `src/js/${name}.js`), "utf8"), context);
+  const worn = [BL.hubModels.jetpack(), BL.hubModels.jetFlame()];
+  for (const geo of worn) mirrorGeometries.add(geo);
+  // Exercise the renderer's real reduced-capture decision on actual builder output, in both storage paths.
+  const source = await readFile(join(root, "src/js/gl-renderer.js"), "utf8"), start = source.indexOf("    const captureInstanceVisible ="), end = source.indexOf("    const drawCaptureRuns =", start);
+  if (start < 0 || end < 0) throw new Error("Reduced mirror capture predicate not found");
+  let inView = true;
+  const capture = new Function("boundsOf", "slotInFrustum", "sphereInFrustum", `${source.match(/const CULL_MARGIN = [^;]+;/)[0]}
+    ${source.match(/const INSTANCE_FLOATS = [^;]+;/)[0]} const MIRROR_FRUSTUM = [];
+    ${source.slice(start, end)} return { visible: captureInstanceVisible, margin: CULL_MARGIN, stride: INSTANCE_FLOATS };`)(BL.scene.boundsOf, () => inView, () => inView);
+  let small = 0, failures = 0;
+  const check = (geometry, expected) => {
+    const bounds = BL.scene.boundsOf(geometry), data = new Float32Array(capture.stride);
+    data[0] = data[5] = data[10] = data[15] = 1;
+    const node = { geometry, spheres: new Float32Array([0, 0, 0, bounds.radius + capture.margin]) }, batch = { geometry, batch: { instanceData: data } };
+    inView = true;
+    if (capture.visible(node, 0) !== expected || capture.visible(batch, 0) !== expected) failures++;
+    inView = false;
+    if (capture.visible(node, 0) || capture.visible(batch, 0)) failures++;
+    if (expected && bounds.radius < 1.25) small++;
+  };
+  for (const geo of mirrorGeometries) check(geo, true);
+  check(BL.models.box({ w: 0.1, h: 0.1, d: 0.1, color: "#ffffff" }), false);
+  const jetpack = worn.every(geo => geo.characterPart === true && BL.scene.boundsOf(geo).radius < 1.25);
+  record("mirror character ownership: reduced captures keep both weapon skins, tint and head swaps, swag, gorilla forms/clothing and the worn jetpack and flame, while still culling small scenery and out-of-frustum parts", failures === 0 && small > 0 && jetpack, JSON.stringify({ geometries: mirrorGeometries.size, small, failures, jetpack }));
 };
 // The mempool.space feed parser in Node: message shapes as the socket sends them, no socket.
 const mempoolFeedChecks = async () => {

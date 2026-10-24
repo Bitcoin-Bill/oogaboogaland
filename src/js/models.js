@@ -12,6 +12,11 @@
   const { hexToRgb, damp } = BL.math;
   const { createNode, addChild } = BL.scene;
   const geometry = () => ({ verts: [], faces: [], lines: [] });
+  const characterGeometry = (geo) => {
+    geo.characterPart = true;
+    if (geo.glassShell) geo.glassShell.characterPart = true;
+    return geo;
+  };
   const pushVert = (geo, x, y, z) => {
     geo.verts.push(x, y, z);
     return geo.verts.length / 3 - 1;
@@ -1048,8 +1053,13 @@
       }
     }
     // A reflection keeps characters whatever their size: the renderer's reduced capture otherwise drops small parts.
-    const markCharacter = (node) => { if (node.geometry) node.geometry.characterPart = true; for (const child of node.children) markCharacter(child); };
+    const markCharacter = (node) => {
+      if (node.geometry) characterGeometry(node.geometry);
+      if (node.skins) for (const skin of Object.values(node.skins)) characterGeometry(skin);
+      for (const child of node.children) markCharacter(child);
+    };
     markCharacter(root);
+    for (const weapon of Object.values(skins)) for (const skin of Object.values(weapon)) characterGeometry(skin);
     headOpen.characterPart = headClosed.characterPart = portraitHead.characterPart = true;
     if (tint) for (const twin of tint.keys()) twin.characterPart = true;
     return { root, parts, traits, headOffset: 1.1 * h, headOpen, headClosed, portraitHead, skins, clubRest, clubCarry, tint, gunHeadBounds: BL.scene.boundsOf(headOpen) };
@@ -1436,7 +1446,7 @@
   const swagGeo = (id, build) => {
     let geo = swagCache.get(id);
     if (!geo) {
-      geo = build();
+      geo = characterGeometry(build());
       swagCache.set(id, geo);
     }
     return geo;
@@ -1769,5 +1779,5 @@
     for (const geo of set) if (geo.foliageLods?.owner === geo) { set.add(geo.foliageLods.medium); set.add(geo.foliageLods.far); }
     return set;
   };
-  BL.models = { foliageLods, paintFoliageAtlas, addLods, beam, forwardLathe, turn, shaded, torus, along, chain, railParts, columnParts, deckGrid, deckPosts, deckParts, stairParts, lanternParts, LANTERN_GLASS, geometry, pushVert, face, cutCylinder, voxCoords, box, bevelBox, panel, lathe, glassVessel, attachGlassShell, tube, ring, polyline, merge, forward, moved, turnedX, turnedY, turnedZ, prism, cached, variants, scopedMap, track, setScope, withScope, release, assertReleased, noShadow, makeVox, voxelGeometry, voxelFaces, banana, bananaGeometry, bananaTileGeometry, bananaPileCoreGeometry, bananaPileRadiusScale, bananaPileHeightOffset, BANANA_AMMO_SCALE, BANANA_PILE_PROFILE, particleGeometry, spareMagazine, caveman, CLUB_PALETTE, GOLD_CLUB_PALETTE, labRoom, buildableGeos, crate, die, dieRotationFor, SWAG, TIER_COLORS };
+  BL.models = { characterGeometry, foliageLods, paintFoliageAtlas, addLods, beam, forwardLathe, turn, shaded, torus, along, chain, railParts, columnParts, deckGrid, deckPosts, deckParts, stairParts, lanternParts, LANTERN_GLASS, geometry, pushVert, face, cutCylinder, voxCoords, box, bevelBox, panel, lathe, glassVessel, attachGlassShell, tube, ring, polyline, merge, forward, moved, turnedX, turnedY, turnedZ, prism, cached, variants, scopedMap, track, setScope, withScope, release, assertReleased, noShadow, makeVox, voxelGeometry, voxelFaces, banana, bananaGeometry, bananaTileGeometry, bananaPileCoreGeometry, bananaPileRadiusScale, bananaPileHeightOffset, BANANA_AMMO_SCALE, BANANA_PILE_PROFILE, particleGeometry, spareMagazine, caveman, CLUB_PALETTE, GOLD_CLUB_PALETTE, labRoom, buildableGeos, crate, die, dieRotationFor, SWAG, TIER_COLORS };
 })();
