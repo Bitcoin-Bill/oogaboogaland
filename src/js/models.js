@@ -1047,6 +1047,11 @@
         tint.set(bake.geo, twin).set(twin, bake.geo);
       }
     }
+    // A reflection keeps characters whatever their size: the renderer's reduced capture otherwise drops small parts.
+    const markCharacter = (node) => { if (node.geometry) node.geometry.characterPart = true; for (const child of node.children) markCharacter(child); };
+    markCharacter(root);
+    headOpen.characterPart = headClosed.characterPart = portraitHead.characterPart = true;
+    if (tint) for (const twin of tint.keys()) twin.characterPart = true;
     return { root, parts, traits, headOffset: 1.1 * h, headOpen, headClosed, portraitHead, skins, clubRest, clubCarry, tint, gunHeadBounds: BL.scene.boundsOf(headOpen) };
   };
   // Traits hash from the handle, so one handle always builds the same voxels.
