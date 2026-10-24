@@ -3733,7 +3733,7 @@
         clankers.bananaHit(hit.owner.entry, source, projectile.serial);
       return;
     }
-    if (hit.owner.kind === "halloween") { ghosts.hit(source, hit, power, isPlayerAttack(source)); return; } // HALLOWEEN
+    if (hit.owner.kind === "halloween") { ghosts.hit(source, hit, power, isPlayerAttack(source), !!projectile); return; } // HALLOWEEN
     if (hit.node === mirrorCave.node) {
       hitMirror(power, hit.x, hit.y, hit.z, source);
       return;
@@ -8833,10 +8833,17 @@
     models.lathe({ profile: [[0.02, -0.03], [0.13, -0.02], [0.12, 0]], segments: 8, color: "#3a2a18" }))));
   const crossesGameRing = (fromX, fromZ, toX, toZ, y) => gameMode && gameRingK > 0 && y > -1
     && fromX * fromX + fromZ * fromZ < GAME_RING_R2 && toX * toX + toZ * toZ >= GAME_RING_R2;
+  // As the ring starts up, the visitor's own Ooga outside it (up the bluff, in a cave mouth, out on a bridge or the
+  // Mempool island) is brought in to the pile, as a fall off the island is, so nobody begins an event shut out.
+  const bringInsideRing = () => {
+    const ooga = pilot.player;
+    if (ooga && Math.hypot(ooga.root.position.x, ooga.root.position.z) >= GAME_RING.r - 0.3) navigate("pile", true, true);
+  };
   const updateGameRing = (dt, elapsed) => {
     if (gameMode && gameRingWait > 0) gameRingWait -= dt;
     const target = gameMode && gameRingWait <= 0 ? 1 : 0;
     if (gameRingK !== target) {
+      if (gameRingK === 0 && target) bringInsideRing();
       gameRingK = target ? Math.min(1, gameRingK + dt / GAME_RING.riseS) : Math.max(0, gameRingK - dt / GAME_RING.sinkS);
       gameRing.scale.y = ease.inOutQuad(gameRingK);
       gameRing.visible = gameRingK > 0;

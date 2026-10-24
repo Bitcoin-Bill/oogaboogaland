@@ -227,11 +227,13 @@
     // Every wall rises at once, RISE_AT after the click; the dusk starts with the click.
     const lapMs = RISE_AT + RISE_MS + SETTLE_MS, nightAt = 0;
     for (const s of stops) s.riseAt = RISE_AT;
-    // The herald's idle drift: a slow wandering ring round the pile, just off the ground, a function of the room's
-    // clock so every page has it in the same place.
+    // The herald's idle drift: a slow wandering ring outside GAME MODE's wall (`HERALD_OUT` past it, give or take
+    // `HERALD_SWAY`), just off the ground over the bluff, a function of the room's clock so every page has it in the
+    // same place; a turn every two minutes or so.
+    const HERALD_OUT = 2.5, HERALD_SWAY = 1, HERALD_TURN = 0.05;
     const HERALD_AT = { x: 0, y: 0, z: 0 };
     const idlePoint = (now) => {
-      const T = now / 1000, a = T * 0.13, r = 7.5 + 1.2 * Math.sin(T * 0.37);
+      const T = now / 1000, a = T * HERALD_TURN, r = hub.ringRadius + HERALD_OUT + HERALD_SWAY * Math.sin(T * 0.37);
       HERALD_AT.x = Math.sin(a) * r; HERALD_AT.z = -Math.cos(a) * r;
       HERALD_AT.y = island.surfaceAt(HERALD_AT.x, HERALD_AT.z) + 0.22 + 0.06 * Math.sin(T * 1.7);
       return HERALD_AT;
@@ -269,9 +271,10 @@
     addChild(group, herald);
     const owner = (role, slot) => ({
       kind: "halloween", role, slot, priority: role === "herald" ? 3 : 2, weaponType: role === "herald" ? "object" : "enemy", active: role === "herald",
-      tooltip: () => role === "herald" ? coarse ? "A restless ghost · tap, club or shoot it to start the ghost hunt" : "A restless ghost · click, club or shoot it to start the ghost hunt"
+      tooltip: () => role === "herald" ? S.state === ST.GATHER ? coarse ? "The restless ghost · tap it to ready up" : "The restless ghost · click it to ready up" : "A restless ghost · shoot it to start the ghost hunt"
         : role === "boss" ? "THE BOSS · shoot him down" : role === "brute" ? sim.brutes[slot].kind ? "Skeleton · it crawls after you" : "Gorilla · it leaps at you and slams the ground" : TIPS[sim.ghosts[slot].tier],
-      tap: () => { if (role === "herald") tapHerald(); }
+      // Clicking the herald only readies a player in its lobby; only a shot wakes it (`hit`).
+      tap: () => { if (role === "herald" && S.state === ST.GATHER) tapHerald(); }
     });
     const heraldOwner = owner("herald", -1);
     hub.addTarget(herald, heraldOwner);
@@ -2071,12 +2074,12 @@
       if (hitCount === HIT_SLOTS) { hitSentAt = 0; flushHits(clock()); }
       hitIds[hitCount] = id; hitDamage[hitCount++] = damage;
     };
-    /** A weapon landed on the herald, a ghost or the boss (the hub's weaponImpact). */
-    const hit = (source, h, power, byPlayer) => {
+    /** A weapon landed on the herald, a ghost or the boss (the hub's weaponImpact); `shot` when a round did it. */
+    const hit = (source, h, power, byPlayer, shot = false) => {
       const o = h.owner;
       if (!byPlayer) return;
-      // Clubbing or shooting the herald wakes it, as clicking it does.
-      if (o.role === "herald") { tapHerald(); return; }
+      // Only a shot wakes the herald; a club passes through it.
+      if (o.role === "herald") { if (shot) tapHerald(); return; }
       hitAs(o.role, o.slot, h.x, h.y, h.z, Math.max(1, Math.min(20, Math.round(power * 4))));
     };
     /** `damage` to the ghost or gorilla in `slot`, or the boss, landing at (x, y, z), for this page's player. */
