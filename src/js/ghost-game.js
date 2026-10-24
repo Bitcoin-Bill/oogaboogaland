@@ -1618,8 +1618,13 @@
     // while nobody is left).
     let specMode = "grave", specId = 0;
     const FREE = { x: 0, z: 0, yaw: 0, pitch: 0.5 };
-    // A hunter this page can watch: in the hunt, standing, and someone else whose Ooga the room shows here.
-    const watchable = (id) => !!id && id !== myId() && id !== SIM.REVIVE_BOT && !down(id) && !!sim.playerById(id)?.inGame && net.remotes.has(id);
+    // A hunter this page can watch: someone else in the hunt, standing, and still driving an Ooga in the arena, as the
+    // host counts them present (`presentRemote`); one who lets go of theirs is passed over as one who goes down is.
+    const watchable = (id) => {
+      if (!id || id === myId() || id === SIM.REVIVE_BOT || down(id) || !sim.playerById(id)?.inGame) return false;
+      const rec = net.remotes.get(id);
+      return !!rec && rec.bodyKind === "ooga" && rec.zone === "outside" && inArena(rec.x, rec.y, rec.z);
+    };
     // The next hunter to watch after `id`, in the hunt's order and round again; 0 when there is none.
     const nextStanding = (id) => {
       let from = -1;

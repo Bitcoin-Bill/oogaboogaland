@@ -8498,7 +8498,7 @@
   };
   // The driven Ooga touching a veil shows its outline there in glyphs, with waves rolling off it, as anyone crossing
   // B.C.A.'s veil does (mirror-body.js, over every Ooga of the crew). Each section's atlas is made the first time
-  // someone comes to it, with its neighbours, a body at a seam meeting both: taken off the ring while it is made, so
+  // someone comes to it or to either side of it, a body at a seam meeting both: taken off the ring while it is made, so
   // reading its veil's place walks no more than the veil (the ring's group and the island's root stand unmoved).
   const ringBodies = (i) => {
     for (let k = -1; k <= 1; k++) {
@@ -8550,7 +8550,7 @@
       const own = pilot.player;
       if (own) {
         const p = own.root.position, i = ringPanelAt(p.x, p.z, p.y - own.baseY, own.bodyRadius);
-        if (i >= 0 && !ringPanels[i].mirrorBody) ringBodies(i);
+        if (i >= 0) ringBodies(i);
       }
       ringPulseWait -= dt;
       if (ringPulseWait <= 0) {

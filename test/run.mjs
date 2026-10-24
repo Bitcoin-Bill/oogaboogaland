@@ -4801,7 +4801,12 @@ const ghostHuntChecks = async () => {
     // Compared while both still hunt: a finished hunt resets to IDLE and would hide any difference.
     play(a, at, 200000); play(handed, at, 200000);
     const same = JSON.stringify(a.snapshot()) === JSON.stringify(handed.snapshot()), hunting = a.state.state !== ST.IDLE;
-    record("ghost hunt: a seeded hunt repeats exactly, and one picked up from its snapshot mid-way (a new host) goes on the same", repeated && loaded && same && hunting && a.state.kills > 0, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills }));
+    // Pages either side of a deploy share a hunt: the player rows keep the 27 numbers (slot, presence, 25 fields) the
+    // deployed pages read, newer fields riding in `x`, and a snapshot without `x` (an older host's) still loads.
+    const snap = JSON.parse(JSON.stringify(a.snapshot())), rows = snap.p.length > 0 && snap.p.length % 27 === 0 && snap.x.length > 0;
+    delete snap.x;
+    const older = G.create({ seed: 5, spots, lapMs: 20000 }).load(snap);
+    record("ghost hunt: a seeded hunt repeats exactly, one picked up from its snapshot mid-way (a new host) goes on the same, and its rows stay readable across a deploy", repeated && loaded && same && hunting && a.state.kills > 0 && rows && older, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills, rows, older }));
   }
   {
     const sim = begin(11), rounds = [], drops = { 3: false, 4: false }, gorillas = [], skeletons = [], seenBrutes = new Set();

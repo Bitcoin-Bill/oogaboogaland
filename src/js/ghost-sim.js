@@ -156,7 +156,10 @@
     "spawnAt", "sx", "sy", "sz", "lx", "lz", "bounceUntil", "bvx", "bvz", "bounceSpeed", "knockUntil", "kvx", "kvz",
     "beamTarget", "beamAt", "beamUntil", "beamHit", "beamReady", "soulTarget", "soulAt", "soulUntil", "soulHit", "soulReady", "hitAt", "struckAt"];
   const PLAYER_FIELDS = ["id", "x", "y", "z", "seg", "frozenUntil", "invulnUntil", "doubleUntil", "kills", "dropsGiven", "hitAt", "hitX", "hitZ",
-    "tess", "tessReady", "zapAt", "zapX", "zapY", "zapZ", "monkeys", "ready", "inGame", "elixir", "reviveTarget", "reviveSince", "foes", "downAt", "downX", "downZ"];
+    "tess", "tessReady", "zapAt", "zapX", "zapY", "zapZ", "monkeys", "ready", "inGame", "elixir", "reviveTarget", "reviveSince"];
+  // Fields added since that row was fixed, carried in a snapshot's own `x` rows (slot, then these) so pages on either
+  // side of a deploy still share a hunt: an older page skips `x`, a newer one reads its absence as zeros.
+  const PLAYER_EXTRA = ["foes", "downAt", "downX", "downZ"], PLAYER_ALL = PLAYER_FIELDS.concat(PLAYER_EXTRA);
   const DROP_FIELDS = ["id", "kind", "x", "z", "at"];
   // A gorilla's phase: 1 called down (the beam), 2 falling, 3 landed and shaking, 4 coming, 5 holding someone, 6 gathering.
   // A skeleton (`kind` 1) skips the shaking and the leap: it strikes from CHASE and gathers itself in RECOVER.
@@ -174,7 +177,7 @@
   };
   const newPlayer = () => {
     const p = { on: false, here: false };
-    for (const f of PLAYER_FIELDS) p[f] = 0;
+    for (const f of PLAYER_ALL) p[f] = 0;
     return p;
   };
   const newBrute = () => {
@@ -239,7 +242,7 @@
       if (p) return p;
       for (const q of players) if (!q.on) { p = q; break; }
       if (!p) return null;
-      for (const f of PLAYER_FIELDS) p[f] = 0;
+      for (const f of PLAYER_ALL) p[f] = 0;
       p.on = true;
       p.id = id;
       p.seg = C.PLAYER_SEGMENTS;
@@ -1039,10 +1042,10 @@
 
     // ---------- snapshots ----------
     // A hunt as plain numbers: everything `load` needs to go on from here, timers relative to `epoch`.
-    const SNAP = { k: "gh", v: 1, e: 0, s: [], g: [], p: [], d: [], q: [], u: [] };
+    const SNAP = { k: "gh", v: 1, e: 0, s: [], g: [], p: [], d: [], q: [], u: [], x: [] };
     const snapshot = () => {
       SNAP.e = s.epoch;
-      SNAP.s.length = SNAP.g.length = SNAP.p.length = SNAP.d.length = SNAP.q.length = SNAP.u.length = 0;
+      SNAP.s.length = SNAP.g.length = SNAP.p.length = SNAP.d.length = SNAP.q.length = SNAP.u.length = SNAP.x.length = 0;
       for (const f of STATE_FIELDS) SNAP.s.push(s[f]);
       for (let i = 0; i < ghosts.length; i++) {
         const g = ghosts[i];
@@ -1055,6 +1058,8 @@
         if (!p.on) continue;
         SNAP.p.push(i, p.here ? 1 : 0);
         for (const f of PLAYER_FIELDS) SNAP.p.push(p[f]);
+        SNAP.x.push(i);
+        for (const f of PLAYER_EXTRA) SNAP.x.push(p[f]);
       }
       for (let i = 0; i < drops.length; i++) {
         const d = drops[i];
@@ -1097,6 +1102,13 @@
         p.on = true;
         p.here = snap.p[o + 1] === 1;
         for (let i = 0; i < PLAYER_FIELDS.length; i++) p[PLAYER_FIELDS[i]] = num(snap.p[o + 2 + i]);
+        for (const f of PLAYER_EXTRA) p[f] = 0;
+      }
+      const x = Array.isArray(snap.x) ? snap.x : [], xw = PLAYER_EXTRA.length + 1;
+      if (x.length % xw === 0) for (let o = 0; o < x.length; o += xw) {
+        const p = players[x[o]];
+        if (!p || !p.on) continue;
+        for (let i = 0; i < PLAYER_EXTRA.length; i++) p[PLAYER_EXTRA[i]] = num(x[o + 1 + i]);
       }
       for (const d of drops) d.on = false;
       for (let o = 0; o < snap.d.length; o += dw) {
@@ -1147,7 +1159,7 @@
         if (!b) {
           for (const q of players) if (!q.on) { b = q; break; }
           if (!b) return false;
-          for (const f of PLAYER_FIELDS) b[f] = 0;
+          for (const f of PLAYER_ALL) b[f] = 0;
           b.on = true; b.id = REVIVE_BOT; b.inGame = 1;
         }
         b.here = true; b.x = x; b.y = me.y; b.z = z; b.seg = 0; b.elixir = b.reviveTarget = 0;
