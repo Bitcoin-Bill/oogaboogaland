@@ -5773,6 +5773,21 @@ const hubKeptDelivery = { name: "hub kept delivery", why: "regression: leaving a
     start.airborne > 0 && start.accepted === 12 && r.outstanding === 0 && r.airborne === 0 && r.moving === 0 && r.hanging === 0
       && (!start.keep || r.landed === 12 && r.settled), JSON.stringify({ start, r }));
 } };
+// A room's address redirected to the island (signed in, or the account still unknown) chooses that room at the keypad.
+const hubKeypadRedirect = { name: "hub keypad redirect", why: "regression: a kept hub resumed without reading the room a redirected room address chose, so the keypad ignored it and the choice lingered", run: async (b) => {
+  await tourGo(b, "lab");
+  const r = await b.evaluate(`(() => {
+    const B = __ooga, net = BL.net.state, resolved = net.resolved;
+    net.resolved = false;
+    try {
+      B.go("timechain", "3");
+      for (let i = 0; i < 150 && (B.transitioning || B.scene !== "hub"); i++) B.advance(1 / 30, 1 / 30);
+    } finally { net.resolved = resolved; }
+    B.advance(0.3, 1 / 30);
+    return { scene: B.scene, policy: B.hubPolicy, preselected: BL.scenes.hub.debug.timechainIsland.gate.preselected };
+  })()`);
+  record("hub keypad redirect: a room address redirected to the island, kept or rebuilt, has that room chosen at the keypad", r.scene === "hub" && r.preselected === 3, JSON.stringify(r));
+} };
 const play = (id, what, code) => ({ name: `${id} playthrough`, why: "playthrough: the game reaches its result, shown and saved", run: async (b) => {
   const r = await b.evaluate(code);
   record(`${id} playthrough: ${what}`, r.ok, JSON.stringify(r));
@@ -11291,7 +11306,7 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       && animation.host.ooga >= 58 && animation.host.gorilla >= 58 && animation.network && animation.controlled >= 58, JSON.stringify(animation));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
-scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubKeptDelivery, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
+scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hudVisit, hubKeptDelivery, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, hubKeypadRedirect, trip("hub"), factoryActivityRouting] });
 // The same ownership contract exercises complete destruction on memory-limited devices.
 scene("hub", { label: "release policy", query: "hubcache=release", steps: [hudVisit, trip("hub")] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });

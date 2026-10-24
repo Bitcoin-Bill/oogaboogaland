@@ -10791,7 +10791,8 @@
     hud.restoreBoards(jumbotronBoard);
     hud.setDestinations(["pile", "lab", "mirror", "underground", "basement", "mempool", "factory", "arcade", "bca", "gate", "bifrost", "timechain"]);
     input.resume(); pilot.resume(); clankerPlay.resume(); chalkboard.resume();
-    islandGuide.resume(); timechainIsland.gate.resume();
+    islandGuide.resume();
+    if (timechainIsland.gate.resume()) hud.toast(`Room ${timechainIsland.gate.preselected} is chosen at the keypad · walk up to it and press Enter to go in`);
     if (factoryMouth?.hall) factoryMouth.hall.resume();
     if (factoryMouth?.roofWindow) factoryMouth.roofWindow.resume();
     weather = weatherMod.create({ root, renderer, camera, heightAt: mempoolIsland.rainAt, fx, onRain: mempoolIsland.rainHit, centre: mempoolIsland.centre });
