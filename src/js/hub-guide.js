@@ -558,6 +558,8 @@
       if (e.key !== "Enter" && e.key !== "ArrowRight") return;
       const target = e.target;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable || target.closest && target.closest("dialog"))) return;
+      // Enter on one of her own buttons (Ask, a suggestion, Show me, Not now) presses that button.
+      if (e.key === "Enter" && target instanceof Node && panel.contains(target)) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (!e.repeat) forward();
     };
@@ -612,8 +614,9 @@
           break;
         case "offer":
           placeBy(); rig.setLast(spot.x, spot.y, spot.z); rig.steer(dt);
-          // Her offer stands for a while once she has finished asking.
-          if (rig.said && (state.timer -= dt) <= 0) { say(state.asked ? "later" : "declined"); toWork(); }
+          // Her offer stands for a while once she has finished asking, and for as long as a question is being written.
+          if (document.activeElement === field || field.value) state.timer = OFFER_TIME;
+          else if (rig.said && (state.timer -= dt) <= 0) { say(state.asked ? "later" : "declined"); toWork(); }
           break;
         case "tour": {
           // Where the visitor is, she keeps by them; at a stop, she flies there and starts once she is nearly in place.

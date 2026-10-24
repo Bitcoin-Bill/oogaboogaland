@@ -6597,7 +6597,7 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
   record("hub guide: a jetpack climbing as a tour starts lets go once Space is released, rising no more and spending no fuel through the tour", guide.reoffered && guide.climbing && !guide.thrusting && guide.rose <= 0 && guide.burned <= 0 && guide.released, JSON.stringify(guide));
 } };
 // Asking Tess (#270): what the page answers by itself, typed into the box under her offer, through the same page.
-const hubAsk = { name: "hub ask", why: "rule: a question typed to Tess is answered by the page: a place is a trip there and back to her offer, and one it can't answer gets her offline line", run: async (b) => {
+const hubAsk = { name: "hub ask", why: "rule: a question typed to Tess is answered by the page: a place is a trip there and back to her offer, and one it can't answer gets her offline line; a question being written keeps her offer open, and Enter on her buttons presses them", run: async (b) => {
   const ask = await b.evaluate(`(() => {
     const B = __ooga, G = BL.scenes.hub.debug.tess, s = G.state;
     for (let t = 0; t < 12 && s.phase !== "work"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
@@ -6623,6 +6623,48 @@ const hubAsk = { name: "hub ask", why: "rule: a question typed to Tess is answer
   })()`);
   record("hub ask: a place typed to Tess is a trip there and back to her offer, a question the page knows is answered where she is, and one it doesn't gets her offline line",
     ask.shown && ask.trip.kind === "trip" && ask.trip.holding && ask.trip.there && ask.trip.back && ask.answered && ask.offline, JSON.stringify(ask));
+  // The focus and keyboard paths, through real input: a question being written holds her offer open however long it
+  // takes, Tab reaches Ask and Enter there asks it, and Enter on a suggestion asks that one, never starting the tour.
+  const press = async (key, code, keyCode, text) => {
+    await b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: keyCode, text });
+    await b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: keyCode });
+  };
+  await b.focus(true);
+  await b.evaluate(`(() => {
+    const B = __ooga, G = BL.scenes.hub.debug.tess, s = G.state;
+    for (let t = 0; t < 12 && s.phase !== "work"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+    G.tap();
+    for (let t = 0; t < 15 && s.phase !== "offer"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+    document.querySelector(".greeter-ask input").focus();
+  })()`);
+  await b.send("Input.insertText", { text: "How do I donate?" });
+  const held = await b.evaluate(`(() => {
+    const B = __ooga, s = BL.scenes.hub.debug.tess.state, box = document.querySelector(".greeter-ask input");
+    for (let t = 0; t < 20; t += 1 / 30) B.advance(1 / 30, 1 / 30);
+    return { phase: s.phase, shown: !document.querySelector(".greeter-menu").hidden, focused: document.activeElement === box, draft: box.value };
+  })()`);
+  await press("Tab", "Tab", 9);
+  const onAsk = await b.evaluate(`document.activeElement === document.querySelector(".greeter-ask button")`);
+  await press("Enter", "Enter", 13, "\r");
+  const asked = await b.evaluate(`(() => {
+    const B = __ooga, G = BL.scenes.hub.debug.tess, s = G.state;
+    B.advance(0.3, 1 / 30);
+    return { phase: s.phase, holding: s.holding, said: JSON.stringify(G.speech && G.speech.beats || "").includes("Feed the Ooga Boogas") };
+  })()`);
+  await b.evaluate(`document.querySelector(".greeter-chip").focus()`);
+  await press("Enter", "Enter", 13, "\r");
+  const chip = await b.evaluate(`(() => {
+    const B = __ooga, s = BL.scenes.hub.debug.tess.state, skip = document.querySelector(".greeter-menu .greeter-row button:last-child");
+    B.advance(0.1, 1 / 30);
+    const trip = { kind: s.kind, holding: s.holding, title: s.legs[s.stop] ? s.legs[s.stop].title : null };
+    for (let t = 0; t < 20 && s.phase !== "offer"; t += 1 / 30) { if (s.phase === "tour") skip.click(); B.advance(1 / 30, 1 / 30); }
+    skip.click();
+    return trip;
+  })()`);
+  await b.focus(false);
+  record("hub ask: a question being written holds her offer open, Tab reaches Ask and Enter there asks it, and Enter on a suggestion asks that one, never the island tour",
+    held.phase === "offer" && held.shown && held.focused && held.draft === "How do I donate?" && onAsk && asked.phase === "offer" && !asked.holding && asked.said
+      && chip.kind === "trip" && chip.title === "Ooga Arcade", JSON.stringify({ held, onAsk, asked, chip }));
 } };
 const hubMapNavigation = { name: "hub map navigation", why: "regression: choosing a destination or resetting the camera must preserve the controlled actor and view family", run: async (b) => {
   const r = await b.evaluate(`(() => {
