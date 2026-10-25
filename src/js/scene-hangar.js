@@ -1,6 +1,7 @@
 // The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway (`hangar-models.js` has
 // the hall): the landing inside the door, the runway down the middle and on through the launch tunnel's neon frames to
-// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it; the Jet docked beside the runway
+// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it, the hall humming
+// (`hangar-audio.js`); the Jet docked beside the runway
 // (`jet-models.js`) with a stair tower up its flank; the crew's workstations, and the repository's two boards on the
 // wall. The crew are the Factory's own, gorillas in hard hats, each pacing its post. The boards read the repository
 // once a page life, on the first visit (`jet-feed.js`), and show the best reading there is meanwhile; a tap opens one
@@ -85,7 +86,7 @@
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null, clock = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
-  let unsubscribeFeed = null, boardsDirty = false;
+  let unsubscribeFeed = null, boardsDirty = false, audio = null;
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
   // frame, so signed-in players in the hangar hear each other and those in the hall (voice needs a driven Ooga).
@@ -380,6 +381,7 @@
       if (action === "leave") leaveHangar();
       else if (action === "reset-view") pilot.resetCamera();
       else if (action === "act") pilot.action();
+      else if (action === "hangar-mute") hud.toast(audio.setMuted(!audio.muted) ? "Sound off" : "Sound on");
       else if (!leaving && action.startsWith("mode-")) pilot.modeAction(action);
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);
     });
@@ -389,6 +391,7 @@
     addChild(root, dust.node);
     scene = build();
     hireCrew(scene);
+    audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 } });
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
     unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
     if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
@@ -442,7 +445,7 @@
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -464,6 +467,10 @@
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
     pilot.update(dt);
+    // The hall's hum hears from the Ooga driven here, or from the view's target.
+    const ear = people && people.player, at = ear ? ear.root.position : pilot.orbit.target;
+    audio.listen(at.x, ear ? at.y - ear.baseY + 1.4 : at.y, at.z, camera.target.x - camera.position.x, camera.target.z - camera.position.z);
+    audio.update(dt);
     // The Ooga driven here goes to the room with where it stands and its health; other players here are shown.
     const drivenHere = people && people.player;
     BL.net.setBody(drivenHere ? drivenHere.traits.name : null);
@@ -530,6 +537,8 @@
     remotes = null;
     footsteps.dispose();
     footsteps = null;
+    audio.dispose();
+    audio = null;
     if (people) people.dispose();
     fx.dispose();
     pilot.dispose();
