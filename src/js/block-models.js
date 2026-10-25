@@ -185,5 +185,68 @@
     geo.castShadow = false;
     return geo;
   });
-  BL.blockModels = { TEAM, ORANGE, arena, stand, block, tick, ball, splat, ring, pad, bubble, SPLATS: 6 };
+  // A pushable crate: planked sides, darker battens, and a band of its team's paint, centred on its foot.
+  const crate = variants((i) => {
+    const t = SIM.TEAMS[i], h = SIM.CONFIG.CRATE_H, w = SIM.CONFIG.CRATE_HALF * 2, parts = [bevelBox({ w, h, d: w, color: "#9a6a3a", offset: { y: h / 2 } })];
+    for (const s of [-1, 1]) {
+      parts.push(box({ w: w + 0.02, h: 0.1, d: 0.1, color: "#5a3a22", offset: { y: h / 2, z: s * (w / 2 - 0.04) } }));
+      parts.push(box({ w: 0.1, h: 0.1, d: w + 0.02, color: "#5a3a22", offset: { y: h / 2, x: s * (w / 2 - 0.04) } }));
+    }
+    parts.push(box({ w: w + 0.03, h: 0.12, d: w + 0.03, color: TEAM[t].paint, emissive: 0.2, offset: { y: h - 0.2 } }));
+    return merge(...parts);
+  });
+  // Throws in flight: a grenade (a fat ball with a pale band), a rocket (a nose, a body in team paint and fins,
+  // pointing along +z) and a net (a square of green cords).
+  const grenade = variants((i) => {
+    const t = SIM.TEAMS[i];
+    const geo = merge(bevelBox({ w: 0.32, h: 0.32, d: 0.32, color: TEAM[t].paint, emissive: 0.6 }), box({ w: 0.34, h: 0.07, d: 0.34, color: TEAM[t].light, emissive: 0.8 }));
+    geo.castShadow = false;
+    return geo;
+  });
+  const rocket = variants((i) => {
+    const t = SIM.TEAMS[i];
+    const geo = merge(
+      box({ w: 0.22, h: 0.22, d: 0.7, color: TEAM[t].paint, emissive: 0.5 }),
+      box({ w: 0.16, h: 0.16, d: 0.18, color: "#f3efe4", emissive: 0.5, offset: { z: 0.42 } }),
+      box({ w: 0.5, h: 0.04, d: 0.16, color: TEAM[t].deep, offset: { z: -0.3 } }),
+      box({ w: 0.04, h: 0.5, d: 0.16, color: TEAM[t].deep, offset: { z: -0.3 } }),
+      box({ w: 0.16, h: 0.16, d: 0.3, color: ORANGE, emissive: 1, offset: { z: -0.5 } })
+    );
+    geo.castShadow = false;
+    return geo;
+  });
+  const net = cached(() => {
+    const parts = [], n = 4, s = 0.9;
+    for (let k = 0; k <= n; k++) {
+      const o = -s / 2 + k * s / n;
+      parts.push(box({ w: s, h: 0.03, d: 0.03, color: "#7fe08a", emissive: 0.5, offset: { z: o } }));
+      parts.push(box({ w: 0.03, h: 0.03, d: s, color: "#7fe08a", emissive: 0.5, offset: { x: o } }));
+    }
+    const geo = merge(...parts);
+    geo.castShadow = false;
+    return geo;
+  });
+  // A net draped over a caught Ooga: cords down its sides and across its top.
+  const draped = cached(() => {
+    const parts = [], R = 0.5, H = 1.9;
+    for (let k = 0; k < 10; k++) {
+      const a = k / 10 * Math.PI * 2;
+      parts.push(box({ w: 0.03, h: H, d: 0.03, color: "#7fe08a", emissive: 0.4, offset: { x: Math.sin(a) * R, y: H / 2, z: Math.cos(a) * R } }));
+    }
+    for (const y of [0.5, 1.1, 1.7]) for (let k = 0; k < 10; k++) {
+      const a = (k + 0.5) / 10 * Math.PI * 2;
+      parts.push(moved(turnedY(box({ w: R * 0.65, h: 0.03, d: 0.03, color: "#7fe08a", emissive: 0.4 }), a), Math.sin(a) * R * 0.95, y, Math.cos(a) * R * 0.95));
+    }
+    parts.push(moved(merge(net()), 0, H, 0));
+    const geo = merge(...parts);
+    geo.castShadow = false;
+    return geo;
+  });
+  // A rain streak, a thin pale bar the scene leans with the wind.
+  const streak = cached(() => {
+    const geo = box({ w: 0.025, h: 0.5, d: 0.025, color: "#c8d8ff", emissive: 0.4 });
+    geo.castShadow = false;
+    return geo;
+  });
+  BL.blockModels = { TEAM, ORANGE, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, SPLATS: 6 };
 })();

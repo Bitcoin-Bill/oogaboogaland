@@ -5,12 +5,14 @@
 //
 // Phases `board` (choose a side), `play` and `results`. The rules run in `blockSim.step` on a fixed step; this file
 // draws them: the arena and stands built once a visit, the four Oogas posed from the sim each frame, the two blocks on
-// their stands, at a carrier's back or lying with a countdown ring, pooled paint balls and splats, and a chase camera
-// behind the visitor's Ooga that the mouse drag, Q E or the look stick turns. W A S D run toward where the camera
-// looks, Shift sprints, Space jumps and jumps again in the air, a left click or Enter paints one ball a press, G drops
-// the block, C crouches while held, V switches between the chase camera and first person (a click there locks the
-// mouse for aiming; Escape lets it go). On touch the act button jumps and `#block-paint` paints. The intro card, the board (side and Ooga), the
-// quiz card and the results are in `src/index.html` under `#block`.
+// their stands, at a carrier's back or lying where they fell, pooled crates, throws and splats, the weather (a wind
+// sign, rain and lightning in a storm), and a chase camera behind the visitor's Ooga that the mouse drag, Q E or the
+// look stick turns. W A S D run toward where the camera looks, Shift sprints, Space jumps and jumps again in the air,
+// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net), R drops a crate, G drops the
+// block, C crouches while held, V switches between the chase camera and first person (a click there locks the mouse
+// for aiming; Escape lets it go). On touch the act button jumps, `#block-paint` throws and the tool bar picks. A round
+// opens with the sim's fortifying time. The intro card, the board (side and Ooga), the tool bar, the quiz card and the
+// results are in `src/index.html` under `#block`.
 //
 // Quiz traps: stepping on a green pad closes a Matrix bubble round the Ooga (`block-sim.js`). For the visitor the
 // scene opens `#block-quiz`, a Bitcoin question from `block-trivia.js` with its four answers shuffled; a right answer
@@ -38,10 +40,18 @@
     splat: ["Splat!", "Paint in eye!", "Ooga sticky!"],
     lost: ["Our block! Get it!", "Thief! Paint thief!"],
     win: ["Ooga win! All blocks!", "Stack sats!"],
+    rescue: ["Mine again! Home!", "Ooga take it back!"],
+    boom: ["Kaboom!", "Paint everywhere!"],
+    net: ["Ooga tangled!", "Net?! Rude!"],
     trap: ["Quiz?! Ooga think…", "Hmm. Satoshi who?", "Big brain time."],
     free: ["Ooga know!", "Easy! Twenty-one million!", "Brain unlocked!"]
   };
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
+  const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
+  const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net" };
+  const WEATHER_WORDS = { clear: "Clear", breeze: "Windy", storm: "Storm" };
+  const RAIN = 140;
   // Sky, light and haze from the island's clock, as the drop's.
   const RENDER_OPTS = {
     clear: new Float32Array(3), horizon: new Float32Array(3), zenith: new Float32Array(3), sky: new Float32Array(3), ground: new Float32Array(3), sun: new Float32Array(3), direct: new Float32Array(3),
@@ -62,7 +72,8 @@
   let home = "hub";
   let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
-  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null;
+  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null;
+  let tool = "paint", flash = 0, flashT = 0;
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
@@ -96,10 +107,11 @@
       const ring = createNode({ geometry: BM.ring(0) });
       const blob = createNode({ geometry: BM.splat(0), position: { x: 0, y: 1.9, z: 0 }, scale: { x: 0.8, y: 1, z: 0.8 }, visible: false });
       const bubble = createNode({ geometry: BM.bubble(), visible: false });
-      addChild(body, ring, blob, bubble);
+      const netted = createNode({ geometry: BM.draped(), visible: false });
+      addChild(body, ring, blob, bubble, netted);
       place(body);
       if (cave) input.add(cave.parts.torso, { kind: "ooga", index: i, priority: 1 });
-      return { body, cave, ring, blob, bubble, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -227,7 +239,7 @@
     closeQuiz();
     phase = "board";
     el.board.hidden = false;
-    el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = true;
+    el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = el.toolBar.hidden = true;
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === selection.team));
@@ -250,7 +262,7 @@
     result = null;
     closeQuiz();
     el.board.hidden = el.results.hidden = true;
-    el.strip.hidden = false;
+    el.strip.hidden = el.toolBar.hidden = false;
     el.notice.hidden = false;
     hud.el.act.hidden = !COARSE;
     hud.setAct("Jump");
@@ -260,8 +272,10 @@
     cam.pitch = 0.28;
     cam.warm = false;
     controls.reset();
-    center("GO!", 900);
-    notice(COARSE ? "Steal the orange block · bring it home · Jump twice to climb" : "Steal the orange block · bring it home · click or Enter paints · Space twice climbs", 4500);
+    tool = "paint";
+    updateTools();
+    center(`FORTIFY! ${Math.ceil(sim.prep)}`, 0);
+    notice(COARSE ? "Fortify your fort: Crate drops a crate · push crates by walking into them" : "Fortify your fort: R drops a crate in front of you · push crates by walking into them", 0);
     updateStrip();
   };
   const finish = () => {
@@ -270,7 +284,7 @@
     const won = sim.winner === sim.team, ms = Math.round(sim.time * 1000);
     const best = game.recordBlock({ won, ms });
     result = { won, ms, best };
-    el.strip.hidden = true;
+    el.strip.hidden = el.toolBar.hidden = true;
     el.center.hidden = el.notice.hidden = true;
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
@@ -341,10 +355,36 @@
         say(e.actor, LINES.capture);
       } else if (e.type === "return") {
         if (e.team === sim.team) notice("Your block is home", 1800);
-        else notice("Their block went home", 1800);
+        else notice("Their block is back on its stand", 1800);
+      } else if (e.type === "rescue") {
+        if (e.team === sim.team) notice(me ? "Got our block back! Carry it home to your stand" : "Teammate has our block · cover them home", 2500);
+        else notice("They grabbed their block back! Stop them before their stand", 2500);
+        say(e.actor, LINES.rescue);
       } else if (e.type === "knock" || e.type === "drop") {
-        if (me && e.type === "drop") notice("Block dropped · it goes home in 20 s", 2500);
-        else if (!mine) notice(e.type === "knock" ? "Carrier splatted! Your block is loose" : "Your block is loose", 2200);
+        if (e.team === sim.team) notice("Our block is loose! Grab it and carry it home", 2500);
+        else notice(me ? "Block dropped · grab it again, or a teammate can" : "Their block is down! Grab it", 2500);
+      } else if (e.type === "go") {
+        center("GO!", 900);
+        notice(COARSE ? "Steal the orange block · bring it home · Jump twice to climb" : "Steal the orange block · bring it home · Space twice climbs · 1-4 pick a tool", 4500);
+      } else if (e.type === "build") {
+        fx.burst(e.x, 0.6, e.z, 8, WOOD_BITS, 1.6);
+        if (me) updateTools();
+      } else if (e.type === "pop" || e.type === "boom") {
+        const big = e.type === "boom";
+        stamp(e.team, e.x, Math.min(e.y, 0.1), e.z);
+        for (let k = 0; k < (big ? 5 : 3); k++) { const a = k * 2.1 + e.x, r = big ? 1.6 : 1.1; stamp(e.team, e.x + Math.sin(a) * r, Math.min(e.y, 0.1), e.z + Math.cos(a) * r); }
+        fx.burst(e.x, e.y + 0.3, e.z, big ? 30 : 18, PAINT_BITS[e.team], big ? 4.2 : 3);
+        if (big) say(e.actor, LINES.boom, 1.2);
+      } else if (e.type === "net") {
+        fx.burst(e.x, e.y, e.z, 10, NET_BITS, 1.8);
+        if (me) { center("NETTED!", 900); notice("Tangled! Slow and no jumping for a few seconds", 2200); }
+        say(e.actor, LINES.net, 1.4);
+      } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
+      else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
+      else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
+      else if (e.type === "weather") {
+        const w = sim.weather.kind;
+        notice(w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears", 2400);
       } else if (e.type === "trap") {
         fx.burst(e.x, 1, e.z, 12, QUIZ_BITS, 2);
         if (me) { center("QUIZ TRAP!", 1000); openQuiz(); }
@@ -368,7 +408,34 @@
   // Paint along the camera's look, lobbed a little higher when the camera looks up.
   // In first person the ball goes where the eye looks, less the lob the throw adds.
   const lookUp = () => clamp(-(cam.pitch - 0.28) * 1.6, -0.9, 0.9);
-  const paint = () => SIM.fire(sim, 0, cam.yaw, cam.first ? lookUp() - 0.09 : clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2));
+  // Grenades lob higher; the chase camera's tilt still nudges every throw up or down.
+  const paint = () => {
+    const lob = tool === "grenade" ? 0.35 : tool === "rocket" ? -0.04 : 0;
+    const ok = SIM.fire(sim, 0, cam.yaw, (cam.first ? lookUp() - 0.09 : clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2)) + lob, tool);
+    if (!ok && tool !== "paint" && sim.actors[0][tool] <= 0) notice(`Out of ${tool}s · refill on your own stand`, 1400);
+    return ok;
+  };
+  const chooseTool = (k) => {
+    tool = k;
+    updateTools();
+  };
+  const buildCrate = () => {
+    if (phase !== "play") return false;
+    if (SIM.build(sim, 0, cam.yaw)) return true;
+    const a = sim.actors[0];
+    notice(a.crates <= 0 ? "No crates left" : "Can't put a crate there · your own half, clear ground", 1200);
+    return false;
+  };
+  const updateTools = () => {
+    if (!sim || !el.tools) return;
+    const a = sim.actors[0];
+    for (const b of el.tools) {
+      const k = b.dataset.tool;
+      b.setAttribute("aria-pressed", String(k === tool));
+      const n = b.querySelector("b");
+      if (n) n.textContent = k === "paint" ? "∞" : k === "crate" ? String(a.crates) : String(a[k]);
+    }
+  };
   const setView = (first) => {
     cam.first = first;
     cam.warm = false;
@@ -425,6 +492,7 @@
       a.ring.visible = s.grounded;
       a.blob.visible = s.splat > 0;
       a.bubble.visible = s.trapped > 0;
+      a.netted.visible = s.netted > 0;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
       if (!a.cave) continue;
       const p = a.cave.parts;
@@ -477,10 +545,54 @@
       b.node.rotation.y = elapsed * (f.state === "carried" ? 3 : 0.9);
       b.node.glow = f.state === "dropped" ? 0.7 + 0.3 * Math.sin(elapsed * 8) : 1;
       // The countdown ring under a dropped block, one tick for each part of its twenty seconds left.
-      const left = f.state === "dropped" ? (f.returnAt - sim.time) / C.RETURN_S : 0;
-      const shown = Math.ceil(left * ticks[t].length);
+      // The ring of ticks spins round a dropped block so it is easy to find; it stays until someone picks it up.
+      const shown = f.state === "dropped" ? ticks[t].length : 0;
+      b.tickRoot.rotation.y = elapsed * 1.5;
       setVec(b.tickRoot.position, f.x, f.y + 0.05, f.z);
       for (let k = 0; k < ticks[t].length; k++) ticks[t][k].visible = k < shown;
+    }
+  };
+  const poseCrates = () => {
+    for (let i = 0; i < crates.length; i++) {
+      const c = sim.crates[i], n = crates[i];
+      n.visible = c.live;
+      if (!c.live) continue;
+      setVec(n.position, c.x, 0, c.z);
+      n.geometry = BM.crate(TEAM_INDEX[c.team]);
+    }
+  };
+  // The sky follows the weather: a storm darkens the light and thickens the cloud, rain falls slanted by the wind
+  // round the camera, and now and then lightning flashes.
+  const poseWeather = (dt) => {
+    const w = sim.weather, storm = w.kind === "storm" ? Math.min(1, w.strength / C.WIND.storm) : 0;
+    RENDER_OPTS.clouds = 0.35 + 0.55 * storm;
+    RENDER_OPTS.directStrength *= 1 - 0.55 * storm;
+    RENDER_OPTS.sunStrength *= 1 - 0.55 * storm;
+    flashT -= dt;
+    if (storm > 0.6 && flashT <= 0 && Math.random() < dt * 0.25) { flash = 1; flashT = 3; }
+    flash = Math.max(0, flash - dt * 5);
+    RENDER_OPTS.ambientFloor = 0.22 + flash * 0.8;
+    RENDER_OPTS.bloomStrength = 0.6 + flash * 1.2;
+    const cx = camera.position.x, cz = camera.position.z, lean = 0.12;
+    for (let i = 0; i < RAIN; i++) {
+      const r = rain[i];
+      r.node.visible = storm > 0.2 && i < RAIN * storm;
+      if (!r.node.visible) continue;
+      r.y -= dt * 14;
+      r.x += w.x * dt * 0.8; r.z += w.z * dt * 0.8;
+      if (r.y < 0 || Math.abs(r.x - cx) > 12 || Math.abs(r.z - cz) > 12) {
+        r.x = cx + (Math.random() - 0.5) * 22; r.z = cz + (Math.random() - 0.5) * 22; r.y = 6 + Math.random() * 6;
+      }
+      setVec(r.node.position, r.x, r.y, r.z);
+      r.node.rotation.x = w.z * lean; r.node.rotation.z = -w.x * lean;
+    }
+    // The wind sign: its strength, and an arrow turned to show where it blows relative to the camera.
+    const key = `${w.kind}${Math.round(w.strength * 2)}${Math.round(wrap(Math.atan2(w.x, w.z) - cam.yaw) * 4)}`;
+    if (key !== el.windKey) {
+      el.windKey = key;
+      el.windWord.textContent = WEATHER_WORDS[w.kind];
+      el.windArrow.style.transform = `rotate(${(-wrap(Math.atan2(w.x, w.z) - cam.yaw)).toFixed(2)}rad)`;
+      el.windArrow.style.opacity = String(Math.min(1, 0.25 + w.strength / C.WIND.storm));
     }
   };
   const posePads = (elapsed) => {
@@ -496,7 +608,10 @@
       n.visible = s.live;
       if (!s.live) continue;
       setVec(n.position, s.x, s.y, s.z);
-      n.geometry = BM.ball(TEAM_INDEX[s.team]);
+      const t = TEAM_INDEX[s.team];
+      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : BM.ball(t);
+      n.rotation.y = Math.atan2(s.vx, s.vz);
+      n.rotation.x = s.kind === "rocket" ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
     }
   };
   const updateCamera = (dt) => {
@@ -538,17 +653,21 @@
     RENDER_OPTS.time = elapsed;
     if (phase === "play") {
       readInput(dt);
+      const prepWas = sim.prep;
       SIM.step(sim, dt, move);
+      if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) center(`FORTIFY! ${Math.ceil(sim.prep)}`, 0);
       readEvents();
       updateStrip();
       if (sim.over) finish();
     } else controls.read();
     poseActors(dt, elapsed);
     poseBlocks(elapsed);
+    poseCrates();
     posePads(elapsed);
     poseShots();
     if (phase === "board") boardView(elapsed);
     else updateCamera(dt);
+    poseWeather(dt);
     fx.update(dt);
     stepTweens(dt);
   };
@@ -575,6 +694,8 @@
       if (e.key >= "1" && e.key <= "4") answer(Number(e.key) - 1);
       return;
     }
+    if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
+    if (e.key === "r" || e.key === "R") buildCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
@@ -604,6 +725,13 @@
     }
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
     el.paintBtn = document.getElementById("block-paint");
+    el.toolBar = document.getElementById("block-tools");
+    el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
+    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else chooseTool(k); };
+    for (const b of el.tools) b.addEventListener("click", el.onTool);
+    el.windWord = document.getElementById("block-wind-word");
+    el.windArrow = document.getElementById("block-wind-arrow");
+    el.windKey = "";
     el.cross = document.getElementById("block-cross");
     el.viewBtn = document.getElementById("block-view-btn");
     el.canvas = ctx.canvas;
@@ -641,6 +769,10 @@
     pads = SIM.ARENA.traps.map(([x, z]) => place(createNode({ geometry: BM.pad(), position: { x, y: 0, z } })));
     shots = [];
     for (let i = 0; i < C.MAX_SHOTS; i++) shots.push(place(createNode({ geometry: BM.ball(0), visible: false })));
+    crates = [];
+    for (let i = 0; i < C.MAX_CRATES; i++) crates.push(place(createNode({ geometry: BM.crate(0), visible: false })));
+    rain = [];
+    for (let i = 0; i < RAIN; i++) rain.push({ node: place(createNode({ geometry: BM.streak(), visible: false })), x: 0, y: -1, z: 0 });
     splats = [];
     for (let i = 0; i < MAX_SPLATS; i++) splats.push(place(createNode({ geometry: BM.splat(0), visible: false, depthBias: 0.2 })));
     splatNext = 0;
@@ -685,7 +817,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws · View for first person" : "W A S D run · drag or Q E turn · Shift sprints · Space jumps, twice to climb · click or Enter paints · C crouches · V first person · G drops";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W A S D run · drag or Q E turn · Space jumps, twice to climb · click or Enter throws · 1-4 tools · R crate · C crouch · V first person · G drop";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -699,7 +831,8 @@
           get result() { return result; },
           get cam() { return cam; },
           get quiz() { return { open: quiz.open, right: quiz.right, locked: quiz.locked, asked: quiz.asked, solved: quiz.solved }; },
-          selection, start, showBoard, paint, drop: dropBlock, chooseTeam, chooseOoga, answer,
+          get tool() { return tool; },
+          selection, start, showBoard, paint, drop: dropBlock, build: buildCrate, chooseTool, chooseTeam, chooseOoga, answer,
           // Runs the round forward without frames, the visitor's Ooga on the sim's autopilot when `auto` is set.
           simulate: (seconds, auto = false) => {
             if (phase !== "play") return;
@@ -724,6 +857,8 @@
     window.clearTimeout(noticeTimer);
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
     el.paintBtn.removeEventListener("pointerdown", el.onPaint);
+    el.toolBar.hidden = true;
+    for (const b of el.tools) b.removeEventListener("click", el.onTool);
     document.removeEventListener("mousemove", onLockedMove);
     el.canvas.removeEventListener("mousedown", onLockedDown);
     window.removeEventListener("keydown", onCrouchKey);
@@ -747,7 +882,7 @@
     input.dispose();
     hud.dispose();
     phase = "board";
-    sim = blocks = shots = splats = ticks = pads = result = null;
+    sim = blocks = shots = splats = ticks = pads = crates = rain = result = null;
     hud = hooks = input = fx = controls = clock = null;
     blockScene.input = blockScene.debug = blockScene.agentControls = null;
     return { targets: count };
