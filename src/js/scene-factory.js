@@ -59,7 +59,7 @@
   const ARRIVAL = { yaw: 0, pitch: 0, dist: FOLLOW.max, position: { x: 0, y: LAYOUT.entrance.y, z: LAYOUT.entrance.z + 1 } };
   // The Lightning Jet Hangar's door, while the hangar is open (`FM.hangarEntry`): its shield's opening in the door's
   // frame, as wide as the arch, in the hall's cyan; and where whoever comes back out of the hangar stands, a step out of
-  // the door on the walkway facing into the hall, the view just inside the doorway behind it.
+  // the door on the walkway facing back along it, the view just inside the doorway behind it.
   const HANGAR_OPENING = { minX: -FM.HANGAR_DOOR.half, maxX: FM.HANGAR_DOOR.half, floorY: 0, ceilingY: FM.HANGAR_DOOR.top }, HANGAR_TINT = BL.factoryWindow.TINT;
   const HANGAR_ARRIVAL = { yaw: -Math.PI / 2, pitch: 0.12, dist: FOLLOW.min, position: { x: LAYOUT.hangar.x + 1.4, y: LAYOUT.hangar.y, z: LAYOUT.hangar.z } };
   // `entrance` is the balcony's view across the core; the rest frame one station each.
@@ -80,7 +80,7 @@
     show: view(11.2, 5.7, 18.2, 0.848, 0.38, 12),
     lookout: view(-16, 19, -14, 0.7, 0.15, 14),
     study: view(19, 8.6, 12, -Math.PI / 2 + 0.2, 0.2, 11),
-    // The hangar's door over Kortik's station, from across the pit.
+    // The hangar's door at the end of the left walkway, seen down the walkway from the balcony.
     hangar: view(-20.2, 8.2, LAYOUT.hangar.z, Math.PI / 2, 0.1, 16),
     galleries: view(4, 17, -16, 0, 0.14, 17)
   };
@@ -1252,15 +1252,15 @@
       transform[14] = other.z + Math.cos(other.turn) * PEER_PLANE + sx * sn - sz * c;
       s.tunnels.push({ at: t, node, stone, label: lbl, face, ripples, body, transform, yaw, crossings: 0, hum: Math.random() * 0.3 });
     });
-    // The Lightning Jet Hangar's door over Kortik's station, while the hangar is open: its arch, its sign, a banner either
-    // side (the one on Kortik's side shorter, clear of the beam over his sign), and across it the lab's phase plane in
-    // the hall's cyan, which takes whoever walks through into the hangar.
+    // The Lightning Jet Hangar's door at the end of the left walkway, while the hangar is open: its arch, its sign, a
+    // banner either side, and across it the lab's phase plane in the hall's cyan, which takes whoever walks through into
+    // the hangar.
     if (FM.hangarEntry()) {
       const h = L.hangar, D = FM.HANGAR_DOOR, door = FM.hangarDoor();
       const node = createNode({ position: { x: h.x, y: h.y, z: h.z }, rotation: { x: 0, y: h.turn, z: 0 } }), stone = createNode({ geometry: door.stone });
       addChild(node, stone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: door.glimpse, sightHidden: true }));
       setBoard(labelNode(node, D.sign[0], D.sign[1], D.sign[2]), "LIGHTNING JET\nHANGAR", "", true, { height: 1.3 });
-      for (const [side, drop] of [[-1, 2.2], [1, 1.8]]) addChild(node, createNode({ position: { x: side * (D.post + 0.75), y: 5.9, z: 0.6 }, geometry: FM.banner(drop) }));
+      for (const side of [-1, 1]) addChild(node, createNode({ position: { x: side * (D.post + 0.75), y: 5.9, z: 0.6 }, geometry: FM.banner(2.2) }));
       addChild(root, node);
       const mouth = { x: h.x, z: h.z, ry: h.turn, floorY: h.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } };
       s.hangar = { node, stone, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };

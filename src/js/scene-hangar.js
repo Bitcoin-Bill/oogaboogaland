@@ -1,7 +1,7 @@
-// The Lightning Jet Hangar, behind the Lightning Factory's door over Kortik's station: for now its shell, a long rock
-// hall under iron gantries with the runway down its middle to the launch tunnel's mouth, sealed until Jet v2 flies. The
-// Jet, its scaffold and crew and the boards come with the hangar itself; until then the scene stays `wip`, and the
-// Factory builds no door to it (`FM.hangarEntry`) unless a page opens it with ?wip=hangar.
+// The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway: for now its shell, a
+// long rock hall under iron gantries with the runway down its middle to the launch tunnel's mouth, sealed until Jet v2
+// flies. The Jet, its scaffold and crew and the boards come with the hangar itself; until then the scene stays `wip`,
+// and the Factory builds no door to it (`FM.hangarEntry`) unless a page opens it with ?wip=hangar.
 //
 // Whoever walked in stays themselves: the Ooga the hall handed over (`world.pilot`), or on a page that opens here,
 // `character=`. It stands a few steps in from the door, looking down the runway. Walking back out through the door's
@@ -39,7 +39,7 @@
     fog: [0.06, 0.06, 0.08], fogNear: 45, fogFar: 120
   };
   const TIPS = {
-    exit: ["Lightning Factory · the way back", "Back to the hall, over Kortik's station."],
+    exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
     sign: ["Lightning Jet Hangar", "Lightning Jet v2 is being built in here. The hangar is still going up."],
     mouth: ["Launch tunnel · sealed", "The runway opens when Jet v2 is ready to fly."]
   };

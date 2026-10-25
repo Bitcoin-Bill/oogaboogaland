@@ -36,6 +36,8 @@
   // Rock outcrops on the left of the front of the pit: [x, z, size, tiers, tier height]. While the Lightning Jet Hangar is
   // open the one under the left walkway stands two shorter tiers, its top (about 4 m) under the walkway's frame.
   const OUTCROPS = [[-11, 21, 1.3, 4, 1], [-16, 25, 1.6, 4, 1]], OUTCROPS_OPEN = [OUTCROPS[0], [-16, 25, 1.6, 2, 0.9]];
+  // How far the front wall stands back over the left walkway while the hangar is open (`hall`).
+  const HANGAR_SET_BACK = 3.4;
   const HALL = { halfW: 23, back: -22, front: 30, h: 26 };
   // The walls' stone comes in cells this big and leans this far in over the hall's height.
   const WALL_CELL = 0.75, WALL_LEAN = 3.5, STATION_BACK = 0.8;
@@ -116,12 +118,13 @@
     // from the line and the tunnel (`porchOf`).
     walk: [[2.5, 17.6, 23.7, 26.3], [17.6, 20.2, 0, 26.3]],
     // Level 2 on the left, while the Lightning Jet Hangar is open (`hangarEntry`): the walkway from the balcony's left
-    // side along the front wall, over the lowered outcrop, and down the left wall to the hangar's door, ending short of
-    // Kortik's station below; decks [x0, x1, z0, z1], as `walk`.
-    walkLeft: [[-17.6, -2.5, 23.7, 26.3], [-20.2, -17.6, 16, 26.3]],
-    // The Lightning Jet Hangar's door: in the left wall at the balcony's level, above Kortik's deck and just forward of
-    // his station, facing into the hall as line C's tunnel does.
-    hangar: { x: -20.8, y: LEVEL.main, z: 19.5, turn: Math.PI / 2 },
+    // side straight along the front wall, over the lowered outcrop, to the hangar's door at its end; decks
+    // [x0, x1, z0, z1], as `walk`.
+    walkLeft: [[-20.2, -2.5, 23.7, 26.3]],
+    // The Lightning Jet Hangar's door: in the left wall at the walkway's end, at the balcony's level over the front of
+    // the pit, forward of Kortik's station, facing back along the walkway as line C's tunnel faces into the hall. The
+    // front wall is set back over the walkway (`HANGAR_SET_BACK`) so the arch and its banners stand clear of the rock.
+    hangar: { x: -20.8, y: LEVEL.main, z: 25, turn: Math.PI / 2 },
     // Every other flight of stairs, [x, y, z] at the bottom and at the top and its width, read by the scaffold that
     // builds them (cutting the rail wherever one lands) and by the floor an Ooga walks: pit to the
     // core's walkway, the main level to the high lines up the lines' inner sides, the high
@@ -433,6 +436,11 @@
     if (hangarEntry()) openings.push(["left", LAYOUT.hangar.z, LAYOUT.hangar.y - 0.5, LAYOUT.hangar.y + 7.8, 4.3]);
     const open = (wall, u, y) => openings.some(([w, c, y0, y1, half]) => w === wall && Math.abs(u - c) < half && y > y0 && y < y1);
     const recesses = donationCorner() ? [["right", LAYOUT.kiosk.z, LAYOUT.kiosk.y - 0.5, LAYOUT.kiosk.y + 5.6, 2, 1.6], ["right", LAYOUT.board.z, LAYOUT.board.y + 0.9, LAYOUT.board.y + 4.6, 2.3, 1.6]] : [];
+    // While the hangar is open the front wall stands further off over the left walkway, its rock as craggy as ever:
+    // `HANGAR_SET_BACK` metres back from past the outcrop to the hangar door's arch, easing to the wall's own line toward
+    // the balcony and above the door, so the walkway runs along an open side and the whole arch shows down it.
+    const ease = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+    const setBack = (wall, u, y) => wall !== "front" || !hangarEntry() ? 0 : HANGAR_SET_BACK * ease((-5 - u) / 5) * ease((y - 2) / 2) * ease((16.5 - y) / 3);
     const recess = (wall, u, y) => {
       for (const [w, c, y0, y1, half, depth] of recesses) if (w === wall && Math.abs(u - c) < half && y > y0 && y < y1) return depth;
       return 0;
@@ -459,7 +467,7 @@
         if (open(name, u, y)) continue;
         // The back wall is smooth where the water runs down it.
         const groove = name === "back" && falls.some((f) => Math.abs(u - f) < 1.1);
-        const depth = recess(name, u, y) || 0.5 + y / H * WALL_LEAN + (groove ? 0 : heave(u, y, 3.2, k) * 0.95 + hash(iu, iy, k + 9) * 0.3);
+        const depth = recess(name, u, y) || 0.5 + y / H * WALL_LEAN + (groove ? 0 : heave(u, y, 3.2, k) * 0.95 + hash(iu, iy, k + 9) * 0.3) - setBack(name, u, y);
         const tone = hash(iu >> 1, iy >> 1, k + 3), color = tone < 0.1 ? 5 : 1 + Math.floor(hash(iu >> 1, iy >> 1, k + 5) * 3.99);
         for (let d = 0; d < 3; d++) put(iu, iy, depth, d, color);
       }
@@ -660,19 +668,12 @@
     place(railParts(ex, a0 + 0.1, wx, a0 + 0.1, [false, true]), 0, e.y, 0);
     place(railParts(ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, [false, true]), 0, e.y, 0);
     place(railParts(wx, a0 + 0.1, wx, s1z0 - 0.1, [false, true]), 0, e.y, 0);
-    // While the hangar is open, its walkway on the left, the right one's mirror: railed along the hall side from the
-    // balcony's rail and across its end over Kortik's station, its posts standing on the lowered outcrop where they
-    // come down on it, and open along the wall to the hangar's door.
+    // While the hangar is open, its walkway on the left: straight from the balcony's rail to the hangar's door in the
+    // left wall, railed along both sides to the wall, its posts standing on the lowered outcrop where they come down on it.
     if (hangarEntry()) {
-      const [[, , b0, b1], [t0x, t1x, tz0]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1, ix = t1x - 0.1;
-      for (const [x0, x1, z0, z1] of L.walkLeft) {
-        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-        place(deckParts(x1 - x0, z1 - z0, (x, z) => e.y - outcropTop(cx + x, cz + z), "", 19), cx, e.y, cz);
-      }
-      place(railParts(lx, b0 + 0.1, ix, b0 + 0.1, [false, true]), 0, e.y, 0);
-      place(railParts(lx, b1 - 0.1, t0x + 0.1, b1 - 0.1, [false, true]), 0, e.y, 0);
-      place(railParts(ix, b0 + 0.1, ix, tz0 + 0.1, [false, true]), 0, e.y, 0);
-      place(railParts(ix, tz0 + 0.1, t0x + 0.1, tz0 + 0.1, [false, true]), 0, e.y, 0);
+      const [[x0, x1, z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      place(deckParts(x1 - x0, z1 - z0, (x, z) => e.y - outcropTop(cx + x, cz + z), "", 19), cx, e.y, cz);
+      for (const z of [z0 + 0.1, z1 - 0.1]) place(railParts(lx, z, x0 + 0.1, z, [false, true]), 0, e.y, 0);
     }
     for (const t of L.tunnels) {
       const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
@@ -786,10 +787,10 @@
     const [[ax0, ax1, az0, az1], [bx0, bx1, bz0, bz1]] = L.walk, y2 = L.entrance.y;
     rects.push(ax0 - 0.3, ax1 + 0.3, az0 + 0.15, az1 - 0.15, y2, bx0 + 0.15, bx1 - 0.15, bz0 - 0.3, bz1 - 0.15, y2);
     if (hangarEntry()) {
-      const [[cx0, cx1, cz0, cz1], [dx0, dx1, dz0, dz1]] = L.walkLeft, h = L.hangar;
-      rects.push(cx0 - 0.3, cx1 + 0.3, cz0 + 0.15, cz1 - 0.15, y2, dx0 + 0.15, dx1 - 0.15, dz0 + 0.15, dz1 - 0.15, y2);
+      const [[cx0, cx1, cz0, cz1]] = L.walkLeft, h = L.hangar;
+      rects.push(cx0 + 0.15, cx1 + 0.3, cz0 + 0.15, cz1 - 0.15, y2);
       // The hangar door's threshold runs on in under its shield, so a walker keeps its footing until it crosses.
-      rects.push(h.x - 0.6, dx0 + 0.3, h.z - HANGAR_DOOR.half + 0.1, h.z + HANGAR_DOOR.half - 0.1, h.y);
+      rects.push(h.x - 0.6, cx0 + 0.3, h.z - HANGAR_DOOR.half + 0.1, h.z + HANGAR_DOOR.half - 0.1, h.y);
     }
     for (const t of L.tunnels) {
       const [x0, x1, z0, z1] = porchOf(t);
@@ -3200,14 +3201,10 @@
   // hall's window hang the same.
   const hangarLamps = () => {
     if (!hangarEntry()) return [];
-    const h = LAYOUT.hangar, c = Math.cos(h.turn), sn = Math.sin(h.turn), [[x0, x1, z0], [, ix, tz0]] = LAYOUT.walkLeft, y = LAYOUT.entrance.y, out = [];
+    const h = LAYOUT.hangar, c = Math.cos(h.turn), sn = Math.sin(h.turn), [[x0, x1, z0]] = LAYOUT.walkLeft, y = LAYOUT.entrance.y, out = [];
     for (const [lx, ly, lz] of HANGAR_DOOR.lamps) out.push(["hang", h.x + lx * c + lz * sn, h.y + ly, h.z - lx * sn + lz * c]);
-    const onRail = (ax, az, bx, bz, fractions) => {
-      const n = Math.max(2, Math.round(Math.hypot(bx - ax, bz - az) / 1.4) + 1);
-      for (const f of fractions) { const k = Math.round(f * (n - 1)) / (n - 1); out.push(["rail", ax + (bx - ax) * k, y, az + (bz - az) * k]); }
-    };
-    onRail(x1, z0 + 0.1, x0, z0 + 0.1, [0.2, 0.5, 0.8]);
-    onRail(ix - 0.1, z0, ix - 0.1, tz0, [0.3, 0.8]);
+    const n = Math.max(2, Math.round((x1 - x0) / 1.4) + 1);
+    for (const f of [0.2, 0.5, 0.8]) { const k = Math.round(f * (n - 1)) / (n - 1); out.push(["rail", x1 + (x0 - x1) * k, y, z0 + 0.1]); }
     return out;
   };
   // Where the lanterns hang, by the rules `lighting()` in `scene-factory.js` hangs them: [kind, x, y, z, turn] each,
@@ -3354,10 +3351,9 @@
       parts.push(...railLite(ex, a0 + 0.1, wx, a0 + 0.1, e.y, { ends: [false, true] }), ...railLite(ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, e.y, { ends: [false, true] }), ...railLite(wx, a0 + 0.1, wx, s1z0 - 0.1, e.y, { ends: [false, true] }));
       // And the hangar's walkway on the left, its mirror, while the hangar is open.
       if (hangarEntry()) {
-        const [[, , b0, b1], [t0x, t1x, tz0]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1, ix = t1x - 0.1;
-        for (const [p0, p1, q0, q1] of L.walkLeft) parts.push(span(p0, p1, e.y - 0.2, e.y, q0, q1, TIMBER));
-        parts.push(...railLite(lx, b0 + 0.1, ix, b0 + 0.1, e.y, { ends: [false, true] }), ...railLite(lx, b1 - 0.1, t0x + 0.1, b1 - 0.1, e.y, { ends: [false, true] }),
-          ...railLite(ix, b0 + 0.1, ix, tz0 + 0.1, e.y, { ends: [false, true] }), ...railLite(ix, tz0 + 0.1, t0x + 0.1, tz0 + 0.1, e.y, { ends: [false, true] }));
+        const [[x0, x1, z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1;
+        parts.push(span(x0, x1, e.y - 0.2, e.y, z0, z1, TIMBER));
+        for (const z of [z0 + 0.1, z1 - 0.1]) parts.push(...railLite(lx, z, x0 + 0.1, z, e.y, { ends: [false, true] }));
       }
       for (const [ax, ay, az, bx, by, bz, w] of L.stairs) parts.push(board(ax, ay, az, bx, by, bz, w - 0.1, TIMBER));
       for (const [bx0, bz0, bx1, bz1] of RING_BRIDGES) parts.push(board(bx0, M, bz0, bx1, M, bz1, 2, TIMBER));

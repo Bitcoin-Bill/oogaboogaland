@@ -1,8 +1,8 @@
-// The Lightning Jet Hangar's geometry, for now its shell: the chamber behind the Lightning Factory's door over Kortik's
-// station. A long rock hall under iron gantries hung with lanterns and the bolt's banners, the runway down its middle
-// to the launch tunnel's mouth (sealed for now, its neon lit, the dark beyond), and in the front wall the door back to
-// the hall, the Factory's own (`FM.hangarDoor`) turned to face in. The Jet, its scaffold, the crew and the boards come
-// with the hangar itself; this is the room they will stand in.
+// The Lightning Jet Hangar's geometry, for now its shell: the chamber behind the Lightning Factory's door at the end of
+// its left walkway. A long rock hall under iron gantries hung with lanterns and the bolt's banners, the runway down its
+// middle to the launch tunnel's mouth (sealed for now, its neon lit, the dark beyond), and in the front wall the door
+// back to the hall, the Factory's own (`FM.hangarDoor`) turned to face in. The Jet, its scaffold, the crew and the
+// boards come with the hangar itself; this is the room they will stand in.
 //
 // `LAYOUT` is the one table of where everything stands, read by the scene too. The hangar's frame: +z runs back out
 // through the door to the hall, x to the right looking in, y 0 the floor. `supportAt`, `clearAt` and `walkable` are the
