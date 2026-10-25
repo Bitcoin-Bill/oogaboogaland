@@ -9365,3 +9365,13 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
 .block-sprint-bar i[data-tired="true"] {
   background: #f7931a;
 }
+
+.block-tools button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.block-tool-pass:not(:disabled) {
+  border-color: #f7931a;
+  background: rgba(120, 70, 10, 0.9);
+}

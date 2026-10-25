@@ -1,5 +1,5 @@
-// Block Frenzy: capture the flag on Fort Chaos, Bitcoin themed. Each side guards its Bitcoin block, a glowing orange
-// cube on a stand in its fort; steal the other side's, carry it home and touch your own stand while your own block is
+// Block Frenzy: capture the flag on Fort Chaos, Bitcoin themed. Each side guards its Bitcoin block, a glowing cube in
+// its team's colour on a stand in its fort; steal the other side's, carry it home and touch your own stand while your own block is
 // home. Paint splats a rival for a moment (a carrier drops what they carry) and nobody dies. Two a side: the visitor
 // and a teammate against two rivals, the three bots run by `block-sim.js`. First to three captures.
 //
@@ -330,7 +330,7 @@
     window.clearTimeout(noticeTimer);
     if (ms) noticeTimer = window.setTimeout(() => { el.notice.textContent = " "; }, ms);
   };
-  const STATE_WORDS = { home: "home", carried: "taken", dropped: "dropped" };
+  const STATE_WORDS = { home: "home", carried: "taken", dropped: "dropped", flying: "in the air" };
   let stripKey = "";
   const updateStrip = () => {
     const own = sim.flags[sim.team], theirs = sim.flags[sim.rival], me = sim.actors[0];
@@ -345,6 +345,7 @@
     el.theirs.dataset.state = me.carrying ? "carried" : theirs.state;
     el.time.textContent = fmt(sim.time * 1000);
     el.drop.disabled = !me.carrying;
+    if (el.passBtn) el.passBtn.disabled = !me.carrying;
   };
 
   // The sim's events since the last frame: splats, sayings, notices.
@@ -379,7 +380,7 @@
         else notice(me ? "Block dropped · grab it again, or a teammate can" : "Their block is down! Grab it", 2500);
       } else if (e.type === "go") {
         center("GO!", 900);
-        notice(COARSE ? "Steal the orange block · bring it home · Jump twice to climb" : "Steal the orange block · bring it home · Space twice climbs · 1-4 pick a tool", 4500);
+        notice(COARSE ? `Steal the ${sim.rival} block · bring it home · Pass throws it` : `Steal the ${sim.rival} block · bring it home · Tab throws it to a friend`, 4500);
       } else if (e.type === "build") {
         fx.burst(e.x, 0.6, e.z, 8, WOOD_BITS, 1.6);
         if (me) updateTools();
@@ -399,7 +400,12 @@
       else if (e.type === "waiting") {
         if (me) { center("NOT YET!", 1200); notice("Your own block isn't home, so you can't score. Hold on here while your team brings it back, or go get it", 4000); }
         else if (mine) notice("Teammate is waiting at our stand · get our block home so they can score", 3000);
-      } else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
+      } else if (e.type === "pass") {
+        if (me) notice("Block thrown! A teammate can catch it", 1500);
+        else if (mine) notice("Pass! Catch it", 1500);
+        else notice("They threw a block · intercept it!", 1500);
+      } else if (e.type === "landed") fx.burst(e.x, e.y + 0.3, e.z, 8, e.team === "blue" ? PAINT_BITS.blue : PAINT_BITS.red, 1.4);
+      else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
       else if (e.type === "weather") {
         const w = sim.weather.kind;
         notice(w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears", 2400);
@@ -487,6 +493,7 @@
       b.setAttribute("aria-pressed", String(k === tool));
       const n = b.querySelector("b");
       if (n) n.textContent = k === "paint" ? "∞" : k === "crate" ? String(a.crates) : String(a[k]);
+      if (k === "pass") b.disabled = !a.carrying;
     }
   };
   const setView = (first) => {
@@ -520,6 +527,13 @@
     lockMouse();
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
+  // Throw the carried block straight ahead, toward the crosshair, for a teammate to catch.
+  const passBlock = () => {
+    if (phase !== "play") return false;
+    if (SIM.pass(sim, 0, cam.face)) return true;
+    notice("Nothing to throw", 900);
+    return false;
+  };
   const dropBlock = () => {
     if (phase !== "play") return false;
     if (SIM.drop(sim, 0)) return true;
@@ -630,8 +644,9 @@
         const s = sim.actors[f.carrier];
         y = s.y + 2.45 + Math.sin(elapsed * 6) * 0.04;
       } else if (f.state === "dropped") y = f.y + 0.5 + Math.sin(elapsed * 3) * 0.06;
+      else if (f.state === "flying") y = f.y;
       setVec(b.node.position, f.x, y, f.z);
-      b.node.rotation.y = elapsed * (f.state === "carried" ? 3 : 0.9);
+      b.node.rotation.y = elapsed * (f.state === "carried" ? 3 : f.state === "flying" ? 12 : 0.9);
       b.node.glow = f.state === "dropped" ? 0.7 + 0.3 * Math.sin(elapsed * 8) : 1;
       // The countdown ring under a dropped block, one tick for each part of its twenty seconds left.
       // The ring of ticks spins round a dropped block so it is easy to find; it stays until someone picks it up.
@@ -798,6 +813,7 @@
       return;
     }
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
+    if (e.key === "Tab" || e.key === "t" || e.key === "T") { e.preventDefault(); passBlock(); }
     if (e.key === "r" || e.key === "R") buildCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
@@ -829,8 +845,9 @@
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
     el.paintBtn = document.getElementById("block-paint");
     el.toolBar = document.getElementById("block-tools");
+    el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
     el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
-    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else chooseTool(k); };
+    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
     el.staminaK = -1;
@@ -929,7 +946,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · Tab passes the block · R crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);

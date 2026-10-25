@@ -1,4 +1,4 @@
-// Block Frenzy's geometry: Fort Chaos, the two stands, the glowing Bitcoin block each team guards, paint balls,
+// Block Frenzy's geometry: Fort Chaos, the two stands, the glowing Bitcoin block each team guards (in its colour), paint balls,
 // splats and the team rings under the Oogas' feet. Every builder is cached; the scene places nodes.
 (() => {
   "use strict";
@@ -10,7 +10,7 @@
     blue: { paint: "#3a8dff", deep: "#1d4fa8", light: "#9cc8ff" },
     red: { paint: "#ff4a3a", deep: "#a8261d", light: "#ffb0a6" }
   };
-  const ORANGE = "#f7931a", ORANGE_DEEP = "#b8650a", CREAM = "#fff3d6";
+  const ORANGE = "#f7931a", CREAM = "#fff3d6";
   // The ₿ in a 7 x 9 grid, top row first: the strokes stand proud of the block's faces.
   const GLYPH = [
     "..#.#..",
@@ -97,23 +97,25 @@
       parts.push(box({ w: Math.abs(Math.cos(turn)) > 0.5 ? u : 0.024, h: u, d: Math.abs(Math.cos(turn)) > 0.5 ? 0.024 : u, color: CREAM, emissive: 1, offset: { x, y: ly, z } }));
     }
   };
+  // A team's block: a cube in its team's colour, glowing, with darker edges, a cream ₿ standing proud on four faces and
+  // a band of Bitcoin orange round its foot, so the two sides' blocks never look alike.
   const block = variants((i) => {
-    const t = SIM.TEAMS[i], parts = [];
-    parts.push(box({ w: SIZE, h: SIZE, d: SIZE, color: ORANGE, emissive: 0.85 }));
-    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) parts.push(box({ w: 0.06, h: SIZE + 0.02, d: 0.06, color: ORANGE_DEEP, emissive: 0.3, offset: { x: sx * SIZE / 2, z: sz * SIZE / 2 } }));
+    const t = SIM.TEAMS[i], parts = [], body = TEAM[t].paint, edge = TEAM[t].deep;
+    parts.push(box({ w: SIZE, h: SIZE, d: SIZE, color: body, emissive: 0.85 }));
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) parts.push(box({ w: 0.06, h: SIZE + 0.02, d: 0.06, color: edge, emissive: 0.3, offset: { x: sx * SIZE / 2, z: sz * SIZE / 2 } }));
     for (const sy of [1, -1]) {
-      parts.push(box({ w: SIZE + 0.02, h: 0.06, d: 0.06, color: ORANGE_DEEP, emissive: 0.3, offset: { y: sy * SIZE / 2, z: SIZE / 2 } }));
-      parts.push(box({ w: SIZE + 0.02, h: 0.06, d: 0.06, color: ORANGE_DEEP, emissive: 0.3, offset: { y: sy * SIZE / 2, z: -SIZE / 2 } }));
-      parts.push(box({ w: 0.06, h: 0.06, d: SIZE + 0.02, color: ORANGE_DEEP, emissive: 0.3, offset: { y: sy * SIZE / 2, x: SIZE / 2 } }));
-      parts.push(box({ w: 0.06, h: 0.06, d: SIZE + 0.02, color: ORANGE_DEEP, emissive: 0.3, offset: { y: sy * SIZE / 2, x: -SIZE / 2 } }));
+      parts.push(box({ w: SIZE + 0.02, h: 0.06, d: 0.06, color: edge, emissive: 0.3, offset: { y: sy * SIZE / 2, z: SIZE / 2 } }));
+      parts.push(box({ w: SIZE + 0.02, h: 0.06, d: 0.06, color: edge, emissive: 0.3, offset: { y: sy * SIZE / 2, z: -SIZE / 2 } }));
+      parts.push(box({ w: 0.06, h: 0.06, d: SIZE + 0.02, color: edge, emissive: 0.3, offset: { y: sy * SIZE / 2, x: SIZE / 2 } }));
+      parts.push(box({ w: 0.06, h: 0.06, d: SIZE + 0.02, color: edge, emissive: 0.3, offset: { y: sy * SIZE / 2, x: -SIZE / 2 } }));
     }
     for (let k = 0; k < 4; k++) glyphFace(parts, k * Math.PI / 2);
-    parts.push(box({ w: SIZE + 0.05, h: 0.05, d: SIZE + 0.05, color: TEAM[t].paint, emissive: 0.6, offset: { y: -SIZE / 2 + 0.06 } }));
+    parts.push(box({ w: SIZE + 0.05, h: 0.05, d: SIZE + 0.05, color: ORANGE, emissive: 0.8, offset: { y: -SIZE / 2 + 0.06 } }));
     const geo = merge(...parts);
     geo.castShadow = false;
     return geo;
   });
-  // A countdown ring under a dropped block: twelve ticks, the scene hides them as the return nears.
+  // The ring of ticks that spins round a dropped block so it is easy to find.
   const tick = cached(() => box({ w: 0.12, h: 0.04, d: 0.3, color: ORANGE, emissive: 1, offset: { z: 1.05 } }));
   // A paint ball, a small chunky cube in its team's colour.
   const ball = variants((i) => {
