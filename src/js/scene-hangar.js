@@ -138,11 +138,17 @@
     return n;
   };
 
+  // The Jet as far built as its stage: its cells, and its nozzles on a node of their own once its engines are fitted.
+  const jetNode = (options) => {
+    const [cells, ...rest] = JM.pieces(JET_STAGE), node = createNode({ ...options, geometry: cells });
+    for (const geometry of rest) addChild(node, createNode({ geometry }));
+    return node;
+  };
   // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
   // round its fuselage's axis.
   const miniJet = ([x, y, z, scale, climb, yaw, roll]) => {
     const flight = createNode({ position: { x, y, z }, rotation: { x: 0, y: 0, z: climb } }), turn = createNode({ rotation: { x: 0, y: -Math.PI / 2 + yaw, z: 0 } }), axis = JM.AXIS * scale;
-    addChild(turn, createNode({ position: { x: axis * Math.sin(roll), y: -axis * Math.cos(roll), z: 0 }, rotation: { x: 0, y: 0, z: roll }, scale: { x: scale, y: scale, z: scale }, geometry: JM.jet(JET_STAGE) }));
+    addChild(turn, jetNode({ position: { x: axis * Math.sin(roll), y: -axis * Math.cos(roll), z: 0 }, rotation: { x: 0, y: 0, z: roll }, scale: { x: scale, y: scale, z: scale } }));
     addChild(flight, turn);
     return flight;
   };
@@ -256,7 +262,7 @@
     s.fixtures = createNode({ geometry: fixtures.flat });
     addChild(root, s.mouth, s.fixtures);
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
-    s.jet = createNode({ position: { x: L.jet.x, y: 0, z: L.jet.z }, geometry: JM.jet(JET_STAGE) });
+    s.jet = jetNode({ position: { x: L.jet.x, y: 0, z: L.jet.z } });
     addChild(root, s.jet);
     // The boards on the left wall: each a glass in its frame with its face built on it and the Jet flying across it,
     // its lettering painted over it from the reading (`paintBoards`); the stats board's fifth tile shows the stars, or

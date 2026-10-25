@@ -1,9 +1,10 @@
 // Lightning Jet v2, the jet docked in the Lightning Jet Hangar, built in big voxels so the renderer's block detail
 // gives it its concept's blocky look: a white fuselage over a royal-blue belly with a gold
 // pinstripe between them and the bolt's roundel on each side, a dark glass canopy in its frame, swept wings edged in
-// blue, blue tailplanes and a blue fin carrying a big gold bolt, twin engine pods with gold intakes whose exhausts
-// glow, and its gear. Each part is shaped as its own set of cells (`PARTS`); a construction stage (`STAGES`) is the
-// parts fitted by then, merged into one mesh (`jet(stage)`, cached), so nothing fitted shows a face inside another.
+// blue, blue tailplanes and a blue fin carrying a big gold bolt, twin engine pods with gold intakes, and its gear. Each
+// part is shaped as its own set of cells (`PARTS`); a construction stage (`STAGES`) is the parts fitted by then, merged
+// into one mesh (`jet(stage)`, cached), so nothing fitted shows a face inside another. The engines' nozzles are turned,
+// smooth, not voxels (`nozzles`): a round jet nozzle on each pod, which `pieces(stage)` fits with the engines.
 // `STAGE` is the stage the hangar shows, which the maintainer bumps by hand; `?debug=1&jetstage=N` previews another.
 //
 // The parts are drawn on a grid of quarter units, with the fuselage's axis `CY` units up, and built `SCALE` times
@@ -15,15 +16,15 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const { models } = BL;
-  const { cached, makeVox, voxelGeometry } = models;
+  const { cached, makeVox, voxelGeometry, turn, shaded, torus, box, moved, turnedY, forwardLathe, merge } = models;
 
   const SCALE = 1.5, CELL = 0.25, U = CELL * SCALE, CY = 3;
-  const LIVERY = { body: "#eef1f6", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", engine: "#1c2c52" };
+  const LIVERY = { body: "#eef1f6", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", steel: "#a9b1bc" };
   // The palette, by index: whites in two tones and a panel line, blues in two tones and the nose's darker one, the
-  // gold, the canopy's glass and frame, the nacelles in two tones, the intakes, the exhausts, the tyres and the struts.
-  const PALETTE = [null, LIVERY.body, "#e2e6ee", "#d3d8e2", LIVERY.blue, "#2b4dbb", "#1a2f7a", LIVERY.gold, LIVERY.glass, "#9aa3b0", "#c9ced6", "#b6bcc6", "#2a2d33", LIVERY.engine, "#1d1f24", "#5a6068"];
-  const WHITE = 1, WHITE_B = 2, PANEL = 3, BLUE = 4, BLUE_B = 5, NOSE = 6, GOLD = 7, GLASS = 8, FRAME = 9, NACELLE = 10, NACELLE_B = 11, INTAKE = 12, EXHAUST = 13, TYRE = 14, STRUT = 15;
-  const EMISSIVE = { [GLASS]: 0.22, [EXHAUST]: 0.25 };
+  // gold, the canopy's glass and frame, the nacelles in two tones, the intakes, the tyres and the struts.
+  const PALETTE = [null, LIVERY.body, "#e2e6ee", "#d3d8e2", LIVERY.blue, "#2b4dbb", "#1a2f7a", LIVERY.gold, LIVERY.glass, "#9aa3b0", "#c9ced6", "#b6bcc6", "#2a2d33", "#1d1f24", "#5a6068"];
+  const WHITE = 1, WHITE_B = 2, PANEL = 3, BLUE = 4, BLUE_B = 5, NOSE = 6, GOLD = 7, GLASS = 8, FRAME = 9, NACELLE = 10, NACELLE_B = 11, INTAKE = 12, TYRE = 13, STRUT = 14;
+  const EMISSIVE = { [GLASS]: 0.22 };
   const SIZE = { length: 18.5 * SCALE, span: 12.4 * SCALE, height: 8 * SCALE };
 
   const smooth = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
@@ -105,17 +106,16 @@
         return inBolt((z - 7.6) / 1, (h - 2.9) / 1.5) ? GOLD : tone(i, j, k, BLUE, BLUE_B);
       }
     },
-    // The engine pods either side of the tail: gold rings round dark intakes, grey nacelles, and dark nozzles, each
-    // a deep blue glimmer inside its rim.
+    // The engine pods either side of the tail: gold rings round dark intakes and grey nacelles, ending where their
+    // nozzles fit on (`nozzles`).
     engines: {
-      box: [-9, 8, 7, 17, 18, 37],
+      box: [-10, 9, 6, 16, 18, 36],
       cell: (i, j, k, x, y, z) => {
-        if (z < 4.6 || z > 9.25) return null;
+        if (z < 4.6 || z > 9.2) return null;
         const ex = x < 0 ? -1.35 : 1.35, d = Math.hypot(x - ex, y - (CY - 0.35));
-        const r = z < 5 ? 0.74 : 0.78 - 0.16 * smooth((z - 5) / 4.25);
+        const r = z < 5 ? 0.8 : 0.84 - 0.18 * smooth((z - 5) / 4.2);
         if (d > r) return null;
-        if (z < 4.85) return d > 0.5 ? GOLD : INTAKE;
-        if (z > 9) return d < 0.55 ? EXHAUST : INTAKE;
+        if (z < 4.85) return d > 0.55 ? GOLD : INTAKE;
         return tone(i, j, k, NACELLE, NACELLE_B);
       }
     },
@@ -164,6 +164,43 @@
   });
   const jet = (stage = STAGE) => (builds[stage] || builds[STAGE])();
 
+  // The engines' nozzles, turned and shaded smooth as the concept draws them, one at the end of each pod, in metres in
+  // the jet's frame, their axis along +z (aft): a dark steel collar over the pod's end; a polished steel shell
+  // narrowing and flaring again to a thin lip, raised petal seams round it; inside, the dark throat with a flame-holder
+  // ring, the turbine's face recessed in it and a grey cone pointing out from its middle. Each profile runs so its
+  // faces look out of the nozzle: up the outside, back down the inside, inward across a face looking aft.
+  const NOZZLE = { at: 9.2 * SCALE - 0.08, r: 0.66 * SCALE, segments: 36, petals: 16 };
+  const STEEL = LIVERY.steel, STEEL_DK = "#5d6470", THROAT = "#15181e", CONE = "#8a929e", RING = "#3a3f48";
+  const nozzles = cached(() => {
+    const k = NOZZLE.r / 0.99, n = NOZZLE.segments, round = [], flat = [];
+    const one = (ex) => {
+      const parts = [
+        turn([[1.08, 0], [1.08, 0.18], [1, 0.18]], n, STEEL_DK),
+        turn([[1, 0.18], [0.97, 0.55], [1, 0.95], [0.92, 0.98]], n, STEEL),
+        turn([[0.92, 0.98], [0.86, 0.62], [0.8, 0.45], [0.3, 0.45]], n, THROAT),
+        turn([[0.3, 0.45], [0.26, 0.6], [0.12, 0.85], [0, 0.92]], n, CONE),
+        moved(torus(0.62, 0.035, RING, 0, n, 6), 0, 0.62, 0)
+      ];
+      const seams = [];
+      for (let p = 0; p < NOZZLE.petals; p++) {
+        const a = (p + 0.5) / NOZZLE.petals * Math.PI * 2;
+        seams.push(moved(turnedY(box({ w: 0.035, h: 0.62, d: 0.03, color: STEEL_DK }), a), Math.sin(a) * 1.0, 0.64, Math.cos(a) * 1.0));
+      }
+      const place = (g) => {
+        forwardLathe(g);
+        const v = g.verts;
+        for (let i = 0; i < v.length; i += 3) { v[i] = v[i] * k + ex; v[i + 1] = v[i + 1] * k + POINTS.engines[0].y; v[i + 2] = v[i + 2] * k + NOZZLE.at; }
+        return g;
+      };
+      for (const g of parts) round.push(place(g));
+      for (const g of seams) flat.push(place(g));
+    };
+    for (const e of POINTS.engines) one(e.x);
+    return shaded(round, flat);
+  });
+  // What the jet is at a stage, each a mesh of its own: its cells, and its nozzles once its engines are fitted.
+  const pieces = (stage = STAGE) => (STAGES[stage] || STAGES[STAGE]).includes("engines") ? [jet(stage), nozzles()] : [jet(stage)];
+
   // Where the hangar meets it and what walkers keep out of, drawn in the grid's units and scaled to metres.
   const at = (p) => ({ x: p.x * SCALE, y: p.y * SCALE, z: p.z * SCALE });
   const POINTS = {
@@ -172,10 +209,10 @@
   };
   // The fuselage and its gear down to the floor, the engine pods, and the wings' roots, low enough to catch a head;
   // under the wings farther out an Ooga walks upright.
-  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.15, 2.15, 4.6, 9.3, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
+  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.25, 2.25, 4.6, 9.85, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
 
   // The fuselage's axis, metres up from the floor, round which a board turns the Jet in miniature.
   const AXIS = CY * SCALE;
 
-  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
+  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet, nozzles, pieces };
 })();

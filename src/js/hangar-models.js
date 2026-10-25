@@ -866,7 +866,7 @@
         parts.push(moved(turnedY(c, b.turn), b.x, b.y, b.z));
       }
     }
-    parts.push(moved(merge(JM.jet(JM.STAGE)), L.jet.x, 0, L.jet.z));
+    parts.push(moved(merge(...JM.pieces(JM.STAGE)), L.jet.x, 0, L.jet.z));
     // Space past the shield: deep blue, stars, the band's haze and a ringed planet.
     const sz = T.z1 - 6;
     parts.push(box({ w: 34, h: 26, d: 0.2, color: "#070c2a", emissive: 1, offset: { y: T.y, z: sz } }));
