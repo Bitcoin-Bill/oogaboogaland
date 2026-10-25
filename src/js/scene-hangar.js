@@ -75,6 +75,10 @@
   // times in half a second (`LAMP_FAILS`, from and to, s, at `LAMP_DIM` of its light); and every `RABBIT` seconds a
   // pulse runs down the runway's marker lamps toward the launch tunnel at `RABBIT_SPEED` m/s, each brightening by up to
   // `RABBIT_GLOW` its own as it passes, within about `RABBIT_WIDTH` metres of it.
+  // How the door back to the hall answers whoever comes near: fully within DOOR_NEAR metres of its opening, not at all
+  // past DOOR_FAR, easing at DOOR_EASE a second, its arch's glow brightening by up to DOOR_BRIGHTEN; its light, the
+  // hangar's first fixed one, as `fixedLights` has it.
+  const DOOR_NEAR = 1.4, DOOR_FAR = 7.5, DOOR_EASE = 5, DOOR_BRIGHTEN = 1.9, DOOR_LIGHT = HM.fixedLights()[0];
   const LAMP_STUTTER = [3, 9], LAMP_FAILS = [0, 0.05, 0.12, 0.2, 0.3, 0.34, 0.46, 0.5], LAMP_DIM = 0.15;
   const RABBIT = [8, 14], RABBIT_SPEED = 28, RABBIT_GLOW = 2.2, RABBIT_WIDTH = 2.5;
   const TIPS = {
@@ -346,7 +350,8 @@
     const door = FM.hangarDoor(), D = FM.HANGAR_DOOR;
     s.door = createNode({ position: { x: DOOR.x, y: DOOR.y, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
     s.doorStone = createNode({ geometry: door.stone });
-    addChild(s.door, s.doorStone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: HM.hallGlimpse(), sightHidden: true }));
+    s.doorGlow = createNode({ geometry: door.glow, sightHidden: true });
+    addChild(s.door, s.doorStone, s.doorGlow, createNode({ geometry: HM.hallGlimpse(), sightHidden: true }));
     // Through the shield, the Factory's hall as it stands, from the hall's own stand-in (`hangar-window.js`; WebGL only,
     // the glimpse staying behind it and in its place on Canvas 2D).
     if (renderer.kind !== "canvas2d") {
@@ -355,7 +360,7 @@
     }
     sign(s.door, FM.label("LIGHTNING\nFACTORY", "", { height: 1.3 }), D.sign[0], D.sign[1], D.sign[2]);
     addChild(root, s.door);
-    s.gate = { hum: 0, phase: BL.labPhase.create(s.door, { x: DOOR.x, z: DOOR.z, ry: DOOR.turn, floorY: DOOR.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } }, OPENING, DOOR.plane, TINT) };
+    s.gate = { hum: 0, near: 0, phase: BL.labPhase.create(s.door, { x: DOOR.x, z: DOOR.z, ry: DOOR.turn, floorY: DOOR.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } }, OPENING, DOOR.plane, TINT) };
     // The launch shield across the tunnel's end, humming; it lets nothing through until Jet v2 flies.
     const launch = createNode({ position: { x: 0, y: 0, z: TUN.z1 } });
     addChild(root, launch);
@@ -714,7 +719,15 @@
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     node.tick(dt);
-    hum(s.gate, OPENING, dt, elapsed, 0.12);
+    // The door answers whoever comes near (the Ooga driven here, or with none the view), as ₿IFRÖST's windows do: its
+    // arch's studs and neon brighten, its light swells and reaches farther, and its field hums faster.
+    const who = drivenHere ? drivenHere.root.position : pilot.orbit.target;
+    const want = clamp((DOOR_FAR - Math.max(0, Math.hypot(who.x - DOOR.x, who.y - DOOR.y - 1, who.z - DOOR.z) - 2)) / (DOOR_FAR - DOOR_NEAR), 0, 1);
+    s.gate.near += (want * want * (3 - 2 * want) - s.gate.near) * Math.min(1, dt * DOOR_EASE);
+    s.doorGlow.glow = 1 + DOOR_BRIGHTEN * s.gate.near;
+    const Lt = RENDER_OPTS.lights, power = 1 + 1.4 * s.gate.near;
+    Lt[3] = DOOR_LIGHT[3] + 4 * s.gate.near; Lt[4] = DOOR_LIGHT[4] * power; Lt[5] = DOOR_LIGHT[5] * power; Lt[6] = DOOR_LIGHT[6] * power;
+    hum(s.gate, OPENING, dt, elapsed, 0.12 * (1 - 0.65 * s.gate.near));
     hum(s.launch, LAUNCH, dt, elapsed, 0.18);
     // Walked up to the hold-short bar, the launch shield ripples where they stand and says, once an approach, that it is
     // sealed.
