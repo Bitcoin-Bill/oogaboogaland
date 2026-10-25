@@ -153,7 +153,12 @@
     wall(B, F, none, (u, y, depth, color) => block(color, X0 + depth - 1.1, y, u));
     wall(B, F, none, (u, y, depth, color) => block(color, X1 - depth + 1.1, y, u));
     wall(X0, X1, octagon, (u, y, depth, color) => block(color, u, y, B + depth - 1.1));
-    wall(X0, X1, (u, y) => Math.abs(u - d.x) < 4.3 && y > d.y - 0.5 && y < d.y + 7.8, (u, y, depth, color) => block(color, u, y, F - depth + 1.1));
+    // The front wall leaves the door's opening, and under it the blocks of its lowest row, which would stand up over the
+    // landing across the doorway's foot (left out where they are laid, so the stones' draws stay as they were).
+    wall(X0, X1, (u, y) => Math.abs(u - d.x) < 4.3 && y > d.y - 0.5 && y < d.y + 7.8, (u, y, depth, color) => {
+      if (Math.abs(u - d.x) < 4.3 && y < d.y) return;
+      block(color, u, y, F - depth + 1.1);
+    });
     for (let x = X0; x < X1; x += 5) for (let z = B; z < F; z += 5) vault.push(box({ w: 5.4, h: 2, d: 5.4, color: STONE[Math.floor(rand() * 4)], offset: { x: x + 2.5, y: H + rand() * 1.2, z: z + 2.5 } }));
     const back = [
       box({ w: 1, h: H + 4, d: F - B + 4, color: STONE_DK, offset: { x: X0 - 1.2, y: H / 2, z: (B + F) / 2 } }),
