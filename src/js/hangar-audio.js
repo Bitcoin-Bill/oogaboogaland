@@ -7,25 +7,42 @@
 // inside it, and the shimmer of each shield, the launch shield's at the tunnel's end and the door's. `listen` says
 // where the visitor hears from and which way the view faces, and `update(dt)` levels the bed from there ten times a
 // second. It honours the page-wide mute (`oogaboogaland.audio`) and the tab's visibility, and `dispose` closes it.
+//
+// Over the bed, the engine static fire test (`test(AT)`, its whole sequence scheduled at the press on voices built
+// with the bed, so nothing starts or allocates while it plays): the booth's two-tone siren from the press to the blast;
+// the turbines' whine and whoosh rising through the spool-up; the ignition's whoomph and then the exhaust's roar, a
+// rocket's, loud, its body, its crackle and its rumble under it; the malfunction's coughing roar, clanks and alarm
+// beeps; the blast's boom and crack, iron clattering down after it; and the presser's hearing muffled from the blast
+// until they come to, a ringing in their ears over it. Everything passes a limiter, so the roar is loud and never
+// clips. `setVolume` sets the hangar's level (localStorage `ooga-hangar-volume`, 0..1).
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
   const { clamp } = BL.math;
-  const NOISE_SECONDS = 2, MASTER = 0.5, STORAGE_KEY = "oogaboogaland.audio", PAN = 0.75;
+  const NOISE_SECONDS = 2, MASTER = 0.5, STORAGE_KEY = "oogaboogaland.audio", VOLUME_KEY = "ooga-hangar-volume", PAN = 0.75;
   // How loud each part of the bed sits: the hum, the drone and the air everywhere, more air inside the tunnel, the
   // neon at its loudest inside it, and each shield close to; and at how many metres each of those last falls to half.
   const LEVEL = { mains: 0.05, drone: 0.08, air: 0.045, tunnelAir: 0.035, neon: 0.05, launch: 0.11, door: 0.06 };
   const REF = { neon: 5, launch: 9, door: 5 };
 
-  // `spots`: the door's shield and the launch shield, { x, y, z } each, and the tunnel's axis { y, z0, z1 }.
+  // How loud the test's voices peak: the siren, the whine and its whoosh, the whoomph, the roar's body, crackle and
+  // rumble, a clank, the alarm, the boom's sweep, its rumble and its crack, and the ringing.
+  const TEST = { siren: 0.2, whine: 0.2, whoosh: 0.16, whoomph: 0.8, roar: 0.9, crackle: 0.4, rumble: 0.6, clank: 0.5, alarm: 0.09, boom: 1, boomNoise: 0.9, crack: 0.7, ring: 0.05 };
+  // How far the blast muffles the presser's hearing, Hz.
+  const MUFFLED = 320, CLEAR = 20000;
+
+  // `spots`: the door's shield and the launch shield, { x, y, z } each, the tunnel's axis { y, z0, z1 }, and the test's
+  // booth and the middle of the Jet's engines, { x, y, z } each.
   const create = (spots) => {
-    let ctx = null, master = null, buffer = null, ready = false, muted = false, disposed = false, since = 0;
+    let ctx = null, master = null, mix = null, muffle = null, buffer = null, ready = false, muted = false, disposed = false, since = 0, volume = 1;
     try {
       muted = localStorage.getItem(STORAGE_KEY) === "off";
+      const saved = localStorage.getItem(VOLUME_KEY), v = Number(saved);
+      if (saved !== null && v >= 0 && v <= 1) volume = v;
     } catch {
       muted = false;
     }
-    const bed = {};
+    const bed = {}, test = {};
     // Where the visitor hears from and the way the view faces on the ground, and where the last spot was placed.
     const ear = { x: 0, y: 0, z: 0, fx: 0, fz: -1 }, AT = { level: 0, pan: 0 };
 
@@ -45,7 +62,7 @@
     };
     const panner = () => {
       const p = ctx.createStereoPanner();
-      p.connect(master);
+      p.connect(mix);
       return p;
     };
     const osc = (type, freq, to) => {
@@ -56,9 +73,9 @@
       o.start();
       return o;
     };
-    const hissOf = (to) => {
+    const hissOf = (to, from = buffer) => {
       const s = ctx.createBufferSource();
-      s.buffer = buffer;
+      s.buffer = from;
       s.loop = true;
       s.connect(to);
       s.start(0, Math.random() * NOISE_SECONDS);
@@ -78,24 +95,31 @@
 
     const init = () => {
       ctx = new AudioContext();
-      master = gain(muted ? 0 : MASTER, ctx.destination);
+      // Every voice into the mix, the mix through the presser's hearing (the muffle) to the master's level, and that
+      // through the limiter.
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -10; limiter.knee.value = 6; limiter.ratio.value = 12; limiter.attack.value = 0.003; limiter.release.value = 0.25;
+      limiter.connect(ctx.destination);
+      master = gain(muted ? 0 : MASTER * volume, limiter);
+      muffle = filter("lowpass", CLEAR, 0.7, master);
+      mix = gain(1, muffle);
       buffer = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       // The mains' hum, a low saw's lower harmonics so small speakers carry it.
-      bed.mainsGain = gain(0, master);
+      bed.mainsGain = gain(0, mix);
       bed.mains = osc("sawtooth", 55, filter("lowpass", 260, 0.6, bed.mainsGain));
       bed.mains2 = osc("sine", 110, gain(0.3, bed.mainsGain));
       // The drone the hall itself seems to make: two low tones a hair apart, beating, their octave over them, and the
       // whole swelling and falling back slowly.
-      bed.droneGain = gain(0, master);
+      bed.droneGain = gain(0, mix);
       const drone = filter("lowpass", 220, 0.7, bed.droneGain);
       bed.drone = osc("sine", 41.2, drone);
       bed.drone2 = osc("sine", 41.75, drone);
       bed.drone3 = osc("triangle", 82.4, gain(0.35, drone));
       bed.swell = wobble(bed.droneGain.gain, 0.07, 0.02);
       // The hall's air, breathing slowly.
-      bed.airGain = gain(0, master);
+      bed.airGain = gain(0, mix);
       bed.airFilter = filter("lowpass", 280, 0.8, bed.airGain);
       bed.air = hissOf(bed.airFilter);
       bed.breath = wobble(bed.airFilter.frequency, 0.23, 90);
@@ -107,7 +131,176 @@
       // The launch shield's shimmer, lower than the door's.
       bed.launch = shimmer(174.6);
       bed.door = shimmer(196);
+      initTest();
       ready = true;
+    };
+
+    // The test's voices, silent until `test` schedules them: the siren and the alarm at the booth, everything the
+    // engines make at the engines, the blast everywhere, and the ringing past the muffle.
+    const initTest = () => {
+      // The exhaust's crackle: sparse clicks of every size, a rocket's.
+      const crackle = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate), c = crackle.getChannelData(0);
+      for (let i = 0; i < c.length; i++) {
+        if (Math.random() > 0.004) continue;
+        const a = (Math.random() * 2 - 1) * (0.4 + Math.random() * 0.6);
+        for (let k = 0; k < 8 && i + k < c.length; k++) c[i + k] += a * Math.pow(0.55, k);
+      }
+      const curve = new Float32Array(1024);
+      for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(2.2 * (i / 511.5 - 1)) / Math.tanh(2.2);
+      test.boothPan = panner();
+      test.enginePan = panner();
+      test.sirenGain = gain(0, test.boothPan);
+      const sirenTone = filter("lowpass", 2400, 0.7, test.sirenGain);
+      test.siren = osc("square", 660, sirenTone);
+      test.siren2 = osc("sawtooth", 1320, gain(0.3, sirenTone));
+      test.alarmGain = gain(0, test.boothPan);
+      test.alarm = osc("square", 1350, filter("bandpass", 1400, 2, test.alarmGain));
+      test.whineGain = gain(0, test.enginePan);
+      test.whineFilter = filter("bandpass", 300, 4, test.whineGain);
+      test.whine = osc("sawtooth", 140, test.whineFilter);
+      test.whine2 = osc("sine", 210, gain(0.6, test.whineGain));
+      test.whooshGain = gain(0, test.enginePan);
+      test.whooshFilter = filter("bandpass", 300, 1.2, test.whooshGain);
+      test.whoosh = hissOf(test.whooshFilter);
+      test.whoomphGain = gain(0, test.enginePan);
+      test.whoomph = hissOf(filter("lowpass", 380, 0.8, test.whoomphGain));
+      // The roar: the noise's full band and a body under it driven into a soft clip, its crackle, and the rumble.
+      test.roarGain = gain(0, test.enginePan);
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = curve;
+      shaper.connect(test.roarGain);
+      test.roarFilter = filter("lowpass", 400, 0.6, shaper);
+      test.roar = hissOf(test.roarFilter);
+      test.roarBody = hissOf(filter("bandpass", 420, 0.6, gain(1.4, shaper)));
+      test.crackleGain = gain(0, test.enginePan);
+      test.crackle = hissOf(filter("highpass", 1400, 0.7, test.crackleGain), crackle);
+      test.rumbleGain = gain(0, test.enginePan);
+      const low = filter("lowpass", 120, 0.8, test.rumbleGain);
+      test.rumble = osc("sawtooth", 42, low);
+      test.rumbleNoise = hissOf(filter("lowpass", 90, 0.7, gain(1.5, test.rumbleGain)));
+      // The malfunction's clanks: struck metal, a ring of noise and a ping.
+      test.clankGain = gain(0, test.enginePan);
+      test.clankFilter = filter("bandpass", 1600, 14, test.clankGain);
+      test.clank = hissOf(test.clankFilter);
+      test.pingGain = gain(0, test.enginePan);
+      test.ping = osc("triangle", 1700, test.pingGain);
+      // The blast: a falling sweep, its noise's rumble closing down, and the crack on top.
+      test.boomGain = gain(0, mix);
+      test.boom = osc("sine", 95, test.boomGain);
+      test.boomNoiseGain = gain(0, mix);
+      test.boomFilter = filter("lowpass", 900, 0.7, test.boomNoiseGain);
+      test.boomNoise = hissOf(test.boomFilter);
+      test.crackGain = gain(0, mix);
+      test.crack = hissOf(filter("highpass", 2500, 0.7, test.crackGain));
+      // The ringing in the presser's ears, past the muffle.
+      test.ringGain = gain(0, master);
+      test.ring = osc("sine", 3150, test.ringGain);
+      test.ring2 = osc("sine", 3195, test.ringGain);
+    };
+
+    // The whole test, from a press now, on the sequence's times `AT` (seconds from the press): every voice's levels and
+    // pitches scheduled at once, the malfunction's coughs and clanks and the iron's clatter from a fixed draw.
+    const CLANKS = [[6.05, 1900], [6.3, 1200], [6.42, 2600], [6.75, 1500], [7, 2200], [7.15, 900], [7.35, 1750]];
+    const CLATTER = [[0.55, 2400], [0.8, 1800], [1.05, 3000], [1.4, 2100], [1.9, 2700]];
+    const play = (AT) => {
+      if (!ready || muted) return false;
+      const t0 = ctx.currentTime + 0.02, at = (s) => t0 + s, T = test;
+      const clear = (param, value) => { param.cancelScheduledValues(t0); param.setValueAtTime(value, t0); };
+      for (const g of [T.sirenGain, T.alarmGain, T.whineGain, T.whooshGain, T.whoomphGain, T.roarGain, T.crackleGain, T.rumbleGain, T.clankGain, T.pingGain, T.boomGain, T.boomNoiseGain, T.crackGain, T.ringGain]) clear(g.gain, 0);
+      // The siren, high and low, from the press to the blast.
+      clear(T.siren.frequency, 660); clear(T.siren2.frequency, 1320);
+      T.sirenGain.gain.linearRampToValueAtTime(TEST.siren, at(0.15));
+      for (let k = 1, s = 0.42; s < AT.boom; k++, s += 0.42) {
+        T.siren.frequency.setValueAtTime(k % 2 ? 880 : 660, at(s));
+        T.siren2.frequency.setValueAtTime(k % 2 ? 1760 : 1320, at(s));
+      }
+      T.sirenGain.gain.setValueAtTime(TEST.siren, at(AT.boom));
+      T.sirenGain.gain.linearRampToValueAtTime(0, at(AT.boom + 0.05));
+      // The spool-up: the whine and its whoosh climbing, then held high under the roar, and spinning down after the blast.
+      clear(T.whine.frequency, 140); clear(T.whine2.frequency, 210); clear(T.whineFilter.frequency, 300); clear(T.whooshFilter.frequency, 300);
+      T.whine.frequency.setValueAtTime(140, at(AT.spool));
+      T.whine.frequency.exponentialRampToValueAtTime(2600, at(AT.fire));
+      T.whine2.frequency.setValueAtTime(210, at(AT.spool));
+      T.whine2.frequency.exponentialRampToValueAtTime(3900, at(AT.fire));
+      T.whineFilter.frequency.setValueAtTime(300, at(AT.spool));
+      T.whineFilter.frequency.exponentialRampToValueAtTime(3000, at(AT.fire));
+      T.whooshFilter.frequency.setValueAtTime(300, at(AT.spool));
+      T.whooshFilter.frequency.exponentialRampToValueAtTime(3200, at(AT.fire));
+      T.whineGain.gain.setValueAtTime(0, at(AT.spool));
+      T.whineGain.gain.linearRampToValueAtTime(TEST.whine, at(AT.fire));
+      T.whineGain.gain.linearRampToValueAtTime(TEST.whine * 0.6, at(AT.fire + 0.4));
+      T.whooshGain.gain.setValueAtTime(0, at(AT.spool));
+      T.whooshGain.gain.linearRampToValueAtTime(TEST.whoosh, at(AT.fire));
+      T.whooshGain.gain.linearRampToValueAtTime(TEST.whoosh * 0.5, at(AT.fire + 0.4));
+      T.whine.frequency.setValueAtTime(2600, at(AT.boom));
+      T.whine.frequency.exponentialRampToValueAtTime(90, at(AT.boom + 2.2));
+      T.whineGain.gain.setValueAtTime(TEST.whine * 0.6, at(AT.boom));
+      T.whineGain.gain.linearRampToValueAtTime(0, at(AT.boom + 2.2));
+      T.whooshGain.gain.setValueAtTime(TEST.whoosh * 0.5, at(AT.boom));
+      T.whooshGain.gain.linearRampToValueAtTime(0, at(AT.boom + 0.3));
+      // Ignition: the whoomph, and the roar opening up to full.
+      T.whoomphGain.gain.setValueAtTime(TEST.whoomph, at(AT.fire));
+      T.whoomphGain.gain.exponentialRampToValueAtTime(0.001, at(AT.fire + 0.9));
+      clear(T.roarFilter.frequency, 400);
+      T.roarFilter.frequency.setValueAtTime(400, at(AT.fire));
+      T.roarFilter.frequency.exponentialRampToValueAtTime(2200, at(AT.fire + 0.35));
+      for (const [g, peak] of [[T.roarGain, TEST.roar], [T.crackleGain, TEST.crackle], [T.rumbleGain, TEST.rumble]]) {
+        g.gain.setValueAtTime(0, at(AT.fire - 0.05));
+        g.gain.linearRampToValueAtTime(peak, at(AT.fire + 0.3));
+        g.gain.setValueAtTime(peak, at(AT.warning));
+      }
+      // The malfunction: the roar coughing and catching, the filter with it, clanks and pings, the alarm beeping.
+      const rand = BL.math.mulberry32(5150);
+      for (let s = AT.warning; s < AT.boom - 0.05; s += 0.07 + rand() * 0.1) {
+        const k = rand() < 0.4 ? 0.12 + rand() * 0.2 : 0.7 + rand() * 0.3;
+        T.roarGain.gain.setValueAtTime(TEST.roar * k, at(s));
+        T.crackleGain.gain.setValueAtTime(TEST.crackle * Math.min(1, k * 1.4), at(s));
+        T.rumbleGain.gain.setValueAtTime(TEST.rumble * k, at(s));
+        T.roarFilter.frequency.setValueAtTime(600 + k * 1600, at(s));
+      }
+      for (const [s, f] of CLANKS) {
+        T.clankFilter.frequency.setValueAtTime(f, at(s));
+        T.clankGain.gain.setValueAtTime(TEST.clank, at(s));
+        T.clankGain.gain.exponentialRampToValueAtTime(0.001, at(s + 0.2));
+        T.ping.frequency.setValueAtTime(f * 1.13, at(s));
+        T.pingGain.gain.setValueAtTime(TEST.clank * 0.25, at(s));
+        T.pingGain.gain.exponentialRampToValueAtTime(0.001, at(s + 0.45));
+      }
+      for (let s = AT.warning; s < AT.boom; s += 0.14) {
+        T.alarmGain.gain.setValueAtTime(TEST.alarm, at(s));
+        T.alarmGain.gain.setValueAtTime(0, at(s + 0.07));
+      }
+      for (const g of [T.roarGain, T.crackleGain, T.rumbleGain]) {
+        g.gain.setValueAtTime(g === T.roarGain ? TEST.roar * 0.5 : 0, at(AT.boom - 0.02));
+        g.gain.linearRampToValueAtTime(0, at(AT.boom + 0.05));
+      }
+      // The blast: the sweep falling, the noise closing down, the crack, and the iron clattering down after it.
+      clear(T.boom.frequency, 95); clear(T.boomFilter.frequency, 900);
+      T.boom.frequency.setValueAtTime(95, at(AT.boom));
+      T.boom.frequency.exponentialRampToValueAtTime(26, at(AT.boom + 1.4));
+      T.boomGain.gain.setValueAtTime(TEST.boom, at(AT.boom));
+      T.boomGain.gain.exponentialRampToValueAtTime(0.001, at(AT.boom + 2.6));
+      T.boomFilter.frequency.setValueAtTime(900, at(AT.boom));
+      T.boomFilter.frequency.exponentialRampToValueAtTime(60, at(AT.boom + 2.5));
+      T.boomNoiseGain.gain.setValueAtTime(TEST.boomNoise, at(AT.boom));
+      T.boomNoiseGain.gain.exponentialRampToValueAtTime(0.001, at(AT.boom + 3));
+      T.crackGain.gain.setValueAtTime(TEST.crack, at(AT.boom));
+      T.crackGain.gain.exponentialRampToValueAtTime(0.001, at(AT.boom + 0.12));
+      for (const [s, f] of CLATTER) {
+        T.clankFilter.frequency.setValueAtTime(f, at(AT.boom + s));
+        T.clankGain.gain.setValueAtTime(TEST.clank * 0.6, at(AT.boom + s));
+        T.clankGain.gain.exponentialRampToValueAtTime(0.001, at(AT.boom + s + 0.15));
+      }
+      // The presser's hearing, muffled from the blast until they come to, ringing.
+      clear(muffle.frequency, CLEAR);
+      muffle.frequency.setValueAtTime(CLEAR, at(AT.boom + 0.04));
+      muffle.frequency.exponentialRampToValueAtTime(MUFFLED, at(AT.boom + 0.2));
+      muffle.frequency.setValueAtTime(MUFFLED, at(AT.result));
+      muffle.frequency.exponentialRampToValueAtTime(CLEAR, at(AT.result + 1.4));
+      T.ringGain.gain.setValueAtTime(0, at(AT.boom + 0.1));
+      T.ringGain.gain.linearRampToValueAtTime(TEST.ring, at(AT.boom + 0.4));
+      T.ringGain.gain.linearRampToValueAtTime(0, at(AT.result + 0.8));
+      return true;
     };
 
     // Only from a gesture the browser has already counted, so nothing warns in the console; a gesture also wakes a
@@ -166,6 +359,10 @@
       place(D.x, D.y, D.z, REF.door);
       set(bed.door.gain.gain, LEVEL.door * AT.level, now);
       set(bed.door.pan.pan, AT.pan, now);
+      place(spots.booth.x, spots.booth.y, spots.booth.z, 1);
+      set(test.boothPan.pan, AT.pan, now);
+      place(spots.engines.x, spots.engines.y, spots.engines.z, 1);
+      set(test.enginePan.pan, AT.pan * 0.6, now);
     };
 
     const setMuted = (value) => {
@@ -174,9 +371,18 @@
         localStorage.setItem(STORAGE_KEY, muted ? "off" : "on");
       } catch {
       }
-      if (ready) master.gain.setTargetAtTime(muted ? 0 : MASTER, ctx.currentTime, 0.05);
+      if (ready) master.gain.setTargetAtTime(muted ? 0 : MASTER * volume, ctx.currentTime, 0.05);
       else if (!muted) activate();
       return muted;
+    };
+    const setVolume = (value) => {
+      volume = clamp(value, 0, 1);
+      try {
+        localStorage.setItem(VOLUME_KEY, String(volume));
+      } catch {
+      }
+      if (ready && !muted) master.gain.setTargetAtTime(MASTER * volume, ctx.currentTime, 0.05);
+      return volume;
     };
 
     const dispose = () => {
@@ -185,14 +391,16 @@
       window.removeEventListener("keydown", activate, true);
       document.removeEventListener("visibilitychange", onVisibility);
       if (ctx) ctx.close().catch(() => {});
-      ctx = master = buffer = null;
+      ctx = master = mix = muffle = buffer = null;
       ready = false;
       for (const key of Object.keys(bed)) bed[key] = null;
+      for (const key of Object.keys(test)) test[key] = null;
     };
 
     return {
-      listen, update, setMuted, dispose,
+      listen, update, setMuted, setVolume, test: play, dispose,
       get muted() { return muted; },
+      get volume() { return volume; },
       get ready() { return ready; },
       get state() { return ctx ? ctx.state : "none"; }
     };

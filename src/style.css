@@ -2448,6 +2448,85 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
   }
 }
 
+/* The hangar's sound panel under its Sound button: on or off, the level and the pad's vibration, on the planks. */
+.hangar-sound {
+  position: absolute;
+  top: calc(58px + var(--safe-top));
+  right: calc(16px + var(--safe-right, 0px));
+  width: min(240px, calc(100vw - 32px));
+  padding: 9px 11px 10px;
+  background: var(--planks);
+  border: 3px solid var(--wood-edge);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.35);
+  color: var(--paper);
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.hangar-sound[hidden] {
+  display: none;
+}
+
+.hangar-sound-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hangar-sound-head h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+.hangar-sound-toggle {
+  flex: none;
+  padding: 4px 9px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: linear-gradient(#f0b05a, var(--accent));
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hangar-sound-toggle[aria-pressed="false"] {
+  background: var(--wood-edge);
+  color: var(--paper);
+}
+
+.hangar-sound-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.hangar-sound-row input[type="range"] {
+  width: 100%;
+  margin: 0;
+  height: 26px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.hangar-sound-note {
+  margin: 4px 0 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
 /* The hunt's mini player, bottom right: what is playing and the music switch, on the lobby card's planks. */
 .ghost-player {
   position: absolute;

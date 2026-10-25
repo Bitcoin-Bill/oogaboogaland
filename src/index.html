@@ -1664,6 +1664,15 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
         <button type="button" class="ghost-spectate-next" id="ghost-spectate-next" aria-label="Next player">Next ▶</button>
       </div>
     </div>
+    <section class="hangar-sound" id="hangar-sound" aria-label="Hangar sound" hidden>
+      <div class="hangar-sound-head">
+        <h3>Sound</h3>
+        <button type="button" class="hangar-sound-toggle" id="hangar-sound-toggle" aria-pressed="true">Sound on</button>
+      </div>
+      <label class="hangar-sound-row" for="hangar-volume"><span>Volume</span><input type="range" id="hangar-volume" min="0" max="100" step="5" value="100"></label>
+      <label class="hangar-sound-row" for="hangar-vibration"><span>Vibration</span><input type="range" id="hangar-vibration" min="0" max="100" step="5" value="100"></label>
+      <p class="hangar-sound-note">Pad vibration: Chrome and Edge</p>
+    </section>
     <div class="ghost-player" id="ghost-player" hidden>
       <span class="ghost-player-note" aria-hidden="true">♪</span>
       <span class="ghost-player-title" id="ghost-player-title"></span>

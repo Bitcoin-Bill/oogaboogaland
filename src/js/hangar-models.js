@@ -19,7 +19,7 @@
   const BL = window.BL = window.BL || {};
   const { models, math } = BL;
   const FM = BL.factoryModels, JM = BL.jetModels;
-  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, prism, chain, lanternParts, deckParts, stairParts } = models;
+  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, prism, chain, lanternParts, deckParts, stairParts, turn, shaded, forwardLathe } = models;
   const { mulberry32 } = math;
   const TAU = Math.PI * 2;
 
@@ -61,10 +61,11 @@
     jetStairs: [10.6, 0, 3.4, 10.6, 5, -4.6, 1.6],
     // Trestles under the wings, [x, z].
     trestles: [[8, -8.9], [22, -8.9]],
-    // The engine static fire test's station behind the Jet's right engine: where its console stands and the way its
-    // front faces, square to the hall with its back to the engines so the presser looks over it at them, and the
-    // cables' far ends under the pods, [x, z].
-    fireTest: { x: 19.8, z: 9.6, turn: 0, cables: [[13, 4.4], [15, 4], [17, 4.4]] },
+    // The engine static fire test's booth behind the Jet's right engine, clear of its exhaust: where it stands and the
+    // way its front faces, square to the hall with its back to the engines so the presser looks over it at them, and
+    // the cables' far ends under the pods, [x, z]; and where the test is watched from, its eye and where it looks,
+    // framing the booth, both plumes and where the presser lands.
+    fireTest: { x: 20.6, z: 9.8, turn: 0, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [10.5, 7, 25], look: [19.5, 2, 12.5] } },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
@@ -809,161 +810,416 @@
 
   // ---- the engine static fire test ---------------------------------------------------------------------------------
 
-  // The test station in its own frame (`LAYOUT.fireTest`), the console's front toward +z and the floor at y 0: a steel
-  // cabinet under a desk sloped to the presser, gauges and toggles across the slope, and on a block rising out of its
-  // right half the big red button (`button`) under its hinged clear guard (`hinge`, the guard's back edge), the DO NOT
-  // PRESS plate on the block's front (`plate`); behind, the screen in its housing (`screen`: centre, width, height) with
-  // the status lamps down its left margin (`lamps`: ready, armed, fire), the cooldown meter's ten segments under it
-  // (`meter`: the first's centre and the step) and the title on top (`title`); two beacons on posts either side
-  // (`beacons`, `beaconY`) and a red strobe over the title (`strobe`); and a striped box painted round it on the floor.
-  // `stand` is where the presser stands.
+  // The test booth in its own frame (`LAYOUT.fireTest`), its front toward +z and the floor at y 0, after its concept: a
+  // steel cabinet in navy panels with the WARNING plate between a hatch and a vent, hazard-striped corners and yellow
+  // brackets at its foot, under a desk sloped to the presser (`desk`: its front and back edges, (z, y)): four levers on
+  // yellow mounts and two lit keys on its left, the oscilloscope (`scope`) and its keys in the middle, and on a block
+  // rising out of its right half the big red button (`button`) under its clear guard, hinged at its back edge (`hinge`),
+  // the DO NOT PRESS sign glowing on the block's front (`plate`). Behind, a bar of status lamps (`leds`, x along it at
+  // `ledY`, `ledZ`) under the screen's housing (`screen`: centre, width, height; `timer`, the countdown's box on it, from
+  // its centre), the ready, armed and fire lamps down its left margin (`lamps`), the JET V2 badge and speaker grilles
+  // down its right, and the ENGINE STATIC FIRE TEST header on top (`header`) between hazard-striped ends, a yellow light
+  // bar either side of a red strobe over it (`bars`, `strobe`); two caged lanterns on posts either side (`posts`,
+  // `postY`, the lantern's foot); and round it all a barrier open at the front, bollards with glowing strips
+  // (`bollards`) and striped rails (`railY`), in a striped box on the floor. `blocks` are what walkers keep out of,
+  // [x0, x1, z0, z1, top], and `stand` is where the presser stands to reach the button.
   const FIRE = {
-    button: [0.55, 1.15, 0.08], hinge: [0.55, 1.15, -0.1], plate: [0.55, 1.04, 0.283], screen: [0, 1.82, -0.325, 1.56, 0.72],
-    title: [0, 2.47, -0.394], meter: [-0.72, 1.36, -0.33, 0.16], lamps: [[-0.89, 2.02, -0.33], [-0.89, 1.82, -0.33], [-0.89, 1.62, -0.33]],
-    beacons: [[-1.3, -0.45], [1.3, -0.45]], beaconY: 2.2, strobe: [0, 2.6, -0.45], footprint: [-1.45, 1.45, -0.7, 0.45], stand: [0.4, 1.05]
+    desk: { front: [0.36, 0.96], back: [-0.25, 1.2] }, scope: [0, 0.04, -0.08],
+    button: [0.68, 1.22, 0.06], hinge: [0.68, 1.22, -0.15], plate: [0.68, 1.1, 0.2995],
+    screen: [-0.02, 1.9, -0.297, 1.38, 0.68], timer: [0.428, -0.095, 0.33, 0.19],
+    leds: [-0.62, -0.48, -0.34, 0.34, 0.48, 0.62], ledY: 1.26, ledZ: -0.208,
+    lamps: [[-0.91, 2.16, -0.3], [-0.91, 2.0, -0.3], [-0.91, 1.84, -0.3]],
+    header: [0, 2.535, -0.377], bars: [[-0.55, 2.745, -0.44], [0.55, 2.745, -0.44]], strobe: [0, 2.71, -0.44],
+    posts: [[-1.33, -0.45], [1.33, -0.45]], postY: 2.3,
+    bollards: [[-1.85, 0.8], [1.85, 0.8], [-1.85, -0.85], [1.85, -0.85]], railY: 0.8,
+    blocks: [[-1.42, 1.42, -0.72, 0.42, 2.8], [-1.98, -1.72, -0.98, 0.93, 1], [1.72, 1.98, -0.98, 0.93, 1], [-1.98, 1.98, -0.92, -0.78, 1]],
+    stand: [0.68, 1.15],
+    // The pictures that stand still on its faces, [key, x, y, z].
+    pictures: [["title", 0, 2.535, -0.377], ["plate", 0.68, 1.1, 0.2995], ["sign", 0, 0.52, 0.321], ["badge", 0.89, 2.06, -0.297],
+      ["stripes:0.11:0.6", -1.13, 0.5, 0.318], ["stripes:0.11:0.6", 1.13, 0.5, 0.318], ["stripes:0.18:0.29", -0.91, 2.535, -0.367], ["stripes:0.18:0.29", 0.91, 2.535, -0.367]]
   };
-  // The desk's slope: its front edge (z, y), its back edge, and how far it leans.
-  const SLOPE = { front: [0.3, 0.92], back: [-0.25, 1.2] };
-  SLOPE.lean = Math.atan2(SLOPE.back[1] - SLOPE.front[1], SLOPE.front[0] - SLOPE.back[0]);
-  const FIRE_STEEL = "#56606c", FIRE_DK = "#2a2f36", FIRE_RED = "#d62828", FIRE_AMBER = "#ffb02e", GUARD = "#cfe8ff";
+  // The desk's lean, and a point on its face in the booth's frame: `x` across, `h` above the face, `zl` down it.
+  FIRE.lean = Math.atan2(FIRE.desk.back[1] - FIRE.desk.front[1], FIRE.desk.front[0] - FIRE.desk.back[0]);
+  const DESK_MID = [(FIRE.desk.front[0] + FIRE.desk.back[0]) / 2, (FIRE.desk.front[1] + FIRE.desk.back[1]) / 2];
+  const onDesk = (g) => moved(turnedX(g, FIRE.lean), 0, DESK_MID[1], DESK_MID[0]);
+  FIRE.onDesk = (x, h, zl) => [x, DESK_MID[1] + h * Math.cos(FIRE.lean) - zl * Math.sin(FIRE.lean), DESK_MID[0] + h * Math.sin(FIRE.lean) + zl * Math.cos(FIRE.lean)];
+  const FIRE_STEEL = "#3b4250", FIRE_DK = "#262b33", FIRE_NAVY = "#22406c", FIRE_SLOT = "#0c1119", FIRE_RED = "#d62828", FIRE_AMBER = "#ffb02e";
+  const BOLT = "#9aa3ad", GUARD = "#cfe8ff", FIRE_BLACK = "#15171b";
+  // A curved cable along the floor from (ax, az) by (mx, mz) to (bx, bz), in whatever frame they are given.
+  const floorCable = (ax, az, mx, mz, bx, bz, color) => models.tube({
+    path: (t) => { const u = 1 - t; return { x: u * u * ax + 2 * u * t * mx + t * t * bx, y: 0.05, z: u * u * az + 2 * u * t * mz + t * t * bz }; },
+    radius: () => 0.05, rings: 20, segments: 6, colorFn: () => color
+  });
+  // A rail of square section from (ax, az) to (bx, bz) at height y, in yellow and black bands.
+  const bandedRail = (out, ax, az, bx, bz, y) => {
+    const len = Math.hypot(bx - ax, bz - az), n = Math.max(2, Math.round(len / 0.24)), a = Math.atan2(bx - ax, bz - az);
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      out.push(moved(turnedY(box({ w: 0.075, h: 0.075, d: len / n, color: i % 2 ? INK : PAINT }), a), ax + (bx - ax) * t, y, az + (bz - az) * t));
+    }
+  };
   const fireStation = cached(() => {
     const body = [], details = [], panel = [], F = FIRE;
-    // The floor's stripes round the station, and the cabinet with its desk, a profile in (z, y) run along x.
-    hazard(body, -1.6, -1.3, 1.6, -1.3, 0.025, 0.22, 0.4); hazard(body, 1.6, -1.3, 1.6, 1.5, 0.025, 0.22, 0.4);
-    hazard(body, 1.6, 1.5, -1.6, 1.5, 0.025, 0.22, 0.4); hazard(body, -1.6, 1.5, -1.6, -1.3, 0.025, 0.22, 0.4);
-    body.push(bevelBox({ w: 2.2, h: 0.85, d: 0.8, color: FIRE_STEEL, bevel: 0.05, offset: { y: 0.425, z: -0.2 } }));
-    body.push(box({ w: 2.0, h: 0.05, d: 0.02, color: PAINT, offset: { y: 0.18, z: 0.205 } }), box({ w: 2.0, h: 0.05, d: 0.02, color: INK, offset: { y: 0.24, z: 0.205 } }));
-    const [fz, fy] = SLOPE.front, [bz, by] = SLOPE.back;
-    body.push(turnedY(prism([[-0.6, 0.85], [fz, 0.85], [fz, fy], [bz, by], [-0.6, by]], 2.2, "#3a414b"), -Math.PI / 2));
-    // Across the slope, in its own frame (y 0 its face, +z down it): a dark inset, two gauges and a row of toggles. These
-    // and the other small parts laid on a face are `details`, a node of their own, so the Canvas 2D sort can keep them
-    // in front of the faces they lie on.
-    panel.push(box({ w: 1.25, h: 0.02, d: 0.5, color: "#1d2127", offset: { x: -0.4, y: 0.005 } }));
-    for (const x of [-0.85, -0.5]) {
-      panel.push(lathe({ profile: [[0.12, 0], [0.12, 0.03], [0.1, 0.03], [0.1, 0.02], [0, 0.02]], segments: 16, color: IRON_DK }));
-      panel.push(lathe({ profile: [[0.1, 0.02], [0, 0.02]], segments: 16, color: "#e8e2d4" }));
-      panel.push(box({ w: 0.012, h: 0.006, d: 0.08, color: FIRE_RED, offset: { z: -0.03 } }));
-      for (const g of panel.slice(-3)) moved(g, x, 0, -0.1);
+    const bolt = (out, x, y, z) => out.push(box({ w: 0.035, h: 0.035, d: 0.02, color: BOLT, offset: { x, y, z } }));
+    // The floor's stripes round the booth.
+    hazard(body, -2.2, -1.2, 2.2, -1.2, 0.025, 0.26, 0.45); hazard(body, 2.2, -1.2, 2.2, 1.5, 0.025, 0.26, 0.45);
+    hazard(body, 2.2, 1.5, -2.2, 1.5, 0.025, 0.26, 0.45); hazard(body, -2.2, 1.5, -2.2, -1.2, 0.025, 0.26, 0.45);
+    // The cabinet on its plinth, and the desk over it, a profile in (z, y) run across.
+    body.push(bevelBox({ w: 2.5, h: 0.12, d: 1.0, color: FIRE_DK, bevel: 0.03, offset: { y: 0.06, z: -0.15 } }));
+    body.push(bevelBox({ w: 2.4, h: 0.82, d: 0.9, color: FIRE_STEEL, bevel: 0.04, offset: { y: 0.53, z: -0.15 } }));
+    const [fz, fy] = F.desk.front, [bz, by] = F.desk.back;
+    body.push(turnedY(prism([[-0.6, 0.94], [fz, 0.94], [fz, fy], [bz, by], [-0.6, by]], 2.4, "#343a44"), -Math.PI / 2));
+    body.push(bevelBox({ w: 2.44, h: 0.06, d: 0.07, color: FIRE_DK, bevel: 0.02, offset: { y: 0.95, z: 0.355 } }));
+    // The cabinet's front: a navy panel either side of the WARNING plate, the left with a hatch and its handle over a
+    // vent, the right a tall vent; the corners striped, yellow brackets at the foot, bolts at every corner.
+    for (const s of [-1, 1]) details.push(box({ w: 0.44, h: 0.62, d: 0.02, color: FIRE_NAVY, offset: { x: s * 0.82, y: 0.52, z: 0.305 } }));
+    for (const [w, h, x, y] of [[0.3, 0.025, -0.82, 0.8], [0.3, 0.025, -0.82, 0.55], [0.025, 0.25, -0.97, 0.675], [0.025, 0.25, -0.67, 0.675]]) details.push(box({ w, h, d: 0.012, color: FIRE_SLOT, offset: { x, y, z: 0.318 } }));
+    details.push(bevelBox({ w: 0.14, h: 0.035, d: 0.035, color: "#7d8691", bevel: 0.01, offset: { x: -0.82, y: 0.675, z: 0.33 } }));
+    for (let k = 0; k < 4; k++) details.push(box({ w: 0.32, h: 0.025, d: 0.01, color: FIRE_SLOT, offset: { x: -0.82, y: 0.27 + k * 0.055, z: 0.317 } }));
+    for (let k = 0; k < 8; k++) details.push(box({ w: 0.32, h: 0.028, d: 0.01, color: FIRE_SLOT, offset: { x: 0.82, y: 0.27 + k * 0.066, z: 0.317 } }));
+    details.push(box({ w: 1.08, h: 0.6, d: 0.02, color: "#101214", offset: { y: 0.52, z: 0.308 } }));
+    for (const s of [-1, 1]) {
+      details.push(box({ w: 0.13, h: 0.64, d: 0.02, color: FIRE_DK, offset: { x: s * 1.13, y: 0.5, z: 0.305 } }));
+      details.push(bevelBox({ w: 0.17, h: 0.15, d: 0.06, color: PAINT, bevel: 0.015, offset: { x: s * 1.17, y: 0.2, z: 0.31 } }));
+      bolt(details, s * 1.17, 0.2, 0.343);
+      for (const x of [0.62, 1.02]) for (const y of [0.25, 0.79]) bolt(details, s * x, y, 0.318);
     }
-    for (let k = 0; k < 5; k++) {
-      const x = -0.95 + k * 0.16;
-      panel.push(box({ w: 0.08, h: 0.03, d: 0.08, color: IRON_DK, offset: { x, y: 0.015, z: 0.13 } }), beam(x, 0.03, 0.13, x, 0.1, 0.11, 0.022, "#c8ccd2"));
+    // The desk's face (in its own frame, y 0 the face and +z down it): a dark inset under the levers and the scope,
+    // the four levers on their yellow mounts, two lit keys before them, the scope's housing and the three keys under
+    // it. The block rising out of the right half carries the button.
+    panel.push(box({ w: 1.44, h: 0.015, d: 0.56, color: "#1f242c", offset: { x: -0.38, y: 0.006 } }));
+    [-0.98, -0.8, -0.62, -0.44].forEach((x, i) => {
+      panel.push(bevelBox({ w: 0.11, h: 0.06, d: 0.2, color: PAINT, bevel: 0.015, offset: { x, y: 0.03, z: -0.06 } }));
+      panel.push(box({ w: 0.03, h: 0.006, d: 0.15, color: FIRE_BLACK, offset: { x, y: 0.061, z: -0.06 } }));
+      panel.push(beam(x, 0.06, -0.03, x, 0.22, -0.09, 0.045, FIRE_BLACK));
+      panel.push(bevelBox({ w: 0.085, h: 0.065, d: 0.065, color: FIRE_BLACK, bevel: 0.015, offset: { x, y: 0.245, z: -0.095 } }));
+      if (i === 0) panel.push(box({ w: 0.087, h: 0.02, d: 0.067, color: "#ff8a2e", emissive: 0.5, offset: { x, y: 0.285, z: -0.095 } }));
+    });
+    for (const x of [-1.03, -0.92]) panel.push(bevelBox({ w: 0.085, h: 0.03, d: 0.075, color: "#ffc93a", emissive: 0.8, bevel: 0.01, offset: { x, y: 0.015, z: 0.2 } }));
+    panel.push(bevelBox({ w: 0.52, h: 0.08, d: 0.3, color: FIRE_DK, bevel: 0.02, offset: { x: F.scope[0], y: F.scope[1], z: F.scope[2] } }));
+    [["#e5352a", 0.8], ["#ffc93a", 0.8], ["#3a3f46", 0]].forEach(([color, emissive], i) => {
+      panel.push(bevelBox({ w: 0.09, h: 0.035, d: 0.08, color, emissive, bevel: 0.012, offset: { x: -0.13 + i * 0.13, y: 0.018, z: 0.2 } }));
+    });
+    for (const g of panel) details.push(onDesk(g));
+    // The button's block, its front's dark bezel for the sign, and the yellow and black ring round the button's well.
+    body.push(bevelBox({ w: 0.62, h: 0.34, d: 0.46, color: FIRE_DK, bevel: 0.03, offset: { x: F.button[0], y: F.button[1] - 0.17, z: F.button[2] } }));
+    details.push(box({ w: 0.54, h: 0.18, d: 0.012, color: "#120607", offset: { x: F.plate[0], y: F.plate[1], z: F.plate[2] - 0.008 } }));
+    details.push(moved(lathe({ profile: [[0.19, 0], [0.19, 0.025], [0.13, 0.025], [0.13, 0]], segments: 24, color: PAINT }), F.button[0], F.button[1], F.button[2]));
+    for (let k = 0; k < 6; k++) {
+      const a = k / 6 * TAU + 0.2;
+      details.push(moved(turnedY(box({ w: 0.06, h: 0.03, d: 0.05, color: INK }), a), F.button[0] + Math.sin(a) * 0.16, F.button[1] + 0.012, F.button[2] + Math.cos(a) * 0.16));
     }
-    for (const g of panel) details.push(moved(turnedX(g, SLOPE.lean), 0, (fy + by) / 2, (fz + bz) / 2));
-    // The button's block rising out of the slope, its yellow and black ring round the well.
-    body.push(bevelBox({ w: 0.5, h: 0.3, d: 0.4, color: FIRE_DK, bevel: 0.03, offset: { x: F.button[0], y: F.button[1] - 0.15, z: F.button[2] } }));
-    details.push(moved(lathe({ profile: [[0.16, 0], [0.16, 0.02], [0.1, 0.02], [0.1, 0]], segments: 20, color: PAINT }), F.button[0], F.button[1], F.button[2]));
-    for (let k = 0; k < 4; k++) {
-      const a = k * Math.PI / 2 + Math.PI / 4;
-      details.push(box({ w: 0.05, h: 0.025, d: 0.07, color: INK, offset: { x: F.button[0] + Math.sin(a) * 0.13, y: F.button[1] + 0.012, z: F.button[2] + Math.cos(a) * 0.13 } }));
+    // The lamp bar on the desk's back under the housing, its socket block in the middle; the housing on a riser.
+    body.push(bevelBox({ w: 1.7, h: 0.12, d: 0.1, color: FIRE_DK, bevel: 0.02, offset: { y: F.ledY, z: -0.27 } }));
+    body.push(bevelBox({ w: 0.3, h: 0.16, d: 0.14, color: "#1c2027", bevel: 0.02, offset: { y: F.ledY + 0.02, z: -0.26 } }));
+    body.push(box({ w: 1.9, h: 0.12, d: 0.2, color: FIRE_DK, offset: { y: F.ledY, z: -0.47 } }));
+    body.push(bevelBox({ w: 2.1, h: 1.06, d: 0.26, color: "#2d333c", bevel: 0.04, offset: { y: 1.85, z: -0.45 } }));
+    for (const x of [-0.98, 0.98]) for (const y of [1.39, 2.31]) bolt(details, x, y, -0.315);
+    // The screen's bezel; the lamps' bezels down the left margin; down the right the badge's plate; a grille each side.
+    details.push(box({ w: F.screen[3] + 0.1, h: F.screen[4] + 0.1, d: 0.02, color: "#12161b", offset: { x: F.screen[0], y: F.screen[1], z: -0.31 } }));
+    for (const [x, y] of F.lamps) details.push(box({ w: 0.15, h: 0.15, d: 0.012, color: "#0e1014", offset: { x, y, z: -0.314 } }));
+    details.push(bevelBox({ w: 0.25, h: 0.27, d: 0.02, color: "#1b2029", bevel: 0.01, offset: { x: 0.89, y: 2.06, z: -0.31 } }));
+    for (const x of [-0.91, 0.89]) {
+      details.push(box({ w: 0.17, h: 0.17, d: 0.01, color: "#1a1e24", offset: { x, y: 1.53, z: -0.313 } }));
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) details.push(box({ w: 0.028, h: 0.028, d: 0.01, color: "#07080a", offset: { x: x + i * 0.045, y: 1.53 + j * 0.045, z: -0.306 } }));
     }
-    // The screen's housing on its riser off the desk's top, the glass dark until a picture lies on it, the meter's
-    // dark slot, the lamps' bezels, a grille down the right margin and the title's board on top.
-    body.push(box({ w: 0.5, h: 0.2, d: 0.16, color: FIRE_DK, offset: { y: by + 0.08, z: -0.5 } }));
-    body.push(bevelBox({ w: 2.0, h: 1.08, d: 0.22, color: FIRE_DK, bevel: 0.04, offset: { y: 1.8, z: -0.45 } }));
-    body.push(box({ w: F.screen[3] + 0.04, h: F.screen[4] + 0.04, d: 0.02, color: "#081018", emissive: 0.4, offset: { y: F.screen[1], z: -0.342 } }));
-    details.push(box({ w: 1.62, h: 0.08, d: 0.01, color: "#0b0d10", offset: { y: F.meter[1], z: -0.339 } }));
-    for (const [x, y] of F.lamps) details.push(box({ w: 0.15, h: 0.15, d: 0.01, color: "#0b0d10", offset: { x, y, z: -0.339 } }));
-    for (let k = 0; k < 6; k++) details.push(box({ w: 0.12, h: 0.02, d: 0.01, color: "#0b0d10", offset: { x: 0.89, y: 1.6 + k * 0.09, z: -0.339 } }));
-    body.push(bevelBox({ w: 1.9, h: 0.26, d: 0.1, color: "#101317", bevel: 0.02, offset: { y: F.title[1], z: -0.45 } }));
-    // The beacons' posts, and the strobe's base on the title.
-    for (const [x, z] of F.beacons) {
-      body.push(box({ w: 0.1, h: F.beaconY, d: 0.1, color: IRON_DK, offset: { x, y: F.beaconY / 2, z } }), box({ w: 0.3, h: 0.06, d: 0.3, color: IRON_DK, offset: { x, y: 0.03, z } }));
-      body.push(moved(lathe({ profile: [[0.16, 0], [0.16, 0.06], [0, 0.06]], segments: 14, color: FIRE_DK }), x, F.beaconY, z));
+    // The header on the housing between its striped ends, and over it the light bars' and the strobe's bases.
+    body.push(bevelBox({ w: 1.62, h: 0.27, d: 0.12, color: "#0e1114", bevel: 0.02, offset: { y: F.header[1], z: -0.44 } }));
+    for (const s of [-1, 1]) body.push(bevelBox({ w: 0.2, h: 0.31, d: 0.14, color: FIRE_DK, bevel: 0.02, offset: { x: s * 0.91, y: F.header[1], z: -0.44 } }));
+    for (const [x, , z] of F.bars) body.push(box({ w: 0.3, h: 0.04, d: 0.12, color: FIRE_DK, offset: { x, y: 2.69, z } }));
+    body.push(moved(lathe({ profile: [[0.09, 0], [0.09, 0.04], [0, 0.04]], segments: 14, color: FIRE_DK }), F.strobe[0], 2.67, F.strobe[2]));
+    // The lantern posts, with the arms that hold the housing to them; each lantern's caps and cage, its globe the scene's.
+    for (const [x, z] of F.posts) {
+      body.push(box({ w: 0.3, h: 0.05, d: 0.3, color: FIRE_DK, offset: { x, y: 0.025, z } }), box({ w: 0.12, h: F.postY, d: 0.12, color: "#2a2f36", offset: { x, y: F.postY / 2, z } }));
+      for (const y of [1.5, 2.2]) body.push(box({ w: 0.24, h: 0.06, d: 0.06, color: FIRE_DK, offset: { x: x - Math.sign(x) * 0.16, y, z } }));
+      body.push(moved(lathe({ profile: [[0, 0], [0.13, 0], [0.13, 0.04], [0.1, 0.06], [0, 0.06]], segments: 16, color: "#22262c" }), x, F.postY, z));
+      body.push(moved(lathe({ profile: [[0, 0.33], [0.13, 0.33], [0.13, 0.37], [0.07, 0.41], [0, 0.42]], segments: 16, color: "#22262c" }), x, F.postY, z));
+      for (let k = 0; k < 6; k++) {
+        const a = k / 6 * TAU;
+        body.push(box({ w: 0.018, h: 0.27, d: 0.018, color: "#1c1f24", offset: { x: x + Math.sin(a) * 0.118, y: F.postY + 0.195, z: z + Math.cos(a) * 0.118 } }));
+      }
+      for (const y of [0.12, 0.27]) body.push(moved(torus(0.118, 0.012, "#1c1f24", 0, 16, 4), x, F.postY + y, z));
     }
-    body.push(moved(lathe({ profile: [[0.1, 0], [0.1, 0.05], [0, 0.05]], segments: 12, color: FIRE_DK }), F.strobe[0], F.strobe[1], F.strobe[2]));
-    // The button, a red mushroom on its stem; the guard, a clear box hinged at its back edge, in the hinge's frame.
-    const button = lathe({ profile: [[0.045, -0.06], [0.045, 0.03], [0.1, 0.035], [0.1, 0.07], [0.075, 0.095], [0, 0.105]], segments: 20, color: FIRE_RED, emissive: 0.6 });
+    // The barrier: bollards with yellow caps, their glowing strips the scene's, and striped rails along the sides and
+    // the back, open at the front.
+    for (const [x, z] of F.bollards) {
+      body.push(box({ w: 0.3, h: 0.04, d: 0.3, color: FIRE_DK, offset: { x, y: 0.02, z } }), box({ w: 0.22, h: 0.92, d: 0.22, color: "#2a2f36", offset: { x, y: 0.46, z } }));
+      body.push(bevelBox({ w: 0.26, h: 0.08, d: 0.26, color: PAINT, bevel: 0.02, offset: { x, y: 0.96, z } }));
+      details.push(box({ w: 0.1, h: 0.56, d: 0.012, color: "#0e1014", offset: { x, y: 0.5, z: z + 0.111 } }));
+    }
+    const [fl, fr, bl, br] = F.bollards;
+    bandedRail(body, fl[0], fl[1] - 0.12, bl[0], bl[1] + 0.12, F.railY);
+    bandedRail(body, fr[0], fr[1] - 0.12, br[0], br[1] + 0.12, F.railY);
+    bandedRail(body, bl[0] + 0.12, bl[1], br[0] - 0.12, br[1], F.railY);
+    // Cables out of the cabinet's sides to the bollards' feet.
+    body.push(floorCable(-1.2, 0.05, -1.55, 0.5, -1.85, 0.66, "#d9862a"), floorCable(-1.2, -0.3, -1.6, -0.3, -1.85, -0.72, FIRE_BLACK));
+    body.push(floorCable(1.2, -0.2, 1.6, 0.1, 1.85, 0.66, FIRE_BLACK));
+    // The moving parts: the button, a red mushroom on its stem; the guard, a clear box in its hinge's frame, and its
+    // hinge pin; the lanterns' globes, the light bars, the strobe's dome, the status lamps, one of the bar's lamps and
+    // a bollard's strip.
+    const button = shaded([turn([[0.05, -0.06], [0.05, 0.03], [0.13, 0.035], [0.13, 0.075], [0.1, 0.1], [0, 0.11]], 24, FIRE_RED, 0.6)]);
     const guard = merge(
-      box({ w: 0.34, h: 0.015, d: 0.36, color: GUARD, offset: { y: 0.16, z: 0.18 } }),
-      box({ w: 0.015, h: 0.16, d: 0.36, color: GUARD, offset: { x: -0.17, y: 0.08, z: 0.18 } }),
-      box({ w: 0.015, h: 0.16, d: 0.36, color: GUARD, offset: { x: 0.17, y: 0.08, z: 0.18 } }),
-      box({ w: 0.34, h: 0.16, d: 0.015, color: GUARD, offset: { y: 0.08, z: 0.36 } })
+      box({ w: 0.42, h: 0.015, d: 0.42, color: GUARD, offset: { y: 0.24, z: 0.21 } }),
+      box({ w: 0.015, h: 0.24, d: 0.42, color: GUARD, offset: { x: -0.21, y: 0.12, z: 0.21 } }),
+      box({ w: 0.015, h: 0.24, d: 0.42, color: GUARD, offset: { x: 0.21, y: 0.12, z: 0.21 } }),
+      box({ w: 0.42, h: 0.24, d: 0.015, color: GUARD, offset: { y: 0.12, z: 0.42 } }),
+      box({ w: 0.42, h: 0.24, d: 0.015, color: GUARD, offset: { y: 0.12, z: 0.005 } })
     );
-    guard.glass = 0.35;
-    const hinge = turnedZ(lathe({ profile: [[0.02, -0.19], [0.02, 0.19]], segments: 8, color: IRON }), Math.PI / 2);
-    // The beacons' amber domes and the reflector that spins in each, the strobe's red dome, the lamps and a segment.
-    const dome = (r, color) => noShadow(lathe({ profile: Array.from({ length: 6 }, (_, k) => [Math.cos(k / 5 * Math.PI / 2) * r, Math.sin(k / 5 * Math.PI / 2) * r * 1.3]), segments: 14, color, emissive: 1 }));
-    const beacon = dome(0.14, FIRE_AMBER), strobe = dome(0.09, "#ff3a2e");
-    beacon.glass = strobe.glass = 0.6;
-    const reflector = noShadow(box({ w: 0.18, h: 0.1, d: 0.02, color: "#ffe1a0", emissive: 1, offset: { y: 0.08 } }));
-    const lamp = (color) => noShadow(bevelBox({ w: 0.11, h: 0.11, d: 0.04, color, emissive: 1, bevel: 0.015 }));
-    const segment = noShadow(box({ w: F.meter[3] * 0.86, h: 0.05, d: 0.02, color: "#5be38a", emissive: 1 }));
-    return { body: merge(...body), details: merge(...details), button, guard, hinge, beacon, reflector, strobe, lamps: [lamp("#3fe07a"), lamp(FIRE_AMBER), lamp("#ff3a2e")], segment };
+    guard.glass = 0.3;
+    const hinge = turnedZ(lathe({ profile: [[0.02, -0.22], [0.02, 0.22]], segments: 8, color: "#7d8691" }), Math.PI / 2);
+    const globe = noShadow(shaded([turn([[0, 0.06], [0.095, 0.065], [0.105, 0.14], [0.105, 0.27], [0.08, 0.32], [0, 0.33]], 18, FIRE_AMBER, 1)]));
+    const bar = noShadow(bevelBox({ w: 0.26, h: 0.07, d: 0.09, color: "#ffd23a", emissive: 1, bevel: 0.015 }));
+    const strobe = noShadow(shaded([turn(Array.from({ length: 6 }, (_, k) => [Math.cos(k / 5 * Math.PI / 2) * 0.085, Math.sin(k / 5 * Math.PI / 2) * 0.11]), 16, "#ff3a2e", 1)]));
+    const lamp = (color) => noShadow(bevelBox({ w: 0.11, h: 0.11, d: 0.03, color, emissive: 1, bevel: 0.015 }));
+    const led = (color) => noShadow(bevelBox({ w: 0.08, h: 0.05, d: 0.02, color, emissive: 1, bevel: 0.01 }));
+    const strip = noShadow(box({ w: 0.07, h: 0.5, d: 0.016, color: FIRE_AMBER, emissive: 1 }));
+    return {
+      body: merge(...body), details: merge(...details), button, guard, hinge, globe, bar, strobe, strip,
+      lamps: [lamp("#3fe07a"), lamp("#ffc93a"), lamp("#ff3a2e")], leds: [led("#ffb02e"), led("#ff7a2a")]
+    };
   });
-  // The cables from the console's back across the floor to under each engine pod, in the hangar's frame.
+  // The cables from the console's back across the floor to boxes under the engine pods, in the hangar's frame.
   const fireCables = cached(() => {
     const T = LAYOUT.fireTest, c = Math.cos(T.turn), s = Math.sin(T.turn), parts = [];
     const back = (x, z) => [T.x + x * c + z * s, T.z - x * s + z * c];
     T.cables.forEach(([ex, ez], i) => {
-      const [ax, az] = back(-0.5 + i * 0.5, -0.65), mx = (ax + ex) / 2 + (i - 1) * 0.8, mz = (az + ez) / 2 + 0.6;
-      const at = (t) => {
-        const u = 1 - t;
-        return { x: u * u * ax + 2 * u * t * mx + t * t * ex, y: 0.05, z: u * u * az + 2 * u * t * mz + t * t * ez };
-      };
-      parts.push(models.tube({ path: at, radius: () => 0.05, rings: 24, segments: 6, colorFn: () => i === 1 ? "#d9862a" : "#1b1d22" }));
+      const [ax, az] = back(-0.6 + i * 0.6, -0.65), mx = (ax + ex) / 2 + (i - 1) * 0.8, mz = (az + ez) / 2 + 0.6;
+      parts.push(floorCable(ax, az, mx, mz, ex, ez, i === 1 ? "#d9862a" : FIRE_BLACK));
       parts.push(bevelBox({ w: 0.4, h: 0.3, d: 0.3, color: FIRE_STEEL, bevel: 0.03, offset: { x: ex, y: 0.15, z: ez } }), box({ w: 0.42, h: 0.04, d: 0.32, color: PAINT, offset: { x: ex, y: 0.24, z: ez } }));
     });
     return merge(...parts);
   });
 
-  // The test's pictures for the station's screen and plates, painted once each (`firePicture(key)`): the screen's
-  // states, the title over it, and the button's DO NOT PRESS.
-  const FIRE_SCREENS = {
-    ready: ["STATUS: READY", "ENGINES COLD · DO NOT PRESS THE BUTTON", "#5be38a"],
-    armed: ["ARMED", "IGNITION SEQUENCE STARTED", FIRE_AMBER],
-    spool: ["SPOOLING UP", "N1 RISING · STAND CLEAR", FIRE_AMBER],
-    fire: ["STATIC FIRE", "FULL THRUST · HOLD IT RIGHT THERE", "#ff8a2e"],
-    warning: ["WARNING", "COMBUSTION UNSTABLE · ABORT ABORT", "#ff3a2e"],
-    boom: ["!!!", "", "#ff3a2e"],
-    result: ["TEST RESULT:\nFAILED SUCCESSFULLY", "LIGHTNING JET V2 — STILL UNDER CONSTRUCTION", "#ffd23a"]
+  // The Jet's exhaust for the test, built at a nozzle's exit and blowing along +z: the plume, a white-hot core in a blue
+  // mantle inside the orange envelope, each a turned flame, the outer two see-through; the shock diamonds down the
+  // core; the throat's glow inside the nozzle, red as it spools and blue-white at full thrust; and the heat's shimmer,
+  // a faint ring the scene drifts back along the plume.
+  const flame = (profile, colors, glass) => {
+    const g = noShadow(forwardLathe(lathe({ profile, segments: 20, color: (t) => colors[Math.min(colors.length - 1, Math.floor(t * colors.length))], emissive: 1 })));
+    g.smooth = true;
+    if (glass) g.glass = glass;
+    return g;
   };
-  const firePictures = new Map();
+  const exhaust = cached(() => ({
+    core: flame([[0, -0.05], [0.36, 0], [0.34, 0.7], [0.24, 1.7], [0.1, 2.6], [0, 3]], ["#ffffff", "#eaf6ff", "#cfe6ff"]),
+    mantle: flame([[0, -0.05], [0.7, 0], [0.76, 0.9], [0.62, 2.3], [0.32, 3.6], [0, 4.4]], ["#6fb7ff", "#3a86ff", "#2a5cff"], 0.8),
+    envelope: flame([[0, 0.9], [0.45, 1.1], [0.95, 2.2], [1.15, 3.6], [1, 5.4], [0.55, 7], [0, 8.4]], ["#ff9a3a", "#ff7a1e", "#ff5a14", "#e8461a"], 0.5),
+    diamond: flame([[0, -0.2], [0.2, 0], [0, 0.2]], ["#ffffff"]),
+    throatHot: noShadow(forwardLathe(lathe({ profile: [[0.8, 0], [0, 0]], segments: 24, color: "#ff5a1e", emissive: 1 }))),
+    throatBlue: noShadow(forwardLathe(lathe({ profile: [[0.8, 0], [0, 0]], segments: 24, color: "#cfe6ff", emissive: 1 }))),
+    haze: Object.assign(noShadow(turnedX(torus(0.9, 0.05, "#ffe6cc", 0.05, 24, 5), Math.PI / 2)), { glass: 0.05 })
+  }));
+  // The blast's pieces, each the scene pools: puffy fireballs in three heats, smoke in two greys, the shockwave's ring
+  // on the floor and its shell, and the bits of iron it throws.
+  const puff = (color, emissive) => Object.assign(noShadow(ball(1, color, emissive)), { smooth: true });
+  const blast = cached(() => ({
+    fire: [puff("#ffd34a", 1), puff("#ff8a1e", 1), puff("#d63a16", 1)],
+    smoke: [puff("#5d5852", 0.04), puff("#36322f", 0.02)],
+    ring: Object.assign(noShadow(torus(1, 0.035, "#eaf4ff", 0.8, 48, 5)), { glass: 0.3 }),
+    shell: Object.assign(puff("#ffffff", 0.6), { glass: 0.12 }),
+    iron: models.particleGeometry("#5a6068", 0.11, 0), spark: models.particleGeometry("#ffd36a", 0.08, 1)
+  }));
+
+  // The booth's pictures, painted once each (`firePicture(key)`): the screen in each state of the test (`FIRE_SCREENS`),
+  // the countdown's box at each second (`timer:<n>`), the scope calm and wild (`scope:0`, `scope:1`), the header, the
+  // DO NOT PRESS plate, the cabinet's WARNING sign, the JET V2 badge and the hazard stripes of a size (`stripes:<w>:<h>`,
+  // metres).
+  const FIRE_FONT = 'Impact, "Arial Narrow", "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const FIRE_SCREENS = {
+    ready: { ink: "#3dff8a", bg: "#03140a", icon: "ok", lines: ["STATUS", "READY", "ENGINES COLD"] },
+    armed: { ink: "#ff3b30", bg: "#170303", icon: "warn", lines: ["ENGINE TEST", "SEQUENCE", "ARMED"] },
+    spool: { ink: "#ffb02e", bg: "#160c02", icon: "warn", lines: ["TURBINE", "SPOOL-UP", "STAND CLEAR"] },
+    fire: { ink: "#ff8a2e", bg: "#170802", icon: "warn", lines: ["STATIC FIRE", "FULL THRUST", "HOLD ON"] },
+    warning: { ink: "#ff3b30", bg: "#1c0303", icon: "warn", lines: ["WARNING", "COMBUSTION", "UNSTABLE"] },
+    boom: { ink: "#ff3b30", bg: "#0a0101", icon: "boom", lines: ["SYSTEM", "ERROR", "!!!"] },
+    result: { ink: "#ffd23a", bg: "#141004" }
+  };
+  // The size of each picture that is not a screen, metres.
+  const FIRE_SIZES = { title: [1.54, 0.21], plate: [0.5, 0.15], sign: [1.0, 0.52], badge: [0.21, 0.23], scope: [0.44, 0.22] };
+  // Sets the largest font up to `px` at which `text` fits `max` pixels wide.
+  const fitText = (g, text, px, max, weight = "") => {
+    g.font = `${weight}${px}px ${FIRE_FONT}`;
+    while (g.measureText(text).width > max && px > 6) { px *= 0.94; g.font = `${weight}${px}px ${FIRE_FONT}`; }
+    return px;
+  };
+  // A warning triangle centred at (x, y), `r` from its middle to a corner, with its "!".
+  const triangle = (g, x, y, r, stroke, fill, mark) => {
+    g.beginPath();
+    g.moveTo(x, y - r); g.lineTo(x + r * 0.95, y + r * 0.62); g.lineTo(x - r * 0.95, y + r * 0.62); g.closePath();
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineJoin = "round"; g.stroke(); }
+    g.fillStyle = mark;
+    g.fillRect(x - r * 0.09, y - r * 0.42, r * 0.18, r * 0.55);
+    g.fillRect(x - r * 0.09, y + r * 0.22, r * 0.18, r * 0.17);
+  };
+  // The Jet's two engines in wireframe, at (x, y), `s` the height of each.
+  const engines = (g, x, y, s) => {
+    for (const dx of [-0.42, 0.42]) {
+      const cx = x + dx * s, rx = s * 0.36, ry = s * 0.5;
+      for (const k of [1, 0.7, 0.32]) { g.beginPath(); g.ellipse(cx, y, rx * k, ry * k, 0, 0, TAU); g.stroke(); }
+      for (let i = 0; i < 12; i++) {
+        const a = i / 12 * TAU;
+        g.beginPath(); g.moveTo(cx + Math.cos(a) * rx * 0.32, y + Math.sin(a) * ry * 0.32); g.lineTo(cx + Math.cos(a + 0.35) * rx * 0.7, y + Math.sin(a + 0.35) * ry * 0.7); g.stroke();
+      }
+      g.beginPath(); g.ellipse(cx - s * 0.3, y - s * 0.16, rx * 0.8, ry * 0.8, 0, Math.PI * 0.55, Math.PI * 1.55); g.stroke();
+      g.beginPath(); g.moveTo(cx, y - ry); g.lineTo(cx - s * 0.3, y - s * 0.16 - ry * 0.8); g.moveTo(cx, y + ry); g.lineTo(cx - s * 0.3, y - s * 0.16 + ry * 0.8); g.stroke();
+    }
+  };
+  // The screen's frame, scanlines and the strips along its foot, shared by every state.
+  const screenFrame = (g, W, H, S) => {
+    g.fillStyle = S.bg; g.fillRect(0, 0, W, H);
+    g.strokeStyle = S.ink; g.lineWidth = H * 0.012; g.globalAlpha = 0.85;
+    g.strokeRect(W * 0.025, H * 0.05, W * 0.95, H * 0.9);
+    g.globalAlpha = 0.6;
+    for (let i = 0; i < 6; i++) g.fillRect(W * (0.05 + i * 0.03), H * 0.08, W * 0.02, H * 0.012);
+    g.fillStyle = S.ink;
+    for (let i = 0; i < 9; i++) {
+      g.beginPath(); const x = W * (0.05 + i * 0.03);
+      g.moveTo(x, H * 0.9); g.lineTo(x + W * 0.018, H * 0.9); g.lineTo(x + W * 0.032, H * 0.82); g.lineTo(x + W * 0.014, H * 0.82); g.closePath(); g.fill();
+    }
+    for (let i = 0; i < 10; i++) g.fillRect(W * (0.4 + i * 0.022), H * (0.84 + (i % 3) * 0.018), W * 0.014, H * 0.03);
+    g.globalAlpha = 1;
+  };
+  const scanlines = (g, W, H) => {
+    g.fillStyle = "rgba(0,0,0,0.22)";
+    for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 2);
+  };
+  const paintScreen = (g, W, H, key) => {
+    const S = FIRE_SCREENS[key];
+    screenFrame(g, W, H, S);
+    g.shadowColor = S.ink; g.shadowBlur = H * 0.018;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    if (key === "result") {
+      g.fillStyle = S.ink;
+      fitText(g, "TEST RESULT:", H * 0.13, W * 0.6);
+      g.fillText("TEST RESULT:", W / 2, H * 0.24);
+      fitText(g, "FAILED SUCCESSFULLY", H * 0.2, W * 0.88);
+      g.fillText("FAILED SUCCESSFULLY", W / 2, H * 0.45);
+      g.fillRect(W * 0.2, H * 0.58, W * 0.6, H * 0.008);
+      g.fillStyle = "#ffe9a6";
+      fitText(g, "LIGHTNING JET V2 — STILL UNDER CONSTRUCTION", H * 0.085, W * 0.86);
+      g.fillText("LIGHTNING JET V2 — STILL UNDER CONSTRUCTION", W / 2, H * 0.7);
+    } else {
+      g.strokeStyle = S.ink; g.fillStyle = S.ink; g.lineWidth = H * 0.008;
+      engines(g, W * 0.19, H * 0.44, H * 0.42);
+      g.lineWidth = H * 0.035;
+      if (S.icon === "ok") {
+        g.beginPath(); g.arc(W * 0.5, H * 0.44, H * 0.22, 0, TAU); g.stroke();
+        g.beginPath(); g.moveTo(W * 0.5 - H * 0.11, H * 0.45); g.lineTo(W * 0.5 - H * 0.02, H * 0.54); g.lineTo(W * 0.5 + H * 0.13, H * 0.34); g.stroke();
+      } else if (S.icon === "boom") {
+        g.beginPath();
+        for (let i = 0; i < 16; i++) { const a = i / 16 * TAU, r = H * (i % 2 ? 0.13 : 0.27); g[i ? "lineTo" : "moveTo"](W * 0.5 + Math.cos(a) * r, H * 0.44 + Math.sin(a) * r); }
+        g.closePath(); g.stroke();
+      } else triangle(g, W * 0.5, H * 0.46, H * 0.28, S.ink, null, S.ink);
+      S.lines.forEach((line, i) => {
+        fitText(g, line, H * 0.1, W * 0.28);
+        g.fillText(line, W * 0.81, H * (0.2 + i * 0.105));
+      });
+      // The countdown's box; while the test runs its figures lie over it (`timer:<n>`), and at rest it reads blank.
+      g.lineWidth = H * 0.012;
+      g.strokeRect(W * 0.69, H * 0.5, W * 0.24, H * 0.28);
+      if (key === "ready" || key === "boom") {
+        fitText(g, "--:--", H * 0.2, W * 0.2);
+        g.fillText("--:--", W * 0.81, H * 0.645);
+      }
+    }
+    g.shadowBlur = 0;
+    scanlines(g, W, H);
+  };
+  const paintPicture = (g, W, H, key) => {
+    const [kind, a, b] = key.split(":");
+    g.textAlign = "center"; g.textBaseline = "middle";
+    if (FIRE_SCREENS[kind]) return paintScreen(g, W, H, kind);
+    if (kind === "timer") {
+      g.fillStyle = "#170303"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = "#ff3b30"; g.lineWidth = H * 0.04; g.strokeRect(H * 0.02, H * 0.02, W - H * 0.04, H - H * 0.04);
+      g.fillStyle = "#ff3b30"; g.shadowColor = "#ff3b30"; g.shadowBlur = H * 0.08;
+      const text = `00:${String(a).padStart(2, "0")}`;
+      fitText(g, text, H * 0.72, W * 0.84);
+      g.fillText(text, W / 2, H * 0.54);
+      g.shadowBlur = 0;
+      return scanlines(g, W, H);
+    }
+    if (kind === "title") {
+      g.fillStyle = "#0e1114"; g.fillRect(0, 0, W, H);
+      g.fillStyle = "#ffd23a";
+      fitText(g, "ENGINE STATIC FIRE TEST", H * 0.78, W * 0.94);
+      return g.fillText("ENGINE STATIC FIRE TEST", W / 2, H * 0.55);
+    }
+    if (kind === "plate") {
+      g.fillStyle = "#a8141a"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = "#ff6a6a"; g.lineWidth = H * 0.07; g.strokeRect(H * 0.06, H * 0.06, W - H * 0.12, H - H * 0.12);
+      g.fillStyle = "#ffffff"; g.shadowColor = "#ff8080"; g.shadowBlur = H * 0.1;
+      fitText(g, "DO NOT PRESS", H * 0.62, W * 0.84);
+      g.fillText("DO NOT PRESS", W / 2, H * 0.55);
+      return void (g.shadowBlur = 0);
+    }
+    if (kind === "sign") {
+      g.fillStyle = "#d9a21c"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = INK; g.lineWidth = H * 0.05; g.strokeRect(H * 0.05, H * 0.05, W - H * 0.1, H - H * 0.1);
+      triangle(g, W * 0.17, H * 0.47, H * 0.27, null, INK, "#d9a21c");
+      g.fillStyle = INK; g.textAlign = "left";
+      fitText(g, "WARNING", H * 0.34, W * 0.6);
+      g.fillText("WARNING", W * 0.32, H * 0.3);
+      fitText(g, "STATIC FIRE TEST", H * 0.19, W * 0.6);
+      g.fillText("STATIC FIRE TEST", W * 0.32, H * 0.58);
+      fitText(g, "AUTHORIZED PERSONNEL ONLY", H * 0.12, W * 0.6);
+      return g.fillText("AUTHORIZED PERSONNEL ONLY", W * 0.32, H * 0.8);
+    }
+    if (kind === "badge") {
+      g.fillStyle = "#1b2029"; g.fillRect(0, 0, W, H);
+      g.fillStyle = "#e8ecf2";
+      fitText(g, "JET V2", H * 0.3, W * 0.86);
+      g.fillText("JET V2", W / 2, H * 0.26);
+      // The Jet seen from above, small: fuselage, swept wings and the tail.
+      const x = W / 2, y = H * 0.68, s = W * 0.4;
+      g.beginPath();
+      g.moveTo(x + s, y); g.lineTo(x + s * 0.2, y - s * 0.12); g.lineTo(x - s * 0.15, y - s * 0.6); g.lineTo(x - s * 0.3, y - s * 0.6);
+      g.lineTo(x - s * 0.2, y - s * 0.1); g.lineTo(x - s * 0.75, y - s * 0.08); g.lineTo(x - s * 0.95, y - s * 0.35); g.lineTo(x - s * 1, y - s * 0.32);
+      g.lineTo(x - s * 0.9, y); g.lineTo(x - s * 1, y + s * 0.32); g.lineTo(x - s * 0.95, y + s * 0.35); g.lineTo(x - s * 0.75, y + s * 0.08);
+      g.lineTo(x - s * 0.2, y + s * 0.1); g.lineTo(x - s * 0.3, y + s * 0.6); g.lineTo(x - s * 0.15, y + s * 0.6); g.lineTo(x + s * 0.2, y + s * 0.12);
+      return g.fill();
+    }
+    if (kind === "scope") {
+      g.fillStyle = "#0b0d08"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = "rgba(255,160,40,0.22)"; g.lineWidth = 1;
+      for (let i = 1; i < 8; i++) { g.beginPath(); g.moveTo(W * i / 8, 0); g.lineTo(W * i / 8, H); g.stroke(); }
+      for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, H * i / 4); g.lineTo(W, H * i / 4); g.stroke(); }
+      g.strokeStyle = "#ffb02e"; g.shadowColor = "#ffb02e"; g.shadowBlur = H * 0.08; g.lineWidth = H * 0.035;
+      const rand = mulberry32(a === "1" ? 77 : 33);
+      g.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const t = i / 60, wild = a === "1" ? (rand() - 0.5) * 0.7 + Math.sin(t * 40) * 0.2 : 0;
+        g[i ? "lineTo" : "moveTo"](W * t, H * (0.5 - (Math.sin(t * TAU * 2) * 0.22 + wild) * (a === "1" ? 1 : 0.8)));
+      }
+      g.stroke();
+      return void (g.shadowBlur = 0);
+    }
+    if (kind === "stripes") {
+      g.fillStyle = PAINT; g.fillRect(0, 0, W, H);
+      g.fillStyle = INK;
+      const band = Math.round(0.06 * W / Number(a));
+      for (let x = -H; x < W + H; x += band * 2) {
+        g.beginPath(); g.moveTo(x, H); g.lineTo(x + band, H); g.lineTo(x + band + H, 0); g.lineTo(x + H, 0); g.closePath(); g.fill();
+      }
+      return;
+    }
+    throw new Error(`no fire picture ${key}`);
+  };
+  const firePictures = new Map(), FIRE_PX = 420;
   const firePicture = (key) => {
     let geo = firePictures.get(key);
     if (geo) return geo;
-    const canvas = document.createElement("canvas"), title = key === "title", plate = key === "plate";
-    const w = title ? 1.84 : plate ? 0.44 : FIRE.screen[3], h = title ? 0.22 : plate ? 0.11 : FIRE.screen[4], PXF = 400;
-    canvas.width = Math.round(w * PXF); canvas.height = Math.round(h * PXF);
-    const g = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    if (title) {
-      g.fillStyle = "#101317"; g.fillRect(0, 0, W, H);
-      g.fillStyle = PAINT; g.font = `bold ${H * 0.56}px ${FONT}`;
-      g.fillText("ENGINE STATIC FIRE TEST", W / 2, H / 2 + 2);
-    } else if (plate) {
-      g.fillStyle = FIRE_RED; g.fillRect(0, 0, W, H);
-      g.strokeStyle = "#fff"; g.lineWidth = 4; g.strokeRect(5, 5, W - 10, H - 10);
-      let px = H * 0.55;
-      g.font = `bold ${px}px ${FONT}`;
-      while (g.measureText("DO NOT PRESS").width > W * 0.84) { px *= 0.94; g.font = `bold ${px}px ${FONT}`; }
-      g.fillStyle = "#fff";
-      g.fillText("DO NOT PRESS", W / 2, H / 2 + 2);
-    } else {
-      const [big, small, color] = FIRE_SCREENS[key], lines = big.split("\n");
-      g.fillStyle = "#081018"; g.fillRect(0, 0, W, H);
-      for (let y = 0; y < H; y += 6) { g.fillStyle = "rgba(255,255,255,0.03)"; g.fillRect(0, y, W, 2); }
-      g.fillStyle = color; g.shadowColor = color; g.shadowBlur = 10;
-      const size = lines.length > 1 ? H * 0.2 : small ? H * 0.28 : H * 0.62;
-      g.font = `bold ${size}px ${FONT}`;
-      lines.forEach((line, i) => {
-        let px = size;
-        while (g.measureText(line).width > W * 0.92 && px > 8) { px *= 0.94; g.font = `bold ${px}px ${FONT}`; }
-        g.fillText(line, W / 2, H * (lines.length > 1 ? 0.3 + i * 0.24 : small ? 0.42 : 0.52));
-      });
-      g.shadowBlur = 0;
-      if (small) {
-        let px = H * 0.085;
-        g.font = `600 ${px}px ${FONT}`;
-        while (g.measureText(small).width > W * 0.9 && px > 6) { px *= 0.94; g.font = `600 ${px}px ${FONT}`; }
-        g.fillStyle = "#cfe0ff";
-        g.fillText(small, W / 2, H * (lines.length > 1 ? 0.84 : 0.76));
-      }
-    }
+    const [kind, a, b] = key.split(":");
+    const [w, h] = FIRE_SCREENS[kind] ? [FIRE.screen[3], FIRE.screen[4]] : kind === "timer" ? [FIRE.timer[2], FIRE.timer[3]] : kind === "stripes" ? [Number(a), Number(b)] : FIRE_SIZES[kind];
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * FIRE_PX); canvas.height = Math.round(h * FIRE_PX);
+    paintPicture(canvas.getContext("2d"), canvas.width, canvas.height, key);
     const image = new Image();
     image.src = canvas.toDataURL("image/png");
+    const lit = FIRE_SCREENS[kind] || kind === "timer" || kind === "scope" ? 0.45 : kind === "plate" ? 0.6 : 0.05;
     geo = { verts: [-w / 2, -h / 2, 0, w / 2, -h / 2, 0, w / 2, h / 2, 0, -w / 2, h / 2, 0], faces: [{ i: [0, 1, 2, 3], color: [0, 0, 0], emissive: 0 }], lines: [], castShadow: false };
-    geo.imageSurface = { asset: { width: W, height: H, load: () => image }, rect: [-w / 2, -h / 2, w, h], bright: 0.35 };
+    geo.imageSurface = { asset: { width: canvas.width, height: canvas.height, load: () => image }, rect: [-w / 2, -h / 2, w, h], bright: lit };
     firePictures.set(key, geo);
     return geo;
   };
@@ -1092,12 +1348,14 @@
     const j = L.jet;
     for (const [x0, x1, z0, z1, from, to] of JM.BOXES) block(j.x + x0, j.x + x1, j.z + z0, j.z + z1, from, to);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
-    // The test station: the console and its beacons, the box round its footprint turned into the hangar (square to it,
-    // so the box is the footprint).
-    const T = L.fireTest, tc = Math.cos(T.turn), ts = Math.sin(T.turn), [fx0, fx1, fz0, fz1] = FIRE.footprint;
-    const xs = [], zs = [];
-    for (const lx of [fx0, fx1]) for (const lz of [fz0, fz1]) { xs.push(T.x + lx * tc + lz * ts); zs.push(T.z - lx * ts + lz * tc); }
-    block(Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), -1, 2.2);
+    // The test booth: its console, and the barrier's rails low enough to jump, each the box round its footprint turned
+    // into the hangar (square to it, so each box is its footprint).
+    const T = L.fireTest, tc = Math.cos(T.turn), ts = Math.sin(T.turn);
+    for (const [fx0, fx1, fz0, fz1, top] of FIRE.blocks) {
+      const xs = [], zs = [];
+      for (const lx of [fx0, fx1]) for (const lz of [fz0, fz1]) { xs.push(T.x + lx * tc + lz * ts); zs.push(T.z - lx * ts + lz * tc); }
+      block(Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), -1, top);
+    }
     // The gap behind each board, where a head would meet its lower edge.
     for (const b of Object.values(L.boards)) block(HALL.x0, b.x + 0.35, b.z - b.w * b.scale / 2, b.z + b.w * b.scale / 2, -1, 2.2);
     // The workstations, the terminals, the tool chests, the crates and the floor lamps.
@@ -1171,7 +1429,7 @@
 
   BL.hangarModels = {
     LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
-    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture,
+    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))

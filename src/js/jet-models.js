@@ -207,6 +207,8 @@
     seat: at({ x: 0, y: CY + 0.35, z: -5 }), eye: at({ x: 0, y: CY + 1.25, z: -5.4 }), hinge: at({ x: 0, y: CY + 1.3, z: -2.8 }),
     engines: [at({ x: -1.35, y: CY - 0.35, z: 6.9 }), at({ x: 1.35, y: CY - 0.35, z: 6.9 })]
   };
+  // Each nozzle's exit, its centre and radius, in the jet's frame: where the static fire's plume starts.
+  const EXHAUST = POINTS.engines.map((e) => ({ x: e.x, y: e.y, z: NOZZLE.at + 0.98 * NOZZLE.r / 0.99, r: 0.92 * NOZZLE.r / 0.99 }));
   // The fuselage and its gear down to the floor, the engine pods, and the wings' roots, low enough to catch a head;
   // under the wings farther out an Ooga walks upright.
   const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.25, 2.25, 4.6, 9.85, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
@@ -214,5 +216,5 @@
   // The fuselage's axis, metres up from the floor, round which a board turns the Jet in miniature.
   const AXIS = CY * SCALE;
 
-  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet, nozzles, pieces };
+  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, EXHAUST, BOXES, U, jet, nozzles, pieces };
 })();

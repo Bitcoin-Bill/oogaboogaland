@@ -87,7 +87,7 @@
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
-  let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false;
+  let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false, soundPanel = null;
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
   // frame, so signed-in players in the hangar hear each other and those in the hall (voice needs a driven Ooga).
@@ -322,9 +322,6 @@
     target(s.boards.stats, "stats", "boards", 4.6);
     target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
-    // The engine static fire test's station behind the Jet's right engine (`hangar-fire.js`).
-    s.fire = BL.hangarFire.create(root);
-    target(s.fire.body, "firetest", null, 1.6);
     return s;
   };
 
@@ -378,14 +375,14 @@
   };
   let poolScore = null;
   // The shared slots go to the lanterns nearest the view, nearest first, by repeated minimum: no sort, no list.
-  const glowNear = (elapsed) => {
+  const glowNear = (elapsed, from) => {
     const P = lanternPool(), n = P.length / 4, t = pilot.orbit.target, Lt = RENDER_OPTS.lights;
     if (!poolScore) poolScore = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const dx = P[i * 4] - t.x, dy = P[i * 4 + 1] - t.y, dz = P[i * 4 + 2] - t.z;
       poolScore[i] = dx * dx + dy * dy * 2 + dz * dz;
     }
-    for (let slot = FIXED; slot < RENDER_OPTS.lightCount; slot++) {
+    for (let slot = from; slot < RENDER_OPTS.lightCount; slot++) {
       let best = 0, bestD = Infinity;
       for (let i = 0; i < n; i++) if (poolScore[i] < bestD) { bestD = poolScore[i]; best = i; }
       poolScore[best] = Infinity;
@@ -487,7 +484,7 @@
       if (action === "leave") leaveHangar();
       else if (action === "reset-view") pilot.resetCamera();
       else if (action === "act") pilot.action();
-      else if (action === "hangar-mute") hud.toast(audio.setMuted(!audio.muted) ? "Sound off" : "Sound on");
+      else if (action === "hangar-mute") soundPanel.toggle();
       else if (!leaving && action.startsWith("mode-")) pilot.modeAction(action);
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);
     });
@@ -498,7 +495,18 @@
     scene = build();
     buildSpace(scene);
     hireCrew(scene);
-    audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 } });
+    const F = LAYOUT.fireTest, exits = JM.EXHAUST;
+    audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 },
+      booth: { x: F.x, y: 2, z: F.z }, engines: { x: LAYOUT.jet.x, y: exits[0].y, z: LAYOUT.jet.z + exits[0].z + 2 } });
+    // The engine static fire test's booth behind the Jet's right engine (`hangar-fire.js`), and its settings: the Sound
+    // button opens the hangar's sound panel, its level and the pad's vibration.
+    scene.fire = BL.hangarFire.create({ root, jet: scene.jet, nozzles: scene.jet.children[0] || null, fx, audio, hold: (on) => {
+      pilot.setActive(!on);
+      pilot.setExternalControl(on);
+    }, toast: hud.toast });
+    input.add(scene.fire.body, { kind: "firetest", preset: null }, { radius: 1.6 });
+    targets.push(scene.fire.body);
+    soundPanel = openSoundPanel();
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
     unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
     if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
@@ -558,6 +566,59 @@
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
 
+  // The hangar's sound panel, from its Sound button: the sound on or off, its level, and how hard a pad vibrates in the
+  // static fire test, each kept in this browser (`hangarAudio`'s and `gamepad`'s own keys). A press outside closes it;
+  // the press on the Sound button that closed it does not open it again.
+  const openSoundPanel = () => {
+    const panel = document.getElementById("hangar-sound"), onOff = document.getElementById("hangar-sound-toggle");
+    const volume = document.getElementById("hangar-volume"), vibration = document.getElementById("hangar-vibration");
+    let closedAt = -Infinity;
+    const show = () => {
+      onOff.textContent = audio.muted ? "Sound off" : "Sound on";
+      onOff.setAttribute("aria-pressed", String(!audio.muted));
+      volume.value = String(Math.round(audio.volume * 100));
+      vibration.value = String(Math.round(BL.gamepad.strength * 100));
+    };
+    const onToggle = () => {
+      audio.setMuted(!audio.muted);
+      show();
+      onOff.blur();
+    };
+    const onVolume = () => audio.setVolume(Number(volume.value) / 100);
+    // A taste of the new strength, on a pad that has one.
+    const onVibration = () => {
+      BL.gamepad.setStrength(Number(vibration.value) / 100);
+      BL.gamepad.rumble(0.6, 0.6, 160);
+    };
+    const blur = (e) => e.target.blur();
+    const close = () => {
+      if (!panel.hidden) closedAt = performance.now();
+      panel.hidden = true;
+    };
+    onOff.addEventListener("click", onToggle);
+    volume.addEventListener("input", onVolume);
+    vibration.addEventListener("input", onVibration);
+    volume.addEventListener("change", blur);
+    vibration.addEventListener("change", blur);
+    hud.dismissOutside(panel, close);
+    return {
+      toggle: () => {
+        if (!panel.hidden) return close();
+        if (performance.now() - closedAt < 400) return;
+        show();
+        panel.hidden = false;
+      },
+      dispose: () => {
+        panel.hidden = true;
+        onOff.removeEventListener("click", onToggle);
+        volume.removeEventListener("input", onVolume);
+        vibration.removeEventListener("input", onVibration);
+        volume.removeEventListener("change", blur);
+        vibration.removeEventListener("change", blur);
+      }
+    };
+  };
+
   // A phase plane's hum: its glow follows, and it ripples now and then across its opening.
   const hum = (g, opening, dt, elapsed, gap) => {
     g.phase.update(dt, elapsed);
@@ -570,17 +631,20 @@
     }
   };
   const update = (dt, elapsed) => {
-    const s = scene;
+    const s = scene, drivenHere = people && people.player;
+    s.fire.unshake(camera);
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
+    // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
+    s.fire.update(dt, drivenHere);
     pilot.update(dt);
+    s.fire.view(camera);
     if (s.window) s.window.update(camera);
     // The hall's hum hears from the Ooga driven here, or from the view's target.
     const ear = people && people.player, at = ear ? ear.root.position : pilot.orbit.target;
     audio.listen(at.x, ear ? at.y - ear.baseY + 1.4 : at.y, at.z, camera.target.x - camera.position.x, camera.target.z - camera.position.z);
     audio.update(dt);
     // The Ooga driven here goes to the room with where it stands and its health; other players here are shown.
-    const drivenHere = people && people.player;
     BL.net.setBody(drivenHere ? drivenHere.traits.name : null);
     if (drivenHere) {
       const p = drivenHere.root.position;
@@ -589,8 +653,7 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
-    // The static fire test's station, and the act button's DON'T PRESS beside its button.
-    s.fire.update(dt, drivenHere);
+    // The act button's DON'T PRESS beside the static fire test's button.
     const actLabel = drivenHere && s.fire.actLabel();
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
@@ -607,7 +670,7 @@
         hud.toast("Launch shield · sealed. The runway opens when Jet v2 is ready.");
       } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
-    glowNear(elapsed);
+    glowNear(elapsed, FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED));
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
@@ -630,7 +693,10 @@
     stepTweens(dt);
     fx.update(dt, elapsed);
   };
-  const drawExtra = (ctx2d, project) => remotes.drawNames(ctx2d, project);
+  const drawExtra = (ctx2d, project) => {
+    remotes.drawNames(ctx2d, project);
+    scene.fire.overlay(ctx2d);
+  };
   const overlay = (dt) => fx.drawOverlay(dt, drawExtra);
 
   const leave = () => {
@@ -648,6 +714,9 @@
     scene.gate.phase.dispose();
     scene.launch.phase.dispose();
     if (scene.window) scene.window.dispose();
+    scene.fire.dispose();
+    soundPanel.dispose();
+    soundPanel = null;
     for (const a of scene.crew) a.dispose();
     remotes.dispose();
     remotes = null;
