@@ -20,7 +20,7 @@
 // of vowels in her line with the formants of its vowel, pauses at its punctuation, a stressed last syllable before a
 // "!" or a "?", and the censor's bleep over each grawlix; muttered, yelled, screamed or whispered, each line at its own
 // pitch and pace. It is placed where she stands while she talks, her yells heard across the hall. Her boots thud
-// where she walks (`boot`), and her hammer clangs on the Jet (`clang`).
+// where she walks (`boot`), a poke boinks (`poke`), and her hammer clangs on the Jet (`clang`).
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -247,6 +247,8 @@
       sis.boot = hissOf(filter("lowpass", 220, 0.9, sis.bootGain));
       sis.knockGain = gain(0, sis.bootPan);
       sis.knock = osc("sine", 90, sis.knockGain);
+      sis.boinkGain = gain(0, sis.bootPan);
+      sis.boink = osc("sine", 700, sis.boinkGain);
     };
 
     // The whole test, from a press now, on the sequence's times `AT` (seconds from the press): every voice's levels and
@@ -435,11 +437,11 @@
       else if (!muted) activate();
       return muted;
     };
-    // A hammer blow on the Jet at (x, y, z), each a little different, quieter with distance.
-    const clang = (x, y, z) => {
+    // A hammer blow on the Jet at (x, y, z), each a little different, quieter with distance, `loud` times as loud.
+    const clang = (x, y, z, loud = 1) => {
       if (!ready || muted) return;
       place(x, y, z, 7);
-      const now = ctx.currentTime, k = 0.55 * AT.level, f = 1300 + Math.random() * 1400, T = test;
+      const now = ctx.currentTime, k = 0.55 * loud * AT.level, f = 1300 + Math.random() * 1400, T = test;
       T.clangPan.pan.setValueAtTime(AT.pan, now);
       T.clangFilter.frequency.setValueAtTime(f, now);
       T.clangGain.gain.cancelScheduledValues(now);
@@ -538,6 +540,21 @@
       sis.knockGain.gain.setValueAtTime(k * 0.6, now);
       sis.knockGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
     };
+    // A poke landing on her at (x, y, z): a rubbery boink.
+    const poke = (x, y, z) => {
+      if (!ready || muted) return;
+      place(x, y, z, BOOT_REF);
+      const now = ctx.currentTime, k = 0.3 * AT.level;
+      sis.bootPan.pan.setValueAtTime(AT.pan, now);
+      sis.boink.frequency.cancelScheduledValues(now);
+      sis.boink.frequency.setValueAtTime(620, now);
+      sis.boink.frequency.exponentialRampToValueAtTime(1180, now + 0.05);
+      sis.boink.frequency.exponentialRampToValueAtTime(760, now + 0.11);
+      sis.boinkGain.gain.cancelScheduledValues(now);
+      sis.boinkGain.gain.setValueAtTime(0.0001, now);
+      sis.boinkGain.gain.exponentialRampToValueAtTime(k, now + 0.012);
+      sis.boinkGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    };
     const setVolume = (value) => {
       volume = clamp(value, 0, 1);
       try {
@@ -563,7 +580,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },

@@ -12,6 +12,15 @@
 // swear a grawlix that her voice bleeps, from where she stands, so she is heard across the hall; her boots thud where
 // she walks.
 //
+// Poke her (Space beside her, the act button reading POKE, or a tap within reach) and she turns on whoever did it,
+// angrier each time: "WHAT?!", "STOP POKING ME!", and on, each with its own fit, now and then chasing them a few
+// seconds. Poke her past her tether and she goes for the Jet with her hammer, running from spot to spot round it and
+// smashing it: sparks, iron and paint flying, the Jet rocking on its gear, smoking dents left behind (all mended in
+// time). Then every poke counts: quick enough in a row (`RAMPAGE.stop`, the tally at her feet draining between them)
+// and she melts down, "GO POKE MY BROTHER! HE'S NEXT DOOR!", and storms off to sulk by the door; but a poke also sends
+// her running for another spot, so the visitor has to chase her. Left alone, she keeps at it until she calls it fixed.
+// After a meltdown she won't go off again for a while.
+//
 // When someone presses the static fire's red button she freaks out: "WHO PRESSED THAT?!", and she runs from the
 // engines with her arms flailing (or, already far off, cowers where she is), cowers with her arms over her head as
 // they roar, cries "THAT ENGINE ISN'T—" as they falter, and the blast knocks her flat on her back, sooted and smoking.
@@ -41,7 +50,7 @@
   const LOW = 0.65, RISE = 0.5, UP = HM.LAYOUT.gangway.y - 0.5;
   // How long each thing takes, s, [least, most]; how likely each is when she picks the next, by its kind; how long the
   // visitor may stand in her way before she goes elsewhere.
-  const TIMES = { fix: [6, 10], inspect: [4.5, 7], admire: [5, 7], glare: [3, 5], pace: [7, 10], yell: [3.2, 4] }, BLOCKED = 1.4;
+  const TIMES = { fix: [6, 10], inspect: [4.5, 7], admire: [5, 7], glare: [3, 5], pace: [7, 10], yell: [3.2, 4], smash: [60, 60] }, BLOCKED = 1.4;
   const WEIGHT = { fix: 0.4, inspect: 0.22, admire: 0.14, pace: 0.12, glare: 0.12 };
   // Running at the visitor: from how far (across the runway she stops at its edge and yells over it), how often at
   // most, how likely when she picks, and how near she stops.
@@ -67,12 +76,21 @@
     mutter: ["This thing will never fly...", "Too heavy. Way too heavy...", "Bigger engines. We need bigger engines...", "I just rebalanced that thing...", "Stupid #@$% engines..."],
     hope: ["Huh... maybe this thing might actually work."],
     rare: ["IF THIS THING FLIES, I'LL EAT MY HARD HAT!", "WHO KEEPS OPENING CHANNELS TO MY TOASTER?!", "FORCE-CLOSED?! WHO FORCE-CLOSED MY CHANNEL?!"],
+    poke: ["WHAT?!", "STOP POKING ME!", "DO I LOOK LIKE A #@$%ING BUTTON?!", "I'M GONNA REBALANCE YOUR FACE!"],
+    rampage: ["THAT'S IT! I'M FIXING THIS THING THE HARD WAY!", "AH, #@$% IT! WHERE'S MY HAMMER?!"],
+    smash: ["COME ON, YOU STUPID THING!", "JUST... ONE... MORE... HIT!", "TAKE THAT!", "FLY, YOU #@$%ING BUCKET!"],
+    shove: ["GET OFF ME!", "I'M BUSY!", "BACK OFF!", "NOT NOW!"],
+    chase: ["COME BACK HERE!", "GET BACK HERE, YOU!"],
+    meltdown: ["GO POKE MY BROTHER! HE'S NEXT DOOR!"],
+    sulk: ["LEAVE ME ALONE!", "I SAID GO POKE MY BROTHER!"],
+    fixed: ["There. Fixed it."],
     panic: ["WHO PRESSED THAT?!", "THAT ENGINE ISN'T—"],
     blame: ["THAT WASN'T MY FAULT!", "WHO TOUCHED MY ENGINES?!", "I TOLD YOU THAT ENGINE WASN'T READY!", "NOBODY SAW THAT. NOBODY!"]
   };
   // How she says each (a style of `hangarAudio.voice`); how often a line about the Jet or Lightning comes out a rare
   // one instead, and a yell a scream.
-  const STYLE = { jet: "yell", lightning: "yell", hammer: "yell", rage: "scream", charge: "scream", caught: "yell", mutter: "mutter", hope: "soft", rare: "yell", panic: "scream", blame: "yell" };
+  const STYLE = { jet: "yell", lightning: "yell", hammer: "yell", rage: "scream", charge: "scream", caught: "yell", mutter: "mutter", hope: "soft", rare: "yell", panic: "scream", blame: "yell",
+    poke: "yell", rampage: "scream", smash: "yell", shove: "yell", chase: "scream", meltdown: "scream", sulk: "yell", fixed: "mutter" };
   const RARE = 0.08, SCREAM = 0.2;
   // The static fire: where she runs to, the nearer of them (beside the booth and by the far wall's crates, both where
   // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast
@@ -80,11 +98,26 @@
   // everyone after; her soot and how fast it fades.
   const FLEE = [[10.4, 12.4], [22.4, 9.2]];
   const PANIC = { far: 14, knock: 26, slide: 0.8, fall: 0.35, rise: 0.6, blame: 3.6, soot: 0.8, fade: 0.08, run: 1.15 };
+  // Poking her: how near the poker must stand and how far their feet and hers may differ, m; how long a fit lasts and
+  // her meltdown's tantrum, s; how long she takes to cool a level of anger left alone; the anger that sets her
+  // smashing the Jet; how likely a poke at the end of her tether sends her after the poker, for how long and how near;
+  // how long after a meltdown she won't go off again, and how long she sulks; how fast she storms off, m/s.
+  const POKE = { reach: 2.4, rise: 1.5, fit: 0.75, tantrum: 1.6, calm: 6, rage: 5, chase: 0.3, chaseTime: 3.5, chaseStop: 1.3, cooldown: 45, sulk: 10, storm: 2.6 };
+  // Her rampage: how many pokes in quick succession stop her, and how fast that tally drains without one, s a poke;
+  // how many blows she lands at a spot before running on, how long a swing takes, how many pokes at one spot send her
+  // running to another, and the longest she keeps it up before she calls it fixed, s.
+  const RAMPAGE = { stop: 4, drain: 2.2, hits: [3, 5], swing: 0.62, flee: 2, max: 50 };
+  // The Jet's damage, all mended in time: how many smoking dents it carries at once and how long each smokes, s.
+  const MARKS = 8, MARK_LIFE = 25;
+  // The tally at her feet while she smashes: its font, its pips' size and gap, px.
+  const TALLY_FONT = "bold 10px ui-monospace, monospace", PIP = 9, PIP_GAP = 4;
 
   // `fx` for her lines and sparks, `audio` for her voice, her boots and her hammer's clang, `fire` the static fire test
-  // she freaks out at.
-  const create = ({ fx, audio, fire }) => {
-    const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), SPARK = HM.blast().spark;
+  // she freaks out at, `jet` the Jet's node, which her rampage rocks, and `toast` for what the visitor should know.
+  const create = ({ fx, audio, fire, jet, toast }) => {
+    const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), B = HM.blast(), SPARK = B.spark, IRON = B.iron;
+    // The Jet's paint flying off it: its white and its livery's blue.
+    const CHIPS = [BL.models.particleGeometry("#eeeae2", 0.1, 0), BL.models.particleGeometry("#2a4fb8", 0.1, 0)];
     const node = createNode({ position: { x: S.x, y: k.HIP, z: S.z }, rotation: { x: 0, y: S.turn, z: 0 } });
     addChild(node, k.root);
     for (const [key, [x, y, z]] of Object.entries(POSE)) { P[key].rotation.x = x; P[key].rotation.y = y; P[key].rotation.z = z; }
@@ -255,6 +288,7 @@
     let panicking = false, warned = false, down = 0, slideX = 0, slideZ = 0, soot = 0, smokeAt = 0;
     const startPanic = () => {
       panicking = true; warned = false; down = 0; t = 0;
+      rampage = storming = false; anger = 0; fitT = 0;
       say(LINES.panic[0], STYLE.panic, 2.4);
       const b = fire.blast, here = Math.hypot(p.x - b.x, p.z - b.z);
       let goal = -1, best = Infinity;
@@ -287,6 +321,8 @@
       return visitorSpot;
     };
     const nextSpot = (driven) => {
+      if (rampage) return smashSpot(false);
+      if (storming) return doorSpot || spots[0];
       if (driven && clock - visitedAt > VISIT.every && rand() < VISIT.chance) {
         const s = visit(driven);
         if (s) return s;
@@ -308,23 +344,124 @@
       blocked = 0;
       if (!plan(p.x, p.z, s.cell)) { arrive(); return; }
       const far = Math.hypot(cx(s.cell) - p.x, cz(s.cell) - p.z);
-      speed = s === visitorSpot || far > RUN_FROM && rand() < RUN_CHANCE ? RUN : WALK;
+      speed = storming ? POKE.storm : rampage || s === visitorSpot || far > RUN_FROM && rand() < RUN_CHANCE ? RUN : WALK;
       doing = "walk";
       if (s === visitorSpot) sayFrom("charge", 2);
-      else if (s.kind === "fix") maybeSay("rage", 0.25);
+      else if (s.kind === "fix" && !rampage) maybeSay("rage", 0.25);
     };
     const arrive = () => {
       last = spot;
-      doing = spot.kind;
+      doing = rampage && spot.kind === "fix" ? "smash" : spot.kind;
       t = 0;
-      spot.dur = pick(TIMES[doing][0], TIMES[doing][1]);
+      spot.dur = storming && doing === "glare" ? POKE.sulk : pick(TIMES[doing][0], TIMES[doing][1]);
       furious = false;
       swingT = 0; swings = 0;
       if (doing === "pace") { paceA = 0; paceDir = 1; paceX = p.x; paceZ = p.z; }
-      if (doing === "fix") maybeSay("hammer", 0.5);
+      if (doing === "smash") { blows = RAMPAGE.hits[0] + Math.floor(rand() * (RAMPAGE.hits[1] - RAMPAGE.hits[0] + 1)); pokesHere = 0; maybeSay("smash", 0.6); }
+      else if (doing === "fix") maybeSay("hammer", 0.5);
       else if (doing === "yell") { sayFrom("caught", 3); spot.dur = Math.max(spot.dur, talk + 0.6); }
       else if (doing === "admire" && rand() < 0.3) say(LINES.hope[0], STYLE.hope, 2.8);
     };
+    // ---- poking her ----
+    // Her anger (0 to POKE.rage) and how long before it cools a level; where the last poke came from and when; the fit
+    // she is in (1 to 4 by her anger, 5 shoved off while she smashes, 6 her meltdown's tantrum) and its time left;
+    // whether she is smashing the Jet, the quick pokes' tally that stops her, the blows left at her spot and the pokes
+    // there, and since when; when she may go off again; whether she is storming off to sulk; a chase's time left and its
+    // line said; whether the visitor's Ooga stands near enough to poke her; and how hard the Jet is rocking.
+    let anger = 0, coolAt = 0, pokeX = 0, pokeZ = 0, pokedAt = -Infinity, fitKind = 0, fitT = 0, fitLen = 1;
+    let rampage = false, pips = 0, blows = 0, pokesHere = 0, rampAt = 0, calmUntil = 0, storming = false, chaseT = 0, chased = false, near = false, jolt = 0;
+    const smashes = spots.filter((s) => s.kind === "fix"), doorSpot = spots.find((s) => s.name === "door");
+    const fit = (kind) => { fitKind = kind; fitLen = fitT = kind === 6 ? POKE.tantrum : POKE.fit; swingT = 0; };
+    // A spot to smash, not the one she is at: at random, or the farther of two from whoever poked her.
+    const smashSpot = (away) => {
+      let best = null, bestD = -1;
+      for (let n = 0; n < 2; n++) {
+        let i = Math.floor(rand() * smashes.length);
+        if (smashes[i] === spot && smashes.length > 1) i = (i + 1) % smashes.length;
+        const d = away ? Math.hypot(smashes[i].x - pokeX, smashes[i].z - pokeZ) : rand();
+        if (d > bestD) { bestD = d; best = smashes[i]; }
+      }
+      return best;
+    };
+    const startRampage = () => {
+      rampage = true; storming = false; pips = 0; rampAt = clock; pokesHere = 0;
+      fit(4);
+      say(one(LINES.rampage), STYLE.rampage, 2.6);
+      toast("Kortik's Sis is smashing the Jet! Chase her and keep poking her to stop her.");
+      goTo(smashSpot(false));
+    };
+    // Stopped: one last tirade, a tantrum, and off to sulk by the door.
+    const meltdown = () => {
+      rampage = false; anger = 0; pips = 0; calmUntil = clock + POKE.cooldown; storming = true;
+      fit(6);
+      say(LINES.meltdown[0], STYLE.meltdown, 3.2);
+      BL.gamepad.rumble(0.5, 0.8, 280);
+      toast("You stopped her! She's storming off. The Jet survives... for now.");
+      goTo(nextSpot(null));
+    };
+    // Left to it long enough, she calls it fixed.
+    const giveUp = () => {
+      rampage = false; anger = 0; pips = 0; calmUntil = clock + POKE.cooldown / 2;
+      sayFrom("fixed", 2.4);
+      goTo(nextSpot(null));
+    };
+    const startChase = () => { doing = "chase"; chaseT = POKE.chaseTime; chased = false; speed = RUN; pathN = 0; };
+    // A poke from the visitor's Ooga: her fit and line, angrier each time, the boink and the pad's pulse. At the end of
+    // her tether she goes for the Jet; while she smashes it each poke counts toward stopping her, and a second at a
+    // spot sends her running for another; storming off or sulking, she only tells them to go away.
+    const poke = () => {
+      if (panicking || !seen) return false;
+      const q = seen.root.position;
+      pokeX = q.x; pokeZ = q.z; pokedAt = clock; coolAt = POKE.calm;
+      BL.gamepad.rumble(0.2, 0.55, 110);
+      audio.poke(p.x, p.y + 0.6, p.z);
+      if (rampage) {
+        if (++pips >= RAMPAGE.stop) { meltdown(); return true; }
+        fit(5);
+        sayFrom("shove", 1.4);
+        if (++pokesHere >= RAMPAGE.flee) { pokesHere = 0; goTo(smashSpot(true)); }
+        return true;
+      }
+      if (storming) { fit(2); sayFrom("sulk", 1.8); return true; }
+      anger = Math.min(POKE.rage, anger + 1);
+      if (anger >= POKE.rage && clock >= calmUntil) { startRampage(); return true; }
+      fit(Math.min(4, anger));
+      if (anger >= POKE.rage) sayFrom("sulk", 1.8);
+      else say(LINES.poke[anger - 1], anger >= 3 ? "scream" : STYLE.poke, 1.8);
+      if (anger >= 3 && rand() < POKE.chase) startChase();
+      return true;
+    };
+    // A blow in her rampage: sparks, iron and the Jet's paint flying, smoke, the Jet rocking on its gear, the clang
+    // twice as loud, a thump in the pad when the visitor is near, and a smoking dent left where it landed; once her
+    // blows here are spent, off to the next spot.
+    const marks = Array.from({ length: MARKS }, () => ({ x: 0, y: 0, z: 0, life: 0, puff: 0 }));
+    const dent = (x, y, z) => {
+      let m = marks[0];
+      for (const n of marks) {
+        if (n.life > 0 && Math.hypot(n.x - x, n.y - y, n.z - z) < 1) { m = n; break; }
+        if (n.life < m.life) m = n;
+      }
+      m.x = x; m.y = y; m.z = z; m.life = MARK_LIFE;
+    };
+    const smashHit = (hx, hy, hz) => {
+      for (let i = 0; i < 16; i++) fx.spawnParticle(SPARK, hx, hy, hz, (rand() - 0.5) * 7, 1 + rand() * 4.5, (rand() - 0.5) * 7, 0.4 + rand() * 0.5, 10, 7);
+      for (let i = 0; i < 2; i++) fx.spawnParticle(IRON, hx, hy, hz, (rand() - 0.5) * 4, 2 + rand() * 3, (rand() - 0.5) * 4, 1.6, 12, 9.8);
+      for (let i = 0; i < 4; i++) fx.spawnParticle(CHIPS[i % 2], hx, hy, hz, (rand() - 0.5) * 4, 1.5 + rand() * 2.5, (rand() - 0.5) * 4, 1.4, 14, 9.8);
+      fx.puff(hx, hy, hz, 0, 0.6, 0, 1.2);
+      audio.clang(hx, hy, hz, 2);
+      jolt = 1;
+      if (seen && Math.hypot(seen.root.position.x - p.x, seen.root.position.z - p.z) < 9) BL.gamepad.rumble(0.25, 0.35, 70);
+      dent(hx, hy, hz);
+      if (--blows <= 0) goTo(smashSpot(false));
+    };
+    // Whether she may stand at (x, z), on her own ground at about her height.
+    const openAt = (x, z) => {
+      const ix = Math.floor((x - X0) / CELL), iz = Math.floor((z - Z0) / CELL);
+      if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return false;
+      const c = iz * NX + ix;
+      return open[c] && Math.abs(feetOf[c] - feet) < RISE || open[N + c] && Math.abs(feetOf[N + c] - feet) < RISE;
+    };
+    const JET_RX = jet.rotation.x, JET_RZ = jet.rotation.z;
     const turnTo = (wantYaw, dt) => {
       let d = wantYaw - yaw;
       d -= TAU * Math.round(d / TAU);
@@ -361,7 +498,15 @@
       quiet -= dt;
       talk = Math.max(0, talk - dt);
       stand();
-      let face = H.open, wantYaw = yaw, stepping = false, glareAt = null, swingNow = -1;
+      let face = H.open, wantYaw = yaw, stepping = false, glareAt = null, swingNow = -1, swingLen = SWING, hop = 0;
+      // Her anger cooling while she is left alone; while she smashes, the tally of quick pokes draining between them,
+      // and her calling it fixed once she has kept at it long enough; and whether the visitor's Ooga can poke her.
+      if (anger > 0 && !rampage && (coolAt -= dt) <= 0) { anger--; coolAt = POKE.calm; }
+      if (rampage) {
+        if (clock - pokedAt > 1) pips = Math.max(0, pips - dt / RAMPAGE.drain);
+        if (clock - rampAt > RAMPAGE.max && fitT <= 0) giveUp();
+      }
+      near = !!driven && !panicking && Math.hypot(driven.root.position.x - p.x, driven.root.position.z - p.z) < POKE.reach && Math.abs(feetAt(driven) - feet) < POKE.rise;
       const ft = fire ? fire.t : -1;
       if (!panicking && ft >= 0 && ft < A.boom) startPanic();
       if (panicking && ft < 0 && doing !== "blame") endPanic();
@@ -423,6 +568,48 @@
           want.armRx = -2.2; want.foreRx = -1.2;
           if (t > PANIC.blame) endPanic();
         }
+      } else if (fitT > 0) {
+        // Poked: turned on whoever did it, still where she was, in a fit as angry as she is: a startled hop, a wagging
+        // finger, a stomp with both fists, the hammer raised over her head, shoved off while she smashes, or her
+        // meltdown's tantrum, stamping with both fists going.
+        fitT -= dt;
+        const r = 1 - fitT / fitLen;
+        wantYaw = Math.atan2(pokeX - p.x, pokeZ - p.z);
+        face = fitKind === 1 ? H.open : H.redOpen;
+        if (fitKind === 1) {
+          hop = Math.sin(Math.min(1, r * 2.2) * Math.PI) * 0.22;
+          want.armLx = -2.6; want.armLz = 0.6; want.foreLx = -0.4; want.armRx = -1.6; want.lean = -0.12;
+        } else if (fitKind === 2) {
+          want.armLx = -1.6; want.armLz = 0.2; want.foreLx = -0.4 + Math.sin(clock * 22) * 0.35; want.foreLz = 0; want.lean = -0.08; want.headZ = Math.sin(clock * 11) * 0.12;
+        } else if (fitKind === 3) {
+          want.crouch = Math.max(0, Math.sin(r * Math.PI * 3)) * 0.1; want.lean = 0.12;
+          want.armLx = -0.9 + Math.sin(clock * 18) * 0.4; want.armLz = 0.3; want.foreLx = -1.2; want.foreLz = 0; want.armRx = -0.9;
+        } else if (fitKind === 4) {
+          want.armRx = -3; want.armRz = -0.2; want.foreRx = -0.6; want.hamX = Math.PI - 0.4; want.lean = 0.18;
+          want.armLx = -2.2; want.foreLx = -0.9; want.foreLz = 0;
+        } else if (fitKind === 5) {
+          want.lean = -0.15; want.armLx = -1.4 + Math.sin(clock * 20) * 0.3; want.armLz = 0.5; want.foreLx = -0.4; want.foreLz = 0;
+        } else {
+          want.crouch = Math.max(0, Math.sin(clock * 14)) * 0.08;
+          want.armLx = -2.6 + Math.sin(clock * 17) * 0.4; want.armLz = 0.4; want.foreLx = -0.8; want.foreLz = 0;
+          want.armRx = -2.4 + Math.cos(clock * 15) * 0.4; want.armRz = -0.4; want.foreRx = -1;
+        }
+      } else if (doing === "chase") {
+        // After whoever poked her, fist up, on her own ground, for a few seconds or until they are out of reach.
+        chaseT -= dt;
+        face = H.redOpen;
+        want.lean = 0.18; want.armLx = -2.5 + Math.sin(clock * 16) * 0.3; want.armLz = 0.35; want.foreLx = -0.8; want.foreLz = 0;
+        if (!chased) { chased = true; sayFrom("chase", 1.8); }
+        const q = driven && driven.root.position;
+        if (q) {
+          const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
+          wantYaw = Math.atan2(dx, dz);
+          if (d > POKE.chaseStop) {
+            const step = Math.min(d - POKE.chaseStop, speed * dt), nx = p.x + dx / d * step, nz = p.z + dz / d * step;
+            if (openAt(nx, nz) && HM.walkable(p.x, p.z, nx, nz, feet, RADIUS)) { p.x = nx; p.z = nz; feet = HM.supportAt(p.x, p.z, feet); stepping = true; }
+          }
+        }
+        if (chaseT <= 0 || !q) goTo(nextSpot(null));
       } else if (doing === "walk") {
         // On along her waypoints, turning to each, stopping short of the visitor's Ooga where it stands in her way.
         const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
@@ -443,7 +630,11 @@
           // Running at them, red, her fist up and shaking.
           face = H.redOpen;
           want.armLx = -2.5 + Math.sin(clock * 16) * 0.3; want.armLz = 0.35; want.foreLx = -0.8;
-        }
+        } else if (rampage) {
+          // Running to the next spot to smash, red, the hammer up over her head.
+          face = H.redOpen;
+          want.armRx = -2.6; want.armRz = -0.25; want.foreRx = -0.5; want.hamX = Math.PI - 0.5;
+        } else if (storming) face = H.redOpen;
       } else if (doing === "pace") {
         // Up and down a three-metre line, fast, head down, turning sharply at each end, muttering.
         speed = 2.2;
@@ -460,15 +651,18 @@
         if (doing === "yell" && driven) { visitorSpot.lx = driven.root.position.x; visitorSpot.lz = driven.root.position.z; visitorSpot.ly = feetAt(driven) + 1.6; }
         wantYaw = Math.atan2(spot.lx - p.x, spot.lz - p.z);
         const u = t / spot.dur, up = Math.atan2(spot.ly - feet - 1.75, Math.hypot(spot.lx - p.x, spot.lz - p.z));
-        if (doing === "fix") {
-          // Swinging the hammer up over her head and down onto the Jet, again and again, a breath between some.
+        if (doing === "fix" || doing === "smash") {
+          // Swinging the hammer up over her head and down onto the Jet, again and again, a breath between some; in her
+          // rampage faster, with no breath between, red.
+          const smash = doing === "smash";
+          swingLen = smash ? RAMPAGE.swing : SWING;
           swingT += dt;
-          if (swingT > SWING + (swings % 3 === 2 ? 0.7 : 0.1)) { swingT = 0; swings++; if (swings % 3 === 0) maybeSay("hammer", 0.45); }
-          swingNow = Math.min(1, swingT / SWING);
+          if (swingT > swingLen + (smash ? 0.05 : swings % 3 === 2 ? 0.7 : 0.1)) { swingT = 0; swings++; if (swings % 3 === 0) maybeSay(smash ? "smash" : "hammer", smash ? 0.7 : 0.45); }
+          swingNow = Math.min(1, swingT / swingLen);
           const height = Math.max(0, Math.min(1, (spot.ly - feet - 0.6) / 2.4));
           want.lean = 0.22 - height * 0.25; want.armLx = -0.5; want.armLz = 0.55; want.foreLx = -0.3; want.foreLz = 0;
           want.headX = -up * 0.6;
-          face = swings % 4 === 3 ? H.goggles : H.open;
+          face = smash ? H.redOpen : swings % 4 === 3 ? H.goggles : H.open;
         } else if (doing === "inspect") {
           // Goggles down, leaning in, pointing at it and tapping, a shake of the head now and then.
           face = H.goggles;
@@ -492,8 +686,14 @@
           face = H.redOpen;
           want.armLx = -2.4 + Math.sin(clock * 15) * 0.3; want.armLz = 0.35; want.foreLx = -0.7; want.foreLz = 0;
           want.armRx = -2.2; want.foreRx = -1.2; want.lean = -0.05; want.headX = -0.1;
+        } else if (doing === "glare" && storming) {
+          // Sulking by the door, red, her arms folded.
+          face = H.redOpen;
+          want.armLx = -1.25; want.armLz = -0.35; want.foreLx = -1.5; want.foreLz = 0.9;
+          want.armRx = -1.1; want.armRz = 0.3; want.foreRx = -1.5; want.foreRz = -0.9;
+          if (u > 0.5) maybeSay("mutter", 0.02);
         }
-        if (u >= 1) goTo(nextSpot(driven));
+        if (u >= 1) { storming = false; goTo(nextSpot(driven)); }
       }
       turnTo(wantYaw, dt);
       node.rotation.y = yaw;
@@ -531,11 +731,14 @@
         P.foreR.rotation.z = 0;
         P.hammer.rotation.x = Math.PI - 0.2;
         P.hammer.rotation.z = 0;
-        if (swingNow >= LAND && swingNow - dt / SWING < LAND) {
-          // Where the hammer lands: sparks off the Jet and the clang.
+        if (swingNow >= LAND && swingNow - dt / swingLen < LAND) {
+          // Where the hammer lands: sparks off the Jet and the clang, or in her rampage a smash.
           const hx = spot.lx + (rand() - 0.5) * 0.3, hy = spot.ly + (rand() - 0.5) * 0.2, hz = spot.lz + (rand() - 0.5) * 0.3;
-          for (let i = 0; i < 9; i++) fx.spawnParticle(SPARK, hx, hy, hz, (rand() - 0.5) * 5, 1 + rand() * 3.5, (rand() - 0.5) * 5, 0.4 + rand() * 0.4, 10, 7);
-          audio.clang(hx, hy, hz);
+          if (doing === "smash") smashHit(hx, hy, hz);
+          else {
+            for (let i = 0; i < 9; i++) fx.spawnParticle(SPARK, hx, hy, hz, (rand() - 0.5) * 5, 1 + rand() * 3.5, (rand() - 0.5) * 5, 0.4 + rand() * 0.4, 10, 7);
+            audio.clang(hx, hy, hz);
+          }
         }
       } else {
         P.armR.rotation.x = cur.armRx + breath * 0.02 + Math.abs(swing) * 0.08;
@@ -548,7 +751,7 @@
       P.torso.scale.y = 1 + breath * 0.012;
       k.root.rotation.x = cur.lean;
       k.root.rotation.z = cur.sway;
-      p.y = k.HIP + feet - cur.crouch + Math.abs(Math.sin(phase)) * moving * (run ? 0.07 : 0.035);
+      p.y = k.HIP + feet + hop - cur.crouch + Math.abs(Math.sin(phase)) * moving * (run ? 0.07 : 0.035);
       if (down > 0) {
         // Flat on her back from the hip, at her body's half depth off what she stands on.
         const e2 = down * down * (3 - 2 * down);
@@ -563,6 +766,22 @@
           smokeAt = 0.15;
           fx.puff(p.x + (rand() - 0.5) * 0.6, p.y + 0.3, p.z + (rand() - 0.5) * 0.6, (rand() - 0.5) * 0.2, 0.7 + rand() * 0.4, (rand() - 0.5) * 0.2, 1.4);
         }
+      }
+      // The Jet rocking from her blows, settling back; and its dents smoking and, freshly made, crackling.
+      if (jolt > 0) {
+        jolt = Math.max(0, jolt - dt * 3);
+        jet.rotation.z = JET_RZ + Math.sin(clock * 38) * 0.004 * jolt;
+        jet.rotation.x = JET_RX + Math.cos(clock * 31) * 0.0025 * jolt;
+      }
+      for (let i = 0; i < MARKS; i++) {
+        const m = marks[i];
+        if (m.life <= 0) continue;
+        m.life -= dt;
+        if ((m.puff -= dt) > 0) continue;
+        const k2 = m.life / MARK_LIFE;
+        m.puff = 0.18 + (1 - k2) * 0.6;
+        fx.puff(m.x + (rand() - 0.5) * 0.3, m.y, m.z + (rand() - 0.5) * 0.3, (rand() - 0.5) * 0.15, 0.5 + rand() * 0.4, (rand() - 0.5) * 0.15, 1.2 + k2);
+        if (k2 > 0.6 && rand() < 0.3) fx.spawnParticle(SPARK, m.x, m.y, m.z, (rand() - 0.5) * 2, 1 + rand() * 1.5, (rand() - 0.5) * 2, 0.35, 10, 7);
       }
       // Her head: glaring at whoever is near when she isn't busy looking at something, within its reach.
       let wantLook = 0;
@@ -591,16 +810,47 @@
     };
     // Her other faces, off the graph until she wears them, kept on the GPU.
     const liveGeometry = (set) => { for (const geo of Object.values(H)) set.add(geo); };
+    // Space beside her pokes her, the act button reading POKE.
+    const useNear = () => near && poke();
+    const actLabel = () => (near ? "POKE" : null);
+    // While she smashes the Jet, the tally of quick pokes at her feet: STOP HER! over a pip a poke, filled as they
+    // count, the last one filling as it drains away.
+    const overlay = (ctx, project) => {
+      if (!rampage) return;
+      const at = project(p.x, feet, p.z);
+      if (!at) return;
+      const w = RAMPAGE.stop * PIP + (RAMPAGE.stop - 1) * PIP_GAP, x0 = Math.round(at.x - w / 2), y0 = Math.round(at.y + 10);
+      ctx.save();
+      ctx.font = TALLY_FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "rgba(20, 14, 10, 0.78)";
+      ctx.fillRect(x0 - 6, y0 - 14, w + 12, PIP + 20);
+      ctx.fillStyle = "#ffcf5a";
+      ctx.fillText("STOP HER!", x0 + w / 2, y0 - 3);
+      for (let i = 0; i < RAMPAGE.stop; i++) {
+        const x = x0 + i * (PIP + PIP_GAP), fill = Math.max(0, Math.min(1, pips - i));
+        ctx.fillStyle = "#4a3a2c";
+        ctx.fillRect(x, y0 + 2, PIP, PIP);
+        if (fill > 0) {
+          ctx.fillStyle = "#ff5a3c";
+          ctx.fillRect(x, y0 + 2 + PIP * (1 - fill), PIP, PIP * fill);
+        }
+      }
+      ctx.restore();
+    };
     // For debugging: send her to a spot by name, or running at the visitor's Ooga, and what she is doing.
     const debug = {
       go: (name) => { const s = spots.find((q) => q.name === name); if (s) goTo(s); return !!s; },
       charge: () => { const s = !panicking && seen && visit(seen); if (s) goTo(s); return !!s; },
+      poke: () => poke(), rampage: () => { if (!panicking) startRampage(); return rampage; },
+      get anger() { return anger; }, get rampaging() { return rampage; }, get pips() { return pips; }, get storming() { return storming; }, get near() { return near; },
       get doing() { return doing; }, get panicking() { return panicking; }, get down() { return down; }, get spot() { return spot && spot.name; }, get spots() { return spots.map((s) => s.name); }, get path() { return pathN; },
       get position() { return { x: p.x, y: feet, z: p.z }; }, open: () => { let n = 0; for (let i = 0; i < M; i++) n += open[i]; return n; }
     };
     goTo(nextSpot(null));
 
-    return { node, body: P.torso, actor, update, liveGeometry, debug };
+    return { node, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; } };
   };
 
   BL.sis = { create };

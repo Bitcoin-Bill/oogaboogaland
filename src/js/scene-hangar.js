@@ -80,7 +80,7 @@
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
-    sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Someone has to fix this thing..."]
+    sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -484,6 +484,7 @@
         if (o.kind === "exit") return leaveHangar();
         if (o.kind === "stats" || o.kind === "timeline") return hud.openBoard(scene.boardViews[o.kind]);
         if (o.kind === "firetest" && scene.fire.near && scene.fire.press()) return;
+        if (o.kind === "sis" && scene.sis.near && scene.sis.poke()) return;
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -518,7 +519,7 @@
     targets.push(scene.fire.body);
     soundPanel = openSoundPanel();
     // Kortik's Sis, the hangar's chief engineer (`sis.js`).
-    scene.sis = BL.sis.create({ fx, audio, fire: scene.fire });
+    scene.sis = BL.sis.create({ fx, audio, fire: scene.fire, jet: scene.jet, toast: hud.toast });
     addChild(root, scene.sis.node);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);
@@ -539,7 +540,7 @@
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
       const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
-        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) };
+        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) || scene.sis.useNear() };
       shared.onModelChange = () => {
         if (!avatar) return;
         scene.gate.phase.body.refresh(avatar.root);
@@ -669,8 +670,8 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
-    // The act button's DON'T PRESS beside the static fire test's button.
-    const actLabel = drivenHere && s.fire.actLabel();
+    // The act button's DON'T PRESS beside the static fire test's button, and POKE beside Kortik's Sis.
+    const actLabel = drivenHere && (s.fire.actLabel() || s.sis.actLabel());
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     node.tick(dt);
@@ -711,6 +712,7 @@
   };
   const drawExtra = (ctx2d, project) => {
     remotes.drawNames(ctx2d, project);
+    scene.sis.overlay(ctx2d, project);
     scene.fire.overlay(ctx2d);
   };
   const overlay = (dt) => fx.drawOverlay(dt, drawExtra);
