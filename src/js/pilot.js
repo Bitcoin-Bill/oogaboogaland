@@ -4,6 +4,7 @@
   const { clamp, damp, mat4, quat } = BL.math;
   const { boundsOf, updateWorld } = BL.scene;
   const { create: createControls } = BL.controls;
+  const { BUTTON: PAD, state: pad } = BL.gamepad;
   const BASE_FOV = 48 * Math.PI / 180;
   const MAX_FOV = 64 * Math.PI / 180;
   const MIN_HFOV = 58 * Math.PI / 180;
@@ -2565,7 +2566,37 @@
       return true;
     };
     // Call before the crew moves: reads keys and sticks for this frame.
+    // A pad's triggers are the mouse's buttons: RT fires (held for auto in combat, V's shot outside it), LT aims down
+    // the sights (in bird's-eye it takes the shoulder, as right-click does). X is R, Y is G, B is F and View is X.
+    // Each press is acted on once; a trigger held when the pilot lets go of input is let go of with it.
+    let padFrame = -1, padFire = false, padAds = false;
+    const readPad = () => {
+      const live = active && !externalControl && !menuOpen;
+      if (padFire && (!live || !(pad.held & PAD.rt))) {
+        padFire = false;
+        weaponAction("weapon-primary-up");
+        crew.setWeaponTrigger(false);
+      }
+      if (padAds && (!live || !(pad.held & PAD.lt))) padAds = ads = false;
+      if (pad.frame === padFrame) return;
+      padFrame = pad.frame;
+      const cave = player();
+      if (!live || !pad.pressed || !cave) return;
+      if (pad.pressed & PAD.view && crew.weaponsEnabled) modeAction("mode-toggle");
+      if (pad.pressed & PAD.lt && armed()) {
+        if (birdsEye()) shooterView(true, renderer.size.width / 2, renderer.size.height / 2);
+        else padAds = ads = true;
+      }
+      if (pad.pressed & PAD.rt) {
+        if (!armed()) weaponAction("weapon-fire");
+        else padFire = weaponAction(cave.weapon.primaryEquipped ? "weapon-primary-down" : "weapon-fire", true);
+      }
+      if (pad.pressed & PAD.x && cave.weapon.equipped) weaponAction(ctx.reloadAnywhere ? "weapon-reload" : "magazine-swap");
+      if (pad.pressed & PAD.y) weaponAction("weapon-toggle");
+      if (pad.pressed & PAD.b && armed() && cave.weapon.equipped) weaponAction("weapon-bash");
+    };
     const readInput = (dt) => {
+      readPad();
       if (!active || externalControl || menuOpen) return;
       syncAim();
       const a = controls.read();
