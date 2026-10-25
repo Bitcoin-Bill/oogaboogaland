@@ -5697,30 +5697,56 @@ const hubWorkingArrival = { name: "hub working arrival", why: "regression: worki
 } };
 const hubLiveWake = { name: "hub live wake", why: "regression: live activity must clear HQ and basement mattresses before reuse, complete both exit walks, and return rainforest sleepers to the main level", run: async b => {
   const state = await b.evaluate(`(() => {
-    const B = __ooga, scene = BL.scenes.hub, sleepers = B.crew.list.filter(c => c !== B.pilot.player && !c.override && c.state === "sleeping" && c.bedroll && c.bedTravel.mode === "rest");
+    const B = __ooga, scene = BL.scenes.hub, now = Date.now(), day = 86400000, mattresses = B.headquarters.mattresses;
+    // The baked roster ages with the clock, so the sleepers are made here. Sani is the Sphere's resident, hidden in its
+    // ball whatever his activity says, so he is no rainforest walker. Activity is set directly and settled at once:
+    // applyActivity would hand it to the hub's listener, which walks new sleepers in from the pile.
+    const cast = B.crew.list.filter(c => c !== B.pilot.player && !c.override && c.traits.name !== "SaniExp");
+    const away = cast.filter(c => c.state === "away"), asleep = cast.filter(c => c.state === "sleeping").length;
+    const sleepAt = (c, at) => { c.contributor.lastCommitAt = c.contributor.lastContributionAt = at; };
+    // Every bed taken and two rainforest sleepers beyond them, then one more Ooga, kept away for now, to take a bed.
+    const seeded = away.slice(0, Math.max(0, mattresses.length + 2 - asleep)), nextSleeper = away[seeded.length];
+    if (!nextSleeper) return { missingNextSleeper: true };
+    seeded.forEach((c, i) => sleepAt(c, now - 3 * day - i * 60000));
+    B.crew.refreshStates(true);
+    const sleepers = cast.filter(c => c.state === "sleeping" && c.bedroll && c.bedTravel.mode === "rest");
     const hotpixelgroup = sleepers.find(c => c.traits.name === "hotpixelgroup" && !c.bedroll.outdoor);
     const hq = hotpixelgroup && !hotpixelgroup.bedroll.basement ? hotpixelgroup : sleepers.find(c => !c.bedroll.outdoor && !c.bedroll.basement);
     const basement = hotpixelgroup?.bedroll.basement ? hotpixelgroup : sleepers.find(c => c.bedroll.basement);
-    const rainforest = sleepers.filter(c => c.bedroll.outdoor).slice(0, 2), actors = [hq, basement, ...rainforest];
+    const rainforest = sleepers.filter(c => c.bedroll.outdoor).slice(0, 2), actors = [hq, basement, rainforest[0], rainforest[1]];
     if (actors.some(c => !c)) return { missing: actors.map(c => c?.traits.name || null) };
-    const beds = actors.map(c => c.bedroll), now = Date.now();
+    const beds = actors.map(c => c.bedroll);
     BL.contributors.applyActivity(actors.map((c, i) => ({ name: c.contributor.name,
       lastCommitAt: now - (i & 1 ? 8 * 3600000 : 30000), repo: "oogaboogax/entropylab" })));
     const started = actors.map((c, i) => {
-      const p = c.root.position, bed = beds[i], indoor = i < 2;
+      const p = c.root.position, bed = beds[i], indoor = i < 2, feet = p.y - c.baseY;
       return { name: c.traits.name, state: c.state, mode: c.bedTravel.mode,
         clear: c.root.visible && !c.root.quaternion && !c.bedroll && bed.sleeper !== c,
-        placed: indoor ? Math.hypot(p.x - bed.walkAt.x, p.z - bed.walkAt.z) < 1e-6 && Math.abs(p.y - c.baseY - bed.walkAt.y) < 1e-6
-          : p.y - c.baseY >= -1e-6 && B.island.surfaceAt(p.x, p.z) >= -1e-6 && !c.bedTravel.mode };
+        // A chilling Ooga may settle into a fire-pit seat, a little below the meadow; the HQ lies metres under it.
+        placed: indoor ? Math.hypot(p.x - bed.walkAt.x, p.z - bed.walkAt.z) < 1e-6 && Math.abs(feet - bed.walkAt.y) < 1e-6
+          : !c.bedTravel.mode && B.island.onLand(p.x, p.z) && feet > B.island.surfaceAt(p.x, p.z) - 0.5 };
     });
-    const nextSleeper = B.crew.list.find(c => c.state === "away" && c !== B.pilot.player);
-    if (!nextSleeper) return { started, missingNextSleeper: true };
-    nextSleeper.override = "sleeping";
+    // The next sleeper settles into a vacated bed while its waker still stands at the bed's side: the waker's walking
+    // body must stay off that mattress, then and for as long as it is still on the bed's floor.
+    sleepAt(nextSleeper, now - day - 3600000);
     B.crew.refreshStates(true);
+    const reuse = { name: nextSleeper.traits.name, bed: beds.indexOf(nextSleeper.bedroll), mode: nextSleeper.bedTravel.mode, samples: 0, clearance: Infinity };
+    const radius = B.headquarters.sleepNavigation.radius;
+    const watch = () => {
+      for (let i = 0; i < 2; i++) {
+        const bed = beds[i], c = actors[i], p = c.root.position, box = bed.collisionBoxes;
+        if (!bed.sleeper || bed.sleeper === c || bed.sleeper.bedTravel.mode !== "rest" || Math.abs(p.y - c.baseY - bed.y) > 1) continue;
+        const dx = p.x - bed.x, dz = p.z - bed.z, lx = dx * bed.cr - dz * bed.sr, lz = dx * bed.sr + dz * bed.cr;
+        reuse.samples++;
+        reuse.clearance = Math.min(reuse.clearance, Math.hypot(Math.max(box[0] - lx, 0, lx - box[3]), Math.max(box[2] - lz, 0, lz - box[5])));
+      }
+    };
+    watch();
     let time = B.renderOpts.matrix.time, frames = 0;
     while (actors[0].bedTravel.mode === "waiting" && frames++ < 600) {
       B.crew.update(1 / 30, time += 1 / 30);
       BL.scene.updateWorld(scene.root);
+      watch();
     }
     const worker = actors[0], route = worker.bedTravel, before = { ...worker.root.position }, savedIndex = route.index;
     if (route.mode !== "walk" || before.y - worker.baseY >= -1e-6) return { started, missingRoute: route.mode, feet: before.y - worker.baseY };
@@ -5735,19 +5761,19 @@ const hubLiveWake = { name: "hub live wake", why: "regression: live activity mus
       B.crew.update(1 / 30, time += 1 / 30);
       BL.scene.updateWorld(scene.root);
       B.headquarters.solids.props.sync();
+      watch();
     }
-    const arrived = actors.slice(0, 2).map(c => ({ name: c.traits.name, mode: c.bedTravel.mode,
+    // Arrival is the hand-over itself: out of the bed walk, on the meadow, in the waking state.
+    const arrived = actors.slice(0, 2).map(c => ({ name: c.traits.name, state: c.state, mode: c.bedTravel.mode, act: c.act.kind,
       feet: c.root.position.y - c.baseY, surface: B.island.surfaceAt(c.root.position.x, c.root.position.z) }));
-    const separate = beds.slice(0, 2).every((bed, i) => !bed.sleeper || bed.sleeper !== actors[i]
-      && Math.hypot(actors[i].root.position.x - bed.sleeper.root.position.x, actors[i].root.position.z - bed.sleeper.root.position.z)
-        >= actors[i].bodyRadius + bed.sleeper.bodyRadius);
-    return { started, arrived, heldUnderground, separate, frames, reused: beds.slice(0, 2).map(bed => bed.sleeper?.traits.name || null) };
+    return { started, arrived, heldUnderground, reuse, radius, frames, reused: beds.slice(0, 2).map(bed => bed.sleeper?.traits.name || null) };
   })()`);
   record("live wake: working and chilling Oogas exit HQ and basement without bed overlap, while rainforest sleepers return to the main level",
     state.started?.every((row, i) => row.clear && row.placed && row.state === (i & 1 ? "chilling" : "working")
       && (i < 2 ? row.mode === "waiting" || row.mode === "walk" : !row.mode))
-    && state.arrived?.every(row => row.feet >= -1e-6 && row.surface >= -1e-6) && state.heldUnderground
-    && state.separate && state.reused?.some(Boolean), JSON.stringify(state));
+    && state.arrived?.every((row, i) => !row.mode && row.state === (i ? "chilling" : "working") && row.feet >= -1e-6 && row.surface >= -1e-6)
+    && state.heldUnderground && state.reuse.bed >= 0 && state.reuse.mode === "rest" && state.reuse.samples > 0 && state.reuse.clearance >= state.radius - 1e-6,
+    JSON.stringify(state));
 } };
 // Away and back twice. The director's ?debug=1 leave contract throws inside advance on a broken leave,
 // and the second visit may hold no more GPU records, nodes, input targets or DOM than the first.
