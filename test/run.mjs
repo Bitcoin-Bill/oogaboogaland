@@ -8236,8 +8236,17 @@ const nextTo = (prop, gap, yaw = "-Math.PI / 2", pitch = 0.3) => `(() => {
 const removeWeaponTarget = `(() => { const B = __ooga, node = window.__target.owner.node; B.hud.tooltip.hide(); B.input.remove(node); BL.scene.removeChild(BL.scenes.hub.root, node); B.renderer.releaseGeometry(node.geometry); delete window.__target; })()`;
 // Attack regressions exercise the shared game capability explicitly. Keep companions
 // present for capture fixtures even though the ghost hunt normally sends them away.
+// Outbound-flight fixtures delay the arena wall through its production timing hook:
+// a raised ring correctly rejects every mainland throw beyond the arena.
 const gameCombat = step => ({ ...step, run: async b => {
-  await b.evaluate(`(() => { const B = __ooga; BL.scenes.hub.debug.setGameMode(true); B.clankers.setAway(false); })()`);
+  await b.evaluate(`(() => {
+    const B = __ooga, H = BL.scenes.hub.debug;
+    // Finish a preceding game's ring descent before baking new throw routes.
+    if (${!!step.outsideRing}) { H.setGameMode(false); B.advance(1, 1 / 60); }
+    H.setGameMode(true);
+    if (${!!step.outsideRing}) H.delayGameRing(Infinity);
+    B.clankers.setAway(false);
+  })()`);
   try { await step.run(b); }
   finally { await b.evaluate(`BL.scenes.hub.debug.setGameMode(false)`); }
 } });
@@ -8495,7 +8504,7 @@ const hubAk = { name: "hub ak", why: "regression: R did nothing unless the playe
   await b.evaluate(removeWeaponTarget);
 } };
 const JET_STATE = `(() => { const c = window.__ooga.crew.player, J = window.__ooga.jetpack; return { worn: !!c.jet, owned: J.owned, fuel: +c.jetFuel.toFixed(3), feet: +(c.root.position.y - c.baseY).toFixed(2), pickup: !!(J.pickup && J.pickup.host), toast: (document.getElementById("toast") || {}).textContent }; })()`;
-const hubJetpack = { name: "hub jetpack", why: "rule: every Ooga permanently owns a J-toggleable jetpack, fueled steering recovers from thrown momentum, and abyss respawns remove only loaded and spare AK ammo", run: async (b) => {
+const hubJetpack = { name: "hub jetpack", outsideRing: true, why: "rule: every Ooga permanently owns a J-toggleable jetpack, fueled steering recovers from thrown momentum, and abyss respawns remove only loaded and spare AK ammo", run: async (b) => {
   await b.evaluate(`(() => { const B = window.__ooga; B.pilot.navigate({ position: { x: -8, y: B.crew.player.root.position.y, z: 16 }, yaw: -Math.PI / 2, pitch: 0.3, dist: 5 }); B.advance(0.4, 1 / 60); })()`);
   await tapKey(b, "j");
   const off = await b.evaluate(JET_STATE);
@@ -8573,6 +8582,7 @@ const hubJetpack = { name: "hub jetpack", why: "rule: every Ooga permanently own
         if (c.grabbedBy === e) { held++; charged ||= e.capture.throwing && e.capture.charge === 1; }
       }
       if (!c.leap.thrown) return { dt, mode, selected, held, charged, launched: false, phase: e.rage.phase, blocked: e.capture.blocked,
+        map: { ready: BL.scenes.hub.debug.rageThrowMap.ready, homeSpots: BL.scenes.hub.debug.rageThrowMap.spots.filter(spot => spot.land === 1 && spot.valid).length },
         position: { x: e.root.position.x, y: e.root.position.y, z: e.root.position.z },
         victim: { x: c.root.position.x, y: c.root.position.y - c.baseY, z: c.root.position.z, grabbed: c.grabbedBy === e },
         goal: { x: e.rage.goalX, y: e.rage.goalY, z: e.rage.goalZ },
