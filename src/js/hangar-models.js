@@ -89,6 +89,12 @@
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
     kiosks: [[-6.9, 12.5, 0.7], [-6.9, -9, 0.7], [7.3, -3.2, -0.8, "jet"]],
+    // The film show the terminals start (`hangar-terminals.js`): the old projector's cradle hung from the second gantry
+    // in over the runway, as a cinema's over its seats, [x, y, z] of its deck, between the lanterns there and low enough
+    // that its reels clear the truss; and the roll-down screen hung from a gantry far down the runway facing the door,
+    // its roller's middle [x, y, z], under the lanterns there and clear of the hangar's sign seen from the door, with
+    // its cloth's width and how far it unrolls.
+    show: { projector: [2.75, 10.9, 14], screen: { x: 0, y: 9.8, z: -18, w: 8, drop: 4.6 } },
     toolChests: [[8.3, 0.4, -Math.PI / 2], [-16.2, 20.8, 0.4]],
     // Crates about the floor, [x, z, turn, stacked], and the blue floor lamps, [x, z].
     crates: [[-7.6, 12, 0.2, 2], [-8.5, 11.2, -0.3, 1], [-7.7, 3.4, 0.1, 1], [-7.8, -15.4, -0.2, 2], [-8.7, -16, 0.4, 1], [-7.6, -24, 0.3, 1],
@@ -1356,6 +1362,118 @@
     return geo;
   };
 
+  // ---- the film show ------------------------------------------------------------------------------------------------
+
+  // The old projector the terminals run, a cinema's in the hangar's colours, aimed at the screen's picture. Its cradle in
+  // the hangar's frame (`cradle`): a timber deck hung on four rods from its gantry's bottom chord, railed all round, the
+  // pedestal on it and two film cans beside. The head in its own frame, its pivot on the pedestal's top at the origin
+  // and its lens toward -z (`head`): the enamelled body on its base plate with chrome trim and the operator's door, a
+  // chimney off its lamp, the lens barrel in front with its focus knob, the reels' arms, and the film running down from
+  // the feed reel into the gate and up out of it to the take-up; its glow (`glow`): the lamp's vents down both sides,
+  // the lens's glass and the pilot lamp; and one reel, built about x, which the head carries at `REELS` (y, z) and the
+  // show turns. `at` and `turn` stand the head on the pedestal turned and tipped toward the picture's middle, and `lens`
+  // is where the light leaves it, in the hangar's frame. All of it is `size` times its own measures, so it reads across
+  // the hall; the head's node carries that as its scale.
+  const PROJECTOR = { size: 1.8, pivot: 0.62, lens: [0, 0.3, -0.69], reels: [[0.9, -0.2], [0.9, 0.44]], reel: 0.3 };
+  const FILM = { body: "#2f3d38", trim: "#c9ced4", lamp: "#ffb347", glass: "#fff1c8", reel: "#aeb4ba", film: "#3a2a1c", cloth: "#e9e4d8" };
+  const projector = cached(() => {
+    const P = PROJECTOR, S = P.size, [px, py, pz] = LAYOUT.show.projector, chord = LAYOUT.gantryY - 0.66, cradle = [], head = [], glow = [];
+    // The cradle: the deck, the iron under it, the rods up to the chord, the rail and the pedestal.
+    const ex = 0.74 * S, ez = 0.68 * S;
+    cradle.push(bevelBox({ w: 1.6 * S, h: 0.12, d: 1.5 * S, color: TIMBER, bevel: 0.03, offset: { x: px, y: py - 0.06, z: pz } }));
+    for (const dz of [-0.6, 0.6]) cradle.push(box({ w: 1.7 * S, h: 0.1, d: 0.12, color: IRON_DK, offset: { x: px, y: py - 0.17, z: pz + dz * S } }));
+    for (const dx of [-ex, ex]) for (const dz of [-ez, ez]) {
+      cradle.push(box({ w: 0.07, h: chord - py, d: 0.07, color: IRON_DK, offset: { x: px + dx, y: (chord + py) / 2, z: pz + dz } }));
+    }
+    for (const [ax, az, bx, bz] of [[-ex, -ez, ex, -ez], [ex, -ez, ex, ez], [ex, ez, -ex, ez], [-ex, ez, -ex, -ez]]) {
+      cradle.push(beam(px + ax, py + 0.55 * S, pz + az, px + bx, py + 0.55 * S, pz + bz, 0.06, IRON));
+    }
+    const pv = P.pivot * S;
+    cradle.push(moved(lathe({ profile: [[0, 0], [0.18 * S, 0], [0.18 * S, 0.04 * S], [0.06 * S, 0.06 * S], [0.06 * S, pv - 0.04 * S], [0.09 * S, pv - 0.02 * S], [0.09 * S, pv], [0, pv]], segments: 12, color: IRON_DK }), px, py, pz + 0.05 * S));
+    for (const [k, h] of [[0, 0], [1, 0.05]]) cradle.push(moved(lathe({ profile: [[0, 0], [0.19 * S, 0], [0.19 * S, 0.045 * S], [0, 0.045 * S]], segments: 14, color: k ? "#8d949c" : "#6e757d" }), px + 0.48 * S, py + h * S, pz + 0.42 * S));
+    // The head: the base plate, the body with its trim, door and knob, and the chimney off the lamp.
+    head.push(box({ w: 0.44, h: 0.05, d: 1.0, color: IRON_DK, offset: { y: 0.025, z: 0.08 } }));
+    head.push(bevelBox({ w: 0.36, h: 0.5, d: 0.94, color: FILM.body, bevel: 0.03, offset: { y: 0.3, z: 0.09 } }));
+    for (const sx of [-1, 1]) head.push(box({ w: 0.01, h: 0.03, d: 0.9, color: FILM.trim, offset: { x: sx * 0.182, y: 0.09, z: 0.09 } }));
+    head.push(box({ w: 0.012, h: 0.32, d: 0.36, color: "#3a4a44", offset: { x: 0.184, y: 0.32, z: -0.12 } }), box({ w: 0.03, h: 0.04, d: 0.04, color: FILM.trim, offset: { x: 0.2, y: 0.32, z: -0.26 } }));
+    head.push(moved(lathe({ profile: [[0, 0], [0.05, 0], [0.05, 0.22], [0.075, 0.22], [0.075, 0.25], [0, 0.25]], segments: 10, color: IRON_DK }), 0.11, 0.55, 0.36));
+    // The lens barrel, its rims and its focus knob.
+    head.push(moved(forwardLathe(lathe({ profile: [[0, 0], [0.078, 0], [0.078, -0.04], [0.07, -0.05], [0.07, -0.24], [0.084, -0.25], [0.084, -0.31], [0, -0.31]], segments: 14, color: FILM.trim })), 0, P.lens[1], -0.38));
+    head.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.025, 0], [0.025, 0.05], [0, 0.05]], segments: 8, color: IRON_DK }), -Math.PI / 2), 0.07, P.lens[1], -0.52));
+    // The reels' arms, the spindles and the film's path through the gate.
+    for (const [ry, rz] of P.reels) {
+      head.push(beam(-0.07, 0.54, rz, -0.07, ry, rz, 0.045, IRON_DK));
+      head.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.025, 0], [0.025, 0.1], [0, 0.1]], segments: 8, color: FILM.trim }), -Math.PI / 2), -0.08, ry, rz));
+    }
+    head.push(beam(0, P.reels[0][0] - 0.2, P.reels[0][1] - 0.13, 0, 0.55, -0.3, 0.012, FILM.film), beam(0, 0.55, 0.3, 0, P.reels[1][0] - 0.2, P.reels[1][1] - 0.1, 0.012, FILM.film));
+    // The glow: four vents down each side, the lens's glass and the pilot lamp.
+    for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) glow.push(box({ w: 0.01, h: 0.024, d: 0.26, color: FILM.lamp, emissive: 1, offset: { x: sx * 0.182, y: 0.2 + k * 0.07, z: 0.38 } }));
+    glow.push(moved(forwardLathe(lathe({ profile: [[0, 0], [0.064, 0], [0.064, -0.006], [0, -0.006]], segments: 14, color: FILM.glass, emissive: 1 })), 0, P.lens[1], P.lens[2]));
+    glow.push(box({ w: 0.012, h: 0.03, d: 0.03, color: "#ff5a3a", emissive: 1, offset: { x: 0.19, y: 0.48, z: -0.3 } }));
+    // One reel about x: its two flanges with dark windows, the film wound on its core and the hub.
+    const reel = [], r = P.reel;
+    for (const sx of [-1, 1]) {
+      reel.push(moved(turnedZ(lathe({ profile: [[0, -0.005], [r, -0.005], [r, 0.005], [0, 0.005]], segments: 20, color: FILM.reel }), -Math.PI / 2), sx * 0.035, 0, 0));
+      for (let k = 0; k < 3; k++) {
+        const a = k * TAU / 3;
+        reel.push(moved(turnedX(box({ w: 0.008, h: 0.1, d: 0.11, color: "#16181b" }), a), sx * 0.041, Math.cos(a) * r * 0.62, Math.sin(a) * r * 0.62));
+      }
+    }
+    reel.push(turnedZ(lathe({ profile: [[0, -0.03], [r * 0.66, -0.03], [r * 0.66, 0.03], [0, 0.03]], segments: 18, color: FILM.film }), -Math.PI / 2));
+    reel.push(turnedZ(lathe({ profile: [[0, -0.05], [0.04, -0.05], [0.04, 0.05], [0, 0.05]], segments: 10, color: FILM.trim }), -Math.PI / 2));
+    // Turned toward the picture's middle and tipped down to it, from the pivot.
+    const pic = filmScreen().picture, at = { x: px, y: py + pv, z: pz + 0.05 * S };
+    const dx = pic.x - at.x, dy = pic.y - at.y - P.lens[1] * S, dz = pic.z - at.z, yaw = Math.atan2(-dx, -dz), tip = Math.atan2(dy, Math.hypot(dx, dz));
+    const [lx, ly, lz] = P.lens.map((v) => v * S), cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tip), st = Math.sin(tip);
+    const ty = ly * ct - lz * st, tz = ly * st + lz * ct;
+    return {
+      cradle: merge(...cradle), head: merge(...head), glow: noShadow(merge(...glow)), reel: merge(...reel), reels: P.reels, scale: S,
+      at, turn: { x: tip, y: yaw, z: 0 }, lens: { x: at.x + lx * cy + tz * sy, y: at.y + ty, z: at.z - lx * sy + tz * cy }
+    };
+  });
+
+  // The roll-down screen over the runway, facing the door: its roller in a case hung on two rods from the gantry's
+  // bottom chord (`frame`, in the hangar's frame); its cloth a metre long hanging from the origin, matte white with black
+  // bands down its sides, which the show stands under the case and stretches as it unrolls (`cloth`, from `top`); and
+  // the weighted batten along its foot with the pull ring, which goes down with it (`batten`). `picture` is where the
+  // film's picture falls on the cloth unrolled, its middle a little in front of it, and its width and height.
+  const filmScreen = cached(() => {
+    const S = LAYOUT.show.screen, chord = LAYOUT.gantryY - 0.66, frame = [], cloth = [], batten = [], w = S.w;
+    frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.17, 0], [0.17, w + 0.5], [0, w + 0.5]], segments: 12, color: IRON_DK }), -Math.PI / 2), S.x - w / 2 - 0.25, S.y, S.z));
+    for (const sx of [-1, 1]) {
+      frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.2, 0], [0.2, 0.06], [0, 0.06]], segments: 12, color: FILM.trim }), -Math.PI / 2), S.x + sx * (w / 2 + 0.28) - 0.03, S.y, S.z));
+      frame.push(box({ w: 0.05, h: chord - S.y - 0.15, d: 0.05, color: IRON_DK, offset: { x: S.x + sx * (w / 2 - 0.1), y: (chord + S.y + 0.15) / 2, z: S.z } }));
+    }
+    cloth.push(box({ w: w - 0.36, h: 1, d: 0.02, color: FILM.cloth, offset: { y: -0.5 } }));
+    for (const sx of [-1, 1]) cloth.push(box({ w: 0.18, h: 1, d: 0.02, color: INK, offset: { x: sx * (w / 2 - 0.09), y: -0.5 } }));
+    batten.push(box({ w: w + 0.12, h: 0.08, d: 0.08, color: IRON_DK, offset: { y: -0.04 } }));
+    batten.push(box({ w: 0.012, h: 0.24, d: 0.012, color: "#c8b48a", offset: { y: -0.2, z: 0.05 } }), moved(turnedX(torus(0.045, 0.01, FILM.trim, 0, 12, 6), Math.PI / 2), 0, -0.36, 0.05));
+    const top = S.y - 0.17, ph = (w - 0.4) * 9 / 16;
+    return { frame: merge(...frame), cloth: merge(...cloth), batten: merge(...batten), top, picture: { x: S.x, y: top - S.drop / 2, z: S.z + 0.04, w: w - 0.4, h: ph } };
+  });
+
+  // The projector's beam, through the hall's dust from the lens to the picture's corners: a long frustum of glass, its
+  // faces in lengths so the Canvas 2D renderer fades it too, brightest at the lens and fading toward the screen, built
+  // along +x from `position` and turned by `rotation` onto the line to the picture's middle.
+  const projectorBeam = cached(() => {
+    const L = projector().lens, P = filmScreen().picture, dx = P.x - L.x, dy = P.y - L.y, dz = P.z - L.z, len = Math.hypot(dx, dy, dz);
+    const th = Math.asin(dy / len), ph = Math.atan2(-dz, dx), ct = Math.cos(th), st = Math.sin(th), cp = Math.cos(ph), sp = Math.sin(ph);
+    const ax = [ct * cp, st, -ct * sp], ay = [-st * cp, ct, st * sp], az = [sp, 0, cp];
+    const far = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => {
+      const cx = P.x + u * P.w / 2 - L.x, cy = P.y + v * P.h / 2 - L.y, cz = P.z - 0.02 - L.z;
+      return [cx * ax[0] + cy * ax[1] + cz * ax[2], cx * ay[0] + cy * ay[1] + cz * ay[2], cx * az[0] + cy * az[1] + cz * az[2]];
+    });
+    const g = models.geometry(), color = math.hexToRgb("#fff0c4"), lit = { emissive: 1 }, n = 8, rings = [];
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, s = 0.012 + t * 0.988;
+      rings.push(far.map(([x, y, z]) => models.pushVert(g, x * t, y * s, z * s)));
+    }
+    for (let k = 0; k < n; k++) for (let e = 0; e < 4; e++) models.face(g, [rings[k][e], rings[k + 1][e], rings[k + 1][(e + 1) % 4], rings[k][(e + 1) % 4]], color, lit);
+    g.glass = 0.075;
+    g.lightBeam = len * 1.6;
+    return { geometry: noShadow(g), position: { x: L.x, y: L.y, z: L.z }, rotation: { x: 0, y: ph, z: th } };
+  });
+
   // ---- the hangar's light, and the hangar through the Factory's door ----------------------------------------------
 
   // The hangar's fixed point lights, most important first, [x, y, z, radius, r, g, b] each: the door's shield in the
@@ -1648,7 +1766,7 @@
 
   BL.hangarModels = {
     LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
-    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast,
+    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, projector, filmScreen, projectorBeam,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))
