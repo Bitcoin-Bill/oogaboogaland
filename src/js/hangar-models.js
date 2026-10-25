@@ -6,10 +6,10 @@
 // timber catwalks run along both side walls on brackets, a stair up to each from the back. On the right, in the
 // hall's wider half, the Jet stands docked beside the runway, nose to the tunnel, inside its striped bay: a timber
 // gangway runs along its left flank at the cockpit's sill, bridging the wing, with a long stair down from behind the
-// wing toward the runway; trestles stand under its wings and a step platform behind an engine. On the left the crew's workstations stand in rows, their screens glowing blue, and on the
-// wall above them the two boards, the repository's stats right after the door and its timeline farther in. Crates,
-// lantern posts, blue floor lamps and terminals on stands line the runway. The Jet itself is `jet-models.js`'s; the
-// boards' faces and the crew are the scene's.
+// wing toward the runway; trestles stand under its wings. On the left the crew's workstations stand in rows, their
+// screens glowing blue, and on the wall above them the two boards, the repository's stats right after the door and
+// its timeline farther in. Crates, lantern posts, blue floor lamps and terminals on stands line the runway. The Jet
+// itself is `jet-models.js`'s; the boards' faces and the crew are the scene's.
 //
 // `LAYOUT` is the one table of where everything stands, read by the scene too. The hangar's frame: +z runs back out
 // through the door to the hall, x to the right looking in, y 0 the floor. `supportAt`, `clearAt` and `walkable` are the
@@ -59,9 +59,8 @@
     bay: [5.6, 25.2, -29.6, 6.6],
     gangway: { x: 11.075, y: 5, w: 2.65, decks: [[-21, -13.6, true], [-13.6, -6.2, false], [-6.2, -4.6, true]] },
     jetStairs: [10.6, 0, 3.4, 10.6, 5, -4.6, 1.6],
-    // Trestles under the wings, [x, z], and the step platform behind the left engine, [x, z, top].
+    // Trestles under the wings, [x, z].
     trestles: [[8, -8.9], [22, -8.9]],
-    engineStand: [13, 5.8, 2.2],
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
@@ -773,8 +772,8 @@
 
   // The dock's timber: the gangway up the Jet's left flank, its decks on braced posts in front of the wing and behind
   // it and the span between on two stringers over the wing, railed along its outer edge and across both ends but where
-  // the stair comes up, and open along the fuselage; the stair; the trestles under the wings, each a braced pair of
-  // legs under a padded cradle; and the step platform behind the left engine.
+  // the stair comes up, and open along the fuselage; the stair; and the trestles under the wings, each a braced pair
+  // of legs under a padded cradle.
   const dock = cached(() => {
     const L = LAYOUT, g = L.gangway, [sx, , sz0, , sy1, sz1, sw] = L.jetStairs, geos = [], last = g.decks.length - 1;
     g.decks.forEach(([z0, z1, posts], i) => {
@@ -795,9 +794,6 @@
       geos.push(beam(x - 0.55, 1.6, z - 0.6, x + 0.55, 1.6, z + 0.6, 0.1, TIMBER), beam(x + 0.55, 1.6, z - 0.6, x - 0.55, 1.6, z + 0.6, 0.1, TIMBER));
       geos.push(bevelBox({ w: 0.7, h: 0.22, d: 1.5, color: TIMBER_LT, bevel: 0.04, offset: { x, y: top - 0.11, z } }), box({ w: 0.6, h: 0.06, d: 1.4, color: "#2b2b2b", offset: { x, y: top + 0.02, z } }));
     }
-    const [ex, ez, et] = L.engineStand;
-    placed(geos, deckParts(1.6, 1.4, et, "nwe", 43), ex, et, ez);
-    geos.push(...stairParts(ex, 0, ez + 3.4, ex, et, ez + 0.7, 1.1, [true, false]));
     return merge(...geos);
   });
 
@@ -931,8 +927,6 @@
     const j = L.jet;
     for (const [x0, x1, z0, z1, from, to] of JM.BOXES) block(j.x + x0, j.x + x1, j.z + z0, j.z + z1, from, to);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
-    const [ex, ez, et] = L.engineStand;
-    block(ex - 0.8, ex + 0.8, ez - 0.7, ez + 3.6, -1, et + 0.4);
     // The gap behind each board, where a head would meet its lower edge.
     for (const b of Object.values(L.boards)) block(HALL.x0, b.x + 0.35, b.z - b.w * b.scale / 2, b.z + b.w * b.scale / 2, -1, 2.2);
     // The workstations, the terminals, the tool chests, the crates and the floor lamps.
