@@ -19917,13 +19917,42 @@ const walletsChecks = BL => {
   // The Chora's chain: three set down together go off as one, a distant fourth waits, and the Ooga close by is knocked back.
   for(const d of T.list())T.detonate(d.slot);run(.1);T.cool();
   const cluster=T.spawn(3,flat.x,flat.z),distant=T.spawn(1,flat.x+12,flat.z);Object.assign(A.root.position,{x:flat.x-1.5,y:ground(flat.x-1.5,flat.z)+A.baseY,z:flat.z});A.hopV=0;
-  const stamp=T.stats();T.detonate(cluster[0]);const after=T.stats(),flash=new Float32Array(8),lit=sys.flashLight(flash,0);
-  record("Wallets chain: three devices set down together in the Chora go off as one blast, a distant one waits, the Ooga close by hops back, and the flash lights one slot",cluster.length===3&&after.walletBlasts===stamp.walletBlasts+1&&after.walletsChained-stamp.walletsChained===3&&after.wallets===1&&T.list()[0].slot===distant[0]&&A.hopV>2&&lit&&flash[4]>0,JSON.stringify({stamp,after,hop:A.hopV}));
+  // Nobody is hurt: the blast never calls crew.damage, combat on or off.
+  let hurt=0;const damage=Wd.crew.damage;Wd.crew.damage=(...args)=>{hurt++;return damage(...args);};
+  const stamp=T.stats();T.detonate(cluster[0]);const after=T.stats(),flash=new Float32Array(8),lit=sys.flashLight(flash,0);Wd.crew.damage=damage;
+  record("Wallets chain: three devices set down together in the Chora go off as one blast, a distant one waits, the Ooga close by hops back unhurt, and the flash lights one slot",cluster.length===3&&after.walletBlasts===stamp.walletBlasts+1&&after.walletsChained-stamp.walletsChained===3&&after.wallets===1&&T.list()[0].slot===distant[0]&&A.hopV>2&&hurt===0&&lit&&flash[4]>0,JSON.stringify({stamp,after,hop:A.hopV,hurt}));
   // Held too long: it goes off in the Ooga's hands, blackens it and says so.
   T.detonate(distant[0]);T.cool();run(.1);sys.take(0);T.timer(.05);run(.2);
   record("Wallets fuse: one held at zero blows up in the Ooga's hands, soots it and says Rekt",T.stats().wallets===0&&A.camp.scorch.every(k=>k===1)&&toasts.at(-1)==="Rekt",JSON.stringify(toasts.slice(-2)));
   for(let k=0;k<W.SCORCH_CAP+6;k++){T.cool();T.spawn(1,flat.x+(k%5)*3,flat.z+Math.floor(k/5)*3);T.timer(.05);run(.1);}
   record("Wallets pools: scorches, fireballs and devices stay within their fixed caps",T.stats().scorches<=W.SCORCH_CAP&&T.stats().fireballs<=4&&T.spawn(W.BOMB_CAP+4,flat.x,flat.z+20).length===W.BOMB_CAP&&targets.size===W.BOMB_CAP,JSON.stringify(T.stats()));
+  // Seated (the Studio's and Maxis's seats): a carried device rests on the lap without forcing the raised-arms pose,
+  // and a blast in the hands soots the Ooga but leaves it in its seat, with no hop.
+  for(const d of T.list())T.detonate(d.slot);T.cool();run(.1);
+  const seat={x:A.root.position.x,z:A.root.position.z};A.camp.seat=seat;A.catchT=0;A.hopV=0;A.camp.scorch.fill(0);sys.take(1);run(.2);
+  const lap=T.list()[0],arms=A.catchT,overHead=lap.y>A.root.position.y-A.baseY+A.bodyHeight;T.timer(.05);run(.1);
+  const seated=A.camp.seat===seat&&A.hopV===0&&A.camp.scorch.every(k=>k===1);A.camp.seat=null;
+  record("Wallets seats: a device carried to a seat rests on the lap and leaves the seated pose alone, and its blast soots the seated Ooga without a hop",arms===0&&!overHead&&lap.state==="carried"&&seated,JSON.stringify({arms,lap,hop:A.hopV,seated}));
+  // The overlay draws nothing, and sets nothing on the canvas, while no device is out.
+  let touched=0;const ctx2d=new Proxy({},{get:(o,k)=>typeof k==="string"&&/Text$/.test(k)?()=>{touched++;}:o[k],set:(o,k,v)=>{touched++;o[k]=v;return true;}});
+  sys.drawOverlay(ctx2d,()=>({x:0,y:0}));const idle=touched;T.cool();sys.take(0);run(.05);sys.drawOverlay(ctx2d,()=>({x:0,y:0}));const busy=touched;T.detonate();run(.05);
+  record("Wallets overlay: with no device out it returns before touching the canvas",idle===0&&busy>0,JSON.stringify({idle,busy}));
+  // The sound's context runs only while a device is out (and a boom rings on), the sound is on and the tab is shown.
+  const calls=[],saved={AudioContext:globalThis.AudioContext,add:document.addEventListener,remove:document.removeEventListener,hidden:document.hidden};let heard=null,unheard=null,mute=false;
+  const param=()=>({value:0,cancelScheduledValues(){},setValueAtTime(){},exponentialRampToValueAtTime(){}}),node=extra=>({connect(){},start(){},...extra});
+  globalThis.AudioContext=class{constructor(){this.state="running";this.currentTime=0;this.sampleRate=8000;this.destination={};}createGain(){return node({gain:param()});}createOscillator(){return node({frequency:param()});}
+    createBuffer(c,l){return {getChannelData:()=>new Float32Array(l)};}createBufferSource(){return node({});}createBiquadFilter(){return node({frequency:param()});}
+    resume(){this.state="running";calls.push("resume");return Promise.resolve();}suspend(){this.state="suspended";calls.push("suspend");return Promise.resolve();}close(){calls.push("close");return Promise.resolve();}};
+  document.addEventListener=(k,f)=>{if(k==="visibilitychange")heard=f;};document.removeEventListener=(k,f)=>{if(k==="visibilitychange"&&f===heard)unheard=f;};document.hidden=false;
+  try{
+    const sound=W.create({root:Wd.root,crew:Wd.crew,fx,hud:{toast:noop},groundAt:ground,bounds:()=>null,addTarget:noop,removeTarget:noop,pickGeometry:BL.walletsRoom.PICK,muted:()=>mute}),S2=sound.debug,go=sec=>{for(let t=0;t<sec;t+=.05)sound.update(.05,t,0);};
+    sound.take(0);go(.1);const playing=S2.stats().walletAudio===1&&S2.stats().walletAudible===1;
+    mute=true;go(.1);const muted=S2.stats().walletAudible===0&&calls.at(-1)==="suspend";mute=false;go(.1);const unmuted=S2.stats().walletAudible===1&&calls.at(-1)==="resume";
+    document.hidden=true;heard();const hiddenOff=S2.stats().walletAudible===0&&calls.at(-1)==="suspend";go(.1);const stays=calls.at(-1)==="suspend";document.hidden=false;heard();const shown=calls.at(-1)==="resume";
+    S2.detonate();go(.5);const ringing=S2.stats().walletAudible===1;go(3);const idle2=S2.stats().wallets===0&&S2.stats().walletAudible===0&&calls.at(-1)==="suspend";
+    sound.dispose();const closed=calls.at(-1)==="close"&&unheard===heard;
+    record("Wallets sound: the context runs only while a device is out or a boom rings on, the sound is on and the tab is shown, and leaving closes it and its visibility handler",playing&&muted&&unmuted&&hiddenOff&&stays&&shown&&ringing&&idle2&&closed,JSON.stringify({playing,muted,unmuted,hiddenOff,stays,shown,ringing,idle2,closed,calls}));
+  }finally{globalThis.AudioContext=saved.AudioContext;document.addEventListener=saved.add;document.removeEventListener=saved.remove;document.hidden=saved.hidden;}
   sys.dispose();const left=Wd.root.children.length;I.dispose();Wd.dispose();
   record("Wallets disposal: every batch and pick target leaves with the visit",targets.size===0&&left===children,JSON.stringify({targets:targets.size,left,children}));
   // The kit's and the devices' meshes join the builder caches that leaving DSB Land drops.
@@ -22669,8 +22698,9 @@ scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adop
   await rescueClick(b,".rescue-menu button[data-close]");await rescueStep(b);const back=await b.evaluate("__ooga.dsb.rescue.menu.isOpen");
   record("Rescue phone: signed out in debug, a tap on Adopt a puppy opens the adoption form, and Back closes it",button.text==="Adopt a puppy"&&!button.hidden&&rescueOffered(tapped)&&!back,JSON.stringify({button,tapped,back}));
 }},phone("rescue",{play:`${RESCUE_SIGN_IN};for(let i=0;i<4;i++)BL.scenes.dsb.update(1/60,i/60);__ooga.dsb.rescue.open()`,required:['.rescue-menu button[data-breed="0"]','.rescue-menu button[data-breed="5"]',".rescue-menu input",".rescue-menu button[data-adopt]"]})]});
-// Free Hardware Wallets at VAC 2, played with real keys and clicks, in two short sessions so each stays well inside its two minutes.
-const walletsStep=(b,n=36)=>b.evaluate(`for(let i=0;i<${n};i++)BL.scenes.dsb.update(1/60,i/60)`);
+// Free Hardware Wallets at VAC 2, played with real keys and clicks: one desktop session and one phone session.
+// n sixtieths of a second of play, in updates of a twentieth: a DSB update costs tens of milliseconds on a software renderer.
+const walletsStep=(b,n=36)=>b.evaluate(`for(let i=0;i<${Math.ceil(n/3)};i++)BL.scenes.dsb.update(1/20,i/20)`);
 // A dialog control the way a visitor reaches it: scrolled into view first, then clicked where it shows.
 const walletsClick=async(b,sel)=>{const r=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await b.click(r.x,r.y);};
 const walletsTap=async(b,x,y,z)=>{const p=await b.evaluate(`__ooga.project(${x},${y},${z},{})`);await b.click(p.x,p.y);};
@@ -22683,8 +22713,8 @@ const WALLETS_SPOT=`(()=>{const D=__ooga.dsb,I=D.interiors,p=D.avatar.root.posit
     if(Math.abs(D.groundAt(x+.6,z)-y)>.03||Math.abs(D.groundAt(x,z+.6)-y)>.03||Math.abs(D.groundAt(x,z,y+.5)-y)>.01)continue;
     if(I.active?I.walkable(x,z,x,z,0,1,{bodyRadius:.7}):D.land.clearAt(x,z,.7))return {x,y,z};}
   return null;})()`;
-const walletsUntil=(b,cond)=>b.evaluate(`(()=>{for(let i=0;i<40&&!(${cond});i++)for(let k=0;k<6;k++)BL.scenes.dsb.update(1/60,k/60);return !!(${cond});})()`);
-scene("dsb",{label:"wallets checkpoint",query:"&view=wallets-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets checkpoint",why:"playthrough: VAC 2's real door enters Free Hardware Wallets, Space at the machine offers ClownCard and Rektdger by picture and name alone, Take hands one over with its countdown line and the keys, a floor click sets it down exactly there, and Y throws the next",run:async b=>{
+const walletsUntil=(b,cond)=>b.evaluate(`(()=>{for(let i=0;i<40&&!(${cond});i++)for(let k=0;k<2;k++)BL.scenes.dsb.update(1/20,k/20);return !!(${cond});})()`);
+scene("dsb",{label:"wallets",query:"&view=wallets-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets",why:"playthrough: VAC 2's real door enters Free Hardware Wallets, Space at the machine offers ClownCard and Rektdger by picture and name alone, Take hands one over with its countdown line and the keys, a floor click sets it down exactly there, Y throws the next; out in the Chora a carried device stays in hand, a ground click sets it down, devices together go off as one bigger blast and one left in the store goes off unseen; carried into the Studio's and Maxis's seats it rests on the lap and its blast leaves the Ooga seated",run:async b=>{
   await walletsStep(b);await b.key(" ");await walletsStep(b);
   const entry=await b.evaluate('(()=>{const D=__ooga.dsb,V=D.vacancies.resolve(2);return {id:D.interiors.active?.room.id,text:V.text,status:V.address.status,exterior:D.exterior.visible};})()');
   record("Wallets browser: Space at VAC 2's door enters Free Hardware Wallets",entry.id==="free-wallets"&&entry.text==="Free Hardware Wallets"&&entry.status==="occupied"&&!entry.exterior,JSON.stringify(entry));
@@ -22701,13 +22731,9 @@ scene("dsb",{label:"wallets checkpoint",query:"&view=wallets-door&weather=clear&
   await walletsClick(b,'.wallets-pick[data-wallet="1"]');await walletsClick(b,".wallets-take");await walletsStep(b,6);await b.key("y");
   const thrown=await b.evaluate('(()=>{const D=__ooga.dsb,flying=D.wallets.list().some(d=>d.state==="flying");for(let i=0;i<120;i++)BL.scenes.dsb.update(1/60,i/60);const R=D.interiors.active.room.bounds;return {flying,list:D.wallets.list().map(d=>d.look+":"+d.state).join(),inside:D.wallets.list().every(d=>d.x>=R.minX&&d.x<=R.maxX&&d.z>=R.minZ&&d.z<=R.maxZ),held:D.wallets.stats().walletsHeld};})()');
   record("Wallets browser: Y throws the ClownCard taken next, which lands inside the store beside the first",thrown.flying&&thrown.list==="rektdger:dropped,clowncard:dropped"&&thrown.inside&&thrown.held===0,JSON.stringify(thrown));
-  await b.evaluate('window.__oldWallets=__ooga.dsb.walletsMenu;__ooga.go("dsb",null,true);__ooga.advance(.05)');
-  record("Wallets browser: leaving DSB removes the machine's dialog, its handlers and the old carry line, and leaves no device",await b.evaluate('__oldWallets.stats.disposed&&!document.querySelector(".wallets-menu")&&document.querySelectorAll(".wallet-carry").length===1&&BL.dsbMenuShell.count===0&&__ooga.dsb.wallets.stats().wallets===0'));
-}}]});
-// Out in the Chora: carried through the door, set down with a click, thrown with Y, and three together go off as one blast.
-scene("dsb",{label:"wallets chora",query:"&view=wallets-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets chora",why:"playthrough: a device carried out of the store stays in the Ooga's hands, a ground click sets it down in the Chora, Y throws another, devices set down together go off as one bigger blast with its flash, and one left in the store goes off unseen",run:async b=>{
-  await walletsStep(b);await b.key(" ");await walletsStep(b);
-  await b.evaluate('(()=>{const D=__ooga.dsb;__ooga.pilot.navigate(D.interiors.active.room.reviews["wallets-machine"]);D.takeWallet(1);D.wallets.setDown(-1.5,-3);D.wallets.cool();D.takeWallet(0);__ooga.pilot.navigate({position:D.interiors.active.room.exit,yaw:Math.PI,pitch:.12,dist:3});})()');
+  // The Chora, in a block of its own names. The two lying in the store go off first, so it starts with none out.
+  {
+  await b.evaluate('(()=>{const D=__ooga.dsb;for(const d of D.wallets.list())D.wallets.detonate(d.slot);D.wallets.cool();__ooga.pilot.navigate(D.interiors.active.room.reviews["wallets-machine"]);D.takeWallet(1);D.wallets.setDown(-1.5,-3);D.wallets.cool();D.takeWallet(0);__ooga.pilot.navigate({position:D.interiors.active.room.exit,yaw:Math.PI,pitch:.12,dist:3});})()');
   await walletsStep(b);await b.key(" ");await walletsStep(b);
   const out=await b.evaluate('(()=>{const D=__ooga.dsb,l=D.wallets.list();return {inside:!!D.interiors.active,held:D.wallets.stats().walletsHeld,carried:l.find(d=>d.state==="carried")?.space,store:l.find(d=>d.state==="dropped")?.space,line:D.walletLine};})()');
   record("Wallets browser: walked out of the door the Ooga still holds its device, and the one left in the store stays there",!out.inside&&out.held===1&&out.carried===0&&out.store>0&&/^Carrying Rektdger/.test(out.line),JSON.stringify(out));
@@ -22724,16 +22750,32 @@ scene("dsb",{label:"wallets chora",query:"&view=wallets-door&weather=clear&time=
   record("Wallets browser: Y throws a device in the Chora, where it lands and lies ticking",thrown.flying&&thrown.dropped===2,JSON.stringify(thrown));
   const blast=await b.evaluate(`(()=>{const D=__ooga.dsb,first=D.wallets.list()[0];D.wallets.spawn(2,first.x+.6,first.z+.4);const before=D.wallets.stats(),lights=__ooga.renderOpts.lightCount;D.wallets.timer(.05,first.slot);for(let i=0;i<6;i++)BL.scenes.dsb.update(1/60,i/60);const after=D.wallets.stats();return {blasts:after.walletBlasts-before.walletBlasts,chained:after.walletsChained-before.walletsChained,left:after.wallets,fireballs:after.fireballs,scorches:after.scorches,lights,lit:__ooga.renderOpts.lightCount};})()`);
   record("Wallets browser: devices lying together in the Chora go off as one bigger blast with a fireball, a scorch and a flash among the point lights",blast.blasts===1&&blast.chained>=3&&blast.fireballs===1&&blast.scorches>=1&&blast.lit===Math.min(blast.lights+1,32),JSON.stringify(blast));
+  }
+  // Seat rooms: a device carried to a seat in the Studio and in Maxis rests on the lap, Space seats the Ooga as ever,
+  // and a blast in its hands soots it where it sits, with no hop out of the seat.
+  for(const [room,k] of [["dsb-studio",19],["maxis-club",34]]){
+    const sat=await b.evaluate(`(()=>{const D=__ooga.dsb;for(const d of D.wallets.list())D.wallets.detonate(d.slot);
+      // Out of the room the Ooga is in first: a review link enters a room only from outside.
+      if(D.interiors.active){D.interiors.request(D.interiors.active.room.exit);for(let i=0;i<60&&(D.interiors.transitioning||D.interiors.active);i++)BL.scenes.dsb.update(1/15,i/15);}
+      D.interiors.review("${room}",true);for(let i=0;i<60&&(D.interiors.transitioning||D.interiors.active?.room.id!=="${room}");i++)BL.scenes.dsb.update(1/15,i/15);
+      const seat=D.interiors.active.room.seats[${k}];__ooga.pilot.navigate({position:{x:seat.walkAt.x,y:seat.floor,z:seat.walkAt.z},yaw:0,pitch:.12,dist:3});D.wallets.cool();D.takeWallet(1);for(let i=0;i<4;i++)BL.scenes.dsb.update(1/15,i/15);return D.interiors.active.room.id;})()`);
+    await b.key(" ");await walletsStep(b,12);
+    const lap=await b.evaluate('(()=>{const D=__ooga.dsb,A=D.avatar,d=D.wallets.list()[0];for(let i=0;i<6;i++)BL.scenes.dsb.update(1/15,i/15);return {seated:!!A.camp.seat,state:d?.state,arms:A.catchT,lap:d?d.y<A.root.position.y-A.baseY+A.bodyHeight:false};})()');
+    const blast=await b.evaluate('(()=>{const D=__ooga.dsb,A=D.avatar;A.hopV=0;D.wallets.timer(.05);for(let i=0;i<6;i++)BL.scenes.dsb.update(1/15,i/15);return {seated:!!A.camp.seat,hop:A.hopV,soot:A.camp.scorch.every(k=>k>.5),left:D.wallets.stats().wallets};})()');
+    await b.key(" ");await walletsStep(b,12);
+    record(`Wallets browser: in ${room==="dsb-studio"?"the Studio":"Maxis"} a carried device goes along to a seat, rests on the lap without forcing the raised arms, and its blast soots the seated Ooga without a hop out of the seat`,sat===room&&lap.seated&&lap.state==="carried"&&lap.arms<1&&lap.lap&&blast.seated&&blast.hop<=0&&blast.soot&&blast.left===0,JSON.stringify({sat,lap,blast}));
+  }
+  await b.evaluate('window.__oldWallets=__ooga.dsb.walletsMenu;__ooga.go("dsb",null,true);__ooga.advance(.05)');
+  record("Wallets browser: leaving DSB removes the machine's dialog, its handlers and the old carry line, and leaves no device",await b.evaluate('__oldWallets.stats.disposed&&!document.querySelector(".wallets-menu")&&document.querySelectorAll(".wallet-carry").length===1&&BL.dsbMenuShell.count===0&&__ooga.dsb.wallets.stats().wallets===0'));
 }}]});
-// On a phone: the machine's two pictures and Take, then the carry line with its Throw button beside the sticks.
+// On a phone, in one session: the machine's two pictures and Take, then the carry line with its Throw button beside the sticks.
 const walletsPhoneCarrying={name:"wallets phone carrying",why:"rule: every scene is readable and playable on a phone, nothing clipped and every control under a thumb",run:async b=>{
   await b.evaluate('(()=>{const D=__ooga.dsb;D.walletsMenu.close();D.takeWallet(1);__ooga.advance(1,1/60);})()');
   const bad=await b.evaluate(PHONE(["#joy-move","#joy-look",".wallet-carry .wallet-throw"]));
   await walletsClick(b,".wallet-carry .wallet-throw");const thrown=await b.evaluate('__ooga.dsb.wallets.list().some(d=>d.state==="flying")');
   record("wallets phone carrying: the carry line and its Throw button sit on screen under a thumb beside the sticks, nothing clipped, and a tap on Throw throws",bad.length===0&&thrown,JSON.stringify({bad,thrown}));
 }};
-scene("dsb",{label:"wallets phone dialog",query:"&interior=free-wallets&view=wallets-dialog&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[phone("wallets",{play:'__ooga.dsb.walletsMenu.isOpen||__ooga.dsb.walletsMenu.open()',required:['.wallets-pick[data-wallet="1"]','.wallets-pick[data-wallet="0"]',".wallets-take"]})]});
-scene("dsb",{label:"wallets phone carrying",query:"&interior=free-wallets&view=wallets-machine&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[walletsPhoneCarrying]});
+scene("dsb",{label:"wallets phone",query:"&interior=free-wallets&view=wallets-dialog&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[phone("wallets",{play:'__ooga.dsb.walletsMenu.isOpen||__ooga.dsb.walletsMenu.open()',required:['.wallets-pick[data-wallet="1"]','.wallets-pick[data-wallet="0"]',".wallets-take"]}),walletsPhoneCarrying]});
 // Review measures settled WebGL views, not the opening curtain's CSS animation.
 // Keep the driver's reduced-motion default: software compositing can delay the
 // full curtain past readiness even on the approved pre-merge build.

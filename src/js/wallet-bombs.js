@@ -5,8 +5,9 @@
 // over it, sets it down where the visitor taps the ground (`setDown`), picks a set-down one up again (tap it) and throws
 // it in a short arc (the Throw button, or Y); one still held at zero blows up in its hands, knocks it back and blackens
 // it with soot for a few seconds. A blast sets off every other live device within `CHAIN_RADIUS` in the same frame,
-// chained, and the merged blast grows with their number (`blastOf`): it knocks the Ooga back and leaves a scorch mark
-// that fades. Nobody dies; the joke is that free hardware wallets are never a gift.
+// chained, and the merged blast grows with their number (`blastOf`): it knocks the Ooga back (not one in a seat, which
+// stays seated, its device on its lap) and leaves a scorch mark that fades. Nobody is hurt and nobody dies; the joke is
+// that free hardware wallets are never a gift.
 //
 // Every device and scorch lives in one space: the Chora (0), or a room by the scene's own number. The scene says each
 // frame which space the visitor stands in (`update`'s `here`); one carried goes with its Ooga, and the rest are drawn
@@ -16,8 +17,9 @@
 // Fixed pools throughout: `BOMB_CAP` devices in typed arrays, one instanced batch a look (screen and LED glow ride the
 // instance's glow) and one of soft glowing rings under the devices on the ground, `SCORCH_CAP` scorch marks in a ring,
 // `FIREBALL_CAP` fireballs. The labels are prebuilt strings, the beep and boom two pooled synthesized voices on one
-// AudioContext opened only after a gesture and silent while DSB is muted. The frame loop writes `instanceData` in place
-// and allocates nothing. No camera shake (the camera moves only on input): the blast is a flash of point light,
+// AudioContext opened only after a gesture and suspended while no device is out (once the last boom has rung out), DSB
+// is muted or the tab is hidden. The frame loop writes `instanceData` in place and allocates nothing; the overlay
+// returns at once while no device is out. No camera shake (the camera moves only on input): the blast is a flash of point light,
 // particles from the fx pool, smoke and the boom.
 (() => {
   "use strict";
@@ -27,6 +29,8 @@
   const CHAIN_RADIUS = 2.5, BASE_RADIUS = 2.2, BASE_POWER = 2, POWER_CAP = 8;
   // A lob from over the head carries about three and a half metres, bounce included.
   const GRAVITY = 9.8, THROW_SPEED = 3.2, THROW_LIFT = 2.6, FLASH_SECONDS = 0.35, SCORCH_SECONDS = 25;
+  // The sound keeps running this long after the last device is gone, so the last boom rings out.
+  const TAIL = 2.5;
   // Drawn this much larger than the models, so they read across a lane; a name shows over a device nearer the
   // driven Ooga than NAME_NEAR, and one is picked up from PICK_REACH.
   const SCALE = 1.6, NAME_NEAR = 4, PICK_REACH = 2.5;
@@ -175,8 +179,17 @@
       picks.push(node);
     }
     const DEBRIS = [BL.models.particleGeometry("#ff8a1f", 0.07, 1), BL.models.particleGeometry("#ffd66b", 0.06, 1), BL.models.particleGeometry("#3d3d44", 0.07, 0), BL.models.particleGeometry("#efe6cc", 0.05, 0)];
-    // Sound: one beep and one boom voice, synthesized, opened after a gesture, silent while DSB is muted.
-    let audio = null;
+    // Sound: one beep and one boom voice, synthesized, opened after a gesture. The context runs only while a device is
+    // out (and a boom rings on, TAIL seconds), DSB's sound is on and the tab is shown; otherwise it is suspended.
+    let audio = null, audible = false, tail = 0, out = 0;
+    const hear = (on) => {
+      if (!audio || on === audible) return;
+      audible = on;
+      if (on) audio.ctx.resume().catch(() => {});
+      else audio.ctx.suspend().catch(() => {});
+    };
+    const onVisibility = () => hear(!document.hidden && (out > 0 || tail > 0) && !muted());
+    document.addEventListener("visibilitychange", onVisibility);
     const openAudio = () => {
       if (audio || muted() || typeof AudioContext === "undefined" || navigator.userActivation && !navigator.userActivation.hasBeenActive) return !!audio;
       const ctx = new AudioContext(), master = ctx.createGain();
@@ -202,11 +215,12 @@
       boom.connect(master);
       noise.start();
       audio = { ctx, beep: beep.gain, boom: boom.gain };
+      audible = ctx.state === "running";
       return true;
     };
     const cue = (gain, level, attack, length) => {
-      if (!openAudio() || muted()) return;
-      if (audio.ctx.state === "suspended") audio.ctx.resume().catch(() => {});
+      if (!openAudio() || muted() || document.hidden) return;
+      hear(true);
       const t = audio.ctx.currentTime;
       gain.cancelScheduledValues(t);
       gain.setValueAtTime(0.0001, t);
@@ -325,23 +339,23 @@
       fire[f] = x; fire[f + 1] = y + 0.35; fire[f + 2] = z; fire[f + 3] = 0; fire[f + 4] = radius;
       fx.burst(x, y + 0.2, z, Math.min(48, 14 + n * 6), DEBRIS, 3 + Math.sqrt(n));
       for (let k = 0; k < Math.min(12, 4 + n * 2); k++) fx.puff(x + (Math.random() - 0.5) * radius * 0.5, y + 0.3, z + (Math.random() - 0.5) * radius * 0.5, (Math.random() - 0.5) * 1.2, 0.8 + Math.random(), (Math.random() - 0.5) * 1.2, 1.6 + Math.random());
-      // Oogas in reach are knocked back with a hop; the one holding it is also blackened with soot.
+      // Oogas in reach are knocked back with a hop, but for one sitting, who stays in its seat; the one holding it is
+      // also blackened with soot. Nobody is hurt.
       for (const cave of crew.list) {
         if (!cave.root.visible || cave.health.stunned) continue;
         const p = cave.root.position, dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
         if (d > radius && cave !== victim) continue;
         const k = cave === victim ? 1 : 1 - d / radius, away = d > 0.01 ? 1 / d : 0;
-        cave.hopV = Math.max(cave.hopV, 2.4 + 2 * k);
+        if (!cave.camp.seat) cave.hopV = Math.max(cave.hopV, 2.4 + 2 * k);
         // Only the driven Ooga's hop carries sideways momentum (crew.js moves it).
-        if (cave === crew.player) { cave.leap.vx = dx * away * 2.5 * k; cave.leap.vz = dz * away * 2.5 * k; }
-        crew.damage(cave, 0.5 * power * k);
+        if (cave === crew.player && !cave.camp.seat) { cave.leap.vx = dx * away * 2.5 * k; cave.leap.vz = dz * away * 2.5 * k; }
         if (cave === victim) crew.soot(cave, 5);
         else fx.say(cave, "OOGA?!", 1.2);
       }
       if (victim) hud.toast("Rekt");
       else if (n > 1) hud.toast(`${n} free wallets went off together. BOOM!`);
       shake = 0.4;
-      if (audio) cue(audio.boom, Math.min(1, 0.55 + n * 0.12), 0.01, 1.1 + Math.min(1, n * 0.15));
+      if (audio) { tail = TAIL; cue(audio.boom, Math.min(1, 0.55 + n * 0.12), 0.01, 1.1 + Math.min(1, n * 0.15)); }
       return n;
     };
     // `at` is the visitor's space: 0 for the Chora, else the scene's number for the room.
@@ -349,8 +363,10 @@
       here = at;
       if (cooldown > 0) cooldown -= dt;
       if (shake > 0) shake = Math.max(0, shake - dt);
+      if (tail > 0) tail = Math.max(0, tail - dt);
       cursor.fill(0);
       let nearest = Infinity, rings = 0;
+      out = 0;
       for (let i = 0; i < BOMB_CAP; i++) {
         if (state[i] === FREE) continue;
         if ((timer[i] -= dt) <= 0) {
@@ -362,6 +378,11 @@
           space[i] = here;
           if (!cave.root.visible || cave.health.stunned || cave !== crew.player) {
             state[i] = FLYING; carriers[i] = null; vx[i] = vz[i] = 0; vy[i] = 1;
+          } else if (cave.camp.seat) {
+            // Seated, it rests on the Ooga's lap and the arms keep the seated pose.
+            const p = cave.root.position, h = cave.root.rotation.y;
+            px[i] = p.x + Math.sin(h) * 0.28; pz[i] = p.z + Math.cos(h) * 0.28;
+            py[i] = p.y - cave.baseY + cave.bodyHeight * 0.42; yaw[i] = h + Math.PI / 2; roll[i] = 0;
           } else {
             // Held up in both hands over the head, in plain sight from every side; the arms stay raised to it
             // while it is held (the catch pose, which settles back on its own once it is gone).
@@ -375,6 +396,7 @@
           if (picks[i].visible) picks[i].visible = false;
           continue;
         }
+        out++;
         if (timer[i] < nearest) nearest = timer[i];
         if (state[i] === FLYING) {
           vy[i] -= GRAVITY * dt;
@@ -415,8 +437,9 @@
       halos.instanceCount = rings;
       halos.visible = rings > 0;
       if (rings) halos.instanceVersion++;
+      hear((out > 0 || tail > 0) && !muted() && !document.hidden);
       // The nearest fuse beeps, in the same steps as the blinking: louder and quicker under ten seconds and under five.
-      if (audio && nearest < Infinity && (beepIn -= dt) <= 0) {
+      if (audible && nearest < Infinity && (beepIn -= dt) <= 0) {
         beepIn = nearest < 5 ? 0.14 : nearest < 10 ? 0.4 : 0.9;
         cue(audio.beep, nearest < 5 ? 0.45 : nearest < 10 ? 0.35 : 0.18, 0.004, 0.06);
       }
@@ -460,6 +483,7 @@
     // Over each device in view its seconds, white, red from ten down, with its name over the held one and over any on
     // the ground near the driven Ooga; the labels jitter a moment after a blast.
     const drawOverlay = (ctx, project) => {
+      if (!out) return;
       ctx.font = "bold 18px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.lineWidth = 3;
@@ -487,14 +511,15 @@
       carriers.fill(null);
       picks.length = 0;
       flash.t = 0;
+      document.removeEventListener("visibilitychange", onVisibility);
       if (audio) audio.ctx.close().catch(() => {});
-      audio = null;
+      audio = null; audible = false;
     };
     const stats = () => {
       let wallets = 0, inHand = 0, placed = 0, marks = 0;
       for (let i = 0; i < BOMB_CAP; i++) if (state[i] !== FREE) { wallets++; if (state[i] === CARRIED) inHand++; if (state[i] === DROPPED) placed++; }
       for (let s = 0; s < SCORCH_CAP; s++) if (scorchAge[s] < SCORCH_SECONDS) marks++;
-      return { wallets, walletsHeld: inHand, walletsPlaced: placed, walletBlasts: blasts, walletsChained: chained, scorches: marks, fireballs: fireballs.instanceCount, walletAudio: audio ? 1 : 0 };
+      return { wallets, walletsHeld: inHand, walletsPlaced: placed, walletBlasts: blasts, walletsChained: chained, scorches: marks, fireballs: fireballs.instanceCount, walletAudio: audio ? 1 : 0, walletAudible: audible ? 1 : 0 };
     };
     const debug = {
       stats, take, refusal, throwCarried, setDown, tap, held, detonate: (i = -1) => {
