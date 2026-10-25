@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'sha256-ZL8aDdlQysP5K9fBnGAg1rRsw/VV58pwmsgWDUuYJSA=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    content="default-src 'none'; script-src 'sha256-PAdfuIVJsY4jw/2pHHlkIrtKGKrTC/O3LE+CiogtnxY=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a0b">
@@ -10265,7 +10265,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           </div>
         </div>
         <div class="garage-foot">
-          <p class="help" id="block-help">F lifts, stacks and sets crates (click throws one) · Tab passes the block · W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view</p>
+          <p class="help" id="block-help">R or right click switches weapon · click throws · W S run · A D turn · Space jumps, twice to climb · Shift sprints · Tab passes · F lifts crates · B new crate · C crouch · V view</p>
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
@@ -10289,7 +10289,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
         <button type="button" data-tool="grenade" aria-pressed="false"><kbd>2</kbd>Grenade <b>3</b></button>
         <button type="button" data-tool="rocket" aria-pressed="false"><kbd>3</kbd>Rocket <b>1</b></button>
         <button type="button" data-tool="net" aria-pressed="false"><kbd>4</kbd>Net <b>3</b></button>
-        <button type="button" data-tool="crate" class="block-tool-crate"><kbd>R</kbd>Crate <b>3</b></button>
+        <button type="button" data-tool="crate" class="block-tool-crate"><kbd>B</kbd>Crate <b>3</b></button>
         <button type="button" data-tool="grab" class="block-tool-crate" aria-pressed="false"><kbd>F</kbd>Lift</button>
         <button type="button" data-tool="pass" class="block-tool-pass" disabled><kbd>Tab</kbd>Pass</button>
       </div>
@@ -10319,7 +10319,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3a8dff" d="M4 0h1v1H4zM3 1h3v1H3zM2 2h5v1H2zM1 3h7v1H1z" /><path fill="#8a8178" d="M2 4h5v5H2z" /><path fill="#f7931a" d="M4 6h1v3H4z" /></svg><b>Yours must be home</b><small>You only score while your own block sits on its stand.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or Enter throws. A splatted carrier drops the block.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Double jump</b><small data-coarse="Jump twice to reach rooftops, huts and the fort walls.">Space twice reaches rooftops, huts and the fort walls.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Tools and crates</b><small data-coarse="Grenades, rockets and nets refill on your stand. Crates wall your fort.">Grenades, rockets and nets refill on your stand. R drops crates to wall your fort.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Tools and crates</b><small data-coarse="Grenades, rockets and nets refill on your stand. Crates wall your fort.">Grenades, rockets and nets refill on your stand. B drops crates to wall your fort.</small></li>
         </ul>
         <div class="actions">
           <button type="button" class="game-intro-go" data-action="intro-go">Play!</button>
@@ -34527,140 +34527,6 @@ void main() {
         k.parts.jetFlame = createNode({ geometry: voxelGeometry(flameVox(), { unit: u, palette: FLAME_PALETTE, origin: { x: -4.5 * u, y: 0, z: -u }, emissive: FLAME_GLOW }), visible: false });
         addChild(k.parts.jetpack, k.parts.jetFlame);
         addChild(k.root, k.parts.jetpack);
-      }
-    }
-  });
-})();
-
-// ---- characters/Bitcoin-Bill.js ----
-// Bitclank Bill, Bitcoin Bill of Bitcoin Guide (bitcoinguide.app): salt-and-pepper hair swept back under a frayed beach straw hat,
-// a full beard going grey at the chin, and glowing orange laser eyes. A tie-dye tank in blue and green with
-// a cord necklace and an orange coin, and his chihuahua at his heel wherever he goes, painted up like an alebrije in
-// violet, orange and turquoise.
-(() => {
-  "use strict";
-  const BL = window.BL;
-  const { makeVox } = BL.models;
-  const { createNode, addChild } = BL.scene;
-  const ORANGE = "#ff9a1f", ORANGE_CORE = "#fff1c4";
-  const STRAW = ["#d8c08a", "#c4a768", "#e8d7a8"], BAND = "#7a5a3a";
-  const DYE = ["#2f8fd8", "#3fc6b5", "#7fd36a", "#1f6fb0", "#56b8e8"];
-  // The chihuahua at his heel, painted as an alebrije, in its own voxel grid facing +z with its paws at y 0: legs,
-  // a red-brown body with violet, orange and turquoise flowers, a cream chest, a head with big pink-lined ears, dark
-  // eyes and nose, a collar of blue beads, and a tail curled up over its back.
-  const dogVox = (k) => {
-    const v = makeVox(), c = (hex) => k.color(hex);
-    const coat = c("#8a4a2e"), coatDk = c("#6e3a24"), violet = c("#7a3fd0"), flower = c("#ff7a2a"), teal = c("#3fd8e0");
-    const cream = c("#f0d2a8"), pink = c("#f28ab0"), black = c("#15100c"), bead = c("#5ab8ff"), fur = k.jit(coat, coatDk, 0.2);
-    for (const [x, z] of [[-1, 1], [1, 1], [-1, -3], [1, -3]]) { v.fill(x, x, 1, 2, z, z, fur); v.set(x, 0, z, cream); }
-    v.fill(-1, 1, 3, 5, -3, 2, fur);
-    v.fill(-1, 1, 3, 4, 2, 2, cream);
-    for (const [x, y, z, ink] of [[1, 5, 0, violet], [-1, 4, -1, flower], [1, 4, -2, teal], [0, 5, -2, flower], [-1, 5, 1, violet], [1, 3, 1, flower], [-1, 3, -3, teal]]) v.set(x, y, z, ink);
-    v.fill(-1, 1, 6, 8, 2, 4, fur);
-    v.fill(-1, 1, 6, 6, 2, 2, bead);
-    v.set(0, 8, 4, flower); v.set(-1, 8, 3, violet); v.set(1, 8, 3, violet);
-    v.set(-1, 7, 4, black); v.set(1, 7, 4, black);
-    v.set(0, 6, 5, cream); v.set(0, 7, 5, cream); v.set(0, 7, 6, black);
-    for (const x of [-1, 1]) { v.set(x, 9, 3, coat); v.set(x, 10, 3, coat); v.set(x, 9, 4, pink); }
-    v.set(0, 6, -3, coat); v.set(0, 7, -3, coatDk); v.set(0, 8, -2, teal);
-    return v;
-  };
-  // The straw hat in the head's voxel grid: a domed crown with a dark band, and a wide brim that droops at its rim and
-  // trails ragged strands. Built once a page for each build kit, from the kit's own random draws.
-  const hatVox = (k) => {
-    // The crown sits over the hair's whole footprint (x -1 to 7, z -1 to 6), so no cell doubles a hair cell.
-    const v = makeVox(), colors = STRAW.map((c) => k.color(c)), band = k.color(BAND), pick = () => colors[Math.floor(k.rand() * colors.length)];
-    for (let y = 9; y <= 12; y++) {
-      const inset = y >= 12 ? 1 : 0;
-      v.fill(-1 + inset, 7 - inset, y, y, -1 + inset, 6 - inset, y === 10 ? band : pick);
-    }
-    const cx = 3, cz = 2.5;
-    for (let x = -6; x <= 12; x++) for (let z = -6; z <= 11; z++) {
-      const d = Math.hypot(x - cx, z - cz);
-      if (d > 8.2 || (x >= -1 && x <= 7 && z >= -1 && z <= 6)) continue;
-      const rim = d > 6.8;
-      v.set(x, rim ? 8 : 9, z, pick());
-      // Strands hanging from the rim, one or two cells long, but none across the front, where they'd hide his eyes.
-      if (rim && k.rand() < 0.3 && !(z > 7 && Math.abs(x - cx) < 4.5)) {
-        v.set(x, 7, z, pick());
-        if (k.rand() < 0.4) v.set(x, 6, z, pick());
-      }
-    }
-    return v;
-  };
-  BL.characters.add({
-    handle: "Bitcoin-Bill",
-    github: "Bitcoin-Bill",
-    display: "Bitclank Bill",
-    joined: 1792943472,
-    lastCommit: 1792943472,
-    look: {
-      face: "beard", noPupils: true, height: 1.04, hatY: 13,
-      skin: "#d99a74", hair: "#3b3430", fur: "#a97f52",
-      portrait: { min: [-1, -2, 0], max: [7, 6, 8] }
-    },
-    voice: {
-      poke: "Bitcoin the easy way!",
-      idle: [
-        "Roll the dice, make the seed.",
-        "Not your keys, not your coconuts.",
-        "Read the white paper. Then read it again.",
-        "Laser eyes on. Stack sats.",
-        "Hold on tight, little dog.",
-        "Proof of work, not proof of talk."
-      ]
-    },
-    dress: {
-      // The tie-dye tank: a spiral of blue, teal and green rings over the chest, bare shoulders and a scoop neck, and a
-      // cord necklace with an orange coin.
-      torso(k, v) {
-        const dye = DYE.map((c) => k.color(c)), skin = k.skinJ, cord = k.color("#2a2018"), coin = k.color("#f7931a");
-        v.fill(1, 7, 3, 7, 1, 4, (x, y) => dye[(Math.round(Math.hypot(x - 4, y - 5) * 1.3) + (k.rand() < 0.15 ? 1 : 0)) % dye.length]);
-        v.fill(1, 1, 7, 7, 1, 4, skin);
-        v.fill(7, 7, 7, 7, 1, 4, skin);
-        v.fill(3, 5, 6, 7, 4, 4, skin);
-        v.set(4, 5, 4, skin);
-        v.set(3, 6, 4, cord); v.set(5, 6, 4, cord); v.set(4, 5, 4, cord);
-        v.set(4, 4, 4, coin);
-      },
-      // Salt and pepper: grey through the sides and back of the hair.
-      crown(k, v) {
-        const grey = k.color("#8b8279"), silver = k.color("#b3aba1");
-        for (let y = 2; y <= 8; y++) for (let z = -1; z <= 6; z++) for (const x of [-1, 7]) {
-          if (v.has(x, y, z) && k.rand() < 0.35) v.set(x, y, z, k.rand() < 0.5 ? grey : silver);
-        }
-        for (let x = 0; x <= 6; x++) for (let y = 2; y <= 8; y++) if (v.has(x, y, -1) && k.rand() < 0.25) v.set(x, y, -1, grey);
-      },
-      // Laser eyes: both glowing Bitcoin orange, each with a white-hot core.
-      eyes(k, v) {
-        const o = k.color(ORANGE), oc = k.color(ORANGE_CORE);
-        for (const [x0, ring, core] of [[0, o, oc], [5, o, oc]]) {
-          for (let x = x0; x <= x0 + 1; x++) for (let y = 2; y <= 3; y++) {
-            v.set(x, y, 5, ring);
-            k.eyeCells.push([x, y]);
-          }
-          v.set(x0 + (x0 ? 0 : 1), 3, 5, core);
-        }
-        k.headEmissive = { [o]: 1, [oc]: 1.4 };
-        return true;
-      },
-      // The beard greys toward the chin: dark through the moustache and cheeks, silver at the bottom.
-      mark(k, v) {
-        const dark = k.color("#3f3732"), mid = k.color("#857c72"), silver = k.color("#c9c3b9"), skip = new Set([k.P.nose, k.P.white, k.P.skin, k.P.skinDk]);
-        for (let x = 0; x <= 6; x++) for (let y = -2; y <= 1; y++) for (let z = 5; z <= 7; z++) {
-          if (!v.has(x, y, z) || skip.has(v.get(x, y, z))) continue;
-          const r = k.rand();
-          v.set(x, y, z, y <= -1 ? (r < 0.7 ? silver : mid) : y === 0 ? (r < 0.4 ? silver : r < 0.75 ? mid : dark) : (r < 0.6 ? dark : mid));
-        }
-      },
-      headgear(k) {
-        addChild(k.parts.head, createNode({ geometry: k.vg(hatVox(k), { x: -3.5 * k.u, y: 0, z: -3 * k.u }) }));
-      },
-      // The chihuahua trots along at his heel, a little behind and to his left, wherever he goes.
-      extras(k) {
-        const s = 0.7, h = k.h;
-        k.parts.dog = createNode({ position: { x: 0.55 * h, y: -5 * k.u, z: -0.25 * h }, scale: { x: s, y: s, z: s }, geometry: k.vg(dogVox(k), { x: -0.5 * k.u, y: 0, z: -0.5 * k.u }) });
-        addChild(k.root, k.parts.dog);
       }
     }
   });
@@ -129635,8 +129501,8 @@ void main() {
 // their stands, at a carrier's back or lying where they fell, pooled crates, throws and splats, the weather (a wind
 // sign, rain and lightning in a storm), and a chase camera behind the visitor's Ooga that the mouse drag, Q E or the
 // look stick turns. W A S D run toward where the camera looks, Shift sprints, Space jumps and jumps again in the air,
-// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; a right click or the wheel steps
-// through them), R drops a crate, G drops the
+// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; R, a right click or the wheel
+// step through them), B drops a crate, F lifts, stacks and sets crates, G drops the
 // block, C crouches while held, V switches between the chase camera and first person (a click there locks the mouse
 // for aiming; Escape lets it go). On touch the act button jumps, `#block-paint` throws and the tool bar picks. A round
 // opens with the sim's fortifying time. The intro card, the board (side and Ooga), the tool bar, the quiz card and the
@@ -129700,7 +129566,7 @@ void main() {
   const selection = { team: "blue", ooga: null };
 
   let home = "hub";
-  let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
+  let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null;
   let tool = "paint", flash = 0, flashT = 0;
@@ -129919,7 +129785,7 @@ void main() {
     updateTools();
     lockMouse();
     center(`BUILD ${Math.ceil(sim.prep)}`, 0);
-    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! R drops a crate · walk into crates to push", 0);
+    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! B drops a crate · F lifts and stacks", 0);
     updateStrip();
   };
   const finish = () => {
@@ -130479,15 +130345,12 @@ void main() {
     }
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
-    if (e.key === "r" || e.key === "R") buildCrate();
+    if (e.key === "r" || e.key === "R") cycleTool(1);
+    if (e.key === "b" || e.key === "B") buildCrate();
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
-    if (e.key === "b" || e.key === "B") {
-      world.level = Math.min(pileMod.MAX_BANANAS, world.level + testBananas);
-      hud.toast(`+${testBananas} test bananas`);
-    }
   };
   const chooseTeam = (team) => {
     selection.team = team;
@@ -130495,7 +130358,7 @@ void main() {
   };
 
   const enter = (ctx) => {
-    ({ renderer, game, world, go, testBananas } = ctx);
+    ({ renderer, game, world, go } = ctx);
     home = ctx.from === "arcade" ? "arcade" : "hub";
     hudMod.leaveTo("block", home);
     camera = createCamera({ fov: 58, near: 0.3, far: 400 });
@@ -130613,7 +130476,7 @@ void main() {
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · right click or wheel tools · Tab passes · F picks up, stacks, sets crates · R new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon · Tab passes · F lifts, stacks, sets crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
