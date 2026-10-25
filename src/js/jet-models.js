@@ -10,8 +10,8 @@
 // The parts are drawn on a grid of quarter units, with the fuselage's axis `CY` units up, and built `SCALE` times
 // that, so each voxel is `U` metres across. In the jet's frame: the nose toward -z, y up, the origin on the floor under
 // its middle, in metres. `SIZE` is its overall size, `POINTS` where the hangar meets it (the cockpit's seat and eye,
-// the canopy's hinge, the engines), `BOXES` the boxes walkers keep out of, [x0, x1, z0, z1, from, to] between two
-// heights of the feet, and `LIVERY` its colours.
+// the canopy's hinge, the engines), `columns(stage)` its cells seen from above for walkers (each column's bottom and
+// top, which `hangar-models.js` makes the Jet's solid and the surfaces on top of it), and `LIVERY` its colours.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -163,6 +163,28 @@
     return voxelGeometry(v, { unit: U, palette: PALETTE, emissive: EMISSIVE });
   });
   const jet = (stage = STAGE) => (builds[stage] || builds[STAGE])();
+  // The jet at a stage seen from above, for walkers: a grid of columns `U` metres square in the jet's frame, from cell
+  // `i0` across and `k0` along, `ni` by `nk` of them, and where each column's lowest cell starts and its highest ends,
+  // in metres up from the floor (`bottom`, `top`; -1 for a column that holds none), from the same cells as its mesh.
+  const columnBuilds = {};
+  for (const [stage, parts] of Object.entries(STAGES)) columnBuilds[stage] = cached(() => {
+    let i0 = Infinity, i1 = -Infinity, k0 = Infinity, k1 = -Infinity;
+    for (const name of parts) {
+      const c = partCells(name);
+      for (let n = 0; n < c.length; n += 4) { i0 = Math.min(i0, c[n]); i1 = Math.max(i1, c[n]); k0 = Math.min(k0, c[n + 2]); k1 = Math.max(k1, c[n + 2]); }
+    }
+    const ni = i1 - i0 + 1, nk = k1 - k0 + 1, bottom = new Float32Array(ni * nk).fill(-1), top = new Float32Array(ni * nk).fill(-1);
+    for (const name of parts) {
+      const c = partCells(name);
+      for (let n = 0; n < c.length; n += 4) {
+        const at = (c[n] - i0) * nk + c[n + 2] - k0, lo = c[n + 1] * U, hi = lo + U;
+        if (bottom[at] < 0 || lo < bottom[at]) bottom[at] = lo;
+        if (hi > top[at]) top[at] = hi;
+      }
+    }
+    return { U, i0, k0, ni, nk, bottom, top };
+  });
+  const columns = (stage = STAGE) => (columnBuilds[stage] || columnBuilds[STAGE])();
 
   // The engines' nozzles, turned and shaded smooth as the concept draws them, one at the end of each pod, in metres in
   // the jet's frame, their axis along +z (aft): a dark steel collar over the pod's end; a polished steel shell
@@ -209,12 +231,9 @@
   };
   // Each nozzle's exit, its centre and radius, in the jet's frame: where the static fire's plume starts.
   const EXHAUST = POINTS.engines.map((e) => ({ x: e.x, y: e.y, z: NOZZLE.at + 0.98 * NOZZLE.r / 0.99, r: 0.92 * NOZZLE.r / 0.99 }));
-  // The fuselage and its gear down to the floor, the engine pods, and the wings' roots, low enough to catch a head;
-  // under the wings farther out an Ooga walks upright.
-  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.25, 2.25, 4.6, 9.85, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
 
   // The fuselage's axis, metres up from the floor, round which a board turns the Jet in miniature.
   const AXIS = CY * SCALE;
 
-  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, EXHAUST, BOXES, U, jet, nozzles, pieces };
+  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, EXHAUST, U, jet, columns, nozzles, pieces };
 })();

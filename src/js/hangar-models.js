@@ -1327,8 +1327,9 @@
   // ---- the floor an Ooga walks ----------------------------------------------------------------------------------
 
   // Every surface with its height, as the Factory keeps its own: the floor, the landing, the catwalks and the dock's
-  // decks as rects, the steps and the stairs as strips that run half a metre on, flat, past both ends; and what stands
-  // in the way as boxes [x0, x1, z0, z1, from, to] between two heights of the feet. `supportAt(x, z, feet)` is the
+  // decks as rects, the steps and the stairs as strips that run half a metre on, flat, past both ends, and the top of
+  // the Jet column by column (`jetModels.columns`); and what stands in the way as boxes [x0, x1, z0, z1, from, to]
+  // between two heights of the feet, and the Jet's own cells. `supportAt(x, z, feet)` is the
   // highest surface within a step of the feet, so a walker on a catwalk stands on it and one on the floor walks under
   // it.
   const STEP = 0.6;
@@ -1358,13 +1359,10 @@
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
     for (const [sx, , sz0, , , sz1, w] of L.catwalkStairs) block(sx - w / 2, sx + w / 2, Math.min(sz0, sz1) + 3.6, Math.max(sz0, sz1), -1, 0.3);
     // The dock: under the gangway, and under its stair two metres up from its foot, from the floor, each low enough
-    // that the widest Ooga on the stair clears it; and the Jet's own boxes, its fuselage and gear, its engine pods and
-    // its wings' roots.
+    // that the widest Ooga on the stair clears it. The Jet itself stands in the way by its cells (`jetIn`).
     block(g.x - g.w / 2, g.x + g.w / 2, gz0, gz1, -1, g.y - 1);
     const [jx, , jz0, , , jz1, jw] = L.jetStairs;
     block(jx - jw / 2, jx + jw / 2, jz1, jz0 - 2, -1, 0.3);
-    const j = L.jet;
-    for (const [x0, x1, z0, z1, from, to] of JM.BOXES) block(j.x + x0, j.x + x1, j.z + z0, j.z + z1, from, to);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
     // The test booth: its console, and the barrier's rails low enough to jump, each the box round its footprint turned
     // into the hangar (square to it, so each box is its footprint).
@@ -1387,8 +1385,28 @@
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
-    return { rects: new Float32Array(rects), strips: new Float32Array(strips), boxes: new Float32Array(boxes) };
+    return { rects: new Float32Array(rects), strips: new Float32Array(strips), boxes: new Float32Array(boxes), jet: JM.columns() };
   });
+  // How many of the Jet's columns a walker of `radius` at (x, z) with its feet at `feet` stands among: those reaching
+  // within it whose cells rise more than a step above its feet and come down below its head (JET_HEAD up), so it walks
+  // under a wing or the belly and up the fuselage's terraces, and onto whatever is no higher than a step.
+  const JET_HEAD = 1.8, JET_FOOT = 0.25;
+  const jetIn = (J, x, z, feet, radius) => {
+    const lx = x - LAYOUT.jet.x, lz = z - LAYOUT.jet.z, U = J.U;
+    const i0 = Math.max(0, Math.floor((lx - radius) / U) - J.i0), i1 = Math.min(J.ni - 1, Math.floor((lx + radius) / U) - J.i0);
+    const k0 = Math.max(0, Math.floor((lz - radius) / U) - J.k0), k1 = Math.min(J.nk - 1, Math.floor((lz + radius) / U) - J.k0);
+    let n = 0;
+    for (let i = i0; i <= i1; i++) {
+      const cx0 = (i + J.i0) * U, dx = Math.max(cx0 - lx, 0, lx - cx0 - U);
+      for (let k = k0; k <= k1; k++) {
+        const c = i * J.nk + k, bottom = J.bottom[c];
+        if (bottom < 0 || J.top[c] <= feet + STEP || bottom >= feet + JET_HEAD) continue;
+        const cz0 = (k + J.k0) * U, dz = Math.max(cz0 - lz, 0, lz - cz0 - U);
+        if (dx * dx + dz * dz < radius * radius) n++;
+      }
+    }
+    return n;
+  };
   const supportAt = (x, z, feet) => {
     const F = FLOOR(), reach = feet + STEP;
     let best = 0;
@@ -1407,11 +1425,21 @@
       const y = S[i + 5] + (S[i + 6] - S[i + 5]) * t;
       if (y > best && y <= reach) best = y;
     }
+    // The Jet's top: the highest of its columns within a foot's breadth (JET_FOOT) of where it stands, so the edge of
+    // a walker's body comes to rest on the fuselage's narrow terraces as it lands or steps down them.
+    const J = F.jet, lx = x - LAYOUT.jet.x, lz = z - LAYOUT.jet.z, U = J.U;
+    const i0 = Math.max(0, Math.floor((lx - JET_FOOT) / U) - J.i0), i1 = Math.min(J.ni - 1, Math.floor((lx + JET_FOOT) / U) - J.i0);
+    const k0 = Math.max(0, Math.floor((lz - JET_FOOT) / U) - J.k0), k1 = Math.min(J.nk - 1, Math.floor((lz + JET_FOOT) / U) - J.k0);
+    for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) {
+      const top = J.top[i * J.nk + k];
+      if (top > best && top <= reach) best = top;
+    }
     return best;
   };
   // Inside the hall, a step clear of its leaning walls; down the launch tunnel to the hold-short line; and through the
   // door's passage out to a little past its shield, so a walker crosses it on its feet. A movement may leave a box it
-  // already overlaps, so long as it does not go in deeper.
+  // already overlaps, so long as it does not go in deeper, and the same among the Jet's columns: never among more of
+  // them than it was, so a walker that ends up in the Jet (a jump, a fall) can always walk out.
   const inside = (x, z, feet) => {
     const d = LAYOUT.door, t = LAYOUT.tunnel;
     if (Math.abs(x - d.x) < d.half - 0.3 && z > HALL.front - 2.4 && z < HALL.front + 1 && Math.abs(feet - d.y) < 0.8) return true;
@@ -1430,6 +1458,11 @@
       const now = depthIn(B, i, x, z, radius);
       if (now <= 0) continue;
       if (depthIn(B, i, fromX, fromZ, radius) <= 0 || now > depthIn(B, i, fromX, fromZ, radius) + 1e-9) return false;
+    }
+    const J = FLOOR().jet, now = jetIn(J, x, z, feet, radius);
+    if (now > 0) {
+      const was = jetIn(J, fromX, fromZ, feet, radius);
+      if (was === 0 || now > was) return false;
     }
     return true;
   };
