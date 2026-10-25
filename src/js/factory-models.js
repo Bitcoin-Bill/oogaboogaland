@@ -34,8 +34,9 @@
 
   const LEVEL = { pit: 0, low: 2.5, main: 5, high: 10, top: 15.5 };
   // Rock outcrops on the left of the front of the pit: [x, z, size, tiers, tier height]. While the Lightning Jet Hangar is
-  // open the one under the left walkway stands two shorter tiers, its top (about 4 m) under the walkway's frame.
-  const OUTCROPS = [[-11, 21, 1.3, 4, 1], [-16, 25, 1.6, 4, 1]], OUTCROPS_OPEN = [OUTCROPS[0], [-16, 25, 1.6, 2, 0.9]];
+  // open the one under the left walkway stands two shorter tiers, its top (about 4 m) under the walkway's frame, and the
+  // one between the balcony and Kortik's Switchboard is taken away, leaving its crystal, so his board shows from the way in.
+  const OUTCROPS = [[-11, 21, 1.3, 4, 1], [-16, 25, 1.6, 4, 1]], OUTCROPS_OPEN = [[-11, 21, 1.3, 0, 1], [-16, 25, 1.6, 2, 0.9]];
   // How far the front wall stands back over the left walkway while the hangar is open (`hall`).
   const HANGAR_SET_BACK = 3.4;
   const HALL = { halfW: 23, back: -22, front: 30, h: 26 };
@@ -826,7 +827,7 @@
     for (const s of [-1, 1]) block(L.forge.x + s * 3.7, L.forge.z + 0.75, 0.35, -1, 4.4);
     for (const [x, z] of COILS) block(x, z, 0.45, LEVEL.main - 0.5, LEVEL.main + 2.5);
     for (const [x, z] of FORGE_STORES) block(x, z, 0.6, -1, 1.5);
-    for (const [x, z, k, tiers, th] of outcrops()) block(x, z, 1.9 * k, -1, tiers * 1.4 * k * th);
+    for (const [x, z, k, tiers, th] of outcrops()) if (tiers) block(x, z, 1.9 * k, -1, tiers * 1.4 * k * th);
     // The watchtower's posts where they stand on line A's deck.
     for (const [x, z] of deckPosts(L.lookout.w, L.lookout.d)) {
       const px = L.lookout.x + x, pz = L.lookout.z + z;
