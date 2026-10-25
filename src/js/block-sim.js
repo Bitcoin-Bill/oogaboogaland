@@ -226,7 +226,7 @@
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
-      stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
+      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
@@ -281,7 +281,7 @@
       a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = a.botJump = false; a.carrying = a.blocked = null;
       a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = a.jump2At = a.tries = a.netted = a.progT = 0;
       a.lastD = Infinity;
-      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = false; a.rest = 0;
+      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = false; a.rest = 0;
       a.captures = a.splats = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -548,6 +548,11 @@
       homeFlag(own);
       emit(sim, "return", own.team, a.id, own.x, 0, own.z);
     }
+    // At home with their block while your own is away: no score yet, said once a visit to the stand.
+    if (a.carrying === theirs.team && home && own.state !== "home" && !a.waiting) {
+      a.waiting = true;
+      emit(sim, "waiting", a.team, a.id, stand.x, 0, stand.z);
+    } else if (!home) a.waiting = false;
     if (a.carrying === theirs.team && home && own.state === "home") {
       const f = sim.flags[a.carrying];
       a.carrying = null;
