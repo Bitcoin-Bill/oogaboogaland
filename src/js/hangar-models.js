@@ -61,6 +61,10 @@
     jetStairs: [10.6, 0, 3.4, 10.6, 5, -4.6, 1.6],
     // Trestles under the wings, [x, z].
     trestles: [[8, -8.9], [22, -8.9]],
+    // The engine static fire test's station behind the Jet's right engine: where its console stands and the way its
+    // front faces, square to the hall with its back to the engines so the presser looks over it at them, and the
+    // cables' far ends under the pods, [x, z].
+    fireTest: { x: 19.8, z: 9.6, turn: 0, cables: [[13, 4.4], [15, 4], [17, 4.4]] },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
@@ -803,6 +807,167 @@
     ...[0.42, 0.7].map((y) => box({ w: 1.27, h: 0.07, d: 0.67, color: "#f2c230", emissive: 0.25, offset: { y } }))
   ));
 
+  // ---- the engine static fire test ---------------------------------------------------------------------------------
+
+  // The test station in its own frame (`LAYOUT.fireTest`), the console's front toward +z and the floor at y 0: a steel
+  // cabinet under a desk sloped to the presser, gauges and toggles across the slope, and on a block rising out of its
+  // right half the big red button (`button`) under its hinged clear guard (`hinge`, the guard's back edge), the DO NOT
+  // PRESS plate on the block's front (`plate`); behind, the screen in its housing (`screen`: centre, width, height) with
+  // the status lamps down its left margin (`lamps`: ready, armed, fire), the cooldown meter's ten segments under it
+  // (`meter`: the first's centre and the step) and the title on top (`title`); two beacons on posts either side
+  // (`beacons`, `beaconY`) and a red strobe over the title (`strobe`); and a striped box painted round it on the floor.
+  // `stand` is where the presser stands.
+  const FIRE = {
+    button: [0.55, 1.15, 0.08], hinge: [0.55, 1.15, -0.1], plate: [0.55, 1.04, 0.283], screen: [0, 1.82, -0.325, 1.56, 0.72],
+    title: [0, 2.47, -0.394], meter: [-0.72, 1.36, -0.33, 0.16], lamps: [[-0.89, 2.02, -0.33], [-0.89, 1.82, -0.33], [-0.89, 1.62, -0.33]],
+    beacons: [[-1.3, -0.45], [1.3, -0.45]], beaconY: 2.2, strobe: [0, 2.6, -0.45], footprint: [-1.45, 1.45, -0.7, 0.45], stand: [0.4, 1.05]
+  };
+  // The desk's slope: its front edge (z, y), its back edge, and how far it leans.
+  const SLOPE = { front: [0.3, 0.92], back: [-0.25, 1.2] };
+  SLOPE.lean = Math.atan2(SLOPE.back[1] - SLOPE.front[1], SLOPE.front[0] - SLOPE.back[0]);
+  const FIRE_STEEL = "#56606c", FIRE_DK = "#2a2f36", FIRE_RED = "#d62828", FIRE_AMBER = "#ffb02e", GUARD = "#cfe8ff";
+  const fireStation = cached(() => {
+    const body = [], details = [], panel = [], F = FIRE;
+    // The floor's stripes round the station, and the cabinet with its desk, a profile in (z, y) run along x.
+    hazard(body, -1.6, -1.3, 1.6, -1.3, 0.025, 0.22, 0.4); hazard(body, 1.6, -1.3, 1.6, 1.5, 0.025, 0.22, 0.4);
+    hazard(body, 1.6, 1.5, -1.6, 1.5, 0.025, 0.22, 0.4); hazard(body, -1.6, 1.5, -1.6, -1.3, 0.025, 0.22, 0.4);
+    body.push(bevelBox({ w: 2.2, h: 0.85, d: 0.8, color: FIRE_STEEL, bevel: 0.05, offset: { y: 0.425, z: -0.2 } }));
+    body.push(box({ w: 2.0, h: 0.05, d: 0.02, color: PAINT, offset: { y: 0.18, z: 0.205 } }), box({ w: 2.0, h: 0.05, d: 0.02, color: INK, offset: { y: 0.24, z: 0.205 } }));
+    const [fz, fy] = SLOPE.front, [bz, by] = SLOPE.back;
+    body.push(turnedY(prism([[-0.6, 0.85], [fz, 0.85], [fz, fy], [bz, by], [-0.6, by]], 2.2, "#3a414b"), -Math.PI / 2));
+    // Across the slope, in its own frame (y 0 its face, +z down it): a dark inset, two gauges and a row of toggles. These
+    // and the other small parts laid on a face are `details`, a node of their own, so the Canvas 2D sort can keep them
+    // in front of the faces they lie on.
+    panel.push(box({ w: 1.25, h: 0.02, d: 0.5, color: "#1d2127", offset: { x: -0.4, y: 0.005 } }));
+    for (const x of [-0.85, -0.5]) {
+      panel.push(lathe({ profile: [[0.12, 0], [0.12, 0.03], [0.1, 0.03], [0.1, 0.02], [0, 0.02]], segments: 16, color: IRON_DK }));
+      panel.push(lathe({ profile: [[0.1, 0.02], [0, 0.02]], segments: 16, color: "#e8e2d4" }));
+      panel.push(box({ w: 0.012, h: 0.006, d: 0.08, color: FIRE_RED, offset: { z: -0.03 } }));
+      for (const g of panel.slice(-3)) moved(g, x, 0, -0.1);
+    }
+    for (let k = 0; k < 5; k++) {
+      const x = -0.95 + k * 0.16;
+      panel.push(box({ w: 0.08, h: 0.03, d: 0.08, color: IRON_DK, offset: { x, y: 0.015, z: 0.13 } }), beam(x, 0.03, 0.13, x, 0.1, 0.11, 0.022, "#c8ccd2"));
+    }
+    for (const g of panel) details.push(moved(turnedX(g, SLOPE.lean), 0, (fy + by) / 2, (fz + bz) / 2));
+    // The button's block rising out of the slope, its yellow and black ring round the well.
+    body.push(bevelBox({ w: 0.5, h: 0.3, d: 0.4, color: FIRE_DK, bevel: 0.03, offset: { x: F.button[0], y: F.button[1] - 0.15, z: F.button[2] } }));
+    details.push(moved(lathe({ profile: [[0.16, 0], [0.16, 0.02], [0.1, 0.02], [0.1, 0]], segments: 20, color: PAINT }), F.button[0], F.button[1], F.button[2]));
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2 + Math.PI / 4;
+      details.push(box({ w: 0.05, h: 0.025, d: 0.07, color: INK, offset: { x: F.button[0] + Math.sin(a) * 0.13, y: F.button[1] + 0.012, z: F.button[2] + Math.cos(a) * 0.13 } }));
+    }
+    // The screen's housing on its riser off the desk's top, the glass dark until a picture lies on it, the meter's
+    // dark slot, the lamps' bezels, a grille down the right margin and the title's board on top.
+    body.push(box({ w: 0.5, h: 0.2, d: 0.16, color: FIRE_DK, offset: { y: by + 0.08, z: -0.5 } }));
+    body.push(bevelBox({ w: 2.0, h: 1.08, d: 0.22, color: FIRE_DK, bevel: 0.04, offset: { y: 1.8, z: -0.45 } }));
+    body.push(box({ w: F.screen[3] + 0.04, h: F.screen[4] + 0.04, d: 0.02, color: "#081018", emissive: 0.4, offset: { y: F.screen[1], z: -0.342 } }));
+    details.push(box({ w: 1.62, h: 0.08, d: 0.01, color: "#0b0d10", offset: { y: F.meter[1], z: -0.339 } }));
+    for (const [x, y] of F.lamps) details.push(box({ w: 0.15, h: 0.15, d: 0.01, color: "#0b0d10", offset: { x, y, z: -0.339 } }));
+    for (let k = 0; k < 6; k++) details.push(box({ w: 0.12, h: 0.02, d: 0.01, color: "#0b0d10", offset: { x: 0.89, y: 1.6 + k * 0.09, z: -0.339 } }));
+    body.push(bevelBox({ w: 1.9, h: 0.26, d: 0.1, color: "#101317", bevel: 0.02, offset: { y: F.title[1], z: -0.45 } }));
+    // The beacons' posts, and the strobe's base on the title.
+    for (const [x, z] of F.beacons) {
+      body.push(box({ w: 0.1, h: F.beaconY, d: 0.1, color: IRON_DK, offset: { x, y: F.beaconY / 2, z } }), box({ w: 0.3, h: 0.06, d: 0.3, color: IRON_DK, offset: { x, y: 0.03, z } }));
+      body.push(moved(lathe({ profile: [[0.16, 0], [0.16, 0.06], [0, 0.06]], segments: 14, color: FIRE_DK }), x, F.beaconY, z));
+    }
+    body.push(moved(lathe({ profile: [[0.1, 0], [0.1, 0.05], [0, 0.05]], segments: 12, color: FIRE_DK }), F.strobe[0], F.strobe[1], F.strobe[2]));
+    // The button, a red mushroom on its stem; the guard, a clear box hinged at its back edge, in the hinge's frame.
+    const button = lathe({ profile: [[0.045, -0.06], [0.045, 0.03], [0.1, 0.035], [0.1, 0.07], [0.075, 0.095], [0, 0.105]], segments: 20, color: FIRE_RED, emissive: 0.6 });
+    const guard = merge(
+      box({ w: 0.34, h: 0.015, d: 0.36, color: GUARD, offset: { y: 0.16, z: 0.18 } }),
+      box({ w: 0.015, h: 0.16, d: 0.36, color: GUARD, offset: { x: -0.17, y: 0.08, z: 0.18 } }),
+      box({ w: 0.015, h: 0.16, d: 0.36, color: GUARD, offset: { x: 0.17, y: 0.08, z: 0.18 } }),
+      box({ w: 0.34, h: 0.16, d: 0.015, color: GUARD, offset: { y: 0.08, z: 0.36 } })
+    );
+    guard.glass = 0.35;
+    const hinge = turnedZ(lathe({ profile: [[0.02, -0.19], [0.02, 0.19]], segments: 8, color: IRON }), Math.PI / 2);
+    // The beacons' amber domes and the reflector that spins in each, the strobe's red dome, the lamps and a segment.
+    const dome = (r, color) => noShadow(lathe({ profile: Array.from({ length: 6 }, (_, k) => [Math.cos(k / 5 * Math.PI / 2) * r, Math.sin(k / 5 * Math.PI / 2) * r * 1.3]), segments: 14, color, emissive: 1 }));
+    const beacon = dome(0.14, FIRE_AMBER), strobe = dome(0.09, "#ff3a2e");
+    beacon.glass = strobe.glass = 0.6;
+    const reflector = noShadow(box({ w: 0.18, h: 0.1, d: 0.02, color: "#ffe1a0", emissive: 1, offset: { y: 0.08 } }));
+    const lamp = (color) => noShadow(bevelBox({ w: 0.11, h: 0.11, d: 0.04, color, emissive: 1, bevel: 0.015 }));
+    const segment = noShadow(box({ w: F.meter[3] * 0.86, h: 0.05, d: 0.02, color: "#5be38a", emissive: 1 }));
+    return { body: merge(...body), details: merge(...details), button, guard, hinge, beacon, reflector, strobe, lamps: [lamp("#3fe07a"), lamp(FIRE_AMBER), lamp("#ff3a2e")], segment };
+  });
+  // The cables from the console's back across the floor to under each engine pod, in the hangar's frame.
+  const fireCables = cached(() => {
+    const T = LAYOUT.fireTest, c = Math.cos(T.turn), s = Math.sin(T.turn), parts = [];
+    const back = (x, z) => [T.x + x * c + z * s, T.z - x * s + z * c];
+    T.cables.forEach(([ex, ez], i) => {
+      const [ax, az] = back(-0.5 + i * 0.5, -0.65), mx = (ax + ex) / 2 + (i - 1) * 0.8, mz = (az + ez) / 2 + 0.6;
+      const at = (t) => {
+        const u = 1 - t;
+        return { x: u * u * ax + 2 * u * t * mx + t * t * ex, y: 0.05, z: u * u * az + 2 * u * t * mz + t * t * ez };
+      };
+      parts.push(models.tube({ path: at, radius: () => 0.05, rings: 24, segments: 6, colorFn: () => i === 1 ? "#d9862a" : "#1b1d22" }));
+      parts.push(bevelBox({ w: 0.4, h: 0.3, d: 0.3, color: FIRE_STEEL, bevel: 0.03, offset: { x: ex, y: 0.15, z: ez } }), box({ w: 0.42, h: 0.04, d: 0.32, color: PAINT, offset: { x: ex, y: 0.24, z: ez } }));
+    });
+    return merge(...parts);
+  });
+
+  // The test's pictures for the station's screen and plates, painted once each (`firePicture(key)`): the screen's
+  // states, the title over it, and the button's DO NOT PRESS.
+  const FIRE_SCREENS = {
+    ready: ["STATUS: READY", "ENGINES COLD · DO NOT PRESS THE BUTTON", "#5be38a"],
+    armed: ["ARMED", "IGNITION SEQUENCE STARTED", FIRE_AMBER],
+    spool: ["SPOOLING UP", "N1 RISING · STAND CLEAR", FIRE_AMBER],
+    fire: ["STATIC FIRE", "FULL THRUST · HOLD IT RIGHT THERE", "#ff8a2e"],
+    warning: ["WARNING", "COMBUSTION UNSTABLE · ABORT ABORT", "#ff3a2e"],
+    boom: ["!!!", "", "#ff3a2e"],
+    result: ["TEST RESULT:\nFAILED SUCCESSFULLY", "LIGHTNING JET V2 — STILL UNDER CONSTRUCTION", "#ffd23a"]
+  };
+  const firePictures = new Map();
+  const firePicture = (key) => {
+    let geo = firePictures.get(key);
+    if (geo) return geo;
+    const canvas = document.createElement("canvas"), title = key === "title", plate = key === "plate";
+    const w = title ? 1.84 : plate ? 0.44 : FIRE.screen[3], h = title ? 0.22 : plate ? 0.11 : FIRE.screen[4], PXF = 400;
+    canvas.width = Math.round(w * PXF); canvas.height = Math.round(h * PXF);
+    const g = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    if (title) {
+      g.fillStyle = "#101317"; g.fillRect(0, 0, W, H);
+      g.fillStyle = PAINT; g.font = `bold ${H * 0.56}px ${FONT}`;
+      g.fillText("ENGINE STATIC FIRE TEST", W / 2, H / 2 + 2);
+    } else if (plate) {
+      g.fillStyle = FIRE_RED; g.fillRect(0, 0, W, H);
+      g.strokeStyle = "#fff"; g.lineWidth = 4; g.strokeRect(5, 5, W - 10, H - 10);
+      let px = H * 0.55;
+      g.font = `bold ${px}px ${FONT}`;
+      while (g.measureText("DO NOT PRESS").width > W * 0.84) { px *= 0.94; g.font = `bold ${px}px ${FONT}`; }
+      g.fillStyle = "#fff";
+      g.fillText("DO NOT PRESS", W / 2, H / 2 + 2);
+    } else {
+      const [big, small, color] = FIRE_SCREENS[key], lines = big.split("\n");
+      g.fillStyle = "#081018"; g.fillRect(0, 0, W, H);
+      for (let y = 0; y < H; y += 6) { g.fillStyle = "rgba(255,255,255,0.03)"; g.fillRect(0, y, W, 2); }
+      g.fillStyle = color; g.shadowColor = color; g.shadowBlur = 10;
+      const size = lines.length > 1 ? H * 0.2 : small ? H * 0.28 : H * 0.62;
+      g.font = `bold ${size}px ${FONT}`;
+      lines.forEach((line, i) => {
+        let px = size;
+        while (g.measureText(line).width > W * 0.92 && px > 8) { px *= 0.94; g.font = `bold ${px}px ${FONT}`; }
+        g.fillText(line, W / 2, H * (lines.length > 1 ? 0.3 + i * 0.24 : small ? 0.42 : 0.52));
+      });
+      g.shadowBlur = 0;
+      if (small) {
+        let px = H * 0.085;
+        g.font = `600 ${px}px ${FONT}`;
+        while (g.measureText(small).width > W * 0.9 && px > 6) { px *= 0.94; g.font = `600 ${px}px ${FONT}`; }
+        g.fillStyle = "#cfe0ff";
+        g.fillText(small, W / 2, H * (lines.length > 1 ? 0.84 : 0.76));
+      }
+    }
+    const image = new Image();
+    image.src = canvas.toDataURL("image/png");
+    geo = { verts: [-w / 2, -h / 2, 0, w / 2, -h / 2, 0, w / 2, h / 2, 0, -w / 2, h / 2, 0], faces: [{ i: [0, 1, 2, 3], color: [0, 0, 0], emissive: 0 }], lines: [], castShadow: false };
+    geo.imageSurface = { asset: { width: W, height: H, load: () => image }, rect: [-w / 2, -h / 2, w, h], bright: 0.35 };
+    firePictures.set(key, geo);
+    return geo;
+  };
+
   // ---- the hangar's light, and the hangar through the Factory's door ----------------------------------------------
 
   // The hangar's fixed point lights, most important first, [x, y, z, radius, r, g, b] each: the door's shield in the
@@ -927,6 +1092,12 @@
     const j = L.jet;
     for (const [x0, x1, z0, z1, from, to] of JM.BOXES) block(j.x + x0, j.x + x1, j.z + z0, j.z + z1, from, to);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
+    // The test station: the console and its beacons, the box round its footprint turned into the hangar (square to it,
+    // so the box is the footprint).
+    const T = L.fireTest, tc = Math.cos(T.turn), ts = Math.sin(T.turn), [fx0, fx1, fz0, fz1] = FIRE.footprint;
+    const xs = [], zs = [];
+    for (const lx of [fx0, fx1]) for (const lz of [fz0, fz1]) { xs.push(T.x + lx * tc + lz * ts); zs.push(T.z - lx * ts + lz * tc); }
+    block(Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), -1, 2.2);
     // The gap behind each board, where a head would meet its lower edge.
     for (const b of Object.values(L.boards)) block(HALL.x0, b.x + 0.35, b.z - b.w * b.scale / 2, b.z + b.w * b.scale / 2, -1, 2.2);
     // The workstations, the terminals, the tool chests, the crates and the floor lamps.
@@ -1000,7 +1171,7 @@
 
   BL.hangarModels = {
     LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
-    fixedLights, doorWindow,
+    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))

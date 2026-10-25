@@ -78,7 +78,8 @@
     jet: ["Lightning Jet v2 · under construction", "The Jet is still being built. Its stair leads up to the cockpit."],
     stats: ["Repo stats · drneski/lightning-jet", ""],
     timeline: ["Lightning Jet timeline", ""],
-    station: ["Crew workstations", "Where the crew follows the Jet's build."]
+    station: ["Crew workstations", "Where the crew follows the Jet's build."],
+    firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -86,7 +87,7 @@
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
-  let unsubscribeFeed = null, boardsDirty = false, audio = null;
+  let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false;
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
   // frame, so signed-in players in the hangar hear each other and those in the hall (voice needs a driven Ooga).
@@ -321,6 +322,9 @@
     target(s.boards.stats, "stats", "boards", 4.6);
     target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
+    // The engine static fire test's station behind the Jet's right engine (`hangar-fire.js`).
+    s.fire = BL.hangarFire.create(root);
+    target(s.fire.body, "firetest", null, 1.6);
     return s;
   };
 
@@ -472,6 +476,7 @@
         const o = hit.owner;
         if (o.kind === "exit") return leaveHangar();
         if (o.kind === "stats" || o.kind === "timeline") return hud.openBoard(scene.boardViews[o.kind]);
+        if (o.kind === "firetest" && scene.fire.near && scene.fire.press()) return;
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -510,7 +515,8 @@
     if (playerName) {
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
-      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy };
+      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
+        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) };
       shared.onModelChange = () => {
         if (!avatar) return;
         scene.gate.phase.body.refresh(avatar.root);
@@ -540,14 +546,14 @@
     // The page's one factory node goes on with the hall's show while the visitor is in here.
     node = BL.factoryFeed.node(world);
     lightUp();
-    leaving = false;
+    leaving = actPrompt = false;
 
     hangarScene.root = root;
     hangarScene.camera = camera;
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -583,6 +589,11 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
+    // The static fire test's station, and the act button's DON'T PRESS beside its button.
+    s.fire.update(dt, drivenHere);
+    const actLabel = drivenHere && s.fire.actLabel();
+    if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
+    else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     node.tick(dt);
     hum(s.gate, OPENING, dt, elapsed, 0.12);
     hum(s.launch, LAUNCH, dt, elapsed, 0.18);
