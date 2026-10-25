@@ -36,7 +36,7 @@
   // The door's shield, as wide as its arch, in the hall's cyan; and the launch shield across the tunnel's end, in a
   // paler blue.
   const OPENING = { minX: -DOOR.half, maxX: DOOR.half, floorY: 0, ceilingY: DOOR.top }, TINT = BL.factoryWindow.TINT;
-  const LAUNCH = { minX: -TUN.r + 0.6, maxX: TUN.r - 0.6, floorY: 0, ceilingY: TUN.y + TUN.r - 0.8 }, LAUNCH_TINT = [0.45, 0.72, 1];
+  const LAUNCH = { minX: -TUN.r + 0.6, maxX: TUN.r - 0.6, floorY: 0, ceilingY: TUN.y + TUN.r - 0.8 }, LAUNCH_TINT = HM.TINTS.launch;
   const view = (x, y, z, yaw, pitch, dist) => ({ yaw, pitch, dist, target: { x, y, z } });
   // `entrance` stands over the landing and looks down the runway to the tunnel's mouth, as the concept's entry view.
   const PRESETS = {
@@ -70,7 +70,7 @@
   // The tunnel's neon burns past full (`NEON_GLOW`), each frame's strip shimmering at its own pace, and every
   // `NEON_STUTTER` seconds one stutters, dipping twice as a tired tube does; the light at the tunnel's mouth follows
   // its first strip (`MOUTH_LIGHT`).
-  const NEON_GLOW = 1.7, NEON_STUTTER = [2.5, 7], MOUTH_LIGHT = [0.36, 0.66, 1.2];
+  const NEON_GLOW = 1.7, NEON_STUTTER = [2.5, 7], MOUTH_LIGHT = HM.TINTS.mouth;
   const TIPS = {
     exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
     sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
@@ -295,6 +295,12 @@
     s.door = createNode({ position: { x: DOOR.x, y: DOOR.y, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
     s.doorStone = createNode({ geometry: door.stone });
     addChild(s.door, s.doorStone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: HM.hallGlimpse(), sightHidden: true }));
+    // Through the shield, the Factory's hall as it stands, from the hall's own stand-in (`hangar-window.js`; WebGL only,
+    // the glimpse staying behind it and in its place on Canvas 2D).
+    if (renderer.kind !== "canvas2d") {
+      const hall = FM.hubWindow(), h = FM.LAYOUT.hangar;
+      s.window = BL.hangarWindow.create({ group: s.door, pieces: [hall.hall, hall.chamber, hall.fire], beyond: BL.hangarWindow.across(h.x, h.y, h.z, h.turn, DOOR.plane), plane: DOOR.plane });
+    }
     sign(s.door, FM.label("LIGHTNING\nFACTORY", "", { height: 1.3 }), D.sign[0], D.sign[1], D.sign[2]);
     addChild(root, s.door);
     s.gate = { hum: 0, phase: BL.labPhase.create(s.door, { x: DOOR.x, z: DOOR.z, ry: DOOR.turn, floorY: DOOR.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } }, OPENING, DOOR.plane, TINT) };
@@ -350,27 +356,18 @@
   };
 
   // Point lights, most important first so the lowest tier keeps them: the door's cyan, the landing, the dock's two work
-  // lamps, the boards' blue, the tunnel mouth's and the launch shield's, and two warm ones over the crew's floor; the
+  // lamps, the boards' blue, the tunnel mouth's and the launch shield's, and two warm ones over the crew's floor
+  // (`HM.fixedLights`); the
   // lanterns share what is left, the vault's and the floor's, the nearest the view first, each reaching as far as
   // `hangar-models.js` says and flickering like a flame, as the Factory shares its own.
-  const LANTERN_GLOW = [1.3, 0.8, 0.36], FIXED = 10;
+  const LANTERN_GLOW = HM.LANTERN_GLOW, FIXED = 10;
   const lanternPool = models.cached(() => new Float32Array([...HM.dressing().lights, ...HM.fixtures().lights]));
   const lamp = (i, x, y, z, radius, r, g, b) => {
     const o = i * 8, l = RENDER_OPTS.lights;
     l[o] = x; l[o + 1] = y; l[o + 2] = z; l[o + 3] = radius; l[o + 4] = r; l[o + 5] = g; l[o + 6] = b; l[o + 7] = 0;
   };
   const lightUp = () => {
-    const L = LAYOUT, B = L.boards;
-    lamp(0, DOOR.x, DOOR.y + 2.2, DOOR.z - 2, 8, TINT[0], TINT[1], TINT[2]);
-    lamp(1, 0, L.landing.y + 3, L.landing.z - 3, 12, 1, 0.66, 0.3);
-    lamp(2, L.gangway.x - 2, 8, L.gangway.decks[0][1], 16, 1, 0.86, 0.62);
-    lamp(3, L.jet.x - 4, 7, L.jet.z + 12, 18, 1, 0.86, 0.62);
-    lamp(4, B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.24, 0.42, 0.72);
-    lamp(5, B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.24, 0.42, 0.72);
-    lamp(6, 0, TUN.y, HALL.back + 3, 16, MOUTH_LIGHT[0], MOUTH_LIGHT[1], MOUTH_LIGHT[2]);
-    lamp(7, 0, TUN.y, TUN.z1 + 4, 14, LAUNCH_TINT[0], LAUNCH_TINT[1], LAUNCH_TINT[2]);
-    lamp(8, -12, 6, 12, 16, 1, 0.66, 0.32);
-    lamp(9, -12, 6, -12, 16, 1, 0.66, 0.32);
+    HM.fixedLights().forEach((l, i) => lamp(i, ...l));
     RENDER_OPTS.lightCount = Math.min(BL.glRenderer.POINT_LIGHT_CAPACITY, FIXED + lanternPool().length / 4);
   };
   let poolScore = null;
@@ -560,6 +557,7 @@
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
     pilot.update(dt);
+    if (s.window) s.window.update(camera);
     // The hall's hum hears from the Ooga driven here, or from the view's target.
     const ear = people && people.player, at = ear ? ear.root.position : pilot.orbit.target;
     audio.listen(at.x, ear ? at.y - ear.baseY + 1.4 : at.y, at.z, camera.target.x - camera.position.x, camera.target.z - camera.position.z);
@@ -627,6 +625,7 @@
     BL.net.setBody(null);
     scene.gate.phase.dispose();
     scene.launch.phase.dispose();
+    if (scene.window) scene.window.dispose();
     for (const a of scene.crew) a.dispose();
     remotes.dispose();
     remotes = null;

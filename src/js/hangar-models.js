@@ -807,6 +807,88 @@
     ...[0.42, 0.7].map((y) => box({ w: 1.27, h: 0.07, d: 0.67, color: "#f2c230", emissive: 0.25, offset: { y } }))
   ));
 
+  // ---- the hangar's light, and the hangar through the Factory's door ----------------------------------------------
+
+  // The hangar's fixed point lights, most important first, [x, y, z, radius, r, g, b] each: the door's shield in the
+  // hall's cyan, the landing, the dock's two work lamps, the boards' blue, the tunnel's mouth (`TINTS.mouth`, which the
+  // scene flickers with the neon) and the launch shield (`TINTS.launch`), and two warm fills over the crew's floor. The
+  // scene lights them and the lanterns after them; the window into the hangar bakes them all.
+  const TINTS = { door: math.hexToRgb("#5fe3ff").map((k) => k / 255), mouth: [0.36, 0.66, 1.2], launch: [0.45, 0.72, 1] };
+  const LANTERN_GLOW = [1.3, 0.8, 0.36];
+  const fixedLights = cached(() => {
+    const L = LAYOUT, B = L.boards, D = L.door, T = L.tunnel;
+    return [
+      [D.x, D.y + 2.2, D.z - 2, 8, ...TINTS.door], [0, L.landing.y + 3, L.landing.z - 3, 12, 1, 0.66, 0.3],
+      [L.gangway.x - 2, 8, L.gangway.decks[0][1], 16, 1, 0.86, 0.62], [L.jet.x - 4, 7, L.jet.z + 12, 18, 1, 0.86, 0.62],
+      [B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.24, 0.42, 0.72], [B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.24, 0.42, 0.72],
+      [0, T.y, HALL.back + 3, 16, ...TINTS.mouth], [0, T.y, T.z1 + 4, 14, ...TINTS.launch],
+      [-12, 6, 12, 16, 1, 0.66, 0.32], [-12, 6, -12, 16, 1, 0.66, 0.32]
+    ];
+  });
+
+  // The hangar as the Factory's walkway sees it through the door's shield, for `hangar-window.js`, which pulls every
+  // point of it along its own sight line into a band just behind the shield: so it is built at full size in the
+  // hangar's frame and kept light. The hall a gridded shell (no front wall, behind the eye), the gantries as plain
+  // trusses, the lanterns as their glass; the landing, the runway and its lamps, the tunnel's frames and every neon
+  // ring, the catwalks, the floor's fixtures, the boards on their mounts with their faces, and the Jet at its dock; and
+  // past the tunnel's end space, deep blue with stars, the galaxy's haze and a ringed planet. Every face glows with the
+  // hangar's light at rest baked into its colour (`FM.bakeWindow` under `MOOD`, with every fixed light and lantern), so
+  // the Factory's own light never touches it, and stone and timber stay dark so the hall's bloom picks out its lights.
+  const MOOD = {
+    sky: [0.54, 0.38, 0.26], ground: [0.24, 0.16, 0.1], floor: 0.4, sun: [0.25, 0.9, 0.35], direct: [0.7, 0.52, 0.36], strength: 0.36, fill: [0.05, 0.04, 0.11],
+    fog: [0.05, 0.04, 0.035], near: 150, far: 400, eye: [0, 3.3, 27], dim: 0.55, knee: 0.08, cap: 0.22
+  };
+  const doorWindow = cached(() => {
+    const L = LAYOUT, { x0: X0, x1: X1, back: B, front: F, h: H } = HALL, T = L.tunnel, rand = mulberry32(5151), parts = [];
+    // The shell: a floor of big tiles, the side and back walls in four-metre blocks leaning in as they rise (the back
+    // wall round the tunnel's mouth), and the vault.
+    for (let x = X0; x < X1; x += 8) for (let z = B; z < F; z += 8) parts.push(box({ w: 8, h: 0.4, d: 8, color: STONE[Math.floor(rand() * 4)], offset: { x: x + 4, y: -0.2, z: z + 4 } }));
+    for (let y = 0; y < H; y += 4) {
+      const depth = 0.6 + (y + 2) / H * 2.6;
+      for (let z = B; z < F; z += 4) for (const [x, s] of [[X0, 1], [X1, -1]]) parts.push(box({ w: 2.2, h: 4, d: 4, color: STONE[Math.floor(rand() * 4)], offset: { x: x + s * (depth - 1.1), y: y + 2, z: z + 2 } }));
+      for (let x = X0; x < X1; x += 4) {
+        if (Math.abs(x + 2) < T.r + 1 && Math.abs(y + 2 - T.y) < T.r + 1) continue;
+        parts.push(box({ w: 4, h: 4, d: 2.2, color: STONE[Math.floor(rand() * 4)], offset: { x: x + 2, y: y + 2, z: B + depth - 1.1 } }));
+      }
+    }
+    parts.push(box({ w: X1 - X0, h: 1, d: F - B, color: STONE_DK, offset: { x: (X0 + X1) / 2, y: H + 0.5, z: (B + F) / 2 } }));
+    // The gantries, as trusses: their chords and verticals.
+    const span = X1 - X0 - 4, mid = (X0 + X1) / 2;
+    for (const z of L.gantries) {
+      for (const y of [L.gantryY + 0.5, L.gantryY - 0.5]) parts.push(box({ w: span, h: 0.32, d: 0.46, color: GIRDER, offset: { x: mid, y, z } }));
+      for (let x = X0 + 2; x <= X1 - 2; x += 4.8) parts.push(box({ w: 0.16, h: 0.7, d: 0.3, color: GIRDER_DK, offset: { x, y: L.gantryY, z } }));
+    }
+    const run = runway(), tun = tunnel(), dressed = dressing(), fix = fixtures();
+    parts.push(landing(), run.flat, run.glow, tun.stone, tun.iron, dressed.banners, dressed.glass, catwalks(), fix.flat, fix.glow, fix.glass, dock());
+    for (const z of tun.neonZ) parts.push(moved(merge(tun.neon), 0, 0, z));
+    // The boards on their mounts, their glass and tiles, as they hang.
+    const frames = boardFrames(), faces = { stats: statsFace(), timeline: timelineFace() };
+    for (const [key, b] of Object.entries(L.boards)) {
+      for (const g of [frames[key].flat, frames[key].glow, faces[key].flat, faces[key].glow]) {
+        const c = merge(g), v = c.verts;
+        for (let i = 0; i < v.length; i++) v[i] *= b.scale;
+        parts.push(moved(turnedY(c, b.turn), b.x, b.y, b.z));
+      }
+    }
+    parts.push(moved(merge(JM.jet(JM.STAGE)), L.jet.x, 0, L.jet.z));
+    // Space past the shield: deep blue, stars, the band's haze and a ringed planet.
+    const sz = T.z1 - 6;
+    parts.push(box({ w: 34, h: 26, d: 0.2, color: "#070c2a", emissive: 1, offset: { y: T.y, z: sz } }));
+    for (let i = 0; i < 18; i++) parts.push(box({ w: 2 + rand() * 3, h: 1 + rand() * 2, d: 0.05, color: rand() < 0.5 ? "#2a1a5a" : "#1a3a6a", emissive: 1, offset: { x: (rand() - 0.5) * 16, y: T.y + (rand() - 0.5) * 12, z: sz + 0.12 } }));
+    for (let i = 0; i < 140; i++) {
+      const k = 0.06 + rand() * 0.1;
+      parts.push(box({ w: k, h: k, d: 0.04, color: rand() < 0.8 ? "#f4f6ff" : "#ffe6b0", emissive: 1, offset: { x: (rand() - 0.5) * 18, y: T.y + (rand() - 0.5) * 14, z: sz + 0.2 } }));
+    }
+    parts.push(moved(lathe({ profile: Array.from({ length: 9 }, (_, k) => [Math.sin(k / 8 * Math.PI) * 1.4, -Math.cos(k / 8 * Math.PI) * 1.4]), segments: 14, color: "#e8b070", emissive: 1 }), -2.6, T.y + 2.4, sz + 1.5));
+    parts.push(moved(turnedZ(turnedX(torus(2.3, 0.12, "#c8a878", 1, 24, 4), 1.25), 0.35), -2.6, T.y + 2.4, sz + 1.5));
+    const geo = merge(...parts);
+    geo.lines = [];
+    delete geo.voxel;
+    const lit = [...fixedLights()];
+    for (const P of [dressed.lights, fix.lights]) for (let i = 0; i < P.length; i += 4) lit.push([P[i], P[i + 1], P[i + 2], P[i + 3], ...LANTERN_GLOW]);
+    return [FM.bakeWindow(geo, FM.windowLights(lit), [0, 0, 0], MOOD)];
+  });
+
   // ---- the floor an Ooga walks ----------------------------------------------------------------------------------
 
   // Every surface with its height, as the Factory keeps its own: the floor, the landing, the catwalks and the dock's
@@ -923,7 +1005,8 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, STEP, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
+    LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
+    fixedLights, doorWindow,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))

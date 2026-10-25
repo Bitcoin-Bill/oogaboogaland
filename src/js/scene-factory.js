@@ -1264,6 +1264,12 @@
       addChild(root, node);
       const mouth = { x: h.x, z: h.z, ry: h.turn, floorY: h.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } };
       s.hangar = { node, stone, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };
+      // Through the shield, the hangar as it stands, from its own stand-in (`hangar-window.js`; WebGL only, the glimpse
+      // staying behind it and in its place on Canvas 2D).
+      if (renderer.kind !== "canvas2d") {
+        const HD = BL.hangarModels.LAYOUT.door;
+        s.hangar.window = BL.hangarWindow.create({ group: node, pieces: BL.hangarModels.doorWindow(), beyond: BL.hangarWindow.across(HD.x, HD.y, HD.z, HD.turn, D.plane), plane: D.plane });
+      }
     }
     // Gallery stands along the top decks.
     const gcaps = FM.galleryCaps();
@@ -2036,6 +2042,7 @@
     // So does the hangar door's, in the same cyan.
     const hg = s.hangar;
     if (hg) {
+      if (hg.window) hg.window.update(camera);
       hg.phase.update(dt, elapsed);
       hg.phase.body.update(dt);
       hg.phase.body.time = hg.phase.ripples.time;
@@ -2264,7 +2271,10 @@
     }
     for (const g of scene.crew) g.agent.dispose();
     scene.gate.phase.dispose();
-    if (scene.hangar) scene.hangar.phase.dispose();
+    if (scene.hangar) {
+      scene.hangar.phase.dispose();
+      if (scene.hangar.window) scene.hangar.window.dispose();
+    }
     for (const t of scene.tunnels) { t.ripples.dispose(); t.body.dispose(); }
     // Save the carry/combat choice while the controlled actor still exists.
     pilot.dispose();
