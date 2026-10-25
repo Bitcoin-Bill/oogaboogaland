@@ -49,6 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
+    PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -204,8 +205,11 @@
   };
   const ARENAS = { fort: fortChaos(), town: oogaTown() };
   // What every map shares: its size, the stands, the towers with their ladders and ziplines.
+  // The banana peels the potato Oogas drop round their fire, offsets from it toward the field.
+  const PEELS = [[3, 1.5], [2.2, -2.6], [0.6, 3.2], [0.8, -3.3]];
   for (const A of Object.values(ARENAS)) {
     A.W = W; A.L = L;
+    A.peels = PEELS.map(([dx, dz]) => [A.fire[0] + dx, A.fire[1] + dz]);
     A.stands = { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } };
     // Each tower's footprint [x0, x1, z0, z1] and the ladder up its inward side: a zone [x0, x1, z0, z1] to climb in,
     // and the way into the tower (dx, dz) a climber pushes toward.
@@ -357,7 +361,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0,
+      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -367,9 +371,10 @@
     const traps = A.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const caches = A.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const powers = A.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
+    const peels = A.peels.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -423,7 +428,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = a.slip = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -439,6 +444,7 @@
     for (const s of sim.shots) s.live = false;
     for (const t of sim.traps) t.dark = 0;
     for (const c of sim.caches) c.dark = 0;
+    for (const p of sim.peels) p.dark = 0;
     // Each pair of spots starts with the same power (boots, laser eyes, then the halving or cold storage by the seed);
     // after that each draws from the seed, so a seed replays the round's power-ups too.
     for (let i = 0; i < sim.powers.length; i++) { const p = sim.powers[i]; p.dark = 0; p.kind = [0, 3, seed & 1 ? 2 : 1][(i >> 1) % 3]; }
@@ -661,7 +667,7 @@
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -1013,9 +1019,21 @@
         else if (a.trapped <= 0) { a.trapped = 0.001; escape(sim, a.id, "timeout"); }
       } else if (a.guard > 0) a.guard = Math.max(0, a.guard - dt);
       a.painted = Math.max(0, a.painted - dt * 0.05);
+      // Slipping on a peel: the Ooga spins and slides, out of control, until it finds its feet.
+      if (a.slip > 0) {
+        a.slip = Math.max(0, a.slip - dt);
+        a.heading += CONFIG.SLIP_SPIN * dt * (a.slip / CONFIG.SLIP_S + 0.2);
+        const k = Math.max(0, 1 - 2.2 * dt);
+        a.vx *= k; a.vz *= k;
+        if (a.slip === 0) emit(sim, "steady", a.team, a.id, a.x, a.y, a.z);
+      }
       const free = a.splat <= 0 && a.trapped <= 0;
       let jump = false;
-      if (a.bot) {
+      if (a.slip > 0) {
+        // No steering, no jumping: the slide carries on.
+        if (!a.bot) input.jump = 0;
+        a.botJump = false;
+      } else if (a.bot) {
         thinkBot(sim, a, dt);
         jump = a.botJump;
         a.botJump = false;
@@ -1111,6 +1129,19 @@
         a.vy = 4.5; a.grounded = false; a.jumps = 0;
         emit(sim, "burn", a.team, a.id, a.x, 0, a.z);
       }
+      // A banana peel underfoot: a slide and a spin, and whatever block was in hand goes flying out of it.
+      if (a.grounded && a.y < 0.1 && free && a.slip <= 0) {
+        for (const p of sim.peels) {
+          if (p.dark > 0 || (a.x - p.x) ** 2 + (a.z - p.z) ** 2 > CONFIG.PEEL_R * CONFIG.PEEL_R) continue;
+          a.slip = CONFIG.SLIP_S;
+          a.vx *= 1.3; a.vz *= 1.3;
+          p.dark = CONFIG.PEEL_REARM;
+          if (a.holding) { a.holding = false; emit(sim, "smash", a.team, a.id, a.x, a.y + 2, a.z); }
+          emit(sim, "slip", a.team, a.id, a.x, 0, a.z);
+          dropFlag(sim, a, "knock");
+          break;
+        }
+      }
       if (a.grounded && a.y < 0.05 && free && a.netted <= 0 && trampAt(a)) {
         a.vy = CONFIG.BOUNCE; a.grounded = false; a.jumps = 1;
         emit(sim, "boing", a.team, a.id, a.x, 0, a.z);
@@ -1119,7 +1150,8 @@
       a.moving = sp;
       // The player faces where they aim (`input.face`, the camera's yaw) when the scene gives it; everyone else faces
       // where they run, unless they just threw.
-      if (!a.bot && free && input.face !== undefined) a.heading = input.face;
+      if (a.slip > 0) { /* spinning: the heading turns by itself */ }
+      else if (!a.bot && free && input.face !== undefined) a.heading = input.face;
       else if (sp > 0.5 && a.cooldown <= (a.bot ? sim.bots.cool : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
       if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
     }
@@ -1127,6 +1159,7 @@
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
     for (const p of sim.powers) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
+    for (const p of sim.peels) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
     for (const t of TEAMS) {
       if (sim.halving[t] > 0) sim.halving[t] = Math.max(0, sim.halving[t] - dt);
       if (sim.cold[t] > 0) sim.cold[t] = Math.max(0, sim.cold[t] - dt);

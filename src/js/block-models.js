@@ -433,5 +433,34 @@
     geo.castShadow = false;
     return geo;
   });
-  BL.blockModels = { firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // Bananas: one to hold (a curved run of yellow segments, a brown tip), a heap of them by the fire, and a peel lying
+  // flat, its four flaps splayed.
+  const BANANA = "#ffd23a", BANANA_DK = "#e0a81c";
+  const banana = cached(() => {
+    const parts = [];
+    for (let k = 0; k < 5; k++) {
+      const a = (k - 2) * 0.28;
+      parts.push(box({ w: 0.09, h: 0.09, d: 0.1, color: k % 2 ? BANANA : BANANA_DK, offset: { y: Math.cos(a) * 0.32 - 0.32, z: Math.sin(a) * 0.32 } }));
+    }
+    parts.push(box({ w: 0.05, h: 0.05, d: 0.05, color: "#5a3a22", offset: { y: Math.cos(0.56) * 0.32 - 0.32, z: Math.sin(0.62) * 0.32 + 0.04 } }));
+    return merge(...parts);
+  });
+  const bananaPile = cached(() => {
+    const parts = [];
+    for (let k = 0; k < 9; k++) {
+      const a = k * 2.3, r = k < 5 ? 0.35 : 0.15;
+      parts.push(moved(turnedY(banana(), a), Math.sin(a) * r, 0.36 + (k < 5 ? 0 : 0.12), Math.cos(a) * r));
+    }
+    return merge(...parts);
+  });
+  const peel = cached(() => {
+    const parts = [box({ w: 0.12, h: 0.06, d: 0.12, color: BANANA_DK, offset: { y: 0.04 } })];
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2 + 0.4;
+      parts.push(turnedY(box({ w: 0.1, h: 0.03, d: 0.34, color: k % 2 ? BANANA : "#f2c62e", offset: { y: 0.02, z: 0.2 } }), a));
+      parts.push(turnedY(box({ w: 0.06, h: 0.031, d: 0.06, color: "#5a3a22", offset: { y: 0.02, z: 0.37 } }), a));
+    }
+    return merge(...parts);
+  });
+  BL.blockModels = { banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

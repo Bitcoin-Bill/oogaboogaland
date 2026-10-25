@@ -93,7 +93,7 @@
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
-  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false;
+  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
   // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
@@ -448,6 +448,7 @@
     else if (t === "capture") (mine ? c.capture : c.theirCapture)();
     else if (t === "go") c.go();
     else if (t === "burn") c.burn(me ? 1 : k);
+    else if (t === "slip") c.slip(me ? 1 : k);
     else if (me && t === "trap") c.trap();
     else if (me && (t === "refill" || t === "cache")) c.refill();
     else if (me && t === "rifle") c.rifle();
@@ -482,6 +483,7 @@
     else if (t === "zip") feed(`${who} took the zipline`, e.team);
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
+    else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
@@ -646,7 +648,11 @@
         if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : "HALVING!", 900);
         notice(words[kind], 2600);
         updateStrip();
-      } else if (e.type === "burn") {
+      } else if (e.type === "slip") {
+        fx.burst(e.x, 0.3, e.z, 8, ORANGE_BITS, 1.6);
+        if (me) { center("SLIP!", 900); notice("Banana peel! Spinning…", 1500); }
+      } else if (e.type === "steady") { if (me) notice("Back on your feet", 900); }
+      else if (e.type === "burn") {
         fx.burst(e.x, 0.4, e.z, 14, ORANGE_BITS, 2.4);
         if (me) {
           center("HOT FEET!", 1000);
@@ -905,7 +911,7 @@
       a.trolley.visible = s.riding;
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0;
+      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -928,6 +934,12 @@
         p.armR.rotation.x = -2 + Math.sin(elapsed * 2 + i) * 0.1;
         p.armL.rotation.x = -0.3;
         p.legL.rotation.x = p.legR.rotation.x = 0;
+        continue;
+      }
+      if (s.slip > 0) {
+        // Slipping: arms flung out, one leg up.
+        p.armL.rotation.x = p.armR.rotation.x = -1.6;
+        p.legL.rotation.x = -1.1; p.legR.rotation.x = 0.3;
         continue;
       }
       if (s.burnt > 0) {
@@ -1293,13 +1305,17 @@
     const [fx, fz] = A.fire;
     add(createNode({ geometry: BM.firePit(), position: { x: fx, y: 0, z: fz } }));
     fireNode = add(createNode({ geometry: BM.flames(), position: { x: fx, y: 0.05, z: fz } }));
+    // A heap of bananas by the fire, and each dancer with one in hand; the peels they've dropped round it.
+    add(createNode({ geometry: BM.bananaPile(), position: { x: fx + 1.2, y: 0, z: fz + 0.2 } }));
     dancers = [0, 1, 2].map((k) => {
       const body = add(createNode({ geometry: BM.potato() }));
       const armL = createNode({ geometry: BM.potatoArm(), position: { x: -0.5, y: 0.78, z: 0 } });
       const armR = createNode({ geometry: BM.potatoArm(), position: { x: 0.5, y: 0.78, z: 0 } });
+      addChild(armR, createNode({ geometry: BM.banana(), position: { x: 0, y: -0.36, z: 0.05 }, rotation: { x: 0, y: 0, z: Math.PI } }));
       addChild(body, armL, armR);
       return { body, armL, armR, k };
     });
+    peelNodes = A.peels.map(([x, z], i) => add(createNode({ geometry: BM.peel(), position: { x, y: 0.01, z }, rotation: { x: 0, y: i * 1.7, z: 0 } })));
   };
   // The fire flickers and spits embers; the potato Oogas dance round it, hopping and waving.
   const poseFire = (elapsed) => {
@@ -1308,6 +1324,8 @@
     fireNode.scale.x = fireNode.scale.z = 1 + 0.06 * Math.sin(elapsed * 17);
     fireNode.rotation.y = elapsed * 1.7;
     if (Math.random() < 0.12) fx.burst(cx + (Math.random() - 0.5) * 0.4, 1, cz + (Math.random() - 0.5) * 0.4, 1, ORANGE_BITS, 0.9);
+    // A peel someone slipped on is kicked away; a dancer drops a fresh one after a while.
+    for (let i = 0; i < peelNodes.length; i++) peelNodes[i].visible = sim.peels[i].dark <= 0;
     for (const d of dancers) {
       const a = elapsed * 0.7 + d.k * Math.PI * 2 / 3, x = cx + Math.sin(a) * 1.8, z = cz + Math.cos(a) * 1.8;
       setVec(d.body.position, x, Math.abs(Math.sin(elapsed * 5 + d.k * 1.3)) * 0.3, z);
@@ -1576,7 +1594,7 @@
     hud.dispose();
     phase = "board";
     sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
-    mapRoot = fireNode = dancers = null;
+    mapRoot = fireNode = dancers = peelNodes = null;
     for (const t of SIM.TEAMS) iceNodes[t] = null;
     zipNear = false;
     hud = hooks = input = fx = controls = clock = null;
