@@ -3,9 +3,11 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { box, bevelBox, merge, moved, turnedY, cached, variants, geometry, pushVert, face, tube } = BL.models;
+  const { box, bevelBox, merge, moved, turnedY, cached, variants, geometry, pushVert, face, tube, lathe } = BL.models;
   const { hexToRgb } = BL.math;
-  const SIM = BL.blockSim, A = SIM.ARENA;
+  // Map-independent places (the stands, towers, ladders and ziplines) read Fort Chaos; each map's own ground and
+  // buildings are `arena(map index)`.
+  const SIM = BL.blockSim, A = SIM.ARENAS.fort;
   const TEAM = {
     blue: { paint: "#3a8dff", deep: "#1d4fa8", light: "#9cc8ff" },
     red: { paint: "#ff4a3a", deep: "#a8261d", light: "#ffb0a6" }
@@ -27,8 +29,8 @@
   // The ground: a sandy field with a darker strip down the middle and each half's end tinted to its team, then every
   // wall block in stone with a team-coloured cap near its fort, timber crates for the field's low cover, and the
   // centre tower in dark stone with an orange band.
-  const arena = cached(() => {
-    const parts = [];
+  const arena = variants((mapIndex) => {
+    const M = SIM.ARENAS[SIM.MAPS[mapIndex]], town = M.id === "town", parts = [];
     parts.push(box({ w: A.W * 2 + 4, h: 1, d: A.L * 2 + 4, color: "#6b5a3e", offset: { y: -0.5 } }));
     parts.push(box({ w: A.W * 2, h: 0.04, d: A.L * 2, color: "#c9a96b", offset: { y: 0.02 } }));
     parts.push(box({ w: A.W * 2, h: 0.05, d: 0.6, color: ORANGE, emissive: 0.25, offset: { y: 0.03 } }));
@@ -46,8 +48,27 @@
       parts.push(bevelBox({ w: 0.6, h: 0.8, d: A.L * 2 + 0.6, color: "#7d7468", offset: { x: s * (A.W + 0.3), y: 0.4 } }));
       parts.push(bevelBox({ w: A.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (A.L + 0.3), y: 0.4 } }));
     }
-    for (const b of A.BLOCKS) {
+    if (town) {
+      // Cobbled streets: a darker band down the middle and across the square.
+      parts.push(box({ w: 18, h: 0.05, d: A.L * 2 - 20, color: "#a89270", offset: { y: 0.03 } }));
+      parts.push(box({ w: A.W * 2, h: 0.05, d: 8, color: "#a89270", offset: { y: 0.035 } }));
+    }
+    for (const b of M.BLOCKS) {
       const w = b[1] - b[0], d = b[3] - b[2], bottom = b[5] || 0, h = b[4] - bottom, x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2, y = bottom + h / 2;
+      if (M.steps.has(b)) {
+        // A stair: stone with a worn lip.
+        parts.push(bevelBox({ w, h, d, color: "#8a8178", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.02, h: 0.05, d: 0.12, color: "#b0a698", offset: { x, y: b[4] - 0.02, z: z - d / 2 + 0.06 * Math.sign(z || 1) } }));
+        continue;
+      }
+      if (town && bottom === 0 && h >= 2.9 && !(w < 1 && d < 1) && !(b[4] > TOP - 0.5)) {
+        // A town wall: sandstone with a darker plinth, the banks banded in their team's colour under the top.
+        const bank = Math.abs(z) > 22 || Math.abs(b[2]) > 33;
+        parts.push(bevelBox({ w, h, d, color: "#c4a676", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.03, h: 0.5, d: d + 0.03, color: "#8a7350", offset: { x, y: 0.25, z } }));
+        parts.push(box({ w: w + 0.04, h: 0.2, d: d + 0.04, color: bank ? TEAM[z > 0 ? "blue" : "red"].paint : "#7a5a3a", emissive: bank ? 0.15 : 0, offset: { x, y: b[4] - 0.25, z } }));
+        continue;
+      }
       const fort = Math.abs(z) > 22 && Math.abs(z) < 34, team = z > 0 ? "blue" : "red";
       const post = w < 1 && d < 1, deck = b[4] === TOP, rail = bottom === TOP, roof = bottom > 4 && !deck && !rail, floor = bottom > 1.5 && h < 0.5 && !roof, hutWall = bottom > 1.5 && !floor && !roof;
       if (rail) {
@@ -79,6 +100,48 @@
     }
     return merge(...parts);
   });
+  // The campfire: a ring of stones, crossed logs and three tongues of flame (the scene flickers their node).
+  const firePit = cached(() => {
+    const parts = [];
+    for (let k = 0; k < 10; k++) {
+      const a = k / 10 * Math.PI * 2;
+      parts.push(bevelBox({ w: 0.32, h: 0.24, d: 0.26, color: k % 2 ? "#6e6a66" : "#86817a", offset: { x: Math.sin(a) * 0.85, y: 0.12, z: Math.cos(a) * 0.85 } }));
+    }
+    for (const a of [0.3, 1.9, 3.5]) parts.push(turnedY(box({ w: 1.2, h: 0.16, d: 0.18, color: "#5a3a22", offset: { y: 0.12 } }), a));
+    parts.push(box({ w: 0.9, h: 0.04, d: 0.9, color: "#ff6a1a", emissive: 1, offset: { y: 0.05 } }));
+    return merge(...parts);
+  });
+  const flames = cached(() => {
+    const geo = merge(
+      lathe({ profile: [[0, 0], [0.42, 0.15], [0.3, 0.6], [0, 1.1]], segments: 7, color: "#ff7a1a", emissive: 1 }),
+      moved(lathe({ profile: [[0, 0], [0.26, 0.12], [0.18, 0.45], [0, 0.8]], segments: 6, color: "#ffd24a", emissive: 1 }), 0.12, 0.05, 0.08),
+      moved(lathe({ profile: [[0, 0], [0.2, 0.1], [0.12, 0.3], [0, 0.55]], segments: 6, color: "#fff3a0", emissive: 1 }), -0.1, 0.05, -0.06)
+    );
+    geo.castShadow = false;
+    return geo;
+  });
+  // A potato Ooga that dances round the fire: an egg-shaped tan body speckled darker, a leopard-spot loincloth, two
+  // stubby legs, two little arms (separate, so the scene waves them), big dark eyes and brows, and an open mouth.
+  const potato = cached(() => {
+    const parts = [lathe({ profile: [[0, 0.18], [0.36, 0.26], [0.5, 0.55], [0.52, 0.85], [0.44, 1.15], [0.26, 1.33], [0, 1.38]], segments: 10, color: "#c9a06a" })];
+    for (let k = 0; k < 9; k++) {
+      const a = k * 2.4, y = 0.45 + (k % 4) * 0.22;
+      parts.push(box({ w: 0.05, h: 0.05, d: 0.05, color: "#9a7448", offset: { x: Math.sin(a) * 0.5, y, z: Math.cos(a) * 0.5 } }));
+    }
+    parts.push(lathe({ profile: [[0.37, 0.2], [0.47, 0.28], [0.5, 0.42], [0.36, 0.42]], segments: 10, color: "#c8954a" }));
+    for (let k = 0; k < 10; k++) {
+      const a = k * 0.63 + 0.2;
+      parts.push(box({ w: 0.07, h: 0.06, d: 0.04, color: "#3a2614", offset: { x: Math.sin(a) * 0.49, y: 0.3 + (k % 2) * 0.07, z: Math.cos(a) * 0.49 } }));
+    }
+    for (const x of [-0.17, 0.17]) {
+      parts.push(box({ w: 0.15, h: 0.24, d: 0.15, color: "#d8b07a", offset: { x, y: 0.1 } }));
+      parts.push(box({ w: 0.1, h: 0.13, d: 0.04, color: "#1a1410", offset: { x, y: 0.95, z: 0.5 } }));
+      parts.push(box({ w: 0.14, h: 0.04, d: 0.04, color: "#1a1410", offset: { x: x * 1.1, y: 1.1, z: 0.47 } }));
+    }
+    parts.push(box({ w: 0.14, h: 0.12, d: 0.04, color: "#5a1a14", offset: { y: 0.72, z: 0.52 } }));
+    return merge(...parts);
+  });
+  const potatoArm = cached(() => merge(box({ w: 0.12, h: 0.32, d: 0.12, color: "#d8b07a", offset: { y: -0.14 } }), box({ w: 0.16, h: 0.12, d: 0.14, color: "#d8b07a", offset: { y: -0.3 } })));
   // A stand: a stepped stone plinth with its team's paint round the top, where the block sits.
   const stand = variants((i) => {
     const t = SIM.TEAMS[i];
@@ -346,5 +409,58 @@
     }
     return merge(...parts);
   });
-  BL.blockModels = { tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // The power-ups, each a floating glowing token over a little plinth: a lightning bolt (boots), a coin cut in half
+  // (the halving), an ice cube (cold storage) and a visor with two red eyes (laser eyes); and the ice over a frozen
+  // block.
+  const power = variants((i) => {
+    const parts = [box({ w: 0.7, h: 0.12, d: 0.7, color: "#3a3430", offset: { y: 0.06 } })], y = 1.1;
+    if (i === 0) {
+      for (const [x, yy, w, h] of [[0.08, 0.22, 0.14, 0.3], [-0.02, 0.02, 0.26, 0.1], [-0.1, -0.2, 0.14, 0.3]]) parts.push(box({ w, h, d: 0.1, color: "#ffe14a", emissive: 1, offset: { x, y: y + yy } }));
+    } else if (i === 1) {
+      parts.push(box({ w: 0.24, h: 0.56, d: 0.1, color: ORANGE, emissive: 0.9, offset: { x: -0.16, y } }));
+      parts.push(box({ w: 0.24, h: 0.56, d: 0.1, color: "#c9ced6", emissive: 0.5, offset: { x: 0.16, y: y - 0.12 } }));
+    } else if (i === 2) {
+      parts.push(bevelBox({ w: 0.5, h: 0.5, d: 0.5, color: "#bfe8ff", emissive: 0.7, offset: { y } }));
+      parts.push(box({ w: 0.3, h: 0.06, d: 0.52, color: "#ffffff", emissive: 1, offset: { y: y + 0.1 } }));
+    } else {
+      parts.push(box({ w: 0.6, h: 0.18, d: 0.14, color: "#24242a", offset: { y } }));
+      for (const x of [-0.15, 0.15]) parts.push(box({ w: 0.14, h: 0.1, d: 0.16, color: "#ff2a1a", emissive: 1, offset: { x, y } }));
+    }
+    return merge(...parts);
+  });
+  const ice = cached(() => {
+    const geo = merge(bevelBox({ w: 1.25, h: 1.25, d: 1.25, color: "#bfe8ff", emissive: 0.35 }), box({ w: 1.27, h: 0.08, d: 1.27, color: "#ffffff", emissive: 0.8, offset: { y: 0.3 } }));
+    geo.castShadow = false;
+    return geo;
+  });
+  // Bananas: one to hold (a curved run of yellow segments, a brown tip), a heap of them by the fire, and a peel lying
+  // flat, its four flaps splayed.
+  const BANANA = "#ffd23a", BANANA_DK = "#e0a81c";
+  const banana = cached(() => {
+    const parts = [];
+    for (let k = 0; k < 5; k++) {
+      const a = (k - 2) * 0.28;
+      parts.push(box({ w: 0.09, h: 0.09, d: 0.1, color: k % 2 ? BANANA : BANANA_DK, offset: { y: Math.cos(a) * 0.32 - 0.32, z: Math.sin(a) * 0.32 } }));
+    }
+    parts.push(box({ w: 0.05, h: 0.05, d: 0.05, color: "#5a3a22", offset: { y: Math.cos(0.56) * 0.32 - 0.32, z: Math.sin(0.62) * 0.32 + 0.04 } }));
+    return merge(...parts);
+  });
+  const bananaPile = cached(() => {
+    const parts = [];
+    for (let k = 0; k < 9; k++) {
+      const a = k * 2.3, r = k < 5 ? 0.35 : 0.15;
+      parts.push(moved(turnedY(banana(), a), Math.sin(a) * r, 0.36 + (k < 5 ? 0 : 0.12), Math.cos(a) * r));
+    }
+    return merge(...parts);
+  });
+  const peel = cached(() => {
+    const parts = [box({ w: 0.12, h: 0.06, d: 0.12, color: BANANA_DK, offset: { y: 0.04 } })];
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2 + 0.4;
+      parts.push(turnedY(box({ w: 0.1, h: 0.03, d: 0.34, color: k % 2 ? BANANA : "#f2c62e", offset: { y: 0.02, z: 0.2 } }), a));
+      parts.push(turnedY(box({ w: 0.06, h: 0.031, d: 0.06, color: "#5a3a22", offset: { y: 0.02, z: 0.37 } }), a));
+    }
+    return merge(...parts);
+  });
+  BL.blockModels = { banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

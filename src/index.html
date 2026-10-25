@@ -309,6 +309,7 @@
       <nav class="presets" aria-label="Block Frenzy" data-scene="block" hidden>
         <button type="button" data-action="block-board" id="block-board-btn">Sides</button>
         <button type="button" data-action="block-view" id="block-view-btn" aria-pressed="false">View</button>
+        <button type="button" data-action="block-sound" id="block-sound-btn" aria-pressed="true">Sound</button>
         <button type="button" data-action="block-drop" id="block-drop" disabled>Drop<span> block</span></button>
         <button type="button" class="leave" data-action="leave">Back<span> to the island</span></button>
       </nav>
@@ -868,6 +869,24 @@
               <button type="button" class="block-side block-target" data-target="5" aria-pressed="false">5</button>
               <button type="button" class="block-side block-target" data-target="7" aria-pressed="false">7</button>
             </div>
+            <h3 class="section-head">Map</h3>
+            <div class="block-sides block-targets">
+              <button type="button" class="block-side block-target" data-map="fort" aria-pressed="true">Fort Chaos</button>
+              <button type="button" class="block-side block-target" data-map="town" aria-pressed="false">Ooga Town</button>
+            </div>
+            <h3 class="section-head">Oogas a side</h3>
+            <div class="block-sides block-targets">
+              <button type="button" class="block-side block-target" data-size="2" aria-pressed="false">2</button>
+              <button type="button" class="block-side block-target" data-size="3" aria-pressed="true">3</button>
+              <button type="button" class="block-side block-target" data-size="4" aria-pressed="false">4</button>
+              <button type="button" class="block-side block-target" data-size="5" aria-pressed="false">5</button>
+            </div>
+            <h3 class="section-head">Bots</h3>
+            <div class="block-sides block-targets">
+              <button type="button" class="block-side block-target" data-skill="easy" aria-pressed="false">Easy</button>
+              <button type="button" class="block-side block-target" data-skill="normal" aria-pressed="true">Normal</button>
+              <button type="button" class="block-side block-target" data-skill="hard" aria-pressed="false">Hard</button>
+            </div>
             <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
             <select class="block-ooga" id="block-ooga"></select>
           </div>
@@ -889,6 +908,7 @@
           <div class="race-lap block-score" data-team="blue"><span>Blue</span><b id="block-score-blue">0</b></div>
           <div class="race-lap block-score" data-team="red"><span>Red</span><b id="block-score-red">0</b></div>
           <div class="race-lap block-sprint"><span>Sprint</span><div class="block-sprint-bar" aria-hidden="true"><i id="block-stamina"></i></div></div>
+          <div class="race-lap block-power" id="block-power" hidden><span>Power</span><b id="block-power-word"></b></div>
         </div>
         <div class="race-hud race-hud-right">
           <div class="race-time" id="block-time">0:00</div>
@@ -898,6 +918,8 @@
         </div>
       </div>
       <div class="race-center" id="block-center" hidden>GO!</div>
+      <canvas class="block-map" id="block-map" width="88" height="148" hidden aria-label="Map: both blocks and every Ooga"></canvas>
+      <ol class="block-feed" id="block-feed" hidden aria-live="off"><li></li><li></li><li></li><li></li></ol>
       <button type="button" class="act block-paint" id="block-paint" hidden>Throw!</button>
       <div class="block-tools" id="block-tools" hidden role="toolbar" aria-label="Tools">
         <button type="button" data-tool="paint" aria-pressed="true"><kbd>1</kbd>Paint <b>∞</b></button>
@@ -1942,6 +1964,7 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/block-sim.js"></script>
   <script src="js/block-trivia.js"></script>
   <script src="js/block-models.js"></script>
+  <script src="js/block-audio.js"></script>
   <script src="js/scene-block.js"></script>
   <script src="js/mine-models.js"></script>
   <script src="js/mine-sim.js"></script>
