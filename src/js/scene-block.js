@@ -44,12 +44,14 @@
     rescue: ["Mine again! Home!", "Ooga take it back!"],
     boom: ["Kaboom!", "Paint everywhere!"],
     net: ["Ooga tangled!", "Net?! Rude!"],
+    bonk: ["Bonk!", "Ooga see stars!", "Who threw box?!"],
     trap: ["Quiz?! Ooga think…", "Hmm. Satoshi who?", "Big brain time."],
     free: ["Ooga know!", "Easy! Twenty-one million!", "Brain unlocked!"]
   };
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
   const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net" };
   const WEATHER_WORDS = { clear: "Clear", breeze: "Windy", storm: "Storm" };
   const RAIN = 140;
@@ -110,7 +112,8 @@
       const blob = createNode({ geometry: BM.splat(0), position: { x: 0, y: 1.9, z: 0 }, scale: { x: 0.8, y: 1, z: 0.8 }, visible: false });
       const bubble = createNode({ geometry: BM.bubble(), visible: false });
       const netted = createNode({ geometry: BM.draped(), visible: false });
-      addChild(body, ring, blob, bubble, netted);
+      const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
+      addChild(body, ring, blob, bubble, netted, held);
       place(body);
       if (cave) input.add(cave.parts.torso, { kind: "ooga", index: i, priority: 1 });
       // A companion a character file hangs on its Ooga (`parts.dog`) is let off the lead here: it is lifted off the
@@ -122,7 +125,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -400,6 +403,15 @@
       else if (e.type === "waiting") {
         if (me) { center("NOT YET!", 1200); notice("Your own block isn't home, so you can't score. Hold on here while your team brings it back, or go get it", 4000); }
         else if (mine) notice("Teammate is waiting at our stand · get our block home so they can score", 3000);
+      } else if (e.type === "lift" || e.type === "set") {
+        if (e.actor === 0) updateTools();
+        if (e.type === "set") fx.burst(e.x, e.y + 0.2, e.z, 6, WOOD_BITS, 1.2);
+        if (e.type === "lift" && e.actor === 0) notice("Crate up! Click throws it · F sets it down or stacks it", 2200);
+      } else if (e.type === "smash") fx.burst(e.x, e.y + 0.4, e.z, 14, WOOD_BITS, 2.4);
+      else if (e.type === "bonk") {
+        fx.burst(e.x, e.y + 0.8, e.z, 14, STAR_BITS, 2.2);
+        if (me) { center("BONK!", 900); notice("Crate to the head! Seeing stars…", 2000); }
+        say(e.actor, LINES.bonk, 1.3);
       } else if (e.type === "pass") {
         if (me) notice("Block thrown! A teammate can catch it", 1500);
         else if (mine) notice("Pass! Catch it", 1500);
@@ -449,6 +461,11 @@
   };
   const paint = () => {
     const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
+    // Holding a crate, a throw throws the crate.
+    if (a.holding) {
+      const cdx = q.x - a.x, cdz = q.z - a.z, cflat = Math.hypot(cdx, cdz) || 1;
+      return SIM.fire(sim, 0, Math.atan2(cdx, cdz), clamp(Math.atan2(q.y - a.y - 1.7, cflat) - 0.05, -0.6, 0.6), "crate");
+    }
     const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
     const lob = tool === "grenade" ? 0.3 : tool === "rocket" ? 0 : tool === "net" ? -0.12 : -0.09;
     const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
@@ -494,6 +511,7 @@
       const n = b.querySelector("b");
       if (n) n.textContent = k === "paint" ? "∞" : k === "crate" ? String(a.crates) : String(a[k]);
       if (k === "pass") b.disabled = !a.carrying;
+      if (k === "grab") b.setAttribute("aria-pressed", String(a.holding));
     }
   };
   const setView = (first) => {
@@ -536,6 +554,14 @@
     if (!e.repeat) passBlock();
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
+  // Pick up the crate in front, or set the held one down (stacking it on a crate there).
+  const grabCrate = () => {
+    if (phase !== "play") return false;
+    if (SIM.grab(sim, 0, cam.face)) return true;
+    const a = sim.actors[0];
+    notice(a.holding ? "No room to set it there (stacks go three high)" : a.carrying ? "Hands full with the block" : "No crate in reach · face one and press F", 1200);
+    return false;
+  };
   // Throw the carried block straight ahead, toward the crosshair, for a teammate to catch.
   const passBlock = () => {
     if (phase !== "play") return false;
@@ -602,9 +628,12 @@
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
       a.ring.visible = s.grounded;
-      a.blob.visible = s.splat > 0;
       a.bubble.visible = s.trapped > 0;
       a.netted.visible = s.netted > 0;
+      a.held.visible = s.holding && !(i === 0 && cam.first);
+      if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
+      // A crate to the head shows stars, not paint.
+      a.blob.visible = s.splat > 0 && !s.bonked;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
       if (!a.cave) continue;
       const p = a.cave.parts;
@@ -634,8 +663,8 @@
       const swing = Math.sin(a.phase) * Math.min(1, sp / 3);
       p.legR.rotation.x = swing * 0.6;
       p.legL.rotation.x = -swing * 0.6;
-      if (s.carrying) {
-        // Both hands up holding the block overhead.
+      if (s.carrying || s.holding) {
+        // Both hands up holding the block (or a crate) overhead.
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
       } else {
         p.armR.rotation.x = s.cooldown > (s.bot ? C.BOT_COOLDOWN : C.COOLDOWN) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
@@ -670,7 +699,7 @@
       const c = sim.crates[i], n = crates[i];
       n.visible = c.live;
       if (!c.live) continue;
-      setVec(n.position, c.x, 0, c.z);
+      setVec(n.position, c.x, c.y, c.z);
       n.geometry = BM.crate(TEAM_INDEX[c.team]);
     }
   };
@@ -730,7 +759,7 @@
       if (!s.live) continue;
       setVec(n.position, s.x, s.y, s.z);
       const t = TEAM_INDEX[s.team];
-      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : BM.ball(t);
+      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
       n.rotation.y = Math.atan2(s.vx, s.vz);
       n.rotation.x = s.kind === "rocket" ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
     }
@@ -824,6 +853,7 @@
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
     if (e.key === "r" || e.key === "R") buildCrate();
+    if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
@@ -856,7 +886,7 @@
     el.toolBar = document.getElementById("block-tools");
     el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
     el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
-    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
+    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
     el.staminaK = -1;
@@ -956,7 +986,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · Tab passes the block · R crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · right click or wheel tools · Tab passes · F picks up, stacks, sets crates · R new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);

@@ -19,7 +19,9 @@
 // Crates: wooden boxes anyone can push by walking into them and stand on. Each fort starts with a few, each team has
 // a stock to place (`build`) on its own half, and a round opens with `PREP_S` of fortifying, each side kept to its
 // own half and the flags locked, so the bots plug their gates and the visitor can wall theirs: getting in then takes
-// a push or a double jump. A crate never lands on a stand.
+// a push or a double jump. A crate never lands on a stand. An Ooga can pick a crate up (`grab`), carry it overhead,
+// set it down or stack it up to three high (`grab` again), or throw it (`fire` with "crate"): a crate that hits a
+// rival stuns them as a paint hit does, and lands as a crate where it falls.
 //
 // Quiz traps: glowing Matrix pads on the field (`ARENA.traps`). Step on one and a bubble closes round you: you can't
 // move, throw, pick up or score, a carrier drops the block, and nobody can paint you inside it. You get out by
@@ -52,7 +54,8 @@
     paint: { speed: 24, lift: 2.2, gravity: 9, life: 1.1, r: 0.5, blast: 0, cool: 0.32, max: 0 },
     grenade: { speed: 12, lift: 4.5, gravity: 14, life: 2.2, r: 0.45, blast: 2.6, cool: 0.8, max: 3 },
     rocket: { speed: 28, lift: 0, gravity: 0, life: 1.6, r: 0.55, blast: 3.2, cool: 1.2, max: 1 },
-    net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 }
+    net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 },
+    crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
@@ -128,7 +131,7 @@
   // The crates of the sim being stepped; the world queries below see them as boxes alongside the fixed blocks.
   let CRATES = [];
   const CB = [0, 0, 0, 0, 0, 0];
-  const crateBox = (c) => { CB[0] = c.x - CONFIG.CRATE_HALF; CB[1] = c.x + CONFIG.CRATE_HALF; CB[2] = c.z - CONFIG.CRATE_HALF; CB[3] = c.z + CONFIG.CRATE_HALF; CB[4] = CONFIG.CRATE_H; CB[5] = 0; return CB; };
+  const crateBox = (c) => { CB[0] = c.x - CONFIG.CRATE_HALF; CB[1] = c.x + CONFIG.CRATE_HALF; CB[2] = c.z - CONFIG.CRATE_HALF; CB[3] = c.z + CONFIG.CRATE_HALF; CB[4] = c.y + CONFIG.CRATE_H; CB[5] = c.y; return CB; };
   const boxCount = () => BLOCKS.length + CRATES.length;
   // The i-th box: a fixed block, then the live crates (a dead crate is an empty box nothing touches).
   const boxAt = (i) => {
@@ -226,13 +229,13 @@
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
-      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
+      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0, holding: false, bonked: false,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
     for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
-    const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, z: 0 }));
+    const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
@@ -250,23 +253,29 @@
     for (const k of KINDS) if (TOOLS[k].max && a[k] < TOOLS[k].max) { a[k] = TOOLS[k].max; more = true; }
     return more;
   };
-  // A crate at (x, z) if the spot is free of blocks, crates and stands; returns it, or null.
-  const freeSpot = (sim, x, z) => {
-    const h = CONFIG.CRATE_HALF;
+  // True when a crate fits at (x, y, z): inside the arena, off the stands, overlapping no box at that height.
+  const freeSpot = (sim, x, z, y = 0) => {
+    const h = CONFIG.CRATE_HALF, top = y + CONFIG.CRATE_H;
     if (x < -W + h || x > W - h || z < -L + h || z > L - h) return false;
     for (const t of TEAMS) { const s = ARENA.stands[t]; if (Math.hypot(x - s.x, z - s.z) < CONFIG.STAND_CLEAR) return false; }
     for (let i = 0, n = boxCount(); i < n; i++) {
       const b = boxAt(i);
-      if (b[5] > CONFIG.CRATE_H) continue;
+      if (b[5] >= top - 0.01 || b[4] <= y + 0.01) continue;
       if (x + h > b[0] && x - h < b[1] && z + h > b[2] && z - h < b[3]) return false;
     }
     return true;
   };
-  const addCrate = (sim, team, x, z) => {
-    if (!freeSpot(sim, x, z)) return null;
-    for (const c of sim.crates) if (!c.live) { c.live = true; c.team = team; c.x = x; c.z = z; return c; }
+  const addCrate = (sim, team, x, z, y = 0) => {
+    if (!freeSpot(sim, x, z, y)) return null;
+    for (const c of sim.crates) if (!c.live) { c.live = true; c.team = team; c.x = x; c.y = y; c.z = z; return c; }
     return null;
   };
+  // The crate sitting on crate c, if any.
+  const crateOn = (sim, c) => {
+    for (const o of sim.crates) if (o.live && o !== c && Math.abs(o.y - c.y - CONFIG.CRATE_H) < 0.05 && Math.abs(o.x - c.x) < CONFIG.CRATE_HALF * 2 - 0.05 && Math.abs(o.z - c.z) < CONFIG.CRATE_HALF * 2 - 0.05) return o;
+    return null;
+  };
+  const MAX_STACK_Y = CONFIG.CRATE_H * 2 + 0.05;
   // Everyone back to their fort, both flags home, the forts' crates back, the score at nil and the clock at zero.
   const reset = (sim, seed = sim.seed) => {
     sim.seed = seed;
@@ -281,7 +290,7 @@
       a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = a.botJump = false; a.carrying = a.blocked = null;
       a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = a.jump2At = a.tries = a.netted = a.progT = 0;
       a.lastD = Infinity;
-      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = false; a.rest = 0;
+      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -381,6 +390,54 @@
     emit(sim, "build", a.team, id, x, 0, z);
     return true;
   };
+  // Pick up the nearest top crate in front of actor `id`, or, holding one, set it down a step ahead along `yaw`: on top
+  // of a crate there (up to three high) or on whatever ground is there. Hands carrying a block can't take a crate.
+  const grab = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    const a = sim.actors[id];
+    if (sim.over || a.splat > 0 || a.trapped > 0 || !a.grounded) return false;
+    const fx = a.x + Math.sin(yaw) * 1.3, fz = a.z + Math.cos(yaw) * 1.3;
+    if (a.holding) {
+      let x = fx, z = fz, y = groundAt(fx, fz, a.y + 1.2, 0);
+      for (const c of sim.crates) {
+        if (!c.live || Math.hypot(c.x - fx, c.z - fz) > 0.8 || crateOn(sim, c)) continue;
+        x = c.x; z = c.z; y = c.y + CONFIG.CRATE_H;
+      }
+      if (y > MAX_STACK_Y || !addCrate(sim, a.team, x, z, y)) return false;
+      a.holding = false;
+      emit(sim, "set", a.team, id, x, y, z);
+      return true;
+    }
+    if (a.carrying) return false;
+    let best = null, bd = 1.1;
+    for (const c of sim.crates) {
+      if (!c.live || crateOn(sim, c) || c.y > a.y + 1.6) continue;
+      const d = Math.hypot(c.x - fx, c.z - fz);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) return false;
+    best.live = false;
+    a.holding = true;
+    emit(sim, "lift", a.team, id, best.x, best.y, best.z);
+    return true;
+  };
+  // A thrown crate comes to rest where it fell, or as near as there's room; with no room it breaks.
+  const landCrate = (sim, s) => {
+    for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const x = s.x + dx * 1.25, z = s.z + dz * 1.25, y = groundAt(x, z, Math.max(0, s.y) + 0.5, 0);
+      if (y <= MAX_STACK_Y && addCrate(sim, s.team, x, z, y)) { emit(sim, "set", s.team, s.owner, x, y, z); return; }
+    }
+    emit(sim, "smash", s.team, s.owner, s.x, Math.max(0, s.y), s.z);
+  };
+  // Crates with nothing under them fall to whatever is below.
+  const settleCrates = (sim, dt) => {
+    for (const c of sim.crates) {
+      if (!c.live || c.y <= 0) continue;
+      c.live = false;
+      const below = groundAt(c.x, c.z, c.y, -0.05);
+      c.live = true;
+      if (below < c.y) c.y = Math.max(below, c.y - 7 * dt);
+    }
+  };
   // Out of a quiz bubble (a right answer, or the bot's think time up): fresh-paint protection follows, as after a splat.
   const escape = (sim, id = 0, why = "escape") => {
     const a = sim.actors[id];
@@ -402,7 +459,7 @@
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0)) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -411,18 +468,21 @@
     s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.25 : CONFIG.SHOT_Y);
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
+    if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
     a.cooldown = a.bot ? Math.max(tool.cool, CONFIG.BOT_COOLDOWN) : tool.cool;
     a.heading = yaw;
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
-  const splat = (sim, a) => {
+  const splat = (sim, a, bonk = false) => {
     a.splat = CONFIG.SPLAT_S;
+    a.bonked = bonk;
     a.guard = a.netted = 0;
     a.vx = a.vz = 0;
     a.splats++;
     a.painted = Math.min(1, a.painted + 0.34);
-    emit(sim, "splat", a.team, a.id, a.x, a.y + 1, a.z);
+    emit(sim, bonk ? "bonk" : "splat", a.team, a.id, a.x, a.y + 1, a.z);
+    if (a.holding) { a.holding = false; emit(sim, "smash", a.team, a.id, a.x, a.y + 2, a.z); }
     dropFlag(sim, a, "knock");
   };
   const open = (a) => a.splat <= 0 && a.guard <= 0 && a.trapped <= 0;
@@ -586,7 +646,7 @@
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
     // Picking up: the rivals' flag from its stand or the ground, or your own team's flag where it was dropped.
     for (const f of [theirs, own]) {
-      if (a.carrying || f.state === "carried" || (f === own && f.state === "home")) continue;
+      if (a.carrying || a.holding || f.state === "carried" || (f === own && f.state === "home")) continue;
       if (f.state === "flying") {
         // A catch: the block within reach of the body's middle, its thrower kept off it for a moment.
         if (f.thrower === a.id && f.t < CONFIG.PASS_SAFE) continue;
@@ -635,7 +695,7 @@
     if (a.y > 0.05) return;
     const r = CONFIG.BODY_R, h = CONFIG.CRATE_HALF;
     for (const c of sim.crates) {
-      if (!c.live) continue;
+      if (!c.live || c.y > 0.05 || crateOn(sim, c)) continue;
       const cx = Math.max(c.x - h, Math.min(a.x, c.x + h)), cz = Math.max(c.z - h, Math.min(a.z, c.z + h));
       const dx = a.x - cx, dz = a.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r || d2 < 1e-9) continue;
@@ -773,6 +833,7 @@
     for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
+    settleCrates(sim, dt);
     // Throws in flight: gravity and the wind, then a rival in the way or anything solid.
     for (const s of sim.shots) {
       if (!s.live) continue;
@@ -785,8 +846,9 @@
       let hit = null;
       for (const a of sim.actors) {
         if (a.team === s.team || !open(a)) continue;
-        const dy = s.y - a.y;
-        if (dy > -0.1 && dy < heightOf(a) + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
+        // A crate is big: it counts a little over the head and under the feet.
+        const dy = s.y - a.y, slack = s.kind === "crate" ? 0.45 : 0.15;
+        if (dy > -slack && dy < heightOf(a) + slack && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
       }
       const solid = !hit && solidAt(s.x, s.y, s.z), spent = s.t > tool.life;
       if (!hit && !solid && !spent) continue;
@@ -795,8 +857,9 @@
       else if (hit && s.kind === "net") {
         hit.netted = CONFIG.NET_S;
         emit(sim, "net", hit.team, hit.id, hit.x, hit.y + 1, hit.z);
-      } else if (hit) splat(sim, hit);
-      else emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
+      } else if (hit) splat(sim, hit, s.kind === "crate");
+      if (s.kind === "crate") landCrate(sim, s);
+      else if (!hit) emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
     }
   };
   // Advance by any frame time in fixed substeps (at most four a call, as the other games do). Stops when the round is
@@ -808,5 +871,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, escape, clearLine, solidAt, resolve, groundAt };
 })();

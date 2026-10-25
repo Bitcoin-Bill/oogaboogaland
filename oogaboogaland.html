@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'sha256-5zYEX9t9Uox4OIBBJdXXtvMCiY8hLJ+0CG1Udf0a1bw=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    content="default-src 'none'; script-src 'sha256-rKEEem78B75KgdlBwzlXe60RG75OFFu+6+zkqEd1Zws=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a0b">
@@ -10265,7 +10265,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           </div>
         </div>
         <div class="garage-foot">
-          <p class="help" id="block-help">Tab passes the block · W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view</p>
+          <p class="help" id="block-help">F lifts, stacks and sets crates (click throws one) · Tab passes the block · W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view</p>
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
@@ -10290,6 +10290,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
         <button type="button" data-tool="rocket" aria-pressed="false"><kbd>3</kbd>Rocket <b>1</b></button>
         <button type="button" data-tool="net" aria-pressed="false"><kbd>4</kbd>Net <b>3</b></button>
         <button type="button" data-tool="crate" class="block-tool-crate"><kbd>R</kbd>Crate <b>3</b></button>
+        <button type="button" data-tool="grab" class="block-tool-crate" aria-pressed="false"><kbd>F</kbd>Lift</button>
         <button type="button" data-tool="pass" class="block-tool-pass" disabled><kbd>Tab</kbd>Pass</button>
       </div>
       <div class="block-cross" id="block-cross" hidden aria-hidden="true"></div>
@@ -34526,140 +34527,6 @@ void main() {
         k.parts.jetFlame = createNode({ geometry: voxelGeometry(flameVox(), { unit: u, palette: FLAME_PALETTE, origin: { x: -4.5 * u, y: 0, z: -u }, emissive: FLAME_GLOW }), visible: false });
         addChild(k.parts.jetpack, k.parts.jetFlame);
         addChild(k.root, k.parts.jetpack);
-      }
-    }
-  });
-})();
-
-// ---- characters/Bitcoin-Bill.js ----
-// Bitclank Bill, Bitcoin Bill of Bitcoin Guide (bitcoinguide.app): salt-and-pepper hair swept back under a frayed beach straw hat,
-// a full beard going grey at the chin, and glowing orange laser eyes. A tie-dye tank in blue and green with
-// a cord necklace and an orange coin, and his chihuahua at his heel wherever he goes, painted up like an alebrije in
-// violet, orange and turquoise.
-(() => {
-  "use strict";
-  const BL = window.BL;
-  const { makeVox } = BL.models;
-  const { createNode, addChild } = BL.scene;
-  const ORANGE = "#ff9a1f", ORANGE_CORE = "#fff1c4";
-  const STRAW = ["#d8c08a", "#c4a768", "#e8d7a8"], BAND = "#7a5a3a";
-  const DYE = ["#2f8fd8", "#3fc6b5", "#7fd36a", "#1f6fb0", "#56b8e8"];
-  // The chihuahua at his heel, painted as an alebrije, in its own voxel grid facing +z with its paws at y 0: legs,
-  // a red-brown body with violet, orange and turquoise flowers, a cream chest, a head with big pink-lined ears, dark
-  // eyes and nose, a collar of blue beads, and a tail curled up over its back.
-  const dogVox = (k) => {
-    const v = makeVox(), c = (hex) => k.color(hex);
-    const coat = c("#8a4a2e"), coatDk = c("#6e3a24"), violet = c("#7a3fd0"), flower = c("#ff7a2a"), teal = c("#3fd8e0");
-    const cream = c("#f0d2a8"), pink = c("#f28ab0"), black = c("#15100c"), bead = c("#5ab8ff"), fur = k.jit(coat, coatDk, 0.2);
-    for (const [x, z] of [[-1, 1], [1, 1], [-1, -3], [1, -3]]) { v.fill(x, x, 1, 2, z, z, fur); v.set(x, 0, z, cream); }
-    v.fill(-1, 1, 3, 5, -3, 2, fur);
-    v.fill(-1, 1, 3, 4, 2, 2, cream);
-    for (const [x, y, z, ink] of [[1, 5, 0, violet], [-1, 4, -1, flower], [1, 4, -2, teal], [0, 5, -2, flower], [-1, 5, 1, violet], [1, 3, 1, flower], [-1, 3, -3, teal]]) v.set(x, y, z, ink);
-    v.fill(-1, 1, 6, 8, 2, 4, fur);
-    v.fill(-1, 1, 6, 6, 2, 2, bead);
-    v.set(0, 8, 4, flower); v.set(-1, 8, 3, violet); v.set(1, 8, 3, violet);
-    v.set(-1, 7, 4, black); v.set(1, 7, 4, black);
-    v.set(0, 6, 5, cream); v.set(0, 7, 5, cream); v.set(0, 7, 6, black);
-    for (const x of [-1, 1]) { v.set(x, 9, 3, coat); v.set(x, 10, 3, coat); v.set(x, 9, 4, pink); }
-    v.set(0, 6, -3, coat); v.set(0, 7, -3, coatDk); v.set(0, 8, -2, teal);
-    return v;
-  };
-  // The straw hat in the head's voxel grid: a domed crown with a dark band, and a wide brim that droops at its rim and
-  // trails ragged strands. Built once a page for each build kit, from the kit's own random draws.
-  const hatVox = (k) => {
-    // The crown sits over the hair's whole footprint (x -1 to 7, z -1 to 6), so no cell doubles a hair cell.
-    const v = makeVox(), colors = STRAW.map((c) => k.color(c)), band = k.color(BAND), pick = () => colors[Math.floor(k.rand() * colors.length)];
-    for (let y = 9; y <= 12; y++) {
-      const inset = y >= 12 ? 1 : 0;
-      v.fill(-1 + inset, 7 - inset, y, y, -1 + inset, 6 - inset, y === 10 ? band : pick);
-    }
-    const cx = 3, cz = 2.5;
-    for (let x = -6; x <= 12; x++) for (let z = -6; z <= 11; z++) {
-      const d = Math.hypot(x - cx, z - cz);
-      if (d > 8.2 || (x >= -1 && x <= 7 && z >= -1 && z <= 6)) continue;
-      const rim = d > 6.8;
-      v.set(x, rim ? 8 : 9, z, pick());
-      // Strands hanging from the rim, one or two cells long, but none across the front, where they'd hide his eyes.
-      if (rim && k.rand() < 0.3 && !(z > 7 && Math.abs(x - cx) < 4.5)) {
-        v.set(x, 7, z, pick());
-        if (k.rand() < 0.4) v.set(x, 6, z, pick());
-      }
-    }
-    return v;
-  };
-  BL.characters.add({
-    handle: "Bitcoin-Bill",
-    github: "Bitcoin-Bill",
-    display: "Bitclank Bill",
-    joined: 1792943472,
-    lastCommit: 1792943472,
-    look: {
-      face: "beard", noPupils: true, height: 1.04, hatY: 13,
-      skin: "#d99a74", hair: "#3b3430", fur: "#a97f52",
-      portrait: { min: [-1, -2, 0], max: [7, 6, 8] }
-    },
-    voice: {
-      poke: "Bitcoin the easy way!",
-      idle: [
-        "Roll the dice, make the seed.",
-        "Not your keys, not your coconuts.",
-        "Read the white paper. Then read it again.",
-        "Laser eyes on. Stack sats.",
-        "Hold on tight, little dog.",
-        "Proof of work, not proof of talk."
-      ]
-    },
-    dress: {
-      // The tie-dye tank: a spiral of blue, teal and green rings over the chest, bare shoulders and a scoop neck, and a
-      // cord necklace with an orange coin.
-      torso(k, v) {
-        const dye = DYE.map((c) => k.color(c)), skin = k.skinJ, cord = k.color("#2a2018"), coin = k.color("#f7931a");
-        v.fill(1, 7, 3, 7, 1, 4, (x, y) => dye[(Math.round(Math.hypot(x - 4, y - 5) * 1.3) + (k.rand() < 0.15 ? 1 : 0)) % dye.length]);
-        v.fill(1, 1, 7, 7, 1, 4, skin);
-        v.fill(7, 7, 7, 7, 1, 4, skin);
-        v.fill(3, 5, 6, 7, 4, 4, skin);
-        v.set(4, 5, 4, skin);
-        v.set(3, 6, 4, cord); v.set(5, 6, 4, cord); v.set(4, 5, 4, cord);
-        v.set(4, 4, 4, coin);
-      },
-      // Salt and pepper: grey through the sides and back of the hair.
-      crown(k, v) {
-        const grey = k.color("#8b8279"), silver = k.color("#b3aba1");
-        for (let y = 2; y <= 8; y++) for (let z = -1; z <= 6; z++) for (const x of [-1, 7]) {
-          if (v.has(x, y, z) && k.rand() < 0.35) v.set(x, y, z, k.rand() < 0.5 ? grey : silver);
-        }
-        for (let x = 0; x <= 6; x++) for (let y = 2; y <= 8; y++) if (v.has(x, y, -1) && k.rand() < 0.25) v.set(x, y, -1, grey);
-      },
-      // Laser eyes: both glowing Bitcoin orange, each with a white-hot core.
-      eyes(k, v) {
-        const o = k.color(ORANGE), oc = k.color(ORANGE_CORE);
-        for (const [x0, ring, core] of [[0, o, oc], [5, o, oc]]) {
-          for (let x = x0; x <= x0 + 1; x++) for (let y = 2; y <= 3; y++) {
-            v.set(x, y, 5, ring);
-            k.eyeCells.push([x, y]);
-          }
-          v.set(x0 + (x0 ? 0 : 1), 3, 5, core);
-        }
-        k.headEmissive = { [o]: 1, [oc]: 1.4 };
-        return true;
-      },
-      // The beard greys toward the chin: dark through the moustache and cheeks, silver at the bottom.
-      mark(k, v) {
-        const dark = k.color("#3f3732"), mid = k.color("#857c72"), silver = k.color("#c9c3b9"), skip = new Set([k.P.nose, k.P.white, k.P.skin, k.P.skinDk]);
-        for (let x = 0; x <= 6; x++) for (let y = -2; y <= 1; y++) for (let z = 5; z <= 7; z++) {
-          if (!v.has(x, y, z) || skip.has(v.get(x, y, z))) continue;
-          const r = k.rand();
-          v.set(x, y, z, y <= -1 ? (r < 0.7 ? silver : mid) : y === 0 ? (r < 0.4 ? silver : r < 0.75 ? mid : dark) : (r < 0.6 ? dark : mid));
-        }
-      },
-      headgear(k) {
-        addChild(k.parts.head, createNode({ geometry: k.vg(hatVox(k), { x: -3.5 * k.u, y: 0, z: -3 * k.u }) }));
-      },
-      // The chihuahua trots along at his heel, a little behind and to his left, wherever he goes.
-      extras(k) {
-        const s = 0.7, h = k.h;
-        k.parts.dog = createNode({ position: { x: 0.55 * h, y: -5 * k.u, z: -0.25 * h }, scale: { x: s, y: s, z: s }, geometry: k.vg(dogVox(k), { x: -0.5 * k.u, y: 0, z: -0.5 * k.u }) });
-        addChild(k.root, k.parts.dog);
       }
     }
   });
@@ -128465,7 +128332,9 @@ void main() {
 // Crates: wooden boxes anyone can push by walking into them and stand on. Each fort starts with a few, each team has
 // a stock to place (`build`) on its own half, and a round opens with `PREP_S` of fortifying, each side kept to its
 // own half and the flags locked, so the bots plug their gates and the visitor can wall theirs: getting in then takes
-// a push or a double jump. A crate never lands on a stand.
+// a push or a double jump. A crate never lands on a stand. An Ooga can pick a crate up (`grab`), carry it overhead,
+// set it down or stack it up to three high (`grab` again), or throw it (`fire` with "crate"): a crate that hits a
+// rival stuns them as a paint hit does, and lands as a crate where it falls.
 //
 // Quiz traps: glowing Matrix pads on the field (`ARENA.traps`). Step on one and a bubble closes round you: you can't
 // move, throw, pick up or score, a carrier drops the block, and nobody can paint you inside it. You get out by
@@ -128498,7 +128367,8 @@ void main() {
     paint: { speed: 24, lift: 2.2, gravity: 9, life: 1.1, r: 0.5, blast: 0, cool: 0.32, max: 0 },
     grenade: { speed: 12, lift: 4.5, gravity: 14, life: 2.2, r: 0.45, blast: 2.6, cool: 0.8, max: 3 },
     rocket: { speed: 28, lift: 0, gravity: 0, life: 1.6, r: 0.55, blast: 3.2, cool: 1.2, max: 1 },
-    net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 }
+    net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 },
+    crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
@@ -128574,7 +128444,7 @@ void main() {
   // The crates of the sim being stepped; the world queries below see them as boxes alongside the fixed blocks.
   let CRATES = [];
   const CB = [0, 0, 0, 0, 0, 0];
-  const crateBox = (c) => { CB[0] = c.x - CONFIG.CRATE_HALF; CB[1] = c.x + CONFIG.CRATE_HALF; CB[2] = c.z - CONFIG.CRATE_HALF; CB[3] = c.z + CONFIG.CRATE_HALF; CB[4] = CONFIG.CRATE_H; CB[5] = 0; return CB; };
+  const crateBox = (c) => { CB[0] = c.x - CONFIG.CRATE_HALF; CB[1] = c.x + CONFIG.CRATE_HALF; CB[2] = c.z - CONFIG.CRATE_HALF; CB[3] = c.z + CONFIG.CRATE_HALF; CB[4] = c.y + CONFIG.CRATE_H; CB[5] = c.y; return CB; };
   const boxCount = () => BLOCKS.length + CRATES.length;
   // The i-th box: a fixed block, then the live crates (a dead crate is an empty box nothing touches).
   const boxAt = (i) => {
@@ -128672,13 +128542,13 @@ void main() {
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
-      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
+      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0, holding: false, bonked: false,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
     for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
-    const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, z: 0 }));
+    const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
@@ -128696,23 +128566,29 @@ void main() {
     for (const k of KINDS) if (TOOLS[k].max && a[k] < TOOLS[k].max) { a[k] = TOOLS[k].max; more = true; }
     return more;
   };
-  // A crate at (x, z) if the spot is free of blocks, crates and stands; returns it, or null.
-  const freeSpot = (sim, x, z) => {
-    const h = CONFIG.CRATE_HALF;
+  // True when a crate fits at (x, y, z): inside the arena, off the stands, overlapping no box at that height.
+  const freeSpot = (sim, x, z, y = 0) => {
+    const h = CONFIG.CRATE_HALF, top = y + CONFIG.CRATE_H;
     if (x < -W + h || x > W - h || z < -L + h || z > L - h) return false;
     for (const t of TEAMS) { const s = ARENA.stands[t]; if (Math.hypot(x - s.x, z - s.z) < CONFIG.STAND_CLEAR) return false; }
     for (let i = 0, n = boxCount(); i < n; i++) {
       const b = boxAt(i);
-      if (b[5] > CONFIG.CRATE_H) continue;
+      if (b[5] >= top - 0.01 || b[4] <= y + 0.01) continue;
       if (x + h > b[0] && x - h < b[1] && z + h > b[2] && z - h < b[3]) return false;
     }
     return true;
   };
-  const addCrate = (sim, team, x, z) => {
-    if (!freeSpot(sim, x, z)) return null;
-    for (const c of sim.crates) if (!c.live) { c.live = true; c.team = team; c.x = x; c.z = z; return c; }
+  const addCrate = (sim, team, x, z, y = 0) => {
+    if (!freeSpot(sim, x, z, y)) return null;
+    for (const c of sim.crates) if (!c.live) { c.live = true; c.team = team; c.x = x; c.y = y; c.z = z; return c; }
     return null;
   };
+  // The crate sitting on crate c, if any.
+  const crateOn = (sim, c) => {
+    for (const o of sim.crates) if (o.live && o !== c && Math.abs(o.y - c.y - CONFIG.CRATE_H) < 0.05 && Math.abs(o.x - c.x) < CONFIG.CRATE_HALF * 2 - 0.05 && Math.abs(o.z - c.z) < CONFIG.CRATE_HALF * 2 - 0.05) return o;
+    return null;
+  };
+  const MAX_STACK_Y = CONFIG.CRATE_H * 2 + 0.05;
   // Everyone back to their fort, both flags home, the forts' crates back, the score at nil and the clock at zero.
   const reset = (sim, seed = sim.seed) => {
     sim.seed = seed;
@@ -128727,7 +128603,7 @@ void main() {
       a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = a.botJump = false; a.carrying = a.blocked = null;
       a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = a.jump2At = a.tries = a.netted = a.progT = 0;
       a.lastD = Infinity;
-      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = false; a.rest = 0;
+      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -128827,6 +128703,54 @@ void main() {
     emit(sim, "build", a.team, id, x, 0, z);
     return true;
   };
+  // Pick up the nearest top crate in front of actor `id`, or, holding one, set it down a step ahead along `yaw`: on top
+  // of a crate there (up to three high) or on whatever ground is there. Hands carrying a block can't take a crate.
+  const grab = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    const a = sim.actors[id];
+    if (sim.over || a.splat > 0 || a.trapped > 0 || !a.grounded) return false;
+    const fx = a.x + Math.sin(yaw) * 1.3, fz = a.z + Math.cos(yaw) * 1.3;
+    if (a.holding) {
+      let x = fx, z = fz, y = groundAt(fx, fz, a.y + 1.2, 0);
+      for (const c of sim.crates) {
+        if (!c.live || Math.hypot(c.x - fx, c.z - fz) > 0.8 || crateOn(sim, c)) continue;
+        x = c.x; z = c.z; y = c.y + CONFIG.CRATE_H;
+      }
+      if (y > MAX_STACK_Y || !addCrate(sim, a.team, x, z, y)) return false;
+      a.holding = false;
+      emit(sim, "set", a.team, id, x, y, z);
+      return true;
+    }
+    if (a.carrying) return false;
+    let best = null, bd = 1.1;
+    for (const c of sim.crates) {
+      if (!c.live || crateOn(sim, c) || c.y > a.y + 1.6) continue;
+      const d = Math.hypot(c.x - fx, c.z - fz);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) return false;
+    best.live = false;
+    a.holding = true;
+    emit(sim, "lift", a.team, id, best.x, best.y, best.z);
+    return true;
+  };
+  // A thrown crate comes to rest where it fell, or as near as there's room; with no room it breaks.
+  const landCrate = (sim, s) => {
+    for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const x = s.x + dx * 1.25, z = s.z + dz * 1.25, y = groundAt(x, z, Math.max(0, s.y) + 0.5, 0);
+      if (y <= MAX_STACK_Y && addCrate(sim, s.team, x, z, y)) { emit(sim, "set", s.team, s.owner, x, y, z); return; }
+    }
+    emit(sim, "smash", s.team, s.owner, s.x, Math.max(0, s.y), s.z);
+  };
+  // Crates with nothing under them fall to whatever is below.
+  const settleCrates = (sim, dt) => {
+    for (const c of sim.crates) {
+      if (!c.live || c.y <= 0) continue;
+      c.live = false;
+      const below = groundAt(c.x, c.z, c.y, -0.05);
+      c.live = true;
+      if (below < c.y) c.y = Math.max(below, c.y - 7 * dt);
+    }
+  };
   // Out of a quiz bubble (a right answer, or the bot's think time up): fresh-paint protection follows, as after a splat.
   const escape = (sim, id = 0, why = "escape") => {
     const a = sim.actors[id];
@@ -128848,7 +128772,7 @@ void main() {
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0)) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -128857,18 +128781,21 @@ void main() {
     s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.25 : CONFIG.SHOT_Y);
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
+    if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
     a.cooldown = a.bot ? Math.max(tool.cool, CONFIG.BOT_COOLDOWN) : tool.cool;
     a.heading = yaw;
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
-  const splat = (sim, a) => {
+  const splat = (sim, a, bonk = false) => {
     a.splat = CONFIG.SPLAT_S;
+    a.bonked = bonk;
     a.guard = a.netted = 0;
     a.vx = a.vz = 0;
     a.splats++;
     a.painted = Math.min(1, a.painted + 0.34);
-    emit(sim, "splat", a.team, a.id, a.x, a.y + 1, a.z);
+    emit(sim, bonk ? "bonk" : "splat", a.team, a.id, a.x, a.y + 1, a.z);
+    if (a.holding) { a.holding = false; emit(sim, "smash", a.team, a.id, a.x, a.y + 2, a.z); }
     dropFlag(sim, a, "knock");
   };
   const open = (a) => a.splat <= 0 && a.guard <= 0 && a.trapped <= 0;
@@ -129032,7 +128959,7 @@ void main() {
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
     // Picking up: the rivals' flag from its stand or the ground, or your own team's flag where it was dropped.
     for (const f of [theirs, own]) {
-      if (a.carrying || f.state === "carried" || (f === own && f.state === "home")) continue;
+      if (a.carrying || a.holding || f.state === "carried" || (f === own && f.state === "home")) continue;
       if (f.state === "flying") {
         // A catch: the block within reach of the body's middle, its thrower kept off it for a moment.
         if (f.thrower === a.id && f.t < CONFIG.PASS_SAFE) continue;
@@ -129081,7 +129008,7 @@ void main() {
     if (a.y > 0.05) return;
     const r = CONFIG.BODY_R, h = CONFIG.CRATE_HALF;
     for (const c of sim.crates) {
-      if (!c.live) continue;
+      if (!c.live || c.y > 0.05 || crateOn(sim, c)) continue;
       const cx = Math.max(c.x - h, Math.min(a.x, c.x + h)), cz = Math.max(c.z - h, Math.min(a.z, c.z + h));
       const dx = a.x - cx, dz = a.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r || d2 < 1e-9) continue;
@@ -129219,6 +129146,7 @@ void main() {
     for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
+    settleCrates(sim, dt);
     // Throws in flight: gravity and the wind, then a rival in the way or anything solid.
     for (const s of sim.shots) {
       if (!s.live) continue;
@@ -129231,8 +129159,9 @@ void main() {
       let hit = null;
       for (const a of sim.actors) {
         if (a.team === s.team || !open(a)) continue;
-        const dy = s.y - a.y;
-        if (dy > -0.1 && dy < heightOf(a) + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
+        // A crate is big: it counts a little over the head and under the feet.
+        const dy = s.y - a.y, slack = s.kind === "crate" ? 0.45 : 0.15;
+        if (dy > -slack && dy < heightOf(a) + slack && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
       }
       const solid = !hit && solidAt(s.x, s.y, s.z), spent = s.t > tool.life;
       if (!hit && !solid && !spent) continue;
@@ -129241,8 +129170,9 @@ void main() {
       else if (hit && s.kind === "net") {
         hit.netted = CONFIG.NET_S;
         emit(sim, "net", hit.team, hit.id, hit.x, hit.y + 1, hit.z);
-      } else if (hit) splat(sim, hit);
-      else emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
+      } else if (hit) splat(sim, hit, s.kind === "crate");
+      if (s.kind === "crate") landCrate(sim, s);
+      else if (!hit) emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
     }
   };
   // Advance by any frame time in fixed substeps (at most four a call, as the other games do). Stops when the round is
@@ -129254,7 +129184,7 @@ void main() {
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, escape, clearLine, solidAt, resolve, groundAt };
 })();
 
 // ---- js/block-trivia.js ----
@@ -129607,12 +129537,14 @@ void main() {
     rescue: ["Mine again! Home!", "Ooga take it back!"],
     boom: ["Kaboom!", "Paint everywhere!"],
     net: ["Ooga tangled!", "Net?! Rude!"],
+    bonk: ["Bonk!", "Ooga see stars!", "Who threw box?!"],
     trap: ["Quiz?! Ooga think\u2026", "Hmm. Satoshi who?", "Big brain time."],
     free: ["Ooga know!", "Easy! Twenty-one million!", "Brain unlocked!"]
   };
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
   const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net" };
   const WEATHER_WORDS = { clear: "Clear", breeze: "Windy", storm: "Storm" };
   const RAIN = 140;
@@ -129673,7 +129605,8 @@ void main() {
       const blob = createNode({ geometry: BM.splat(0), position: { x: 0, y: 1.9, z: 0 }, scale: { x: 0.8, y: 1, z: 0.8 }, visible: false });
       const bubble = createNode({ geometry: BM.bubble(), visible: false });
       const netted = createNode({ geometry: BM.draped(), visible: false });
-      addChild(body, ring, blob, bubble, netted);
+      const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
+      addChild(body, ring, blob, bubble, netted, held);
       place(body);
       if (cave) input.add(cave.parts.torso, { kind: "ooga", index: i, priority: 1 });
       // A companion a character file hangs on its Ooga (`parts.dog`) is let off the lead here: it is lifted off the
@@ -129685,7 +129618,7 @@ void main() {
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -129963,6 +129896,15 @@ void main() {
       else if (e.type === "waiting") {
         if (me) { center("NOT YET!", 1200); notice("Your own block isn't home, so you can't score. Hold on here while your team brings it back, or go get it", 4000); }
         else if (mine) notice("Teammate is waiting at our stand · get our block home so they can score", 3000);
+      } else if (e.type === "lift" || e.type === "set") {
+        if (e.actor === 0) updateTools();
+        if (e.type === "set") fx.burst(e.x, e.y + 0.2, e.z, 6, WOOD_BITS, 1.2);
+        if (e.type === "lift" && e.actor === 0) notice("Crate up! Click throws it · F sets it down or stacks it", 2200);
+      } else if (e.type === "smash") fx.burst(e.x, e.y + 0.4, e.z, 14, WOOD_BITS, 2.4);
+      else if (e.type === "bonk") {
+        fx.burst(e.x, e.y + 0.8, e.z, 14, STAR_BITS, 2.2);
+        if (me) { center("BONK!", 900); notice("Crate to the head! Seeing stars\u2026", 2000); }
+        say(e.actor, LINES.bonk, 1.3);
       } else if (e.type === "pass") {
         if (me) notice("Block thrown! A teammate can catch it", 1500);
         else if (mine) notice("Pass! Catch it", 1500);
@@ -130012,6 +129954,11 @@ void main() {
   };
   const paint = () => {
     const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
+    // Holding a crate, a throw throws the crate.
+    if (a.holding) {
+      const cdx = q.x - a.x, cdz = q.z - a.z, cflat = Math.hypot(cdx, cdz) || 1;
+      return SIM.fire(sim, 0, Math.atan2(cdx, cdz), clamp(Math.atan2(q.y - a.y - 1.7, cflat) - 0.05, -0.6, 0.6), "crate");
+    }
     const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
     const lob = tool === "grenade" ? 0.3 : tool === "rocket" ? 0 : tool === "net" ? -0.12 : -0.09;
     const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
@@ -130057,6 +130004,7 @@ void main() {
       const n = b.querySelector("b");
       if (n) n.textContent = k === "paint" ? "\u221e" : k === "crate" ? String(a.crates) : String(a[k]);
       if (k === "pass") b.disabled = !a.carrying;
+      if (k === "grab") b.setAttribute("aria-pressed", String(a.holding));
     }
   };
   const setView = (first) => {
@@ -130099,6 +130047,14 @@ void main() {
     if (!e.repeat) passBlock();
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
+  // Pick up the crate in front, or set the held one down (stacking it on a crate there).
+  const grabCrate = () => {
+    if (phase !== "play") return false;
+    if (SIM.grab(sim, 0, cam.face)) return true;
+    const a = sim.actors[0];
+    notice(a.holding ? "No room to set it there (stacks go three high)" : a.carrying ? "Hands full with the block" : "No crate in reach · face one and press F", 1200);
+    return false;
+  };
   // Throw the carried block straight ahead, toward the crosshair, for a teammate to catch.
   const passBlock = () => {
     if (phase !== "play") return false;
@@ -130165,9 +130121,12 @@ void main() {
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
       a.ring.visible = s.grounded;
-      a.blob.visible = s.splat > 0;
       a.bubble.visible = s.trapped > 0;
       a.netted.visible = s.netted > 0;
+      a.held.visible = s.holding && !(i === 0 && cam.first);
+      if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
+      // A crate to the head shows stars, not paint.
+      a.blob.visible = s.splat > 0 && !s.bonked;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
       if (!a.cave) continue;
       const p = a.cave.parts;
@@ -130197,8 +130156,8 @@ void main() {
       const swing = Math.sin(a.phase) * Math.min(1, sp / 3);
       p.legR.rotation.x = swing * 0.6;
       p.legL.rotation.x = -swing * 0.6;
-      if (s.carrying) {
-        // Both hands up holding the block overhead.
+      if (s.carrying || s.holding) {
+        // Both hands up holding the block (or a crate) overhead.
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
       } else {
         p.armR.rotation.x = s.cooldown > (s.bot ? C.BOT_COOLDOWN : C.COOLDOWN) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
@@ -130233,7 +130192,7 @@ void main() {
       const c = sim.crates[i], n = crates[i];
       n.visible = c.live;
       if (!c.live) continue;
-      setVec(n.position, c.x, 0, c.z);
+      setVec(n.position, c.x, c.y, c.z);
       n.geometry = BM.crate(TEAM_INDEX[c.team]);
     }
   };
@@ -130293,7 +130252,7 @@ void main() {
       if (!s.live) continue;
       setVec(n.position, s.x, s.y, s.z);
       const t = TEAM_INDEX[s.team];
-      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : BM.ball(t);
+      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
       n.rotation.y = Math.atan2(s.vx, s.vz);
       n.rotation.x = s.kind === "rocket" ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
     }
@@ -130387,6 +130346,7 @@ void main() {
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
     if (e.key === "r" || e.key === "R") buildCrate();
+    if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
@@ -130419,7 +130379,7 @@ void main() {
     el.toolBar = document.getElementById("block-tools");
     el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
     el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
-    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
+    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
     el.staminaK = -1;
@@ -130519,7 +130479,7 @@ void main() {
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · Tab passes the block · R crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · right click or wheel tools · Tab passes · F picks up, stacks, sets crates · R new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
