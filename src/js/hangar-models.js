@@ -330,18 +330,12 @@
   // ---- the floor's fixtures ---------------------------------------------------------------------------------------
 
   // A monitor facing +z with its stand: a dark frame round a glowing blue screen showing a page of the crew's work, a
-  // title bar, lines of text and a little bar chart, or with `jet` the Jet's silhouette in white.
-  const monitor = (flat, glow, w, h, seed, jet = false) => {
+  // title bar, lines of text and a little bar chart, or with `blank` the screen alone, for pictures laid on it.
+  const monitor = (flat, glow, w, h, seed, blank = false) => {
     flat.push(box({ w: w + 0.08, h: h + 0.08, d: 0.06, color: IRON_DK, offset: { y: h / 2, z: -0.03 } }));
     glow.push(box({ w, h, d: 0.02, color: SCREEN, emissive: 0.95, offset: { y: h / 2, z: 0.01 } }));
     const ink = (x, y, bw, bh) => glow.push(box({ w: bw, h: bh, d: 0.01, color: SCREEN_INK, emissive: 1, offset: { x, y, z: 0.026 } }));
-    if (jet) {
-      // From above, nose to the right: the fuselage, the swept wings and the tailplanes.
-      const stroke = (ax, ay, bx, by, t) => glow.push(beam(ax * w, ay * h, 0.03, bx * w, by * h, 0.03, t, SCREEN_INK, 1));
-      stroke(-0.32, 0.5, 0.34, 0.5, 0.05);
-      for (const s of [-1, 1]) stroke(0.06, 0.5, -0.1, 0.5 + s * 0.38, 0.045), stroke(-0.24, 0.5, -0.32, 0.5 + s * 0.18, 0.035);
-      return;
-    }
+    if (blank) return;
     const rand = mulberry32(seed);
     ink(0, h - 0.05, w - 0.1, 0.035);
     for (let k = 0; k < 3; k++) {
@@ -414,6 +408,9 @@
     return f;
   };
 
+  // A terminal's screen on its stand, in the stand's frame: its width and height, where its bottom edge stands, and how
+  // far it leans back; `hangar-terminals.js` lays its pictures over it.
+  const KIOSK = { w: 0.78, h: 0.5, y: 1.08, z: 0.02, tilt: -0.45 };
   // The crew's workstations, the terminals on stands, the tool chests, the crates (some stacked, a lantern on the
   // tallest), and the blue floor lamps. Screens glow, so they are their own mesh, and so do the lamps (`lampGlow`, for
   // the Factory's window into the hangar; the scene stands a `floorLamp` of its own on each base to light them one at a
@@ -442,13 +439,13 @@
       placed(flat, f, x, 0, z, turn);
       placed(glow, g, x, 0, z, turn);
     });
-    for (const [x, z, turn, kind] of L.kiosks) {
-      const f = [], g = [];
-      f.push(bevelBox({ w: 0.6, h: 0.08, d: 0.5, color: IRON_DK, bevel: 0.02, offset: { y: 0.04 } }), box({ w: 0.14, h: 1.1, d: 0.14, color: IRON, offset: { y: 0.6 } }));
+    for (const [x, z, turn] of L.kiosks) {
+      const f = [], g = [], K = KIOSK;
+      f.push(bevelBox({ w: 0.6, h: 0.08, d: 0.5, color: IRON_DK, bevel: 0.02, offset: { y: 0.04 } }), box({ w: 0.14, h: 1.02, d: 0.14, color: IRON, offset: { y: 0.59, z: -0.06 } }));
       const mf = [], mg = [];
-      monitor(mf, mg, 0.78, 0.5, 91 + x, kind === "jet");
-      for (const p of mf) f.push(moved(turnedX(p, -0.45), 0, 1.08, 0.02));
-      for (const p of mg) g.push(moved(turnedX(p, -0.45), 0, 1.08, 0.02));
+      monitor(mf, mg, K.w, K.h, 0, true);
+      for (const p of mf) f.push(moved(turnedX(p, K.tilt), 0, K.y, K.z));
+      for (const p of mg) g.push(moved(turnedX(p, K.tilt), 0, K.y, K.z));
       placed(flat, f, x, 0, z, turn);
       placed(glow, g, x, 0, z, turn);
     }
@@ -1766,7 +1763,7 @@
 
   BL.hangarModels = {
     LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
-    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, projector, filmScreen, projectorBeam,
+    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, KIOSK, projector, filmScreen, projectorBeam,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))

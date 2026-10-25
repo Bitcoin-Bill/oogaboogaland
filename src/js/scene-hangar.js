@@ -97,7 +97,10 @@
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
-    sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."]
+    sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
+    terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
+    projector: ["The projector · Lightning Jet Pictures", "An old film projector. Any terminal by the runway starts the show."],
+    screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -638,6 +641,7 @@
         if (o.kind === "stats" || o.kind === "timeline") return hud.openBoard(scene.boardViews[o.kind]);
         if (o.kind === "firetest" && scene.fire.near && scene.fire.press()) return;
         if (o.kind === "sis" && scene.sis.near && scene.sis.poke()) return;
+        if (o.kind === "terminal" && scene.terminals.near && scene.terminals.press()) return;
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -661,7 +665,7 @@
     hireCrew(scene);
     const F = LAYOUT.fireTest, exits = JM.EXHAUST;
     audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 },
-      booth: { x: F.x, y: 2, z: F.z }, engines: { x: LAYOUT.jet.x, y: exits[0].y, z: LAYOUT.jet.z + exits[0].z + 2 } });
+      booth: { x: F.x, y: 2, z: F.z }, engines: { x: LAYOUT.jet.x, y: exits[0].y, z: LAYOUT.jet.z + exits[0].z + 2 }, projector: HM.projector().lens, screen: HM.filmScreen().picture });
     // The engine static fire test's booth beside the runway (`hangar-fire.js`), and its settings: the Sound
     // button opens the hangar's sound panel, its level and the pad's vibration.
     scene.fire = BL.hangarFire.create({ root, jet: scene.jet, nozzles: scene.jet.children[0] || null, fx, audio, hold: (on) => {
@@ -676,6 +680,15 @@
     addChild(root, scene.sis.node, scene.sis.props);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);
+    // The terminals by the runway and the film show they start (`hangar-terminals.js`), its mood page reading hers.
+    scene.terminals = BL.hangarTerminals.create({ root, audio, mood: () => scene.sis.mood, toast: hud.toast });
+    for (const n of scene.terminals.nodes) {
+      input.add(n, { kind: "terminal", preset: null }, { radius: 0.8 });
+      targets.push(n);
+    }
+    input.add(scene.terminals.projector, { kind: "projector", preset: null }, { radius: 1.2 });
+    input.add(scene.terminals.screen, { kind: "screen", preset: null }, { radius: 4.5 });
+    targets.push(scene.terminals.projector, scene.terminals.screen);
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
     unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
     if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
@@ -693,7 +706,7 @@
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
       const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
-        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) || scene.sis.useNear() };
+        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) || scene.terminals.useNear(x, z, reach, feet) || scene.sis.useNear() };
       shared.onModelChange = () => {
         if (!avatar) return;
         scene.gate.phase.body.refresh(avatar.root);
@@ -730,7 +743,7 @@
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; }, get sis() { return scene && scene.sis && scene.sis.debug; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; }, get sis() { return scene && scene.sis && scene.sis.debug; }, get terminals() { return scene && scene.terminals && scene.terminals.debug; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -807,6 +820,7 @@
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
     s.sis.update(dt, drivenHere, camera.position);
+    s.terminals.update(dt, drivenHere);
     pilot.update(dt);
     s.fire.view(camera);
     if (s.window) s.window.update(camera);
@@ -823,8 +837,9 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
-    // The act button's DON'T PRESS beside the static fire test's button, and POKE beside Kortik's Sis.
-    const actLabel = drivenHere && (s.fire.actLabel() || s.sis.actLabel());
+    // The act button's DON'T PRESS beside the static fire test's button, DISPLAY (or STOP) beside a terminal, and POKE
+    // beside Kortik's Sis.
+    const actLabel = drivenHere && (s.fire.actLabel() || s.terminals.actLabel() || s.sis.actLabel());
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     node.tick(dt);
@@ -848,7 +863,8 @@
         hud.toast("Launch shield · sealed. The runway opens when Jet v2 is ready.");
       } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
-    glowNear(elapsed, FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED));
+    const fired = FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED);
+    glowNear(elapsed, fired + s.terminals.lights(RENDER_OPTS.lights, fired));
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
     lampLife(s, dt, elapsed);
@@ -922,6 +938,7 @@
     if (scene) {
       scene.gate.phase.liveGeometry(set); scene.launch.phase.liveGeometry(set);
       scene.sis.liveGeometry(set);
+      scene.terminals.liveGeometry(set);
       for (const a of scene.crew) a.liveGeometry(set);
     }
     if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
