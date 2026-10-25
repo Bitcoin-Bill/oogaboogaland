@@ -43,7 +43,7 @@
     MAX_SHOTS: 48, MAX_EVENTS: 48, STEP: 1 / 120,
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8],
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
-    NET_S: 4, NET_SLOW: 0.4,
+    NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
@@ -230,7 +230,7 @@
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
-    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null };
+    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
@@ -314,6 +314,8 @@
     f.z = ARENA.stands[f.team].z;
     f.y = 0;
     f.carrier = null;
+    f.vx = f.vy = f.vz = 0;
+    f.thrower = -1;
   };
   // A carrier lets go: the flag lies at their feet and counts down home.
   const dropFlag = (sim, a, why) => {
@@ -334,6 +336,40 @@
   const drop = (sim, id = 0) => {
     const a = sim.actors[id];
     return !sim.over && a.splat <= 0 && dropFlag(sim, a, "drop");
+  };
+  // Throw the carried block along `yaw` in a long arc (a pass). Anyone who could pick it up can catch it in the air;
+  // its thrower only after `PASS_SAFE`. Where it lands it lies as a dropped block.
+  const pass = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    const a = sim.actors[id], f = a.carrying && sim.flags[a.carrying];
+    if (sim.over || !f || a.splat > 0 || a.trapped > 0) return false;
+    f.state = "flying";
+    f.carrier = null;
+    f.thrower = id;
+    f.t = 0;
+    f.x = a.x + Math.sin(yaw) * 0.6; f.z = a.z + Math.cos(yaw) * 0.6; f.y = a.y + 1.6;
+    f.vx = Math.sin(yaw) * CONFIG.PASS_SPEED + a.vx * 0.5; f.vz = Math.cos(yaw) * CONFIG.PASS_SPEED + a.vz * 0.5; f.vy = CONFIG.PASS_LIFT;
+    a.carrying = null;
+    a.heading = yaw;
+    emit(sim, "pass", f.team, id, f.x, f.y, f.z);
+    return true;
+  };
+  // A block in flight: gravity and the wind; it lands on whatever it falls onto, or drops where it struck a wall.
+  const flyFlag = (sim, f, dt) => {
+    f.t += dt;
+    f.vy -= CONFIG.PASS_GRAVITY * dt;
+    f.vx += sim.weather.x * CONFIG.SHOT_WIND * dt; f.vz += sim.weather.z * CONFIG.SHOT_WIND * dt;
+    const nx = f.x + f.vx * dt, ny = f.y + f.vy * dt, nz = f.z + f.vz * dt;
+    const outside = nx < -W + 0.4 || nx > W - 0.4 || nz < -L + 0.4 || nz > L - 0.4;
+    if (outside || (ny > 0 && solidAt(nx, ny, nz))) { f.vx = f.vz = 0; f.vy = Math.min(f.vy, 0); }
+    else { f.x = nx; f.z = nz; }
+    f.y = Math.max(ny, -1);
+    const ground = groundAt(f.x, f.z, f.y + 0.3, 0.2);
+    if (f.y <= ground) {
+      f.state = "dropped";
+      f.y = ground;
+      if (f.thrower >= 0) sim.actors[f.thrower].blocked = f.team;
+      emit(sim, "landed", f.team, f.thrower, f.x, f.y, f.z);
+    }
   };
   // Place a crate a step from actor `id` along `yaw` (its heading if not given), on their own half, from their stock.
   const build = (sim, id = 0, yaw = sim.actors[id].heading) => {
@@ -413,7 +449,7 @@
       return;
     }
     if (a.carrying) { goal.x = stand.x; goal.z = stand.z; return; }
-    if (own.state === "dropped") { goal.x = own.x; goal.z = own.z; return; }
+    if (own.state === "dropped" || own.state === "flying") { goal.x = own.x; goal.z = own.z; return; }
     if (own.state === "carried" && sim.actors[own.carrier].team !== a.team) { const c = sim.actors[own.carrier]; goal.x = c.x; goal.z = c.z; return; }
     if (a.role === "defend") {
       let near = null, best = CONFIG.GUARD_RANGE * CONFIG.GUARD_RANGE;
@@ -459,8 +495,24 @@
     }
     return best;
   };
+  // A bot carrying a block passes it when a rival is closing in and a free teammate stands nearer home.
+  const botPass = (sim, a) => {
+    let near = false;
+    for (const b of sim.actors) if (b.team !== a.team && open(b) && (b.x - a.x) ** 2 + (b.z - a.z) ** 2 < 16) near = true;
+    if (!near) return;
+    const stand = ARENA.stands[a.team], mine = Math.hypot(a.x - stand.x, a.z - stand.z);
+    for (const b of sim.actors) {
+      if (b === a || b.team !== a.team || !open(b)) continue;
+      const d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d > 5 && d < 15 && Math.hypot(b.x - stand.x, b.z - stand.z) < mine - 3 && clearLine(a.x, a.z, b.x, b.z, 0.1, CONFIG.SHOT_Y)) {
+        pass(sim, a.id, Math.atan2(b.x - a.x, b.z - a.z));
+        return;
+      }
+    }
+  };
   const thinkBot = (sim, a, dt) => {
     if (a.splat > 0 || a.trapped > 0) return;
+    if (a.carrying && a.cooldown <= 0 && sim.rng() < dt * 2) botPass(sim, a);
     if (a.detour > 0) {
       a.detour -= dt;
       goal.x = a.detourX; goal.z = a.detourZ;
@@ -534,9 +586,17 @@
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
     // Picking up: the rivals' flag from its stand or the ground, or your own team's flag where it was dropped.
     for (const f of [theirs, own]) {
-      if (a.carrying || a.blocked === f.team || f.state === "carried" || (f === own && f.state !== "dropped")) continue;
-      const fy = f.state === "dropped" ? f.y : 0;
-      if (a.y > fy + 1.4 || a.y < fy - 0.5 || (a.x - f.x) ** 2 + (a.z - f.z) ** 2 >= r2) continue;
+      if (a.carrying || f.state === "carried" || (f === own && f.state === "home")) continue;
+      if (f.state === "flying") {
+        // A catch: the block within reach of the body's middle, its thrower kept off it for a moment.
+        if (f.thrower === a.id && f.t < CONFIG.PASS_SAFE) continue;
+        const dy = f.y - (a.y + 1);
+        if (dy * dy + (a.x - f.x) ** 2 + (a.z - f.z) ** 2 >= CONFIG.CATCH_R * CONFIG.CATCH_R) continue;
+      } else {
+        if (a.blocked === f.team) continue;
+        const fy = f.state === "dropped" ? f.y : 0;
+        if (a.y > fy + 1.4 || a.y < fy - 0.5 || (a.x - f.x) ** 2 + (a.z - f.z) ** 2 >= r2) continue;
+      }
       f.state = "carried";
       f.carrier = a.id;
       a.carrying = f.team;
@@ -712,6 +772,7 @@
     }
     for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
+    for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
     // Throws in flight: gravity and the wind, then a rival in the way or anything solid.
     for (const s of sim.shots) {
       if (!s.live) continue;
@@ -747,5 +808,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, build, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, escape, clearLine, solidAt, resolve, groundAt };
 })();
