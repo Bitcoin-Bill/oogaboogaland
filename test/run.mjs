@@ -14903,9 +14903,13 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     && row.peakSpeed <= state.rageSpeed + 1e-5 && row.largestStep < state.rageSpeed * row.dt + 0.15
     && row.groundError < 0.05 && !row.airborne && !row.recoveries);
   record("gorilla traversal: crates, barrels and rocks keep a grounded gallop; an autonomous gorilla leaves intact production crates without relocation; ordinary and controlled gorillas leave every box face and corner, rage departs crates and pebbles on four limbs at 12 m/s, and destroyed support falls normally; jumps, low cover and scenery detours retain their behavior", props && intactProp && departures && rage && destroyed && raisedProp && jump && canopy && detour, JSON.stringify(state));
-} }, { name: "gorilla rage contacts", why: "rule: only real banana impacts may count, and an autonomous ground capture must preserve visitor ownership and restore controls on every release", run: async (b) => {
+} }, { name: "gorilla rage contacts", outsideRing: true, why: "rule: only real banana impacts may count, and an autonomous ground capture must preserve visitor ownership and restore controls on every release", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, C = B.clankers, H = BL.scenes.hub.debug, S = BL.scene, c = B.cavemen.get("portlandhodl");
+    // Certify launch pads with the real scenery before isolating contact actors.
+    const map = H.rageThrowMap, limit = Math.ceil(map.spots.length * 201 / 24) + 1;
+    let warmup = 0;
+    while (!map.ready && warmup < limit) { B.advance(1 / 60, 1 / 60); warmup++; }
     // Combat deliberately excludes the shooter's own companion. Hit another
     // awake gorilla and keep the shooter's companion clear of the fixture.
     const e = C.list.find(entry => entry.owner.traits.name === "w-s-bitcoin"), other = C.list.find(entry => entry.owner === c);
@@ -14973,8 +14977,18 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     const dropped = H.rageRelease(e) && !c.grabbedBy && !e.capture.cave && !e.motion.dragging
       && B.pilot.player === c && B.crew.player === c && !c.root.quaternion && Math.abs(c.root.rotation.x) < 1e-6;
     placeForGrab();
-    const preparing = H.rageGrab(e, c) && H.rageThrow(e, 0, 1, 1) && e.capture.throwing
+    // A grab alone does not authorize an arbitrary outbound throw. Let rage
+    // select and reach its proven launch pad, then cancel the actual wind-up.
+    let frames = 0, recaptured = false;
+    while (!e.capture.throwing && frames < 8 * 60) {
+      B.advance(1 / 60, 1 / 60); frames++;
+      recaptured ||= e.capture.cave === c && c.grabbedBy === e;
+      if (recaptured && e.capture.cave !== c) break;
+    }
+    const preparing = recaptured && e.capture.cave === c && e.capture.throwing && e.capture.charge === 1
       && Math.abs(e.capture.aim.dy - Math.hypot(e.capture.aim.dx, e.capture.aim.dz)) < 1e-6;
+    const preparation = { mapReady: map.ready, homeSpots: map.spots.filter(spot => spot.land === 1 && spot.valid).length,
+      warmup, frames, recaptured, phase: e.rage.phase, reason: e.rage.edgeRejectReason, blocked: e.capture.blocked };
     const account = BL.net.state.me; BL.net.state.me = { id: "fixture" }; C.update(1 / 60);
     const cancelled = !e.rage.active && !e.capture.cave && !c.grabbedBy && !c.leap.thrown
       && B.pilot.player === c && B.crew.player === c && e.gorilla.form === "ape" && !e.root.matrixNative
@@ -14983,10 +14997,10 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     B.crew.configureWeapon(c, 2, "unlimited"); c.weapon.cooldown = 0;
     const restored = B.crew.fireWeapon(c, { x: c.root.position.x, y: c.root.position.y + 2, z: c.root.position.z + 5 }, 1);
     B.crew.clearProjectiles(); B.pilot.release(true);
-    return { fired, counted, excluded, active, codeForm, grabbed, identity, exclusive, suppressed, dropped, preparing, cancelled, restored };
+    return { checks: { fired, counted, excluded, active, codeForm, grabbed, identity, exclusive, suppressed, dropped, preparing, cancelled, restored }, preparation };
   })()`);
   record("gorilla rage contacts: a physical banana counts once while replay and generic damage do not; a clear ground grab preserves visitor ownership, suppresses conflicting controls, rejects duplicate captors and restores controls on drop and signed-in throw cancellation",
-    Object.values(state).every(Boolean), JSON.stringify(state));
+    Object.values(state.checks).every(Boolean), JSON.stringify(state));
 } }, { name: "gorilla camera modes", why: "regression: controlled gorillas lacked shared camera/cursor controls and Escape, and selecting an unavailable Ooga dropped the current gorilla", run: async (b) => {
   const state = await b.evaluate(`(() => {
     const B = __ooga, P = B.clankerPlay, C = B.clankers, e = C.list.find(e => e.owner.traits.name === "portlandhodl");
