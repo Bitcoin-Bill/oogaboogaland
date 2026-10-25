@@ -48,7 +48,7 @@
     // ends, their feet far enough from the back wall to walk up to them straight; and the truss gantries across the
     // vault, by z, at the height they run.
     catwalkY: 7.5, catwalks: [[HALL.x0 + 3, HALL.x0 + 5.4, -15, 24], [HALL.x1 - 5.4, HALL.x1 - 3, -15, 24]],
-    catwalkStairs: [[HALL.x0 + 4.2, 0, -26.5, HALL.x0 + 4.2, 7.5, -15, 1.6], [HALL.x1 - 4.2, 0, -26.5, HALL.x1 - 4.2, 7.5, -15, 1.6]],
+    catwalkStairs: [[HALL.x0 + 4.2, 0, -26.5, HALL.x0 + 4.2, 7.5, -15, 2], [HALL.x1 - 4.2, 0, -26.5, HALL.x1 - 4.2, 7.5, -15, 2]],
     gantries: [22, 14, 6, -2, -10, -18, -26], gantryY: 15,
     // The Jet's dock right of the runway, nose to the tunnel: where `jet-models.js`'s jet stands on the floor, and the
     // striped bay round it, [x0, x1, z0, z1]. Its gangway along the left flank at the cockpit's sill, `w` wide at `x`
@@ -57,8 +57,8 @@
     // width.
     jet: { x: 15, z: -10 },
     bay: [5.6, 25.2, -29.6, 6.6],
-    gangway: { x: 11.075, y: 5, w: 2.65, decks: [[-21, -13.6, true], [-13.6, -6.2, false], [-6.2, -4.6, true]] },
-    jetStairs: [10.6, 0, 3.4, 10.6, 5, -4.6, 1.6],
+    gangway: { x: 10.875, y: 5, w: 3.05, decks: [[-21, -13.6, true], [-13.6, -6.2, false], [-6.2, -4.6, true]] },
+    jetStairs: [10.4, 0, 3.4, 10.4, 5, -4.6, 2],
     // Trestles under the wings, [x, z].
     trestles: [[8, -8.9], [22, -8.9]],
     // The engine static fire test's booth beside the runway behind the Jet's left engine, clear of its exhaust: where it
@@ -1368,21 +1368,24 @@
     flight(...L.jetStairs.slice(0, 6), L.jetStairs[6] - 0.2);
     const block = (x0, x1, z0, z1, from, to) => boxes.push(x0, x1, z0, z1, from, to);
     const around = (x, z, hx, hz, to) => block(x - hx, x + hx, z - hz, z + hz, -1, to);
-    // A stair's handrails, both sides (as `stairParts` puts them), each in half-metre lengths just outside the rail's
-    // line, so the widest Ooga still climbs between them; each length stands in the way from a little below a
-    // walker's head to over its feet where the stair is there, so a walker on the stair, or on the floor beside its
-    // low end, keeps to its side of the rail, and one on the floor walks under the rail where the stair is overhead.
-    // The hangar's stairs all run along z or x, so each length is the box round it.
+    // A stair's handrails, both sides (as `stairParts` puts them), from the inner face of its posts outward, so a body
+    // stops at the rail rather than in it (the flights are wide enough for the widest Ooga between them). Each in two
+    // lengths: from its foot to where it rises over a walker's head, in the way of everyone there, on the stair or on
+    // the floor beside its low end; and on up to its head, in the way of walkers on the stair alone, so one on the
+    // floor walks under the rail where the stair is overhead. Two lengths, not many, so a walker along a rail never
+    // meets a seam. The hangar's stairs all run along z or x, so each length is the box round it.
+    const RAIL_HEAD = 1.8;
     const rails = (ax, ay, az, bx, by, bz, w) => {
-      const len = Math.hypot(bx - ax, bz - az), px = -(bz - az) / len, pz = (bx - ax) / len, n = Math.ceil(len / 0.5);
-      for (let i = 0; i < n; i++) {
-        const t0 = i / n, t1 = (i + 1) / n, h = ay + (by - ay) * (t0 + t1) / 2;
+      const len = Math.hypot(bx - ax, bz - az), px = -(bz - az) / len, pz = (bx - ax) / len, split = Math.min(1, Math.max(0, (RAIL_HEAD - ay) / (by - ay)));
+      const length = (t0, t1, from, to) => {
         for (const s of [-1, 1]) {
-          const x0 = ax + (bx - ax) * t0 + px * s * (w / 2 + 0.05), z0 = az + (bz - az) * t0 + pz * s * (w / 2 + 0.05);
+          const x0 = ax + (bx - ax) * t0 + px * s * (w / 2 - 0.03), z0 = az + (bz - az) * t0 + pz * s * (w / 2 - 0.03);
           const x1 = ax + (bx - ax) * t1 + px * s * (w / 2 + 0.15), z1 = az + (bz - az) * t1 + pz * s * (w / 2 + 0.15);
-          block(Math.min(x0, x1), Math.max(x0, x1), Math.min(z0, z1), Math.max(z0, z1), h - 1.5, h + 0.9);
+          block(Math.min(x0, x1), Math.max(x0, x1), Math.min(z0, z1), Math.max(z0, z1), from, to);
         }
-      }
+      };
+      length(0, split, -1, RAIL_HEAD + 0.9);
+      if (split < 1) length(split, 1, RAIL_HEAD - 1.2, by + 0.9);
     };
     rails(...L.steps);
     for (const st of L.catwalkStairs) rails(...st);
