@@ -112,13 +112,15 @@
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false, soundPanel = null;
   const NO_ACTORS = [];
-  // What walks the hall besides the crew, for the crew to keep clear of: the other players' Oogas and Kortik's Sis.
+  // What walks the hall besides the Oogas, for them to keep clear of: the other players' Oogas, Kortik's Sis and the
+  // gorillas of the hangar's crew.
   const ACTORS = [];
   const outsideActors = () => {
     ACTORS.length = 0;
     const others = remotes ? remotes.actors() : NO_ACTORS;
     for (let i = 0; i < others.length; i++) ACTORS.push(others[i]);
     if (scene && scene.sis) ACTORS.push(scene.sis.actor);
+    if (scene) for (let i = 0; i < scene.crewActors.length; i++) ACTORS.push(scene.crewActors[i]);
     return ACTORS;
   };
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
@@ -496,14 +498,25 @@
 
   // The crew, gorillas in hard hats as the Factory's and the hangar's hi-vis vests, each pacing its post on the floor,
   // on the Jet's gangway or on a catwalk, kept to where an Ooga could walk at its height and held off rails, desks and
-  // the Jet by their own breadth (`CREW_BODY`, half a gorilla's shoulders). Each paces to the next spot round its post it
-  // can walk to all the way, tried `PACE_TRIES` times, so none presses on toward one past a rail; with none, it stands
-  // a while.
-  const CREW_BODY = 0.5, PACE_TRIES = 12;
+  // the Jet by their own breadth (`CREW_BODY`, half a gorilla's shoulders), and off the Ooga the visitor drives, as the
+  // Oogas keep off them (each gorilla's `actor`, `CREW_HEIGHT` tall). Each paces to the next spot round its post it can
+  // walk to all the way, tried `PACE_TRIES` times, so none presses on toward one past a rail; with none, it stands a
+  // while.
+  const CREW_BODY = 0.5, CREW_HEIGHT = 1.9, PACE_TRIES = 12;
+  // Whether a gorilla's step from (fx, fz) to (nx, nz) at height y keeps clear of the driven Ooga, or at least goes no
+  // nearer it.
+  const clearOfOoga = (fx, fz, nx, nz, y) => {
+    const o = people && people.player;
+    if (!o) return true;
+    const p = o.root.position, r = CREW_BODY + (o.bodyRadius || 0.35), dn = Math.hypot(nx - p.x, nz - p.z);
+    return dn >= r || Math.abs(p.y - o.baseY - y) > 1.5 || dn >= Math.hypot(fx - p.x, fz - p.z);
+  };
   const hireCrew = (s) => {
     const hat = FM.hardHat(), vest = HM.vest();
+    s.crewActors = [];
     for (const [x, y, z, radius, heading] of LAYOUT.crew) {
-      const walkable = (fx, fz, nx, nz) => Math.hypot(nx - x, nz - z) < radius + 0.4 && HM.supportAt(nx, nz, y) === y && HM.clearAt(nx, nz, y, CREW_BODY, fx, fz);
+      const walkable = (fx, fz, nx, nz) => Math.hypot(nx - x, nz - z) < radius + 0.4 && HM.supportAt(nx, nz, y) === y && HM.clearAt(nx, nz, y, CREW_BODY, fx, fz)
+        && clearOfOoga(fx, fz, nx, nz, y);
       const agent = BL.agent.create({ groundAt: () => y, walkable, form: "ape", x, z, heading, scale: 0.86 });
       addChild(agent.parts.head, createNode({ position: { x: 0, y: 0.6, z: 0.05 }, geometry: hat }));
       addChild(agent.parts.torso, createNode({ geometry: vest }));
@@ -528,6 +541,7 @@
       };
       addChild(root, agent.root);
       s.crew.push(agent);
+      s.crewActors.push({ x, y, z, radius: CREW_BODY, height: CREW_HEIGHT });
     }
   };
 
@@ -915,7 +929,11 @@
     lampLife(s, dt, elapsed);
     boardJets(s, dt);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
-    for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
+    for (let i = 0; i < s.crew.length; i++) {
+      s.crew[i].update(dt);
+      const p = s.crew[i].root.position, a = s.crewActors[i];
+      a.x = p.x; a.z = p.z;
+    }
     if (boardsDirty) {
       boardsDirty = false;
       paintBoards(s);
