@@ -908,7 +908,29 @@
     // Kortik's switchboard, desk, stool, side table and crates.
     const k = L.kortik, kx = k.x - k.w / 2 + KORTIK.face;
     for (const [along, out, r] of KORTIK.blocks) block(kx + out, k.z - along, r, k.y - 0.5, k.y + 3);
-    return { rects: new Float32Array(rects), strips: new Float32Array(strips), blocks: new Float32Array(blocks), discs: new Float32Array(discs),
+    // The rails along the decks' edges (`deckRailing`, cut by `railPlan`) and the walkways (`walkRails`), as boxes
+    // [x0, x1, z0, z1, from, to] round each rail from just past its outer face to its inner one, in the way of walkers
+    // on foot on that deck (`railClear`), so a body stops at a rail rather than in it; walkers below pass under and a
+    // jump goes over. A length ends `CUT_EASE` short of a cut, since the stairs and bridges landing there are about as
+    // narrow as the widest Ooga.
+    const walls = [], CUT_EASE = 0.6;
+    const wall = (x0, x1, z0, z1, y) => walls.push(x0, x1, z0, z1, y - 0.5, y + 1.1);
+    const { cutsFor } = railPlan();
+    for (const [d, rails] of deckRailing()) {
+      const hw = d.w / 2 - 0.1, hd = d.d / 2 - 0.1;
+      for (const [x0, z0, x1, z1] of models.deckRailSpans(d.w, d.d, rails, cutsFor(d))) {
+        const ease = (u, half) => Math.abs(Math.abs(u) - half) < 0.01 ? 0 : CUT_EASE;
+        if (z0 === z1) {
+          const a = Math.min(x0, x1), b = Math.max(x0, x1), ea = ease(a, hw), eb = ease(b, hw), inner = z0 < 0 ? 1 : -1;
+          if (b - eb > a + ea) wall(d.x + a + ea, d.x + b - eb, d.z + Math.min(z0 - 0.15 * inner, z0 + 0.1 * inner), d.z + Math.max(z0 - 0.15 * inner, z0 + 0.1 * inner), d.y);
+        } else {
+          const a = Math.min(z0, z1), b = Math.max(z0, z1), ea = ease(a, hd), eb = ease(b, hd), inner = x0 < 0 ? 1 : -1;
+          if (b - eb > a + ea) wall(d.x + Math.min(x0 - 0.15 * inner, x0 + 0.1 * inner), d.x + Math.max(x0 - 0.15 * inner, x0 + 0.1 * inner), d.z + a + ea, d.z + b - eb, d.y);
+        }
+      }
+    }
+    for (const [ax, az, bx, bz, y] of walkRails()) wall(Math.min(ax, bx) - 0.1, Math.max(ax, bx) + 0.1, Math.min(az, bz) - 0.1, Math.max(az, bz) + 0.1, y);
+    return { rects: new Float32Array(rects), strips: new Float32Array(strips), blocks: new Float32Array(blocks), discs: new Float32Array(discs), walls: new Float32Array(walls),
       stairs: new Float32Array([L.stairway, ...L.stairs].flat()), ring: L.ring };
   });
   const supportAt = (x, z, feet) => {
@@ -947,7 +969,7 @@
       const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps;
       const floor = supportAt(x, z, feet);
       const px = ax + (bx - ax) * (i - 1) / steps, pz = az + (bz - az) * (i - 1) / steps;
-      if (!clearAt(x, z, Math.max(feet, floor), radius, height, px, pz) || floor < feet - STEP) return false;
+      if (!clearAt(x, z, Math.max(feet, floor), radius, height, px, pz) || !railClear(x, z, Math.max(feet, floor), radius, px, pz) || floor < feet - STEP) return false;
     }
     return true;
   };
@@ -983,6 +1005,24 @@
       if (old2 >= r * r || distance2 <= old2 + 1e-12 || ox * (x - fromX) + oz * (z - fromZ) < -1e-12) return false;
     }
     return true;
+  };
+  // Whether a step on foot from (fromX, fromZ) to (x, z) keeps a body of `radius` off the decks' and walkways' rails
+  // (`FLOOR`'s walls): no nearer than `radius` to one, or, already nearer, no deeper into it. A body in the air goes
+  // over them.
+  const railClear = (x, z, feet, radius, fromX, fromZ) => {
+    const W = FLOOR().walls;
+    for (let i = 0; i < W.length; i += 6) {
+      if (feet < W[i + 4] || feet > W[i + 5]) continue;
+      const near = wallDistance(W, i, x, z);
+      if (near >= radius) continue;
+      if (near < wallDistance(W, i, fromX, fromZ) - 1e-9 || wallDistance(W, i, fromX, fromZ) >= radius) return false;
+    }
+    return true;
+  };
+  // How far (x, z) stands outside the wall at `i` in `W`, less than nothing inside it.
+  const wallDistance = (W, i, x, z) => {
+    const dx = Math.max(W[i] - x, x - W[i + 1]), dz = Math.max(W[i + 2] - z, z - W[i + 3]);
+    return dx > 0 || dz > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) : Math.max(dx, dz);
   };
   // Horizontal clearance alone cannot stop a fall entering a lower layer's obstacle. Resolve the new
   // contact at its rim as the feet cross its top, before the walker can land trapped inside it.
