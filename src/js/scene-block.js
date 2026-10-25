@@ -396,7 +396,10 @@
       } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
       else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
       else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
-      else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
+      else if (e.type === "waiting") {
+        if (me) { center("NOT YET!", 1200); notice("Your own block isn't home, so you can't score. Hold on here while your team brings it back, or go get it", 4000); }
+        else if (mine) notice("Teammate is waiting at our stand · get our block home so they can score", 3000);
+      } else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
       else if (e.type === "weather") {
         const w = sim.weather.kind;
         notice(w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears", 2400);
