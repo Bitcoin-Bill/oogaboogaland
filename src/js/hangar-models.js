@@ -566,7 +566,7 @@
   // The stats board's face: its dark glass, its tiles, and each tile's icon: the commits' branch graph, the pull request's two
   // branches and arrow, the issues' red ring, the release's green cube; and for the fifth tile both a star (the
   // repository's stars) and a milestone's flag, which the scene shows as the reading says. The Jet on the last tile
-  // is the scene's.
+  // and its streak are the scene's.
   const statsFace = cached(() => {
     const T = STATS_FACE.tiles, flat = [screen("stats")], glow = [], z = 0.075;
     for (const t of Object.values(T)) tile(flat, glow, ...t);
@@ -589,15 +589,12 @@
     [x, y] = at(T.stars);
     const stars = merge(moved(star(0.2, 0.085, 0.05, GOLD, 0.9), x, y, z + 0.02));
     const flag = merge(beam(x - 0.12, y - 0.26, z + 0.01, x - 0.12, y + 0.26, z + 0.01, 0.03, "#e8eeff", 0.6), moved(prism([[x - 0.12, y + 0.25], [x - 0.12, y + 0.02], [x + 0.2, y + 0.135]], 0.03, GOLD, 0.9), 0, 0, z + 0.01));
-    const [jx, jy, jz, s, climb] = JETS.stats[0];
-    streak(glow, jx, jy, jz - 0.1, climb, 27.75 * s * 0.38, 0.48, 0.05, "#bfe3ff");
-    streak(glow, jx, jy - 0.14, jz - 0.12, climb, 27.75 * s * 0.3, 0.34, 0.018, "#7fb8ff");
     return { flat: merge(...flat), glow: noShadow(merge(...glow)), stars: noShadow(stars), flag: noShadow(flag) };
   });
 
-  // The timeline's face: its dark glass, the bolt by its title, the pixel clouds, a far islet and the Jet's streak over the top right,
-  // and the six stops, each a hexagon edged in light round its icon, joined by yellow arrows and parted by faint rules.
-  // The Jets are the scene's.
+  // The timeline's face: its dark glass, the bolt by its title, the pixel clouds, a far islet, and the six stops, each a
+  // hexagon edged in light round its icon, joined by yellow arrows and parted by faint rules. The Jets and their streaks
+  // are the scene's.
   const timelineFace = cached(() => {
     const F = TIMELINE_FACE, flat = [screen("timeline")], glow = [], z = 0.07;
     glow.push(moved(FM.smoothBolt(0.78, 0.06, GOLD, 1), F.bolt[0], F.bolt[1], 0.08));
@@ -609,9 +606,6 @@
       lathe({ profile: [[0.225, 0], [0.2, 0.03], [0, 0.04]], segments: 8, color: "#5fbf4a", emissive: 0.55 }),
       moved(lathe({ profile: [[0.06, 0], [0.04, 0.1], [0, 0.14]], segments: 6, color: "#3f9a3a", emissive: 0.55 }), 0.05, 0.03, 0)
     ), 4.85, 0.72, 0.12));
-    const [jx, jy, jz, s, climb] = JETS.timeline[0];
-    streak(glow, jx, jy, jz - 0.12, climb, 27.75 * s * 0.38, 1.6, 0.06, "#bfe3ff");
-    streak(glow, jx, jy - 0.16, jz - 0.14, climb, 27.75 * s * 0.3, 1.0, 0.02, "#7fb8ff");
     const hex = Array.from({ length: 6 }, (_, k) => [Math.cos(k * Math.PI / 3), Math.sin(k * Math.PI / 3)]);
     STOPS.forEach((stop, i) => {
       const x = F.x0 + i * F.step, y = F.y, r = F.r;

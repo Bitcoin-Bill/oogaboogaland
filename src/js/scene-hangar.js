@@ -445,6 +445,7 @@
       HM.JETS[key].forEach((spot, i) => {
         const flight = miniJet(spot);
         addChild(n, flight);
+        if (i === 0) addChild(flight, createNode({ geometry: HM.jetStreaks()[key], sightHidden: true }));
         if (JET_STYLE[key] && JET_STYLE[key].spot === i) s.flyers.push(flyer(n, flight, spot, JET_STYLE[key]));
       });
       addChild(root, n);
