@@ -2,7 +2,9 @@
 // the hall): the landing inside the door, the runway down the middle and on through the launch tunnel's neon frames to
 // the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it; the Jet docked beside the runway
 // (`jet-models.js`) with a stair tower up its flank; the crew's workstations, and the repository's two boards on the
-// wall. The crew are the Factory's own, gorillas in hard hats, each pacing its post.
+// wall. The crew are the Factory's own, gorillas in hard hats, each pacing its post. The boards read the repository
+// once a page life, on the first visit (`jet-feed.js`), and show the best reading there is meanwhile; a tap opens one
+// in the board dialog.
 // Until the hangar opens the scene stays `wip`, and the Factory builds no door to it (`FM.hangarEntry`) unless a page
 // opens it with ?wip=hangar.
 //
@@ -40,7 +42,7 @@
     runway: view(0, 4.5, -62, 0, 0.05, 18),
     // The Jet from behind its tail, the concept's own angle, the tunnel beyond its nose.
     jet: view(LAYOUT.jet.x - 2, 5, LAYOUT.jet.z, -0.5, 0.16, 27),
-    boards: view(HALL.x0 + 5.5, 4.5, 8, Math.PI / 2 - 0.35, 0.05, 12),
+    boards: view(HALL.x0 + 5.5, 4.3, 7, Math.PI / 2 - 0.35, 0.05, 17),
     door: view(0, 3.2, DOOR.z - 4, Math.PI, 0.12, 11)
   };
   // In from the hall: on the landing a step in from the door, facing down the runway, the view in the doorway behind it.
@@ -73,8 +75,8 @@
     sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
     mouth: ["Launch tunnel · sealed", "The runway opens when Jet v2 is ready to fly."],
     jet: ["Lightning Jet v2 · under construction", "The Jet is still being built. Its stair leads up to the cockpit."],
-    stats: ["Repo stats · drneski/lightning-jet", "The project's GitHub stats show here, fetched once as you come in."],
-    timeline: ["Lightning Jet timeline", "The project's story, dated from its repository, shows here: its first release, every one since, and v2 ahead."],
+    stats: ["Repo stats · drneski/lightning-jet", ""],
+    timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
@@ -83,6 +85,7 @@
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null, clock = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
+  let unsubscribeFeed = null, boardsDirty = false;
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
   // frame, so signed-in players in the hangar hear each other and those in the hall (voice needs a driven Ooga).
@@ -134,8 +137,17 @@
     return n;
   };
 
-  // The hangar for a visit: the hall and everything standing in it from the cached builds, the signs, the boards'
-  // frames, the Jet at its dock, the door back to the hall with its shield, and the launch shield.
+  // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
+  // round its fuselage's axis.
+  const miniJet = ([x, y, z, scale, climb, yaw, roll]) => {
+    const flight = createNode({ position: { x, y, z }, rotation: { x: 0, y: 0, z: climb } }), turn = createNode({ rotation: { x: 0, y: -Math.PI / 2 + yaw, z: 0 } }), axis = JM.AXIS * scale;
+    addChild(turn, createNode({ position: { x: axis * Math.sin(roll), y: -axis * Math.cos(roll), z: 0 }, rotation: { x: 0, y: 0, z: roll }, scale: { x: scale, y: scale, z: scale }, geometry: JM.jet(JET_STAGE) }));
+    addChild(flight, turn);
+    return flight;
+  };
+
+  // The hangar for a visit: the hall and everything standing in it from the cached builds, the signs, the boards, the
+  // Jet at its dock, the door back to the hall with its shield, and the launch shield.
   const build = () => {
     const L = LAYOUT, s = { crew: [] }, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), fixtures = HM.fixtures(), frames = HM.boardFrames();
     addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
@@ -150,32 +162,38 @@
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
     s.jet = createNode({ position: { x: L.jet.x, y: 0, z: L.jet.z }, geometry: JM.jet(JET_STAGE) });
     addChild(root, s.jet);
-    // The boards' frames on the left wall, each with its title across its top and its screen dark until its face is painted.
+    // The boards on the left wall: each a glass in its frame with its face built on it and the Jet flying across it,
+    // its lettering painted over it from the reading (`paintBoards`); the stats board's fifth tile shows the stars, or
+    // a flag while the repository has a milestone open. Each has its picture for the board dialog too, with a link out
+    // to the repository.
     s.boards = {};
+    s.boardText = {};
+    s.boardViews = {};
+    const faces = { stats: HM.statsFace(), timeline: HM.timelineFace() };
     for (const [key, b] of Object.entries(L.boards)) {
-      const n = createNode({ position: { x: b.x, y: b.y, z: b.z }, rotation: { x: 0, y: b.turn, z: 0 }, geometry: frames[key].flat });
-      addChild(n, createNode({ geometry: frames[key].glow, sightHidden: true }));
-      sign(n, FM.label(key === "stats" ? "drneski/lightning-jet" : "LIGHTNING JET TIMELINE", "", { height: 0.9 }), 0, b.h / 2 - 0.42, 0.06);
-      const dark = models.box({ w: b.w, h: b.h, d: 0.04, color: "#0b1734", emissive: 0.6 });
-      addChild(n, createNode({ geometry: dark, sightHidden: true }));
+      const n = createNode({ position: { x: b.x, y: b.y, z: b.z }, rotation: { x: 0, y: b.turn, z: 0 }, scale: { x: b.scale, y: b.scale, z: b.scale }, geometry: frames[key].flat });
+      addChild(n, createNode({ geometry: frames[key].glow, sightHidden: true }), createNode({ geometry: faces[key].flat }), createNode({ geometry: faces[key].glow, sightHidden: true }));
+      for (const spot of HM.JETS[key]) addChild(n, miniJet(spot));
       addChild(root, n);
       s.boards[key] = n;
+      s.boardViews[key] = { title: key === "stats" ? "Lightning Jet on GitHub" : "Lightning Jet Timeline", help: "", canvas: document.createElement("canvas"), count: 1, index: 0, version: 0,
+        caption: key === "stats" ? "Repository stats" : "Dated from the repository", note: "", wide: true, go() {},
+        link: { href: `https://github.com/${BL.jetFeed.REPO}`, label: `Open ${BL.jetFeed.REPO} on GitHub ↗` } };
     }
-    // The signs: the hangar's over the runway between two lit bolts, hung from the last gantry on two rods; the right
-    // wall's call to work; and the plaque by the runway at the Jet's tail, on its post.
+    s.statsStars = createNode({ geometry: faces.stats.stars, sightHidden: true });
+    s.statsFlag = createNode({ geometry: faces.stats.flag, sightHidden: true, visible: false });
+    addChild(s.boards.stats, s.statsStars, s.statsFlag);
+    // The signs: the hangar's over the runway between two lit bolts, hung from the last gantry on two rods, and the
+    // plaque by the runway at the Jet's tail, on its post.
     const [hx, hy, hz] = L.signs.hangar, hangarSign = FM.label("LIGHTNING JET\nHANGAR", "", { height: 1.7 });
     s.sign = sign(root, hangarSign, hx, hy, hz);
     for (const side of [-1, 1]) {
       addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 + 0.6), y: hy, z: hz + 0.05 }, geometry: FM.smoothBolt(1.2, 0.1, "#ffd23a", 1), sightHidden: true }));
       addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 - 0.3), y: (hy + L.gantryY) / 2 + 0.4, z: hz - 0.05 }, geometry: models.box({ w: 0.06, h: L.gantryY - hy - 1.2, d: 0.06, color: "#2c2e33" }) }));
     }
-    const [wx, wy, wz] = L.signs.work;
-    sign(root, FM.label("WORK\nBUILD\nTEST\nLAUNCH", "", { height: 1.6, style: "jet" }), wx, wy, wz, -Math.PI / 2);
     const [px, py, pz] = L.signs.soon;
     sign(root, FM.label("JET V2", "COMING SOON", { height: 0.9, style: "jet" }), px, py, pz);
     addChild(root, createNode({ position: { x: px, y: (py - 0.6) / 2, z: pz - 0.1 }, geometry: models.box({ w: 0.14, h: py - 0.6, d: 0.14, color: "#5c3a1e" }) }));
-    // In the tunnel's mouth, a banner of the hangar's words either side.
-    for (const side of [-1, 1]) sign(root, FM.label("LAUNCH\nEXPLORE\nCONNECT\nOOGABOOGA", "", { height: 1, style: "jet" }), side * (TUN.r - 2.2), TUN.y + 2.6, HALL.back - 0.4);
     // The door, the Factory's own turned to face in, with the hall's warm dark through it and its sign the way back.
     const door = FM.hangarDoor(), D = FM.HANGAR_DOOR;
     s.door = createNode({ position: { x: DOOR.x, y: DOOR.y, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
@@ -196,8 +214,8 @@
     target(s.sign, "sign", "runway", 2.5);
     target(s.mouth, "mouth", "runway", 6);
     target(s.jet, "jet", "jet", 6);
-    target(s.boards.stats, "stats", "boards", 4);
-    target(s.boards.timeline, "timeline", "boards", 4.5);
+    target(s.boards.stats, "stats", "boards", 4.6);
+    target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
     return s;
   };
@@ -217,6 +235,24 @@
     }
   };
 
+  // The boards' lettering and their dialog pictures from the best reading there is, painted again whenever the feed
+  // says it changed; a picture replaced leaves the GPU at the next housekeeping pass.
+  const paintBoards = (s) => {
+    const r = BL.jetFeed.reading();
+    for (const key of Object.keys(LAYOUT.boards)) {
+      if (s.boardText[key]) removeChild(s.boards[key], s.boardText[key]);
+      s.boardText[key] = createNode({ geometry: HM.boardText(key, r), sightHidden: true });
+      addChild(s.boards[key], s.boardText[key]);
+      const view = s.boardViews[key];
+      HM.paintBoard(key, view.canvas, r);
+      view.note = HM.boardNote(r);
+      view.version++;
+    }
+    const milestone = !!(r && r.milestones.length);
+    s.statsStars.visible = !milestone;
+    s.statsFlag.visible = milestone;
+  };
+
   // Point lights, most important first so the lowest tier keeps them: the door's cyan, the landing, the dock's two work
   // lamps, the boards' blue, the tunnel mouth's and the launch shield's, and two warm ones over the crew's floor; the
   // lanterns share what is left, the vault's and the floor's, the nearest the view first, each reaching as far as
@@ -233,8 +269,8 @@
     lamp(1, 0, L.landing.y + 3, L.landing.z - 3, 12, 1, 0.66, 0.3);
     lamp(2, L.gangway.x - 2, 8, L.gangway.decks[0][1], 16, 1, 0.86, 0.62);
     lamp(3, L.jet.x - 4, 7, L.jet.z + 12, 18, 1, 0.86, 0.62);
-    lamp(4, B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.35, 0.6, 1);
-    lamp(5, B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.35, 0.6, 1);
+    lamp(4, B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.24, 0.42, 0.72);
+    lamp(5, B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.24, 0.42, 0.72);
     lamp(6, 0, TUN.y, HALL.back + 3, 16, 0.3, 0.55, 1);
     lamp(7, 0, TUN.y, TUN.z1 + 4, 14, LAUNCH_TINT[0], LAUNCH_TINT[1], LAUNCH_TINT[2]);
     lamp(8, -12, 6, 12, 16, 1, 0.66, 0.32);
@@ -333,6 +369,7 @@
         if (!hit) return;
         const o = hit.owner;
         if (o.kind === "exit") return leaveHangar();
+        if (o.kind === "stats" || o.kind === "timeline") return hud.openBoard(scene.boardViews[o.kind]);
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -352,6 +389,11 @@
     addChild(root, dust.node);
     scene = build();
     hireCrew(scene);
+    // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
+    unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
+    if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
+    paintBoards(scene);
+    boardsDirty = false;
     // The visitor's Ooga: `character=` on a page that opens here, else the one the hall handed over, else a free view.
     const asked = ctx.from === null ? new URLSearchParams(location.search).get("character")?.trim().toLowerCase() : null;
     const named = asked ? contributors.roster.find((c) => c.name.toLowerCase() === asked) : null;
@@ -400,7 +442,7 @@
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, get scene() { return scene; }, get avatar() { return avatar; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -448,6 +490,11 @@
     glowNear(elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
+    if (boardsDirty) {
+      boardsDirty = false;
+      paintBoards(s);
+    }
+    hud.updateBoard(elapsed);
     // Back out through the door: walked past its shield, or flown up to it with the free view.
     if (!leaving) {
       const through = (p, feet, margin) => Math.abs(p.x - DOOR.x) <= DOOR.half && DOOR.z - p.z <= DOOR.plane + margin && feet > DOOR.y - 0.3 && feet < DOOR.y + DOOR.top;
@@ -473,6 +520,8 @@
     }
     unsubscribeAccount();
     unsubscribeAccount = null;
+    unsubscribeFeed();
+    unsubscribeFeed = null;
     BL.net.setBody(null);
     scene.gate.phase.dispose();
     scene.launch.phase.dispose();

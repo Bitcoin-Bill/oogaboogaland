@@ -174,5 +174,8 @@
   // under the wings farther out an Ooga walks upright.
   const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.15, 2.15, 4.6, 9.3, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
 
-  BL.jetModels = { SIZE, SCALE, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
+  // The fuselage's axis, metres up from the floor, round which a board turns the Jet in miniature.
+  const AXIS = CY * SCALE;
+
+  BL.jetModels = { SIZE, SCALE, AXIS, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
 })();

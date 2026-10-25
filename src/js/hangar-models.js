@@ -19,7 +19,7 @@
   const BL = window.BL = window.BL || {};
   const { models, math } = BL;
   const FM = BL.factoryModels, JM = BL.jetModels;
-  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, beam, lathe, chain, lanternParts, deckParts, stairParts } = models;
+  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, prism, chain, lanternParts, deckParts, stairParts } = models;
   const { mulberry32 } = math;
   const TAU = Math.PI * 2;
 
@@ -72,19 +72,19 @@
       [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [7.6, 11.4, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [24.2, -22.5, 0, 1], [16.5, -30.4, -0.3, 1]],
     floorLamps: [[-6.3, 20], [-6.3, 8], [-6.3, -4], [-6.3, -16], [-6.3, -28], [6.3, 20], [6.3, -28], [-11.8, 21.2], [-17.4, -3.2], [-11.6, -24],
       [5.9, 6.3], [5.9, -29.3], [24.9, 6.3], [24.9, -29.3], [6.3, 13.5]],
-    // The two boards on the left wall under the catwalk: the repository's stats right after the door, turned a little
-    // toward it, and its timeline farther in; centre, width and height, and the way each faces.
+    // The two boards on the left wall under the catwalk, both square to it: the repository's stats right after the
+    // door, and its timeline farther in; centre, the width and height their faces are laid out in, the way each
+    // faces, and how much bigger than that it hangs.
     boards: {
-      stats: { x: HALL.x0 + 3.6, y: 4.5, z: 16, w: 9, h: 4, turn: Math.PI / 2 - 0.44 },
-      timeline: { x: HALL.x0 + 2.6, y: 4.5, z: -2, w: 11, h: 4, turn: Math.PI / 2 }
+      stats: { x: HALL.x0 + 2.6, y: 4.3, z: 16, w: 9, h: 4, turn: Math.PI / 2, scale: 1.15 },
+      timeline: { x: HALL.x0 + 2.6, y: 4.3, z: -2, w: 11, h: 4, turn: Math.PI / 2, scale: 1.15 }
     },
-    // The signs: the hangar's over the runway from the last gantry, the right wall's call to work, the plaque by the
-    // runway at the Jet's tail.
-    signs: { hangar: [0, 11.6, -26], work: [HALL.x1 - 3.4, 10.6, 13.5], soon: [7.6, 1.9, 8.4] },
+    // The signs: the hangar's over the runway from the last gantry, and the plaque by the runway at the Jet's tail.
+    signs: { hangar: [0, 11.6, -26], soon: [7.6, 1.9, 8.4] },
     // The crew, gorillas in hard hats, each pacing its post: [x, y, z, radius, heading], heading 0 facing +z. At the
     // workstations, at the stats board, on the Jet's gangway, at its stair and its engine, and on both catwalks.
     crew: [[-9.5, 0, 18, 0.35, Math.PI], [-9.2, 0, 10.4, 0.35, Math.PI + 0.3], [-9.5, 0, -12.1, 0.35, Math.PI], [-13.5, 0, -11, 0.35, -Math.PI / 2],
-      [HALL.x0 + 6.4, 0, 17.2, 0.8, -Math.PI / 2 - 0.44], [11, 5, -17.5, 0.9, Math.PI / 2], [7.4, 0, 0.4, 0.5, Math.PI / 2], [14.8, 0, 6.2, 0.4, Math.PI],
+      [HALL.x0 + 5.6, 0, 16.4, 0.8, -Math.PI / 2], [11, 5, -17.5, 0.9, Math.PI / 2], [7.4, 0, 0.4, 0.5, Math.PI / 2], [14.8, 0, 6.2, 0.4, Math.PI],
       [HALL.x1 - 4.2, 7.5, 6, 2.2, -Math.PI / 2], [HALL.x0 + 4.2, 7.5, 0, 2.2, Math.PI / 2]],
     // The far islet seen through the launch shield, past the tunnel's end.
     isle: { x: 7, y: 9, z: -240, r: 11 }
@@ -227,7 +227,7 @@
   // below), railed along the hall side and across both ends but where the stair comes up, and the stairs up to them.
   const catwalks = cached(() => {
     const L = LAYOUT, y = L.catwalkY, geos = [], B = L.boards;
-    const underBoard = (x, z) => Object.values(B).some((b) => Math.sign(b.x) === Math.sign(x) && Math.abs(z - b.z) < b.w / 2 + 0.4);
+    const underBoard = (x, z) => Object.values(B).some((b) => Math.sign(b.x) === Math.sign(x) && Math.abs(z - b.z) < b.w * b.scale / 2 + 0.4);
     L.catwalks.forEach(([x0, x1, z0, z1], i) => {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, side = i ? 1 : -1, [sx, , , , , sz1, sw] = L.catwalkStairs[i];
       // The rails: the hall side and both ends; the wall side is the rock.
@@ -409,6 +409,363 @@
   };
   const boardFrames = cached(() => ({ stats: boardFrame(LAYOUT.boards.stats.w, LAYOUT.boards.stats.h), timeline: boardFrame(LAYOUT.boards.timeline.w, LAYOUT.boards.timeline.h) }));
 
+  // ---- the boards' faces -----------------------------------------------------------------------------------------
+
+  // Each board's face in its own frame, metres from its middle, x right and y up on the glass, which stands at z 0.02.
+  // The stats board's tiles [x0, y0, x1, y1] under its header and over its footnote; the timeline's six stops along `y`
+  // from `x0` every `step`, each a hexagon of radius `r` over its title, date and text. Its geometry and its lettering
+  // both read these, so a word always sits on its tile. `JETS` are where the Jet itself flies across the faces, at
+  // `scale`, climbing, turned toward the eye and banked so its top shows: [x, y, z, scale, climb, yaw, roll].
+  const STATS_FACE = {
+    tiles: { commits: [-4.3, -0.1, -1.85, 1.2], prs: [-1.7, -0.1, -0.05, 1.2], issues: [0.1, -0.1, 1.75, 1.2],
+      stars: [-4.3, -1.55, -1.85, -0.25], release: [-1.7, -1.55, 1.75, -0.25], jet: [1.9, -1.55, 4.3, 1.2] },
+    mark: [-3.95, 1.6, 0.5], title: [-3.55, 1.72], about: [-3.55, 1.4], footer: -1.8
+  };
+  const TIMELINE_FACE = { x0: -4.6, step: 1.84, y: 0.05, r: 0.48, bolt: [-4.95, 1.45], title: [-4.5, 1.52], intro: [1.08, 0.84], stopTitle: -0.66, stopDate: -0.87, stopText: -1.08, footer: -1.86 };
+  const JETS = { stats: [[3.1, 0.28, 0.3, 0.06, 0.2, -0.35, -0.55]], timeline: [[3.75, 1.36, 0.3, 0.05, 0.14, -0.3, -0.5], [TIMELINE_FACE.x0 + 5 * TIMELINE_FACE.step, TIMELINE_FACE.y, 0.24, 0.021, 0.3, -0.3, -0.5]] };
+  // The timeline's stops, written by hand; no date is. Each says where its date comes from in the reading: the
+  // repository's creation, the releases whose versions fall in a span (by major and minor, so `v1.4.0-new-rebalancer`
+  // counts as 1.4), the newest release, or none.
+  const STOPS = [
+    { title: "PLEBNET ERA", icon: "cubes", text: "Node runners balanced channels and set fees by hand." },
+    { title: "JET BEGINS", icon: "bulb", date: "created", text: "A simple idea: automate the work of running a Lightning node." },
+    { title: "EARLY REBALANCING", icon: "tools", date: ["1.1", "1.4"], text: "Full profitability, missed HTLCs, then a new rebalancer." },
+    { title: "MAIN RELEASES", icon: "boxes", date: ["1.5", "1.6"], text: "LND 0.15, metrics, liquidity, probes and database cleanup." },
+    { title: "LATEST RELEASE", icon: "crew", date: "latest", text: (r) => r.releases.length ? `${r.releases[0].tag}, with ${r.stars} stars and ${r.forks} forks so far.` : "No release yet." },
+    { title: "JET V2 AHEAD", icon: "jet", text: "Jet 2.0, rebuilt from the ground up. Coming soon." }
+  ];
+  const BOARD_SCREEN = "#040a1e", TILE = "#0a1a45", EDGE = "#4a9dff", HEX = "#08163d", ICON = "#9fd0ff", GOLD = "#ffd23a";
+  // The board's dark glass, its full width and height, behind the face.
+  const screen = (key) => box({ w: LAYOUT.boards[key].w, h: LAYOUT.boards[key].h, d: 0.04, color: BOARD_SCREEN, emissive: 0.3 });
+
+  // A flat round piece facing +z, its back at z 0: a disc of radius `r`, or a ring round a hole.
+  const roundel = (r, color, emissive, hole = 0, d = 0.03) => turnedX(lathe({ profile: hole ? [[hole, 0], [r, 0], [r, d], [hole, d], [hole, 0]] : [[r, 0], [r, d], [0, d]], segments: 18, color, emissive }), Math.PI / 2);
+  const hoop = (R, r, color, emissive) => turnedX(torus(R, r, color, emissive, 18, 6), Math.PI / 2);
+  const ball = (r, color, emissive) => lathe({ profile: Array.from({ length: 7 }, (_, k) => [Math.sin(k / 6 * Math.PI) * r, -Math.cos(k / 6 * Math.PI) * r]), segments: 12, color, emissive });
+  // A star of `points` points, `r` to its tips and `ri` to its notches, `d` deep, centred on z 0.
+  const star = (r, ri, d, color, emissive, points = 5) => prism(Array.from({ length: points * 2 }, (_, k) => {
+    const a = Math.PI / 2 + k * Math.PI / points, rr = k % 2 ? ri : r;
+    return [Math.cos(a) * rr, Math.sin(a) * rr];
+  }), d, color, emissive);
+  // A tile: a raised panel of the screen's blue, edged in light.
+  const tile = (flat, glow, x0, y0, x1, y1) => {
+    const w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    flat.push(box({ w, h, d: 0.04, color: TILE, emissive: 0.22, offset: { x: cx, y: cy, z: 0.04 } }));
+    for (const [bw, bh, x, y] of [[w + 0.03, 0.03, cx, y1], [w + 0.03, 0.03, cx, y0], [0.03, h, x0, cy], [0.03, h, x1, cy]]) glow.push(box({ w: bw, h: bh, d: 0.02, color: EDGE, emissive: 1, offset: { x, y, z: 0.065 } }));
+  };
+  // A flight's streak behind a jet on a face: a thin wedge from its tail back along its climb.
+  const streak = (out, x, y, z, climb, from, length, width, color) => {
+    const dx = Math.cos(climb), dy = Math.sin(climb), tx = x - dx * from, ty = y - dy * from;
+    out.push(moved(prism([[tx - dy * width, ty + dx * width], [tx - dx * length, ty - dy * length], [tx + dy * width, ty - dx * width]], 0.02, color, 1), 0, 0, z));
+  };
+  // A pixel cloud on a face, in blocks.
+  const cloud = (out, x, y, s) => {
+    for (const [cx, cy, w, h] of [[0, 0, 1, 0.26], [-0.22, 0.17, 0.46, 0.3], [0.18, 0.2, 0.56, 0.36], [0.42, 0.06, 0.3, 0.22]]) out.push(box({ w: w * s, h: h * s, d: 0.03, color: "#5f8fe8", emissive: 0.5, offset: { x: x + cx * s, y: y + cy * s, z: 0.05 } }));
+  };
+  // Small blocky things seen a little from above and to the side, as the concept's icons are: parts built round the
+  // origin, turned, then set down at (x, y, z).
+  const iso = (out, parts, x, y, z, yaw = 0.6, tilt = 0.4) => { for (const g of parts) out.push(moved(turnedX(turnedY(g, yaw), tilt), x, y, z)); };
+
+  // The stats board's face: its dark glass, its tiles, and each tile's icon: the commits' branch graph, the pull request's two
+  // branches and arrow, the issues' red ring, the release's green cube; and for the fifth tile both a star (the
+  // repository's stars) and a milestone's flag, which the scene shows as the reading says. The Jet on the last tile
+  // is the scene's.
+  const statsFace = cached(() => {
+    const T = STATS_FACE.tiles, flat = [screen("stats")], glow = [], z = 0.075;
+    for (const t of Object.values(T)) tile(flat, glow, ...t);
+    const at = (t) => {
+      const narrow = t[2] - t[0] < 2;
+      return [t[0] + (narrow ? 0.38 : 0.5), (t[1] + t[3]) / 2 + 0.05];
+    };
+    let [x, y] = at(T.commits);
+    for (const dy of [0.25, -0.25]) glow.push(moved(hoop(0.065, 0.02, ICON, 0.9), x - 0.06, y + dy, z));
+    glow.push(moved(roundel(0.06, ICON, 0.9), x - 0.06, y, z), moved(hoop(0.065, 0.02, ICON, 0.9), x + 0.2, y + 0.12, z));
+    glow.push(beam(x - 0.06, y - 0.18, z + 0.01, x - 0.06, y + 0.18, z + 0.01, 0.026, ICON, 0.9), beam(x - 0.06, y - 0.1, z + 0.01, x + 0.16, y + 0.07, z + 0.01, 0.026, ICON, 0.9));
+    [x, y] = at(T.prs);
+    for (const [dx, dy] of [[-0.12, 0.23], [-0.12, -0.23], [0.13, -0.23]]) glow.push(moved(hoop(0.06, 0.018, ICON, 0.9), x + dx, y + dy, z));
+    glow.push(beam(x - 0.12, y - 0.17, z + 0.01, x - 0.12, y + 0.17, z + 0.01, 0.024, ICON, 0.9), beam(x + 0.13, y - 0.17, z + 0.01, x + 0.13, y + 0.2, z + 0.01, 0.024, ICON, 0.9));
+    glow.push(beam(x + 0.13, y + 0.2, z + 0.01, x + 0.03, y + 0.2, z + 0.01, 0.024, ICON, 0.9), moved(prism([[x - 0.04, y + 0.2], [x + 0.04, y + 0.14], [x + 0.04, y + 0.26]], 0.03, ICON, 0.9), 0, 0, z + 0.01));
+    [x, y] = at(T.issues);
+    glow.push(moved(hoop(0.15, 0.03, "#ff5a5a", 0.9), x, y, z), moved(roundel(0.045, "#ff5a5a", 0.9), x, y, z));
+    [x, y] = at(T.release);
+    iso(flat, [bevelBox({ w: 0.28, h: 0.28, d: 0.28, color: "#3ad07a", emissive: 0.45, bevel: 0.035 })], x, y, 0.26, Math.PI / 4, 0.55);
+    [x, y] = at(T.stars);
+    const stars = merge(moved(star(0.2, 0.085, 0.05, GOLD, 0.9), x, y, z + 0.02));
+    const flag = merge(beam(x - 0.12, y - 0.26, z + 0.01, x - 0.12, y + 0.26, z + 0.01, 0.03, "#e8eeff", 0.6), moved(prism([[x - 0.12, y + 0.25], [x - 0.12, y + 0.02], [x + 0.2, y + 0.135]], 0.03, GOLD, 0.9), 0, 0, z + 0.01));
+    const [jx, jy, jz, s, climb] = JETS.stats[0];
+    streak(glow, jx, jy, jz - 0.1, climb, 27.75 * s * 0.38, 0.48, 0.05, "#bfe3ff");
+    streak(glow, jx, jy - 0.14, jz - 0.12, climb, 27.75 * s * 0.3, 0.34, 0.018, "#7fb8ff");
+    return { flat: merge(...flat), glow: noShadow(merge(...glow)), stars: noShadow(stars), flag: noShadow(flag) };
+  });
+
+  // The timeline's face: its dark glass, the bolt by its title, the pixel clouds, a far islet and the Jet's streak over the top right,
+  // and the six stops, each a hexagon edged in light round its icon, joined by yellow arrows and parted by faint rules.
+  // The Jets are the scene's.
+  const timelineFace = cached(() => {
+    const F = TIMELINE_FACE, flat = [screen("timeline")], glow = [], z = 0.07;
+    glow.push(moved(FM.smoothBolt(0.78, 0.06, GOLD, 1), F.bolt[0], F.bolt[1], 0.08));
+    cloud(glow, 1.95, 1.58, 0.5);
+    cloud(glow, 4.75, 1.62, 0.42);
+    cloud(glow, 5.0, 0.98, 0.36);
+    glow.push(moved(merge(
+      lathe({ profile: [[0, -0.3], [0.12, -0.16], [0.21, -0.04], [0.22, 0], [0, 0]], segments: 8, color: "#8a6e58", emissive: 0.45 }),
+      lathe({ profile: [[0.225, 0], [0.2, 0.03], [0, 0.04]], segments: 8, color: "#5fbf4a", emissive: 0.55 }),
+      moved(lathe({ profile: [[0.06, 0], [0.04, 0.1], [0, 0.14]], segments: 6, color: "#3f9a3a", emissive: 0.55 }), 0.05, 0.03, 0)
+    ), 4.85, 0.72, 0.12));
+    const [jx, jy, jz, s, climb] = JETS.timeline[0];
+    streak(glow, jx, jy, jz - 0.12, climb, 27.75 * s * 0.38, 1.6, 0.06, "#bfe3ff");
+    streak(glow, jx, jy - 0.16, jz - 0.14, climb, 27.75 * s * 0.3, 1.0, 0.02, "#7fb8ff");
+    const hex = Array.from({ length: 6 }, (_, k) => [Math.cos(k * Math.PI / 3), Math.sin(k * Math.PI / 3)]);
+    STOPS.forEach((stop, i) => {
+      const x = F.x0 + i * F.step, y = F.y, r = F.r;
+      flat.push(moved(prism(hex.map(([u, v]) => [x + u * r, y + v * r]), 0.04, HEX, 0.28), 0, 0, 0.04));
+      for (let k = 0; k < 6; k++) {
+        const [u0, v0] = hex[k], [u1, v1] = hex[(k + 1) % 6], R = r + 0.02;
+        glow.push(beam(x + u0 * R, y + v0 * R, z, x + u1 * R, y + v1 * R, z, 0.04, EDGE, 1));
+      }
+      if (i < STOPS.length - 1) {
+        const a = x + r + 0.12, e = x + F.step - r - 0.12;
+        glow.push(beam(a, y, 0.06, e - 0.12, y, 0.06, 0.05, GOLD, 1), moved(prism([[e, y], [e - 0.16, y + 0.09], [e - 0.16, y - 0.09]], 0.04, GOLD, 1), 0, 0, 0.06));
+        glow.push(box({ w: 0.015, h: 1.15, d: 0.01, color: "#2b5fb8", emissive: 0.7, offset: { x: x + F.step / 2, y: -1.15, z: 0.03 } }));
+      }
+      const icon = [];
+      if (stop.icon === "cubes") {
+        for (const [cx, cy, c] of [[-0.14, -0.12, 0], [0, -0.12, 1], [0.14, -0.12, 0], [-0.07, 0.01, 1], [0.07, 0.01, 0], [0, 0.14, 1]]) icon.push(bevelBox({ w: 0.13, h: 0.13, d: 0.13, color: c ? "#c6ccda" : "#8f9bb5", emissive: 0.3, bevel: 0.02, offset: { x: cx, y: cy } }));
+        iso(flat, icon, x, y - 0.02, 0.2, 0.5, 0.35);
+      } else if (stop.icon === "bulb") {
+        glow.push(moved(lathe({ profile: [[0.06, 0], [0.11, 0.07], [0.13, 0.16], [0.11, 0.25], [0.06, 0.3], [0, 0.31]], segments: 14, color: "#ffe58a", emissive: 1 }), x, y - 0.1, 0.2));
+        flat.push(moved(lathe({ profile: [[0, -0.13], [0.045, -0.13], [0.06, -0.1], [0.065, -0.075], [0.058, -0.05], [0.065, -0.025], [0.06, 0]], segments: 12, color: "#a9b2c4", emissive: 0.3 }), x, y - 0.1, 0.2));
+        for (let k = 0; k < 5; k++) {
+          const a = Math.PI / 2 + (k - 2) * 0.55;
+          glow.push(beam(x + Math.cos(a) * 0.2, y + 0.06 + Math.sin(a) * 0.2, 0.12, x + Math.cos(a) * 0.3, y + 0.06 + Math.sin(a) * 0.3, 0.12, 0.025, "#ffe58a", 1));
+        }
+      } else if (stop.icon === "tools") {
+        flat.push(moved(roundel(0.13, "#9fb6d8", 0.35, 0.05, 0.06), x + 0.1, y - 0.06, z));
+        for (let k = 0; k < 8; k++) {
+          const a = k * Math.PI / 4;
+          flat.push(moved(turnedZ(box({ w: 0.07, h: 0.07, d: 0.06, color: "#9fb6d8", emissive: 0.35 }), a), x + 0.1 + Math.cos(a) * 0.15, y - 0.06 + Math.sin(a) * 0.15, z + 0.03));
+        }
+        flat.push(beam(x - 0.2, y - 0.2, z + 0.08, x + 0.0, y + 0.03, z + 0.08, 0.06, "#c9d6ea", 0.4), moved(roundel(0.085, "#c9d6ea", 0.4, 0.035, 0.05), x + 0.05, y + 0.1, z + 0.06));
+      } else if (stop.icon === "boxes") {
+        for (const [cx, cy, c] of [[-0.09, -0.1, 0], [0.09, -0.1, 1], [-0.02, 0.07, 1], [0.15, 0.06, 0]]) icon.push(bevelBox({ w: 0.16, h: 0.16, d: 0.16, color: c ? GOLD : "#eef2f8", emissive: 0.35, bevel: 0.02, offset: { x: cx, y: cy } }));
+        iso(flat, icon, x, y - 0.02, 0.2, 0.5, 0.35);
+      } else if (stop.icon === "crew") {
+        for (const [dx, dz, k] of [[-0.16, 0, 0.9], [0.16, 0, 0.9], [0, 0.04, 1.12]]) {
+          glow.push(moved(ball(0.055 * k, "#a8ccff", 0.55), x + dx, y + 0.07 * k, z + dz + 0.1));
+          glow.push(moved(lathe({ profile: [[0.11 * k, 0], [0.1 * k, 0.07 * k], [0.06 * k, 0.12 * k], [0, 0.13 * k]], segments: 12, color: "#a8ccff", emissive: 0.55 }), x + dx, y - 0.13 * k, z + dz + 0.1));
+        }
+      }
+    });
+    return { flat: merge(...flat), glow: noShadow(merge(...glow)) };
+  });
+
+  // The lettering both boards carry over their geometry, painted from a reading. `full` paints the whole board flat
+  // for the board dialog: the glass, the tiles and hexagons, and simple drawings of the icons, under the same words.
+  const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif', PX = 320;
+  const MARK = "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z";
+  const WHITE = "#f4f7ff", PALE = "#cfe0ff", GREEN = "#5be38a", DATE = "#8fc4ff";
+  const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const month = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const clock = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const number = (n) => n >= 1000 ? BL.game.formatLarge(n) : String(n);
+  const version = (tag) => {
+    const m = /^v?(\d+)\.(\d+)/.exec(tag);
+    return m ? Number(m[1]) * 1000 + Number(m[2]) : -1;
+  };
+  const stopDate = (stop, r) => {
+    if (!stop.date) return "";
+    if (stop.date === "created") return day(r.createdAt);
+    if (stop.date === "latest") return r.releases.length ? day(r.releases[0].at) : "";
+    const [from, to] = stop.date.map(version), hits = r.releases.filter((x) => version(x.tag) >= from && version(x.tag) <= to);
+    if (!hits.length) return "";
+    const first = month(hits[hits.length - 1].at), last = month(hits[0].at);
+    return first === last ? first : `${first} – ${last}`;
+  };
+  // What a board says of its reading's freshness, under it and in the dialog.
+  const boardNote = (r) => {
+    if (!r) return "No reading yet · couldn't reach GitHub";
+    if (r.source === "fetch") return `Static snapshot · fetched at ${clock(r.at)} as you came in, not live`;
+    const st = BL.jetFeed.state, what = r.source === "cache" ? `Reading from ${day(r.at)}, ${clock(r.at)}` : `Snapshot from ${day(r.at)}`;
+    return `${what} · ${st.loading ? "fetching from GitHub" : st.failed ? "couldn't reach GitHub" : "not live"}`;
+  };
+
+  const sheet = (canvas, w, h) => {
+    canvas.width = Math.round(w * PX);
+    canvas.height = Math.round(h * PX);
+    const g = canvas.getContext("2d");
+    return { g, w, h, x: (x) => (x + w / 2) * PX, y: (y) => (h / 2 - y) * PX };
+  };
+  // Words at (x, y), `size` metres tall, narrowed to `max` metres wide rather than cut: semi-bold at least, so small
+  // type holds across the hall, and only a title glowing in its colour, so the rest stays crisp.
+  const write = (S, text, x, y, size, color, { bold = false, align = "left", max = 0 } = {}) => {
+    const g = S.g, weight = bold ? "bold" : "600";
+    let px = size * PX;
+    g.font = `${weight} ${px}px ${FONT}`;
+    const m = g.measureText(text).width;
+    if (max && m > max * PX) {
+      px *= max * PX / m;
+      g.font = `${weight} ${px}px ${FONT}`;
+    }
+    g.textAlign = align;
+    g.textBaseline = "middle";
+    g.fillStyle = color;
+    g.shadowColor = color;
+    g.shadowBlur = size >= 0.3 ? px * 0.1 : 0;
+    g.fillText(text, S.x(x), S.y(y));
+    g.shadowBlur = 0;
+  };
+  // Words wrapped to `width` metres, a line every `step` metres down from `y`, in at most `lines` lines: smaller type
+  // before fewer words.
+  const wrap = (S, text, x, y, size, color, width, step, lines) => {
+    const g = S.g, words = text.split(" ");
+    for (let k = 0; ; k++) {
+      const s = size * Math.pow(0.9, k);
+      g.font = `600 ${s * PX}px ${FONT}`;
+      const rows = [];
+      for (const word of words) {
+        const row = rows.length ? `${rows[rows.length - 1]} ${word}` : word;
+        if (rows.length && g.measureText(row).width <= width * PX) rows[rows.length - 1] = row;
+        else rows.push(word);
+      }
+      if (rows.length <= lines || k === 5) {
+        rows.forEach((row, i) => write(S, row, x, y - i * step * s / size, s, color, { align: "center", max: width }));
+        return;
+      }
+    }
+  };
+  const rounded = (g, x, y, w, h, r) => {
+    g.beginPath();
+    g.roundRect(x, y, w, h, r);
+  };
+  // The flat board under the words, for the dialog: glass, frame and the tiles or hexagons in the face's colours.
+  const glass = (S) => {
+    const g = S.g;
+    g.fillStyle = BOARD_SCREEN;
+    g.fillRect(0, 0, S.w * PX, S.h * PX);
+    g.strokeStyle = "#5fb8ff";
+    g.lineWidth = 6;
+    g.strokeRect(3, 3, S.w * PX - 6, S.h * PX - 6);
+  };
+  const glyph = (S, kind, x, y) => {
+    const g = S.g, k = PX;
+    g.save();
+    g.translate(S.x(x), S.y(y));
+    g.lineWidth = 0.03 * k;
+    g.strokeStyle = g.fillStyle = kind === "issues" ? "#ff5a5a" : kind === "release" ? "#3ad07a" : kind === "stars" || kind === "flag" ? GOLD : kind === "bulb" ? "#ffe58a" : ICON;
+    const ring = (cx, cy, r) => { g.beginPath(); g.arc(cx * k, -cy * k, r * k, 0, Math.PI * 2); g.stroke(); };
+    const line = (ax, ay, bx, by) => { g.beginPath(); g.moveTo(ax * k, -ay * k); g.lineTo(bx * k, -by * k); g.stroke(); };
+    const square = (cx, cy, s) => g.fillRect((cx - s / 2) * k, (-cy - s / 2) * k, s * k, s * k);
+    if (kind === "commits") { ring(-0.06, 0.25, 0.06); ring(-0.06, -0.25, 0.06); ring(0.2, 0.12, 0.06); line(-0.06, -0.19, -0.06, 0.19); line(-0.06, -0.1, 0.16, 0.07); }
+    else if (kind === "prs") { ring(-0.12, 0.23, 0.06); ring(-0.12, -0.23, 0.06); ring(0.13, -0.23, 0.06); line(-0.12, -0.17, -0.12, 0.17); line(0.13, -0.17, 0.13, 0.2); line(0.13, 0.2, -0.02, 0.2); }
+    else if (kind === "issues") { ring(0, 0, 0.15); ring(0, 0, 0.02); }
+    else if (kind === "release" || kind === "boxes" || kind === "cubes") { square(-0.08, -0.08, 0.14); square(0.08, -0.08, 0.14); square(0, 0.08, 0.14); }
+    else if (kind === "stars") { g.beginPath(); for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, r = (i % 2 ? 0.085 : 0.2) * k; g.lineTo(Math.cos(a) * r, -Math.sin(a) * r); } g.fill(); }
+    else if (kind === "flag") { line(-0.12, -0.26, -0.12, 0.26); g.beginPath(); g.moveTo(-0.12 * k, -0.25 * k); g.lineTo(-0.12 * k, -0.02 * k); g.lineTo(0.2 * k, -0.135 * k); g.fill(); }
+    else if (kind === "bulb") { ring(0, 0.06, 0.12); line(-0.05, -0.1, 0.05, -0.1); }
+    else if (kind === "tools") { ring(0.1, -0.06, 0.12); line(-0.2, -0.2, 0.02, 0.05); }
+    else if (kind === "crew") { for (const dx of [-0.16, 0, 0.16]) { ring(dx, 0.07, 0.05); g.beginPath(); g.arc(dx * k, 0.12 * k, 0.1 * k, Math.PI, 0); g.stroke(); } }
+    else if (kind === "jet") { line(-0.3, 0, 0.32, 0); line(0.05, 0, -0.1, 0.3); line(0.05, 0, -0.1, -0.3); line(-0.22, 0, -0.3, 0.14); line(-0.22, 0, -0.3, -0.14); }
+    g.restore();
+  };
+
+  const paintStats = (canvas, r, full) => {
+    const B = LAYOUT.boards.stats, F = STATS_FACE, T = F.tiles, S = sheet(canvas, B.w, B.h), g = S.g;
+    if (full) {
+      glass(S);
+      for (const [x0, y0, x1, y1] of Object.values(T)) {
+        rounded(g, S.x(x0), S.y(y1), (x1 - x0) * PX, (y1 - y0) * PX, 8);
+        g.fillStyle = TILE;
+        g.fill();
+        g.strokeStyle = EDGE;
+        g.lineWidth = 5;
+        g.stroke();
+      }
+    }
+    const [mx, my, ms] = F.mark, mark = new Path2D(MARK);
+    g.save();
+    g.translate(S.x(mx - ms / 2), S.y(my + ms / 2));
+    g.scale(ms * PX / 16, ms * PX / 16);
+    g.fillStyle = WHITE;
+    g.shadowColor = WHITE;
+    g.shadowBlur = 6;
+    g.fill(mark);
+    g.restore();
+    write(S, BL.jetFeed.REPO, F.title[0], F.title[1], 0.34, WHITE, { bold: true, max: 7.6 });
+    const desc = r && r.description || "Lightning Jet", about = desc.includes(". ") ? desc.slice(0, desc.indexOf(". ") + 1) : desc;
+    write(S, about, F.about[0], F.about[1], 0.16, PALE, { max: 7.8 });
+    const milestone = r && r.milestones.length ? r.milestones[0] : null;
+    const tiles = {
+      commits: ["Commits", r ? number(r.commits) : "-", r ? `+${r.commitsWeek >= 100 ? "100+" : r.commitsWeek} this week` : "", GREEN],
+      prs: ["Open PRs", r ? r.openPRs >= 100 ? "100+" : String(r.openPRs) : "-", r ? r.openPRs ? `${r.readyPRs} ready for review` : "none open" : "", PALE],
+      issues: ["Issues", r ? number(r.openIssues) : "-", "open", PALE],
+      stars: milestone ? ["Milestones", String(r.milestones.length), `${milestone.title} · ${milestone.closed}/${milestone.open + milestone.closed} done`, PALE]
+        : ["Stars", r ? number(r.stars) : "-", r ? `${number(r.forks)} forks` : "", PALE],
+      release: ["Latest Release", r && r.releases.length ? r.releases[0].tag : "None yet", r && r.releases.length ? day(r.releases[0].at) : "", PALE]
+    };
+    for (const [key, [label, value, note, tone]] of Object.entries(tiles)) {
+      const [x0, y0, x1, y1] = T[key], narrow = x1 - x0 < 2, tx = x0 + (narrow ? 0.72 : 1.0), max = x1 - tx - 0.08;
+      if (full) glyph(S, key === "stars" && milestone ? "flag" : key, x0 + (narrow ? 0.38 : 0.5), (y0 + y1) / 2 + 0.05);
+      write(S, label, tx, y1 - 0.27, 0.18, WHITE, { max });
+      write(S, value, tx, (y0 + y1) / 2 - 0.02, key === "release" ? 0.32 : 0.42, WHITE, { bold: true, max });
+      if (note) write(S, note, tx, y0 + 0.24, 0.15, tone, { max });
+    }
+    const [jx0, jy0, jx1] = T.jet, jc = (jx0 + jx1) / 2;
+    if (full) glyph(S, "jet", jc, JETS.stats[0][1]);
+    write(S, "JET V2", jc, jy0 + 0.75, 0.34, GOLD, { bold: true, align: "center", max: 2.1 });
+    write(S, "COMING SOON", jc, jy0 + 0.4, 0.22, GOLD, { bold: true, align: "center", max: 2.1 });
+    write(S, `ⓘ  ${boardNote(r)}`, 0, F.footer, 0.13, "#b4c8ee", { align: "center", max: 8.4 });
+  };
+
+  const paintTimeline = (canvas, r, full) => {
+    const B = LAYOUT.boards.timeline, F = TIMELINE_FACE, S = sheet(canvas, B.w, B.h), g = S.g;
+    if (full) {
+      glass(S);
+      STOPS.forEach((stop, i) => {
+        const x = F.x0 + i * F.step;
+        g.beginPath();
+        for (let k = 0; k < 6; k++) g.lineTo(S.x(x + Math.cos(k * Math.PI / 3) * F.r), S.y(F.y + Math.sin(k * Math.PI / 3) * F.r));
+        g.closePath();
+        g.fillStyle = HEX;
+        g.fill();
+        g.strokeStyle = EDGE;
+        g.lineWidth = 6;
+        g.stroke();
+        glyph(S, stop.icon, x, F.y);
+        if (i < STOPS.length - 1) {
+          g.strokeStyle = g.fillStyle = GOLD;
+          g.beginPath();
+          g.moveTo(S.x(x + F.r + 0.12), S.y(F.y));
+          g.lineTo(S.x(x + F.step - F.r - 0.2), S.y(F.y));
+          g.stroke();
+        }
+      });
+    }
+    write(S, "LIGHTNING JET TIMELINE", F.title[0], F.title[1], 0.42, GOLD, { bold: true, max: 7.4 });
+    write(S, "Lightning Jet automates a Lightning node's rebalancing and fees.", F.title[0], F.intro[0], 0.15, WHITE, { max: 5.8 });
+    write(S, r ? `From its first commit in ${new Date(r.createdAt).getUTCFullYear()} through ${r.releases.length} releases, and now Jet v2.` : "From its first commit to Jet v2.", F.title[0], F.intro[1], 0.15, WHITE, { max: 5.8 });
+    STOPS.forEach((stop, i) => {
+      const x = F.x0 + i * F.step, when = r ? stopDate(stop, r) : "", text = typeof stop.text === "function" ? r ? stop.text(r) : "" : stop.text;
+      write(S, stop.title, x, F.stopTitle, 0.16, GOLD, { bold: true, align: "center", max: 1.75 });
+      if (when) write(S, when, x, F.stopDate, 0.13, DATE, { align: "center", max: 1.75 });
+      wrap(S, text, x, when ? F.stopText : F.stopDate, 0.13, WHITE, 1.66, 0.18, 4);
+    });
+    write(S, `Dates from github.com/${BL.jetFeed.REPO}: when it began and its releases · ${boardNote(r)}`, 0, F.footer, 0.12, "#b4c8ee", { align: "center", max: 10.4 });
+  };
+
+  // A board's lettering as a picture laid over its face: a see-through quad the board's size, in front of its tiles.
+  const boardText = (key, r) => {
+    const B = LAYOUT.boards[key], canvas = document.createElement("canvas");
+    (key === "stats" ? paintStats : paintTimeline)(canvas, r, false);
+    const image = new Image();
+    image.src = canvas.toDataURL("image/png");
+    const w = B.w, h = B.h, z = 0.085;
+    const geo = { verts: [-w / 2, -h / 2, z, w / 2, -h / 2, z, w / 2, h / 2, z, -w / 2, h / 2, z], faces: [{ i: [0, 1, 2, 3], color: [0, 0, 0], emissive: 0 }], lines: [], castShadow: false };
+    geo.imageSurface = { asset: { width: canvas.width, height: canvas.height, load: () => image }, rect: [-w / 2, -h / 2, w, h], cutout: true, soft: true, blend: "alpha", bright: 0.08 };
+    return geo;
+  };
+  // A board painted whole into `canvas` for the board dialog.
+  const paintBoard = (key, canvas, r) => (key === "stats" ? paintStats : paintTimeline)(canvas, r, true);
+
   // ---- the Jet's dock ----------------------------------------------------------------------------------------
 
   // The dock's timber: the gangway up the Jet's left flank, its decks on braced posts in front of the wing and behind
@@ -561,7 +918,7 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, STEP, shell, landing, runway, tunnel, isle, catwalks, dressing, fixtures, boardFrames, dock, vest,
+    LAYOUT, STEP, shell, landing, runway, tunnel, isle, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))

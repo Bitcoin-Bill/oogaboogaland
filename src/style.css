@@ -4261,6 +4261,20 @@ body.tess-touring #joy-look {
   display: none;
 }
 
+.board-link {
+  display: block;
+  margin: 10px 0 0;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.board-link[hidden] {
+  display: none;
+}
+
 .board-caption-above .board-note {
   box-sizing: border-box;
   height: clamp(112px, 22dvh, 168px);
