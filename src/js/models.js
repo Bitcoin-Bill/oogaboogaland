@@ -1564,13 +1564,27 @@
     if (rails.includes("e")) rail(hw, -hd, hw, hd, [!north, !south]);
     return geos;
   };
+  // A stepped flight's treads (`stairParts`' `stepped`): one fewer than its risers, each riser near STEP_RISER high.
+  // Tread i (0 to n - 1) runs from i / n to (i + 1) / n of the way along, its top (i + 1) / (n + 1) of the way up, so a
+  // scene's floor can stand walkers on the very treads drawn.
+  const STEP_RISER = 0.3;
+  const stairTreads = (rise) => Math.max(2, Math.round(rise / STEP_RISER) - 1);
   // A flight of steps from (ax, ay, az) up to (bx, by, bz), `w` wide. An end on a deck's rail leaves out its posts,
-  // since the rail's own end posts stand there (`posts` [foot, head]).
-  const stairParts = (ax, ay, az, bx, by, bz, w = 1.6, posts = [true, true]) => {
+  // since the rail's own end posts stand there (`posts` [foot, head]). Its treads are rungs across it, or, `stepped`,
+  // deep plank treads at `stairTreads`' heights with a riser board under each one's front.
+  const stairParts = (ax, ay, az, bx, by, bz, w = 1.6, posts = [true, true], stepped = false) => {
     const geos = [], rise = by - ay, steps = Math.max(3, Math.round(rise / 0.32)), len = Math.hypot(bx - ax, bz - az);
     const ux = (bx - ax) / len, uz = (bz - az) / len, px = -uz, pz = ux;
     for (const s of [-1, 1]) geos.push(beam(ax + px * s * w / 2, ay, az + pz * s * w / 2, bx + px * s * w / 2, by, bz + pz * s * w / 2, 0.22, TIMBER_DK));
-    for (let i = 0; i < steps; i++) {
+    if (stepped) {
+      const n = stairTreads(rise), run = len / n, yaw = Math.atan2(ux, uz);
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t, top = ay + rise * (i + 1) / (n + 1), up = rise / (n + 1);
+        geos.push(moved(turnedY(bevelBox({ w: w - 0.06, h: 0.08, d: run - 0.03, color: i % 2 ? TIMBER : TIMBER_LT, bevel: 0.02 }), yaw), x, top - 0.04, z));
+        const fx = ax + (bx - ax) * i / n + ux * 0.03, fz = az + (bz - az) * i / n + uz * 0.03;
+        geos.push(moved(turnedY(box({ w: w - 0.1, h: up - 0.08, d: 0.04, color: TIMBER_DK }), yaw), fx, top - 0.08 - (up - 0.08) / 2, fz));
+      }
+    } else for (let i = 0; i < steps; i++) {
       const t = (i + 0.5) / steps, x = ax + (bx - ax) * t, z = az + (bz - az) * t, y = ay + rise * t;
       geos.push(beam(x - px * w / 2, y + 0.06, z - pz * w / 2, x + px * w / 2, y + 0.06, z + pz * w / 2, 0.14, i % 2 ? TIMBER : TIMBER_LT));
     }
@@ -1605,5 +1619,5 @@
     }
     glass.push(box({ w: W, h: tall, d: W, color: tint, emissive: 1, offset: { x, y: mid, z } }));
   };
-  BL.models = { beam, forwardLathe, turn, shaded, torus, along, chain, railParts, columnParts, deckGrid, deckPosts, deckParts, stairParts, lanternParts, LANTERN_GLASS, geometry, pushVert, face, cutCylinder, voxCoords, box, bevelBox, panel, lathe, glassVessel, attachGlassShell, tube, ring, polyline, merge, forward, moved, turnedX, turnedY, turnedZ, prism, cached, variants, track, setScope, release, noShadow, makeVox, voxelGeometry, voxelFaces, banana, bananaGeometry, bananaTileGeometry, bananaPileCoreGeometry, bananaPileRadiusScale, bananaPileHeightOffset, BANANA_AMMO_SCALE, BANANA_PILE_PROFILE, particleGeometry, spareMagazine, caveman, CLUB_PALETTE, GOLD_CLUB_PALETTE, labRoom, buildableGeos, crate, die, dieRotationFor, SWAG, TIER_COLORS };
+  BL.models = { beam, forwardLathe, turn, shaded, torus, along, chain, railParts, columnParts, deckGrid, deckPosts, deckParts, stairParts, stairTreads, lanternParts, LANTERN_GLASS, geometry, pushVert, face, cutCylinder, voxCoords, box, bevelBox, panel, lathe, glassVessel, attachGlassShell, tube, ring, polyline, merge, forward, moved, turnedX, turnedY, turnedZ, prism, cached, variants, track, setScope, release, noShadow, makeVox, voxelGeometry, voxelFaces, banana, bananaGeometry, bananaTileGeometry, bananaPileCoreGeometry, bananaPileRadiusScale, bananaPileHeightOffset, BANANA_AMMO_SCALE, BANANA_PILE_PROFILE, particleGeometry, spareMagazine, caveman, CLUB_PALETTE, GOLD_CLUB_PALETTE, labRoom, buildableGeos, crate, die, dieRotationFor, SWAG, TIER_COLORS };
 })();

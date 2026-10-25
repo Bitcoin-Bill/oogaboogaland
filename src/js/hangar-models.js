@@ -166,7 +166,7 @@
   const landing = cached(() => {
     const l = LAYOUT.landing, [sx, , sz0, , sy1, sz1, sw] = LAYOUT.steps, geos = [];
     placed(geos, deckParts(l.w, l.d, l.y, "new", 29, [[sx - l.x, sz1 - l.z, sw / 2 + 0.05, 0, -1]]), l.x, l.y, l.z);
-    geos.push(...stairParts(sx, 0, sz0, sx, sy1, sz1, sw, [true, false]));
+    geos.push(...stairParts(sx, 0, sz0, sx, sy1, sz1, sw, [true, false], true));
     return merge(...geos);
   });
 
@@ -256,7 +256,7 @@
         geos.push(beam(wall, y - 2.6, z, edge, y - 0.6, z, 0.18, TIMBER_DK), beam(wall, y - 0.55, z, edge, y - 0.55, z, 0.22, TIMBER_DK));
       }
     });
-    for (const [ax, ay, az, bx, by, bz, w] of L.catwalkStairs) geos.push(...stairParts(ax, ay, az, bx, by, bz, w, [true, false]));
+    for (const [ax, ay, az, bx, by, bz, w] of L.catwalkStairs) geos.push(...stairParts(ax, ay, az, bx, by, bz, w, [true, false], true));
     return merge(...geos);
   });
 
@@ -813,7 +813,7 @@
     placed(geos, models.railParts(outer, z0 + 0.1, outer, z1 - 0.1, [false, false]), 0, g.y, 0);
     const [b0, b1] = g.decks.find(([, , posts]) => !posts);
     for (const dx of [-0.8, 0.8]) geos.push(beam(g.x + dx, g.y - 0.62, b0 - 0.6, g.x + dx, g.y - 0.62, b1 + 0.6, 0.3, TIMBER_DK));
-    geos.push(...stairParts(sx, 0, sz0, sx, sy1, sz1, sw, [true, false]));
+    geos.push(...stairParts(sx, 0, sz0, sx, sy1, sz1, sw, [true, false], true));
     for (const [x, z] of L.trestles) {
       const top = 3.3;
       for (const s of [-1, 1]) {
@@ -1333,14 +1333,14 @@
   // ---- the floor an Ooga walks ----------------------------------------------------------------------------------
 
   // Every surface with its height, as the Factory keeps its own: the floor, the landing, the catwalks and the dock's
-  // decks as rects, the steps and the stairs as strips that run half a metre on, flat, past both ends, and the top of
+  // decks as rects, the steps and the stairs as their treads, a rect each at its top (`flight`), and the top of
   // the Jet column by column (`jetModels.columns`); and what stands in the way as boxes [x0, x1, z0, z1, from, to]
   // between two heights of the feet, and the Jet's own cells. `supportAt(x, z, feet)` is the
   // highest surface within a step of the feet, so a walker on a catwalk stands on it and one on the floor walks under
   // it.
   const STEP = 0.6;
   const FLOOR = cached(() => {
-    const L = LAYOUT, rects = [], strips = [], boxes = [];
+    const L = LAYOUT, rects = [], boxes = [];
     const rect = (x0, x1, z0, z1, y) => rects.push(x0, x1, z0, z1, y);
     const deck = (d) => rect(d.x - d.w / 2 + 0.15, d.x + d.w / 2 - 0.15, d.z - d.d / 2 + 0.15, d.z + d.d / 2 - 0.15, d.y);
     deck(L.landing);
@@ -1351,13 +1351,21 @@
     // The gangway, end to end, runs on to the fuselage's side.
     const g = L.gangway, gz0 = g.decks[0][0], gz1 = g.decks[g.decks.length - 1][1];
     rect(g.x - g.w / 2 + 0.15, g.x + g.w / 2, gz0 + 0.15, gz1 - 0.15, g.y);
-    const strip = (ax, ay, az, bx, by, bz, w) => {
-      const len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len * 0.5, uz = (bz - az) / len * 0.5;
-      strips.push(ax, az, bx, bz, w / 2, ay, by, ax - ux, az - uz, ax, az, w / 2, ay, ay, bx, bz, bx + ux, bz + uz, w / 2, by, by);
+    // Each flight's treads as `stairParts` draws them stepped (`stairTreads`), a rect a tread at its top and running
+    // half a metre on, flat, past its head onto the deck it comes up to. The hangar's flights run along z or x, so each
+    // tread is the rect round it.
+    const flight = (ax, ay, az, bx, by, bz, w) => {
+      const n = models.stairTreads(by - ay), len = Math.hypot(bx - ax, bz - az), px = -(bz - az) / len * w / 2, pz = (bx - ax) / len * w / 2;
+      const tread = (t0, t1, y) => {
+        const x0 = ax + (bx - ax) * t0, z0 = az + (bz - az) * t0, x1 = ax + (bx - ax) * t1, z1 = az + (bz - az) * t1;
+        rect(Math.min(x0 - px, x0 + px, x1 - px, x1 + px), Math.max(x0 - px, x0 + px, x1 - px, x1 + px), Math.min(z0 - pz, z0 + pz, z1 - pz, z1 + pz), Math.max(z0 - pz, z0 + pz, z1 - pz, z1 + pz), y);
+      };
+      for (let i = 0; i < n; i++) tread(i / n, (i + 1) / n, ay + (by - ay) * (i + 1) / (n + 1));
+      tread(1, 1 + 0.5 / len, by);
     };
-    strip(...L.steps.slice(0, 6), L.steps[6] - 0.3);
-    for (const s of L.catwalkStairs) strip(...s.slice(0, 6), s[6] - 0.2);
-    strip(...L.jetStairs.slice(0, 6), L.jetStairs[6] - 0.2);
+    flight(...L.steps.slice(0, 6), L.steps[6] - 0.3);
+    for (const st of L.catwalkStairs) flight(...st.slice(0, 6), st[6] - 0.2);
+    flight(...L.jetStairs.slice(0, 6), L.jetStairs[6] - 0.2);
     const block = (x0, x1, z0, z1, from, to) => boxes.push(x0, x1, z0, z1, from, to);
     const around = (x, z, hx, hz, to) => block(x - hx, x + hx, z - hz, z + hz, -1, to);
     // A stair's handrails, both sides (as `stairParts` puts them), each in half-metre lengths just outside the rail's
@@ -1415,7 +1423,7 @@
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
-    return { rects: new Float32Array(rects), strips: new Float32Array(strips), boxes: new Float32Array(boxes), jet: JM.columns() };
+    return { rects: new Float32Array(rects), boxes: new Float32Array(boxes), jet: JM.columns() };
   });
   // How many of the Jet's columns a walker of `radius` at (x, z) with its feet at `feet` stands among: those reaching
   // within it whose cells rise more than a step above its feet and come down below its head (JET_HEAD up), so it walks
@@ -1444,16 +1452,6 @@
     for (let i = 0; i < R.length; i += 5) {
       const y = R[i + 4];
       if (y > best && y <= reach && x >= R[i] && x <= R[i + 1] && z >= R[i + 2] && z <= R[i + 3]) best = y;
-    }
-    const S = F.strips;
-    for (let i = 0; i < S.length; i += 7) {
-      const x0 = S[i], z0 = S[i + 1], dx = S[i + 2] - x0, dz = S[i + 3] - z0, len2 = dx * dx + dz * dz;
-      const t = ((x - x0) * dx + (z - z0) * dz) / len2;
-      if (t < 0 || t > 1) continue;
-      const px = x0 + dx * t - x, pz = z0 + dz * t - z;
-      if (px * px + pz * pz > S[i + 4] * S[i + 4]) continue;
-      const y = S[i + 5] + (S[i + 6] - S[i + 5]) * t;
-      if (y > best && y <= reach) best = y;
     }
     // The Jet's top: the highest of its columns within a foot's breadth (JET_FOOT) of where it stands, so the edge of
     // a walker's body comes to rest on the fuselage's narrow terraces as it lands or steps down them.
