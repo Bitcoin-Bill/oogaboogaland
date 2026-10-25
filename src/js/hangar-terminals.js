@@ -7,9 +7,11 @@
 // rebalance evening out their liquidity, the forwarding log scrolling, the chief engineer's mood (Kortik's Sis's,
 // read live) and the film archive's card saying DISPLAY; the dock's terminal shows the Jet's blueprint, its systems and
 // its launch countdown instead of the build board, the rebalance and the log. A page may have frames, played at its
-// own rate. The crew's desks show pictures of their work too, slower, each desk its own and both its monitors alike:
-// channels, fees, the peer map, the engines' gauges, wiring, the static fire log, the rebalancer's runs, HTLCs, fee
-// policy, the mempool, the day's routing and the chief engineer's orders.
+// own rate. The crew's desks show pictures of their work too, slower, each desk its own and its two monitors a pair
+// that goes together: a channel's liquidity beside the rebalancer's runs, the fees beside the fee policy, HTLCs beside
+// the forwarding log, the peer map beside the routing's success, the mempool beside the new channels, the routing
+// beside the fees; and on the Jet's side, its engines side by side, its wiring beside a unit's gauges, the static fire
+// log beside the chief engineer's orders.
 //
 // Space beside a terminal (the act button reads DISPLAY), or a tap on it from there, starts the show: the screen hung
 // from a gantry far down the runway unrolls, the old projector hung from a gantry over it nearer the door strikes its lamp
@@ -271,14 +273,21 @@
 
   // ---- the crew's desks' pictures, on a screen of W by H pixels ----
 
-  // Each desk's two monitors (`hangarModels.DESK`) show one picture, the same on both, held DESK_HOLD seconds and
-  // swapped for the next with no blank between, each desk DESK_STEP seconds behind the one before; each desk turns
-  // through its own three (`DESKS`, in the order of `LAYOUT.stations`), a kind that comes round on another desk drawn
-  // there from that desk's own numbers and under its own title, so no two desks show the same picture, and in an order
-  // that seldom has two desks showing one kind at once. DESK_PX pixels a metre.
-  const DESK_HOLD = 20, DESK_STEP = 5, DESK_PX = 280;
-  const DESKS = [["channels", "fees", "peers"], ["engine", "wiring", "firelog"], ["htlcs", "policy", "rebalance"], ["routed", "orders", "mempool"],
-    ["engine", "rebalance", "channels"], ["fees", "firelog", "htlcs"], ["policy", "wiring", "peers"], ["routed", "mempool", "engine"], ["orders", "channels", "fees"]];
+  // Each desk's two monitors (`hangarModels.DESK`) show two pictures that go together, as a person's two screens do
+  // (`PAIRS`, each side a kind and its variant at the pair's first, second and third desk), held DESK_HOLD seconds and
+  // swapped together for the next pair with no blank between, each desk DESK_STEP seconds after the one before. The
+  // front row's desks turn through the node's pairs and the back row's through the Jet's build (`DESKS`, in the order
+  // of `LAYOUT.stations`), arranged so no two desks show one pair but for the moment they change over, each under its
+  // own titles and from that desk's own numbers. DESK_PX pixels a metre.
+  const DESK_HOLD = 20, DESK_STEP = 1, DESK_PX = 280;
+  const PAIRS = {
+    liquidity: [["channels", [0, 1, 2]], ["rebalance", [0, 1, 2]]], earnings: [["fees", [0, 1, 2]], ["policy", [0, 1, 2]]],
+    payments: [["htlcs", [0, 1, 2]], ["forwards", [0, 1, 2]]], network: [["peers", [0, 1, 2]], ["routed", [2, 2, 2]]],
+    chain: [["mempool", [0, 1, 2]], ["channels", [2, 2, 2]]], volume: [["routed", [0, 1, 1]], ["fees", [0, 1, 2]]],
+    engines: [["engine", [0, 1, 2]], ["engine", [1, 2, 0]]], build: [["wiring", [0, 1, 2]], ["engine", [2, 0, 1]]], test: [["firelog", [0, 1, 2]], ["orders", [0, 1, 2]]]
+  };
+  const DESKS = [["liquidity", "payments", "chain"], ["earnings", "network", "volume"], ["payments", "chain", "liquidity"], ["network", "volume", "earnings"],
+    ["chain", "liquidity", "payments"], ["volume", "earnings", "network"], ["engines", "build", "test"], ["build", "test", "engines"], ["test", "engines", "build"]];
   const ORDERS = [["DO NOT PRESS", "THE RED BUTTON.", "— CHIEF ENGINEER"], ["NO BANANAS", "NEAR THE ENGINES.", "THIS MEANS YOU."], ["IF IT GOES BOOM,", "IT WAS KORTIK.", "— SIS"]];
   // The `i`th of the four peers a desk's channels and rebalancer show at their `v`th turn.
   const ownPeer = (i, v) => PEERS[(i + v * 2) % PEERS.length];
@@ -749,9 +758,10 @@
       addChild(root, node);
       return { node, x, z, turns, offset: i * HOLD };
     });
-    // The desks' monitors, each laid on its screen's face, and the pictures each desk turns through, a geometry for
-    // each of its monitors' sizes; painted each desk's first at once and the rest a desk a frame (`toPaint`), in the
-    // order they come up; and which each desk shows (-1 none yet). A kind's `v` is its turn round the desks.
+    // The desks' monitors, each laid on its screen's face, and the pairs each desk turns through (`steps`, a kind and
+    // its variant for each monitor) with their pictures, a geometry for each monitor; painted each desk's first pair
+    // at once and the rest a pair a frame (`toPaint`), in the order they come up; and which each desk shows (-1 none
+    // yet). `seen` counts each pair's desks so far, which picks its variants.
     const D = HM.DESK, seen = {};
     const desks = L.stations.map(([x, z, turn], i) => {
       const c = Math.cos(turn), s = Math.sin(turn), face = 0.02 + LIFT;
@@ -761,21 +771,22 @@
         addChild(root, node);
         return node;
       });
-      const kinds = DESKS[i], v = kinds.map((kind) => (seen[kind] = (seen[kind] ?? -1) + 1));
-      return { nodes, kinds, v, pics: kinds.map(() => []), shown: -1, offset: i * DESK_STEP, seed: 977 + i * 13 };
+      const steps = DESKS[i].map((pair) => {
+        const k = seen[pair] = (seen[pair] ?? -1) + 1;
+        return PAIRS[pair].map(([kind, variants]) => [kind, variants[k]]);
+      });
+      return { nodes, steps, pics: steps.map(() => []), shown: -1, offset: i * DESK_STEP, seed: 977 + i * 13 };
     });
-    const paintDesk = (d, n) => {
-      for (const [, w] of D.monitors) {
-        const canvas = sheet(Math.round(w * DESK_PX), Math.round(D.h * DESK_PX));
-        DESK_PAINT[d.kinds[n]](canvas.getContext("2d"), canvas.width, canvas.height, d.v[n], BL.math.mulberry32(d.seed + n));
-        const geo = plane(canvas, w, D.h, 0.45);
-        d.pics[n].push(geo);
-        live.push(geo);
-      }
-    };
+    const paintDesk = (d, n) => D.monitors.forEach(([, w], m) => {
+      const [kind, v] = d.steps[n][m], canvas = sheet(Math.round(w * DESK_PX), Math.round(D.h * DESK_PX));
+      DESK_PAINT[kind](canvas.getContext("2d"), canvas.width, canvas.height, v, BL.math.mulberry32(d.seed + n * 2 + m));
+      const geo = plane(canvas, w, D.h, 0.45);
+      d.pics[n].push(geo);
+      live.push(geo);
+    });
     const toPaint = [];
     for (let step = 0; step < 3; step++) for (const d of desks) {
-      const n = (Math.floor(d.offset / DESK_HOLD) + step) % d.kinds.length;
+      const n = (Math.floor(d.offset / DESK_HOLD) + step) % d.steps.length;
       if (step === 0) paintDesk(d, n); else toPaint.push(d, n);
     }
     let painting = 0;
@@ -943,7 +954,7 @@
       light.level = lit ? lamp * shine * (1 - flick) : 0;
       // The desks: each its next picture once that has loaded, on both its monitors; and the next desk's painted.
       for (let i = 0; i < desks.length; i++) {
-        const d = desks[i], n = Math.floor((clock + d.offset) / DESK_HOLD) % d.kinds.length, next = d.pics[n];
+        const d = desks[i], n = Math.floor((clock + d.offset) / DESK_HOLD) % d.steps.length, next = d.pics[n];
         if (n === d.shown || next.length < d.nodes.length) continue;
         let loaded = true;
         for (let m = 0; m < next.length; m++) loaded = loaded && ready(next[m]);
@@ -990,7 +1001,7 @@
         press, get phase() { return phase; }, get index() { return index; }, get frame() { return film && film[index] ? film[index].key : null; }, get film() { return film ? film.map((e) => e.key) : []; },
         // Skip to frame `i` of the film, or with none the next.
         skip: (i) => { if (phase === "film") { index = Math.max(0, Math.min(film.length - 1, i === undefined ? index + 1 : i)) - 1; advance(); } return index; },
-        get desks() { return desks.map((d) => (d.shown < 0 ? null : d.kinds[d.shown])); },
+        get desks() { return desks.map((d) => (d.shown < 0 ? null : d.steps[d.shown].map(([kind, v]) => `${kind}:${v}`).join(" | "))); },
         get hoist() { return hoist; }, get unroll() { return unroll; }, get lamp() { return lamp; }, get light() { return light.level; }, get clock() { return clock; }, set clock(v) { clock = v; }
       }
     };
