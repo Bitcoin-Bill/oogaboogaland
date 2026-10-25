@@ -92,7 +92,16 @@
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false;
-  let tool = "paint", flash = 0, flashT = 0, audio = null;
+  let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
+  // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
+  // block found resets the pads and caches. `FEE_WEATHER` is sat/vB: below the first clear, below the second breezy.
+  const FEE_WEATHER = [6, 25];
+  const live = { fee: 0, block: 0 };
+  const feeWeather = (fee) => fee <= 0 ? null : fee < FEE_WEATHER[0] ? "clear" : fee < FEE_WEATHER[1] ? "breeze" : "storm";
+  const onFeed = (ev) => {
+    if (ev.type === "fees" && ev.nextFee > 0) live.fee = ev.nextFee;
+    else if (ev.type === "block") live.block = ev.height;
+  };
   // The sniper scope: its zoom step (`ZOOMS`, degrees of view), and the tool and view to go back to off the tower.
   const ZOOMS = [34, 20, 11];
   const scope = { zoom: 0, tool: "paint", first: false };
@@ -519,8 +528,13 @@
       } else if (e.type === "landed") fx.burst(e.x, e.y + 0.3, e.z, 8, e.team === "blue" ? PAINT_BITS.blue : PAINT_BITS.red, 1.4);
       else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
       else if (e.type === "weather") {
-        const w = sim.weather.kind;
-        notice(w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears", 2400);
+        const w = sim.weather.kind, fee = sim.live ? ` · mempool fees ${Math.round(live.fee)} sat/vB` : "";
+        notice((w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears") + fee, 2800);
+      } else if (e.type === "mined") {
+        center(e.x ? `BLOCK ${e.x}!` : "BLOCK FOUND!", 1500);
+        notice("A real Bitcoin block was just mined: every quiz pad and ammo cache is ready again", 3200);
+        audio.cues.block();
+        for (const c of SIM.ARENA.caches) fx.burst(c[0], c[1] + 0.6, c[2], 10, ORANGE_BITS, 2);
       } else if (e.type === "trap") {
         fx.burst(e.x, 1, e.z, 12, QUIZ_BITS, 2);
         if (me) { center("QUIZ TRAP!", 1000); openQuiz(); }
@@ -1008,6 +1022,9 @@
     RENDER_OPTS.time = elapsed;
     if (phase === "play") {
       readInput(dt);
+      // The live feed, folded in before the step: fees to weather, a new block to its reset.
+      SIM.setLive(sim, feeWeather(live.fee));
+      if (live.block) { SIM.newBlock(sim, live.block); live.block = 0; }
       const prepWas = sim.prep;
       SIM.step(sim, dt, move);
       if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) {
@@ -1111,6 +1128,9 @@
     hudMod.leaveTo("block", home);
     camera = createCamera({ fov: 58, near: 0.3, far: 400 });
     audio = BL.blockAudio.create();
+    live.fee = BL.mempool.state.nextFee || 0;
+    live.block = 0;
+    unfeed = BL.mempool.subscribe(onFeed);
     root = createNode();
     clock = daylight.createClock({ hour: hourParam, day: dayParam, now: new Date() });
     hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: false });
@@ -1273,6 +1293,8 @@
         block: {
           get phase() { return phase; },
           get sim() { return sim; },
+          // Plays a live feed message as if it had arrived: { type: "fees", nextFee } or { type: "block", height }.
+          feed: onFeed,
           get result() { return result; },
           get cam() { return cam; },
           get quiz() { return { open: quiz.open, right: quiz.right, locked: quiz.locked, asked: quiz.asked, solved: quiz.solved }; },
@@ -1298,6 +1320,8 @@
   const leave = () => {
     audio.dispose();
     audio = null;
+    unfeed();
+    unfeed = null;
     window.clearInterval(stateTimer);
     window.clearTimeout(hintTimer);
     window.clearTimeout(centerTimer);

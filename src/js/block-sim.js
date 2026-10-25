@@ -290,7 +290,7 @@
     const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -837,8 +837,9 @@
     const w = sim.weather;
     w.left -= dt;
     if (w.left <= 0) {
+      // Live weather (`setLive`) holds its kind; otherwise each spell is a seeded draw.
       const r = sim.rng();
-      w.kind = r < 0.4 ? "clear" : r < 0.75 ? "breeze" : "storm";
+      w.kind = sim.live || (r < 0.4 ? "clear" : r < 0.75 ? "breeze" : "storm");
       w.target = CONFIG.WIND[w.kind];
       w.left = CONFIG.WEATHER_S[0] + sim.rng() * (CONFIG.WEATHER_S[1] - CONFIG.WEATHER_S[0]);
       emit(sim, "weather", null, -1, 0, 0, 0);
@@ -850,6 +851,20 @@
     w.z = Math.sin(w.angle) * w.strength * gust;
   };
 
+  // The live Bitcoin network sets the weather: `kind` from the fees, or null to go back to seeded spells. A change
+  // starts at once.
+  const setLive = (sim, kind) => {
+    if (kind === sim.live) return false;
+    sim.live = kind;
+    if (kind && kind !== sim.weather.kind) sim.weather.left = 0;
+    return true;
+  };
+  // A real Bitcoin block was just found: every quiz pad and ammo cache is ready again.
+  const newBlock = (sim, height = 0) => {
+    for (const t of sim.traps) t.dark = 0;
+    for (const c of sim.caches) c.dark = 0;
+    emit(sim, "mined", null, -1, height, 0, 0);
+  };
   // One fixed step. `input` is the player's: `x`, `z` a world-space move direction of length up to 1, `sprint`,
   // `jump` (a press), `crouch` (held), and optionally `face`, the yaw the player looks along. The scene throws, drops and builds through `fire`, `drop` and `build`.
   const tick = (sim, dt, input) => {
@@ -1020,5 +1035,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, ARENA, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
 })();
