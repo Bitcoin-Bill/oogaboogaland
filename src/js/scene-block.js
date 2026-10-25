@@ -72,11 +72,21 @@
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const pick = (list, i) => list[i % list.length];
   // Kept for the page's life: the side last chosen.
-  // The side, the Ooga and the captures to win the visitor picked on the board; the target is remembered in this
-  // browser (`TARGET_KEY`) for next time.
-  const TARGETS = [1, 3, 5, 7], TARGET_KEY = "oogaboogaland.blockTarget";
-  const savedTarget = () => { try { const n = Number(localStorage.getItem(TARGET_KEY)); return TARGETS.includes(n) ? n : 3; } catch { return 3; } };
-  const selection = { team: "blue", ooga: null, target: 3 };
+  // The side, the Ooga, the captures to win, the Oogas a side and the bots' skill the visitor picked on the board; the
+  // last three are remembered in this browser (`PICKS_KEY`) for next time.
+  const TARGETS = [1, 3, 5, 7], SIZES = [2, 3, 4, 5], PICKS_KEY = "oogaboogaland.blockPicks";
+  const selection = { team: "blue", ooga: null, target: 3, size: 3, skill: "normal" };
+  const loadPicks = () => {
+    try {
+      const p = JSON.parse(localStorage.getItem(PICKS_KEY) || "{}");
+      if (TARGETS.includes(p.target)) selection.target = p.target;
+      if (SIZES.includes(p.size)) selection.size = p.size;
+      if (SIM.SKILLS[p.skill]) selection.skill = p.skill;
+    } catch { /* nothing saved, or storage closed: the defaults stand */ }
+  };
+  const savePicks = () => {
+    try { localStorage.setItem(PICKS_KEY, JSON.stringify({ target: selection.target, size: selection.size, skill: selection.skill })); } catch { /* the picks last this visit */ }
+  };
 
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
@@ -112,8 +122,10 @@
     world.pilot = null;
     if (!names.includes(selection.ooga)) selection.ooga = null;
     const first = own || selection.ooga || names[0] || null;
-    const rest = names.filter((n) => n !== first);
-    return [first, rest[0] || first, rest[1] || first, rest[2] || first];
+    const rest = names.filter((n) => n !== first), cast = [first];
+    // A short roster repeats round so every place is filled.
+    for (let i = 1; i < selection.size * 2; i++) cast.push(rest.length ? rest[(i - 1) % rest.length] : first);
+    return cast;
   };
   const buildActors = (names) => {
     actors = names.map((name, i) => {
@@ -167,12 +179,12 @@
     selection.ooga = name;
     disposeActors();
     buildActors(castNames());
-    for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
+    for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
   };
   // Team colours go on once a side is chosen.
   const paintTeams = () => {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < actors.length; i++) {
       const t = sim.actors[i].team, a = actors[i];
       a.ring.geometry = BM.ring(TEAM_INDEX[t]);
       a.blob.geometry = BM.splat(TEAM_INDEX[SIM.other(t)] + 2 * (i % 3));
@@ -291,8 +303,10 @@
     if (!actors || !actors[0].cave) return;
     sim.team = selection.team;
     sim.rival = SIM.other(selection.team);
-    for (let i = 0; i < 4; i++) sim.actors[i].team = i < 2 ? sim.team : sim.rival;
+    for (let i = 0; i < sim.actors.length; i++) sim.actors[i].team = i < sim.size ? sim.team : sim.rival;
     sim.target = selection.target;
+    sim.skill = selection.skill;
+    sim.bots = SIM.SKILLS[selection.skill];
     SIM.reset(sim, (Date.now() & 0x7fffffff) || 1);
     paintTeams();
     for (const s of splats) s.visible = false;
@@ -680,7 +694,7 @@
   // step, sits when it arrives, and jumps straight to its Ooga if it falls far behind (a roof, a double jump).
   const PET_BACK = 1.1, PET_SIDE = 0.6, PET_SPEED = 9.5;
   const poseCompanions = (dt, elapsed) => {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < actors.length; i++) {
       const a = actors[i], p = a.pet;
       if (!p) continue;
       const s = sim.actors[i], h = a.body.rotation.y;
@@ -703,7 +717,7 @@
     }
   };
   const poseActors = (dt, elapsed) => {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < actors.length; i++) {
       const s = sim.actors[i], a = actors[i];
       setVec(a.body.position, s.x, s.y, s.z);
       a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play");
@@ -765,11 +779,11 @@
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
       } else if (armed) {
         // Gun up and forward, the other hand under it; a big launcher sits higher, on the shoulder.
-        const kick = s.cooldown > (s.bot ? C.BOT_COOLDOWN : SIM.TOOLS.paint.cool) - 0.12 ? 0.18 : 0;
+        const kick = s.cooldown > (s.bot ? sim.bots.cool : SIM.TOOLS.paint.cool) - 0.12 ? 0.18 : 0;
         p.armR.rotation.x = (g === 2 ? -1.75 : -1.45) - kick;
         p.armL.rotation.x = g === 2 ? -1.9 : -1.25;
       } else {
-        p.armR.rotation.x = s.cooldown > (s.bot ? C.BOT_COOLDOWN : SIM.TOOLS.paint.cool) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
+        p.armR.rotation.x = s.cooldown > (s.bot ? sim.bots.cool : SIM.TOOLS.paint.cool) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
         p.armL.rotation.x = -0.2 + swing * 0.35;
       }
       // Guard after a splat blinks the ring.
@@ -1022,7 +1036,25 @@
     selection.target = n;
     for (const b of el.targets) b.setAttribute("aria-pressed", String(Number(b.dataset.target) === n));
     el.boardHelp.textContent = `Pick a side. Steal the rivals' Bitcoin block (their colour), carry it to your own stand while your block is home. First to ${n} capture${n === 1 ? "" : "s"} wins.`;
-    try { localStorage.setItem(TARGET_KEY, String(n)); } catch { /* private window: the pick lasts this visit */ }
+    savePicks();
+  };
+  // A new team size casts the round again: a fresh sim and a fresh set of Oogas.
+  const chooseSize = (n) => {
+    for (const b of el.sizes) b.setAttribute("aria-pressed", String(Number(b.dataset.size) === n));
+    if (n === selection.size && sim && sim.size === n) return;
+    selection.size = n;
+    savePicks();
+    if (!sim) return;
+    sim = SIM.create({ team: selection.team, seed: 1, size: n, skill: selection.skill, target: selection.target });
+    disposeActors();
+    buildActors(castNames());
+    for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
+    paintTeams();
+  };
+  const chooseSkill = (k) => {
+    selection.skill = k;
+    for (const b of el.skills) b.setAttribute("aria-pressed", String(b.dataset.skill === k));
+    savePicks();
   };
   const chooseTeam = (team) => {
     selection.team = team;
@@ -1045,10 +1077,19 @@
     }
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
     el.targets = [...document.querySelectorAll("#block-board [data-target]")];
+    el.sizes = [...document.querySelectorAll("#block-board [data-size]")];
+    el.skills = [...document.querySelectorAll("#block-board [data-skill]")];
+    loadPicks();
+    el.onSize = (e) => { chooseSize(Number(e.currentTarget.dataset.size)); e.currentTarget.blur(); };
+    el.onSkill = (e) => { chooseSkill(e.currentTarget.dataset.skill); e.currentTarget.blur(); };
+    for (const b of el.sizes) b.addEventListener("click", el.onSize);
+    for (const b of el.skills) b.addEventListener("click", el.onSkill);
+    for (const b of el.sizes) b.setAttribute("aria-pressed", String(Number(b.dataset.size) === selection.size));
+    chooseSkill(selection.skill);
     el.boardHelp = document.getElementById("block-board-help");
     el.onTarget = (e) => { chooseTarget(Number(e.currentTarget.dataset.target)); e.currentTarget.blur(); };
     for (const b of el.targets) b.addEventListener("click", el.onTarget);
-    chooseTarget(savedTarget());
+    chooseTarget(selection.target);
     el.paintBtn = document.getElementById("block-paint");
     el.toolBar = document.getElementById("block-tools");
     el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
@@ -1118,9 +1159,9 @@
     splats = [];
     for (let i = 0; i < MAX_SPLATS; i++) splats.push(place(createNode({ geometry: BM.splat(0), visible: false, depthBias: 0.2 })));
     splatNext = 0;
-    sim = SIM.create({ team: selection.team, seed: 1 });
+    sim = SIM.create({ team: selection.team, seed: 1, size: selection.size, skill: selection.skill, target: selection.target });
     buildActors(castNames());
-    for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
+    for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
     // The board's Ooga picker: the roster by the name shown, held to their own Ooga for a signed-in visitor.
     el.oogaPick.textContent = "";
@@ -1208,6 +1249,8 @@
     window.clearTimeout(noticeTimer);
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
     for (const b of el.targets) b.removeEventListener("click", el.onTarget);
+    for (const b of el.sizes) b.removeEventListener("click", el.onSize);
+    for (const b of el.skills) b.removeEventListener("click", el.onSkill);
     el.paintBtn.removeEventListener("pointerdown", el.onPaint);
     el.toolBar.hidden = true;
     for (const b of el.tools) b.removeEventListener("click", el.onTool);

@@ -44,7 +44,7 @@
     SPEED: 6.2, SPRINT: 1.55, CARRY: 0.88, SPRINT_S: 4, SPRINT_REST: 0.8, SPRINT_REFILL: 5, SPRINT_MIN: 0.3, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_Y: 1.3, BOT_COOLDOWN: 1.4, BOT_RANGE: 12, BOT_SPREAD: 0.2, BOT_AIM: 0.6, GUARD_RANGE: 10,
     MAX_SHOTS: 48, MAX_EVENTS: 48, STEP: 1 / 120,
-    TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8],
+    TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8], MAX_SIDE: 5,
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
@@ -130,8 +130,6 @@
   const ARENA = {
     W, L, BLOCKS,
     stands: { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } },
-    // Where each side's Oogas start and come back to after a round, two each, inside their fort.
-    starts: { blue: [[-3, 26], [3, 26]], red: [[3, -26], [-3, -26]] },
     // Where a defender waits: a little in front of its own gate.
     guard: { blue: { x: 0, z: 17.2 }, red: { x: 0, z: -17.2 } },
     // The quiz pads, turned half round between the halves like everything else.
@@ -157,6 +155,18 @@
   };
   for (const t of TEAMS) { const z = ARENA.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   const other = (team) => team === "blue" ? "red" : "blue";
+  // The bots' skill: easy bots aim wider, wait longer before throwing, throw less often, run slower and see less far;
+  // hard ones the other way. "normal" is the CONFIG values.
+  const SKILLS = {
+    easy: { spread: 0.36, aim: 1.1, cool: 2.1, speed: 4.8, range: 10 },
+    normal: { spread: CONFIG.BOT_SPREAD, aim: CONFIG.BOT_AIM, cool: CONFIG.BOT_COOLDOWN, speed: CONFIG.BOT_SPEED, range: CONFIG.BOT_RANGE },
+    hard: { spread: 0.1, aim: 0.35, cool: 0.95, speed: 6, range: 15 }
+  };
+  // Where the k-th of `size` Oogas a side starts, across the inside of its fort (red's turned half round).
+  const startAt = (team, k, size) => {
+    const x = (k - (size - 1) / 2) * 2.4, z = 26 - (k % 2) * 1.2;
+    return team === "blue" ? [x, z] : [-x, -z];
+  };
   const mulberry32 = (seed) => () => {
     seed = seed + 0x6d2b79f5 | 0;
     let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
@@ -259,10 +269,13 @@
   // A round. `team` is the player's colour; `seed` seeds the bots and the weather; `prep` the fortifying seconds.
   // `names` names the four Oogas: the player first, then their teammate, then the two rivals (only carried for the
   // scene).
-  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S, target = CONFIG.CAPTURES } = {}) => {
+  // `size` Oogas a side (2 to `MAX_SIDE`): the player first, then their teammates, then the rivals. `skill` picks the
+  // bots' `SKILLS`.
+  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S, target = CONFIG.CAPTURES, size = 2, skill = "normal" } = {}) => {
     const rival = other(team);
-    const actors = [0, 1, 2, 3].map((i) => ({
-      id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
+    size = Math.max(2, Math.min(CONFIG.MAX_SIDE, size | 0));
+    const actors = Array.from({ length: size * 2 }, (_, i) => ({
+      id: i, slot: i % size, name: names[i] || null, team: i < size ? team : rival, bot: i > 0, role: i % size % 2 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
@@ -277,7 +290,7 @@
     const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { team, rival, seed, target, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -322,7 +335,7 @@
     for (const c of sim.crates) c.live = false;
     for (const t of TEAMS) for (const [x, z] of ARENA.crates[t]) addCrate(sim, t, x, z);
     for (const a of sim.actors) {
-      const k = a.id % 2, at = ARENA.starts[a.team][k];
+      const at = startAt(a.team, a.slot, sim.size);
       a.x = a.lastX = at[0]; a.z = a.lastZ = at[1]; a.y = a.vx = a.vz = a.vy = 0;
       a.heading = a.team === "blue" ? Math.PI : 0;
       a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = a.botJump = false; a.carrying = a.blocked = null;
@@ -567,7 +580,7 @@
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
     if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
-    a.cooldown = a.bot ? Math.max(tool.cool, CONFIG.BOT_COOLDOWN) : tool.cool;
+    a.cooldown = a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
@@ -600,12 +613,14 @@
   // The bots: an attacker goes for the flag and a defender waits at its gate, both breaking off to send a dropped
   // flag of theirs home or to chase the Ooga carrying it, and both throw at the nearest rival in range.
   const goal = { x: 0, z: 0 };
+  // Defenders stand side by side before the gate: the first in the middle, the next either side of it.
+  const guardSpread = (a) => { const k = a.slot >> 1; return k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 2.2; };
   const botGoal = (sim, a) => {
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)], stand = ARENA.stands[a.team];
     if (sim.prep > 0) {
       // Fortifying: defenders at the gate, attackers at the halfway line.
-      if (a.role === "defend") { goal.x = ARENA.guard[a.team].x; goal.z = ARENA.guard[a.team].z; }
-      else { goal.x = a.id % 2 ? -6 : 6; goal.z = a.team === "blue" ? 2.5 : -2.5; }
+      if (a.role === "defend") { goal.x = ARENA.guard[a.team].x + guardSpread(a); goal.z = ARENA.guard[a.team].z; }
+      else { goal.x = [6, -6, 0][(a.slot >> 1) % 3]; goal.z = a.team === "blue" ? 2.5 : -2.5; }
       return;
     }
     if (a.carrying) { goal.x = stand.x; goal.z = stand.z; return; }
@@ -619,7 +634,7 @@
         if (d < best) { best = d; near = b; }
       }
       if (near) { goal.x = near.x; goal.z = near.z; return; }
-      goal.x = ARENA.guard[a.team].x; goal.z = ARENA.guard[a.team].z;
+      goal.x = ARENA.guard[a.team].x + guardSpread(a); goal.z = ARENA.guard[a.team].z;
       return;
     }
     if (theirs.state === "carried" && sim.actors[theirs.carrier].team === a.team) {
@@ -637,7 +652,7 @@
     if (d < 0.3) return 0;
     if (a.y > 0.2 || clearLine(a.x, a.z, wantX, wantZ, CONFIG.BODY_R * 0.9)) return Math.atan2(dx, dz);
     // The two sides fan opposite ways, as the field is turned half round between them, so neither steers better.
-    const base = Math.atan2(dx, dz), probe = Math.min(PROBE, d), hand = (a.id % 2 ? 1 : -1) * (a.team === "blue" ? 1 : -1);
+    const base = Math.atan2(dx, dz), probe = Math.min(PROBE, d), hand = (a.slot % 2 ? 1 : -1) * (a.team === "blue" ? 1 : -1);
     for (let i = 0; i < FANS.length; i++) {
       const h = base + FANS[i] * hand;
       if (clearLine(a.x, a.z, a.x + Math.sin(h) * probe, a.z + Math.cos(h) * probe, CONFIG.BODY_R)) return h;
@@ -679,7 +694,7 @@
     } else botGoal(sim, a);
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
-    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : CONFIG.BOT_SPEED) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
+    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
     if (d > 0.4) {
       const h = steer(sim, a, goal.x, goal.z);
       a.vx = Math.sin(h) * speed; a.vz = Math.cos(h) * speed;
@@ -707,19 +722,19 @@
     // gets a moment, and a bot just back from a splat can't throw at once): a net at a carrier, now and then a grenade
     // or a rocket, otherwise paint, leading the run a little with a seeded wobble.
     if (a.cooldown <= 0 && sim.prep <= 0) {
-      let t = null, best = CONFIG.BOT_RANGE * CONFIG.BOT_RANGE;
+      let t = null, best = sim.bots.range * sim.bots.range;
       for (const b of sim.actors) {
         if (b.team === a.team || !open(b)) continue;
         const dd = (b.x - a.x) ** 2 + (b.z - a.z) ** 2;
         if (dd < best && clearLine(a.x, a.z, b.x, b.z, 0.05, CONFIG.SHOT_Y)) { best = dd; t = b; }
       }
       a.aim = t ? a.aim + dt : 0;
-      if (t && a.aim >= CONFIG.BOT_AIM) {
+      if (t && a.aim >= sim.bots.aim) {
         a.aim = 0;
         const dist = Math.sqrt(best), roll = sim.rng();
         const kind = t.carrying && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : "paint";
         const lead = dist / TOOLS[kind].speed;
-        const yaw = Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z) + (sim.rng() - 0.5) * 2 * CONFIG.BOT_SPREAD;
+        const yaw = Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z) + (sim.rng() - 0.5) * 2 * sim.bots.spread;
         // Paint lobs flatter at range so the ball arrives near chest height; a grenade arcs to its range.
         const pitch = kind === "grenade" ? lobPitch(dist) : kind === "rocket" ? -0.03 : Math.min(0.12, Math.max(-0.12, (dist - 8) * -0.006));
         fire(sim, a.id, yaw, pitch, kind);
@@ -850,8 +865,9 @@
     // Each step takes the four in the other order from the last, so neither side always moves, picks up or reaches a
     // dropped block first.
     sim.flip = !sim.flip;
-    for (let n = 0; n < 4; n++) {
-      const a = sim.actors[sim.flip ? 3 - n : n];
+    const N = sim.actors.length;
+    for (let n = 0; n < N; n++) {
+      const a = sim.actors[sim.flip ? N - 1 - n : n];
       if (a.cooldown > 0) a.cooldown -= dt;
       if (a.netted > 0) { a.netted -= dt; if (a.netted <= 0) { a.netted = 0; emit(sim, "unnet", a.team, a.id, a.x, a.y, a.z); } }
       if (a.splat > 0) {
@@ -959,10 +975,10 @@
       // The player faces where they aim (`input.face`, the camera's yaw) when the scene gives it; everyone else faces
       // where they run, unless they just threw.
       if (!a.bot && free && input.face !== undefined) a.heading = input.face;
-      else if (sp > 0.5 && a.cooldown <= (a.bot ? CONFIG.BOT_COOLDOWN : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
+      else if (sp > 0.5 && a.cooldown <= (a.bot ? sim.bots.cool : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
       if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
     }
-    for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
+    for (let n = 0; n < N; n++) touchFlags(sim, sim.actors[sim.flip ? N - 1 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
     for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
@@ -1004,5 +1020,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
 })();
