@@ -495,15 +495,37 @@
   };
 
   // The crew, gorillas in hard hats as the Factory's and the hangar's hi-vis vests, each pacing its post on the floor,
-  // on the Jet's gangway or on a catwalk, kept to where an Ooga could walk at its height.
+  // on the Jet's gangway or on a catwalk, kept to where an Ooga could walk at its height and held off rails, desks and
+  // the Jet by their own breadth (`CREW_BODY`, half a gorilla's shoulders). Each paces to the next spot round its post it
+  // can walk to all the way, tried `PACE_TRIES` times, so none presses on toward one past a rail; with none, it stands
+  // a while.
+  const CREW_BODY = 0.5, PACE_TRIES = 12;
   const hireCrew = (s) => {
     const hat = FM.hardHat(), vest = HM.vest();
     for (const [x, y, z, radius, heading] of LAYOUT.crew) {
-      const walkable = (fx, fz, nx, nz) => Math.hypot(nx - x, nz - z) < radius + 0.4 && HM.supportAt(nx, nz, y) === y && HM.clearAt(nx, nz, y, 0.3, fx, fz);
+      const walkable = (fx, fz, nx, nz) => Math.hypot(nx - x, nz - z) < radius + 0.4 && HM.supportAt(nx, nz, y) === y && HM.clearAt(nx, nz, y, CREW_BODY, fx, fz);
       const agent = BL.agent.create({ groundAt: () => y, walkable, form: "ape", x, z, heading, scale: 0.86 });
       addChild(agent.parts.head, createNode({ position: { x: 0, y: 0.6, z: 0.05 }, geometry: hat }));
       addChild(agent.parts.torso, createNode({ geometry: vest }));
-      agent.pace(x, z, radius);
+      const at = agent.root.position, target = [{ x, z }];
+      const reaches = (tx, tz) => {
+        const n = Math.ceil(Math.hypot(tx - at.x, tz - at.z) / 0.25);
+        for (let i = 1; i <= n; i++) {
+          if (!walkable(at.x + (tx - at.x) * (i - 1) / n, at.z + (tz - at.z) * (i - 1) / n, at.x + (tx - at.x) * i / n, at.z + (tz - at.z) * i / n)) return false;
+        }
+        return true;
+      };
+      agent.onIdle = () => {
+        for (let k = 0; k < PACE_TRIES; k++) {
+          const a = Math.random() * Math.PI * 2, r = radius * Math.sqrt(Math.random()), tx = x + Math.cos(a) * r, tz = z + Math.sin(a) * r;
+          if (!reaches(tx, tz)) continue;
+          target[0].x = tx; target[0].z = tz;
+          agent.walk(target, Math.hypot(tx - at.x, tz - at.z) > radius * 0.8);
+          return;
+        }
+        target[0].x = at.x; target[0].z = at.z;
+        agent.walk(target);
+      };
       addChild(root, agent.root);
       s.crew.push(agent);
     }
