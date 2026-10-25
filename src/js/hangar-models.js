@@ -67,6 +67,8 @@
     // test is watched from across the runway, its eye and where it looks, framing the booth, both plumes and where
     // the presser lands.
     fireTest: { x: 8, z: 11, turn: -Math.PI / 2, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [-6, 6.5, 18], look: [5, 0.8, 10] } },
+    // Kortik's Sis's spot by the Jet's nose, off the runway, and the way she faces, toward the runway and the door.
+    sis: { x: 9.8, z: 16.6, turn: -Math.PI / 4 },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],

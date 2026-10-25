@@ -79,7 +79,8 @@
     stats: ["Repo stats · drneski/lightning-jet", ""],
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
-    firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."]
+    firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
+    sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Someone has to fix this thing..."]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -507,6 +508,11 @@
     input.add(scene.fire.body, { kind: "firetest", preset: null }, { radius: 1.6 });
     targets.push(scene.fire.body);
     soundPanel = openSoundPanel();
+    // Kortik's Sis, the hangar's chief engineer (`sis.js`).
+    scene.sis = BL.sis.create();
+    addChild(root, scene.sis.node);
+    input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
+    targets.push(scene.sis.body);
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
     unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
     if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
@@ -637,6 +643,7 @@
     if (people) people.update(dt, elapsed);
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
+    s.sis.update(dt, drivenHere ? drivenHere.root.position : camera.position);
     pilot.update(dt);
     s.fire.view(camera);
     if (s.window) s.window.update(camera);
@@ -740,6 +747,7 @@
   const liveGeometry = (set) => {
     if (scene) {
       scene.gate.phase.liveGeometry(set); scene.launch.phase.liveGeometry(set);
+      scene.sis.liveGeometry(set);
       for (const a of scene.crew) a.liveGeometry(set);
     }
     if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
