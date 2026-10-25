@@ -193,6 +193,7 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
   };
   // Team colours go on once a side is chosen.
   const paintTeams = () => {
@@ -900,7 +901,8 @@
       setVec(a.body.position, s.x, s.y, s.z);
       // Lightning boots leave a trail of sparks.
       if (s.boots > 0 && s.moving > 1 && Math.random() < dt * 14) fx.burst(s.x, s.y + 0.2, s.z, 2, ORANGE_BITS, 0.8);
-      a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play");
+      // On the board only the Ooga on show stands in view.
+      a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play") && !(phase === "board" && preview.wide && i > 0);
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
       a.ring.visible = s.grounded;
@@ -911,7 +913,7 @@
       a.trolley.visible = s.riding;
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
+      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -1167,12 +1169,32 @@
     return CAM.dist;
   };
   // The board shows the whole fort from above its gate, slowly turning.
-  const boardView = (elapsed) => {
-    const t = selection.team, s = SIM.ARENA.stands[t], a = elapsed * 0.12;
+  // On a wide screen the board sits on the left and the chosen Ooga stands on the right inside its fort's gate,
+  // turning slowly all the way round (a drag turns it faster); on a narrow one the board fills the screen and the
+  // view circles the fort.
+  const preview = { spin: 0, wide: false };
+  const PREVIEW_MIN_W = 760;
+  const boardView = (elapsed, dt) => {
+    const t = selection.team, s = SIM.ARENA.stands[t], sign = t === "blue" ? 1 : -1;
     camera.fov = 58 * Math.PI / 180;
     if (fpGun) fpGun.visible = false;
-    setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
-    setVec(camera.target, s.x, 1, s.z * 0.8);
+    preview.wide = window.innerWidth >= PREVIEW_MIN_W;
+    el.previewName.hidden = !preview.wide;
+    if (!preview.wide) {
+      const a = elapsed * 0.12;
+      setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
+      setVec(camera.target, s.x, 1, s.z * 0.8);
+      return;
+    }
+    // The visitor's Ooga on its showcase spot, a step inside the gate, turning.
+    const me = sim.actors[0], x = s.x, z = s.z - sign * 2.5;
+    preview.spin = wrap(preview.spin + dt * 0.7);
+    me.x = x; me.z = z; me.y = 0; me.grounded = true; me.moving = 0;
+    me.carrying = null; me.holding = false; me.splat = me.trapped = me.burnt = me.slip = 0;
+    me.heading = preview.spin;
+    // The camera out past the gate at chest height, looking a little to the Ooga's left so it stands right of the board.
+    setVec(camera.position, x, 1.45, z - sign * 3.7);
+    setVec(camera.target, x + sign * 1.25, 1.0, z);
   };
 
   const update = (dt, elapsed) => {
@@ -1202,7 +1224,7 @@
     posePads(elapsed);
     poseFire(elapsed);
     poseShots();
-    if (phase === "board") boardView(elapsed);
+    if (phase === "board") boardView(elapsed, dt);
     else updateCamera(dt);
     poseWeather(dt);
     if (phase === "play") drawMap(dt, elapsed);
@@ -1275,6 +1297,7 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
   };
   const chooseMap = (id) => {
     for (const b of el.maps) b.setAttribute("aria-pressed", String(b.dataset.map === id));
@@ -1343,6 +1366,17 @@
   const chooseTeam = (team) => {
     selection.team = team;
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === team));
+    // The Ooga on show changes colour with its side.
+    if (sim) {
+      sim.team = team; sim.rival = SIM.other(team);
+      for (let i = 0; i < sim.actors.length; i++) sim.actors[i].team = i < sim.size ? sim.team : sim.rival;
+      paintTeams();
+    }
+  };
+  // The name under the Ooga on show.
+  const nameShowcase = () => {
+    const n = actors && actors[0] ? actors[0].name : null;
+    el.previewName.firstChild.textContent = n ? contributors.traitsFor(n).display || n : "";
   };
 
   const enter = (ctx) => {
@@ -1389,6 +1423,8 @@
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
+    el.previewName = document.getElementById("block-preview-name");
+    el.previewName.hidden = true;
     el.map = document.getElementById("block-map");
     el.mapCtx = el.map.getContext("2d");
     el.feed = document.getElementById("block-feed");
@@ -1463,6 +1499,7 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
     // The board's Ooga picker: the roster by the name shown, held to their own Ooga for a signed-in visitor.
     el.oogaPick.textContent = "";
     // In alphabetical order by the name shown, so anyone can find theirs in a long roster.
@@ -1487,6 +1524,8 @@
       // A mouse throws on press (`onLockedDown`); a tap on a touch screen throws here.
       onTap: () => { if (phase === "play" && COARSE) paint(); },
       onOrbit: (dx, dy) => {
+        // On the board a drag turns the Ooga on show.
+        if (phase === "board") { preview.spin = wrap(preview.spin + dx * 8e-3); return; }
         if (phase !== "play") return;
         cam.face = wrap(cam.face - dx * 5e-3);
         cam.pitch = clamp(cam.pitch + dy * 3.5e-3, CAM.pitch[0], CAM.pitch[1]);

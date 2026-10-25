@@ -9442,3 +9442,47 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
     font-size: 10px;
   }
 }
+
+/* On a wide screen Block Frenzy's board sits on the left, leaving the right for the Ooga on show, with its name
+   under it. */
+@media (min-width: 760px) {
+  #block-board {
+    left: calc(20px + var(--safe-left, 0px));
+    transform: translateY(-50%);
+    width: min(560px, 54vw);
+  }
+
+  #block-board .garage-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.block-preview-name {
+  position: absolute;
+  z-index: 11;
+  right: 9vw;
+  bottom: 12%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 14px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 8px;
+  background: rgba(30, 20, 12, 0.78);
+  color: #f3e6cc;
+  pointer-events: none;
+}
+
+.block-preview-name b {
+  font-size: 16px;
+}
+
+.block-preview-name span {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+#block-board[hidden] ~ .block-preview-name {
+  display: none;
+}
