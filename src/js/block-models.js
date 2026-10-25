@@ -331,5 +331,20 @@
       box({ w: 0.5, h: 0.05, d: 0.3, color: ready ? "#fff3a0" : "#5a5852", emissive: ready ? 1 : 0, offset: { y: 0.48 } })
     );
   });
-  BL.blockModels = { TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // A trampoline flush with the ground: a dark frame ring on stubby legs, springs, and an orange-and-black mat.
+  const tramp = cached(() => {
+    const parts = [], R = SIM.CONFIG.TRAMP_R + 0.15, n = 16;
+    for (let k = 0; k < n; k++) {
+      const a = k / n * Math.PI * 2, x = Math.sin(a), z = Math.cos(a);
+      parts.push(box({ w: 0.42, h: 0.14, d: 0.16, color: "#2a2a30", offset: { x: x * R, y: 0.07, z: z * R } }));
+      parts.push(box({ w: 0.05, h: 0.05, d: 0.2, color: "#c9ced6", offset: { x: x * (R - 0.15), y: 0.12, z: z * (R - 0.15) } }));
+    }
+    // The mat: rings of black and orange.
+    for (let k = 0; k < 4; k++) {
+      const r = SIM.CONFIG.TRAMP_R * (1 - k * 0.24);
+      parts.push(box({ w: r * 1.7, h: 0.03, d: r * 1.7, color: k % 2 ? ORANGE : "#18181c", emissive: k % 2 ? 0.5 : 0, offset: { y: 0.1 + k * 0.004 } }));
+    }
+    return merge(...parts);
+  });
+  BL.blockModels = { tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

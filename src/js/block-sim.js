@@ -47,6 +47,7 @@
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
+    TRAMP_R: 1.0, BOUNCE: 13.5,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
@@ -57,8 +58,8 @@
     rocket: { speed: 28, lift: 0, gravity: 0, life: 1.6, r: 0.55, blast: 3.2, cool: 1.2, max: 1 },
     net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 },
     crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 },
-    // The sniper rifle: found only at the top of a sniper tower, five rounds, fast, flat and long.
-    sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 5 }
+    // The sniper rifle: it stays in the sniper towers, so it fires only from a tower's platform; fast, flat and long.
+    sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
@@ -149,7 +150,10 @@
     },
     // Ammo caches: one on each stilt hut's floor and one on the centre deck. A cache refills grenades, rockets and nets
     // like a stand, then goes dark for `CACHE_S`.
-    caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]]
+    caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]],
+    // Trampolines flush with the ground, two a half, turned half round: landing on one (or walking onto it) sends an
+    // Ooga flying, carrying or not, with the double jump still to come.
+    tramps: [[-15, 19], [15, -19], [12, 4], [-12, -4]]
   };
   for (const t of TEAMS) { const z = ARENA.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   const other = (team) => team === "blue" ? "red" : "blue";
@@ -262,7 +266,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, lastKind: "paint",
+      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint",
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
@@ -492,15 +496,19 @@
     emit(sim, "trap", a.team, a.id, t.x, 0, t.z);
     dropFlag(sim, a, "knock");
   };
-  // On the platform of your own tower by the gap, take the zipline down into the rival fort. Not while fortifying,
-  // nor holding a crate.
+  // On either tower's platform by the gap, take that tower's zipline down into the other fort: from your own tower
+  // into theirs to raid, or, with their block in hand, from their tower home. Not while fortifying, nor holding a
+  // crate. Returns the line's team, or null.
   const nearZip = (sim, a) => {
-    const z = ARENA.zips[a.team];
-    return sim.prep <= 0 && !a.holding && a.y > CONFIG.TOWER_TOP - 0.1 && Math.hypot(a.x - z.ax, a.z - z.az) < CONFIG.ZIP_R;
+    if (sim.prep > 0 || a.holding || a.y < CONFIG.TOWER_TOP - 0.1) return null;
+    for (const t of TEAMS) { const z = ARENA.zips[t]; if (Math.hypot(a.x - z.ax, a.z - z.az) < CONFIG.ZIP_R) return t; }
+    return null;
   };
   const zip = (sim, id = 0) => {
     const a = sim.actors[id];
-    if (sim.over || a.riding || a.splat > 0 || a.trapped > 0 || !nearZip(sim, a)) return false;
+    const line = sim.over || a.riding || a.splat > 0 || a.trapped > 0 ? null : nearZip(sim, a);
+    if (!line) return false;
+    a.zipLine = line;
     a.riding = true;
     a.zipT = 0;
     a.climbing = false;
@@ -509,7 +517,7 @@
   };
   // A rider slides along their line at `ZIP_SPEED`, hands on the cable; at its end (or on a jump) they let go and fall.
   const ride = (sim, a, dt, letGo) => {
-    const z = ARENA.zips[a.team];
+    const z = ARENA.zips[a.zipLine];
     a.zipT = Math.min(1, a.zipT + CONFIG.ZIP_SPEED * dt / z.len);
     a.x = z.ax + (z.bx - z.ax) * a.zipT;
     a.z = z.az + (z.bz - z.az) * a.zipT;
@@ -525,6 +533,19 @@
       emit(sim, "unzip", a.team, a.id, a.x, a.y, a.z);
     }
   };
+  const trampAt = (a) => {
+    for (const [x, z] of ARENA.tramps) if ((a.x - x) ** 2 + (a.z - z) ** 2 < CONFIG.TRAMP_R * CONFIG.TRAMP_R) return true;
+    return false;
+  };
+  // True when actor `a` stands on either sniper tower's platform.
+  const onTower = (a) => {
+    if (a.y < CONFIG.TOWER_TOP - 0.3 || a.riding) return false;
+    for (const t of TEAMS) {
+      const [x0, x1, z0, z1] = ARENA.towers[t];
+      if (a.x > x0 && a.x < x1 && a.z > z0 && a.z < z1) return true;
+    }
+    return false;
+  };
   // The ladder zone of whichever tower actor `a` stands at, or null.
   const ladderAt = (a) => {
     for (const t of TEAMS) {
@@ -536,7 +557,7 @@
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a))) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -716,13 +737,9 @@
     }
     const stand = ARENA.stands[a.team], home = a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R;
     if (home && refill(a)) emit(sim, "refill", a.team, a.id, a.x, a.y, a.z);
-    // The rifle rack at the top of either tower.
-    if (a.y > CONFIG.TOWER_TOP - 0.3 && a.sniper < TOOLS.sniper.max) {
-      for (const t of TEAMS) {
-        const [x0, x1, z0, z1] = ARENA.towers[t];
-        if (a.x > x0 && a.x < x1 && a.z > z0 && a.z < z1) { a.sniper = TOOLS.sniper.max; emit(sim, "rifle", a.team, a.id, a.x, a.y, a.z); break; }
-      }
-    }
+    // Up a tower the rifle is in hand (`sniper` 1); stepping off leaves it on the rack.
+    const up = onTower(a) ? 1 : 0;
+    if (up !== a.sniper) { a.sniper = up; emit(sim, up ? "rifle" : "unrifle", a.team, a.id, a.x, a.y, a.z); }
     for (const c of sim.caches) {
       if (c.dark > 0 || Math.abs(a.y - c.y) > 0.5 || (a.x - c.x) ** 2 + (a.z - c.z) ** 2 > CONFIG.CACHE_R * CONFIG.CACHE_R) continue;
       if (refill(a)) { c.dark = CONFIG.CACHE_S; emit(sim, "cache", a.team, a.id, c.x, c.y, c.z); }
@@ -933,6 +950,10 @@
           a.y = ground; a.vy = 0; a.grounded = true; a.jumps = 0;
         } else a.grounded = false;
       } else a.grounded = true;
+      if (a.grounded && a.y < 0.05 && free && a.netted <= 0 && trampAt(a)) {
+        a.vy = CONFIG.BOUNCE; a.grounded = false; a.jumps = 1;
+        emit(sim, "boing", a.team, a.id, a.x, 0, a.z);
+      }
       const sp = Math.hypot(a.vx, a.vz);
       a.moving = sp;
       // The player faces where they aim (`input.face`, the camera's yaw) when the scene gives it; everyone else faces
@@ -983,5 +1004,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
 })();
