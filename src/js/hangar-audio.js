@@ -23,6 +23,11 @@
 // through the hangar's door from next door come on the same voice, lower and muffled (`kortik`). Her boots thud
 // where she walks (`boot`), a poke boinks (`poke`), a warning light beeps (`beep`), and her hammer clangs on the Jet
 // (`clang`).
+//
+// The film show's projector (`projector(on)`) runs where it hangs: its motor's hum and whir and the gate's clatter,
+// spinning up as it starts and running down as it stops, wavering as an old motor does, with the lamp's buzz; each
+// picture clunks into the gate (`clunk`); and from the screen the soundtrack's crackle and hiss while the film runs,
+// and the roller's ratchet as the screen unrolls or rolls back up (`roll`).
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -51,12 +56,16 @@
     kortik: { f0: 120, len: 0.12, gap: 0.035, level: 0.5, end: 1.12, buzz: 1, breath: 0.1, shake: 0, least: 0.12, formant: 0.82, tone: 700 }
   };
   const SIS_REF = 9, BOOT_REF = 5, BLEEP = 0.3;
+  // The film show's levels at full: the projector's motor, its whir, the gate's clatter and the lamp's buzz, the
+  // soundtrack's crackle and hiss, a picture's clunk and the roller's ratchet; and how far the projector and the screen
+  // carry (half at that many metres), the hall being quiet enough to hear them across it.
+  const FILM = { motor: 0.06, whir: 0.03, clatter: 0.2, buzz: 0.025, crackle: 0.1, hiss: 0.025, clunk: 0.45, click: 0.18, roll: 0.14 }, FILM_REF = { projector: 14, screen: 16 };
   // Her vowels' first two formants, Hz, by the letter that starts a syllable (a woman's, after Peterson and Barney),
   // and the third, which stays put.
   const FORMANTS = { 65: [850, 1220], 69: [610, 2330], 73: [430, 2480], 79: [590, 920], 85: [760, 1400], 89: [310, 2790] }, SCHWA = [640, 1500], F3 = 2900;
 
-  // `spots`: the door's shield and the launch shield, { x, y, z } each, the tunnel's axis { y, z0, z1 }, and the test's
-  // booth and the middle of the Jet's engines, { x, y, z } each.
+  // `spots`: the door's shield and the launch shield, { x, y, z } each, the tunnel's axis { y, z0, z1 }, the test's
+  // booth and the middle of the Jet's engines, and the film show's projector and its picture, { x, y, z } each.
   const create = (spots) => {
     let ctx = null, master = null, mix = null, muffle = null, buffer = null, ready = false, muted = false, disposed = false, since = 0, volume = 1;
     try {
@@ -66,7 +75,9 @@
     } catch {
       muted = false;
     }
-    const bed = {}, test = {}, sis = {};
+    const bed = {}, test = {}, sis = {}, proj = {};
+    // Whether the projector runs, so a context opened mid-show starts it running.
+    let projOn = false;
     // Her voice while she talks: where she stands (her node's position, read live), until when, and its least level.
     const sisVoice = { pos: null, until: 0, least: 0 };
     // Where the visitor hears from and the way the view faces on the ground, and where the last spot was placed.
@@ -158,7 +169,39 @@
       bed.launch = shimmer(174.6);
       bed.door = shimmer(196);
       initTest();
+      initProjector();
       ready = true;
+    };
+
+    // The projector's voices, all under its envelope, which `projector` opens and closes, and placed where it hangs; and
+    // the screen's, placed where its picture falls.
+    const initProjector = () => {
+      proj.pan = panner();
+      proj.near = gain(0, proj.pan);
+      proj.env = gain(projOn ? 1 : 0, proj.near);
+      // The motor's hum and whir, the gate's clatter (a saw's edge 24 times a second through a highpass, wavering) and
+      // the lamp's buzz.
+      proj.motor = osc("sawtooth", 98, filter("lowpass", 380, 0.7, gain(FILM.motor, proj.env)));
+      proj.whir = hissOf(filter("bandpass", 1100, 2, gain(FILM.whir, proj.env)));
+      proj.clatter = osc("sawtooth", 24, filter("highpass", 2200, 0.7, gain(FILM.clatter, proj.env)));
+      proj.flutter = wobble(proj.clatter.frequency, 0.6, 0.5);
+      proj.buzz = osc("square", 100, filter("bandpass", 300, 4, gain(FILM.buzz, proj.env)));
+      // A picture's clunk: a low knock and a click.
+      proj.clunkGain = gain(0, proj.near);
+      proj.clunk = osc("sine", 120, proj.clunkGain);
+      proj.clickGain = gain(0, proj.near);
+      proj.click = hissOf(filter("bandpass", 1500, 1.5, proj.clickGain));
+      // At the screen: the soundtrack's crackle (sparse clicks, fewer than the exhaust's) and hiss, under the track's
+      // envelope, and the roller's ratchet.
+      const crackle = ctx.createBuffer(1, ctx.sampleRate * NOISE_SECONDS, ctx.sampleRate), c = crackle.getChannelData(0);
+      for (let i = 0; i < c.length; i++) if (Math.random() < 0.0012) c[i] = (Math.random() * 2 - 1) * (0.3 + Math.random() * 0.7);
+      proj.screenPan = panner();
+      proj.screenNear = gain(0, proj.screenPan);
+      proj.track = gain(projOn ? 1 : 0, proj.screenNear);
+      proj.crackle = hissOf(filter("highpass", 1800, 0.7, gain(FILM.crackle, proj.track)), crackle);
+      proj.hiss = hissOf(filter("bandpass", 4000, 0.8, gain(FILM.hiss, proj.track)));
+      proj.rollGain = gain(0, proj.screenNear);
+      proj.ratchet = osc("sawtooth", 16, filter("highpass", 1400, 0.8, proj.rollGain));
     };
 
     // The test's voices, silent until `test` schedules them: the siren and the alarm at the booth, everything the
@@ -422,6 +465,13 @@
       place(spots.engines.x, spots.engines.y, spots.engines.z, 1);
       set(test.enginePan.pan, AT.pan * 0.6, now);
       if (sisVoice.until > now) placeSis(now, false);
+      const Pj = spots.projector, Sc = spots.screen;
+      place(Pj.x, Pj.y, Pj.z, FILM_REF.projector);
+      set(proj.near.gain, AT.level, now);
+      set(proj.pan.pan, AT.pan, now);
+      place(Sc.x, Sc.y, Sc.z, FILM_REF.screen);
+      set(proj.screenNear.gain, AT.level, now);
+      set(proj.screenPan.pan, AT.pan * 0.7, now);
     };
     // Her voice's level and side from where she stands now, eased, or at once as a line starts.
     const placeSis = (now, snap) => {
@@ -575,6 +625,56 @@
       sis.boinkGain.gain.setValueAtTime(k, now + 0.09);
       sis.boinkGain.gain.linearRampToValueAtTime(0, now + 0.1);
     };
+    // The projector starting, its motor and clatter spinning up through 1.5 s and the track coming on, or stopping, all
+    // of it running down through 2 s.
+    const projector = (on) => {
+      projOn = !!on;
+      if (!ready) return;
+      const now = ctx.currentTime, up = 1.5, down = 2;
+      for (const param of [proj.env.gain, proj.track.gain, proj.clatter.frequency, proj.motor.frequency]) param.cancelScheduledValues(now);
+      proj.env.gain.setValueAtTime(proj.env.gain.value, now);
+      proj.track.gain.setValueAtTime(proj.track.gain.value, now);
+      proj.clatter.frequency.setValueAtTime(proj.clatter.frequency.value, now);
+      proj.motor.frequency.setValueAtTime(proj.motor.frequency.value, now);
+      if (on) {
+        proj.env.gain.linearRampToValueAtTime(1, now + 0.4);
+        proj.clatter.frequency.setValueAtTime(3, now);
+        proj.clatter.frequency.exponentialRampToValueAtTime(24, now + up);
+        proj.motor.frequency.setValueAtTime(30, now);
+        proj.motor.frequency.exponentialRampToValueAtTime(98, now + up);
+        proj.track.gain.setValueAtTime(0, now + up * 0.6);
+        proj.track.gain.linearRampToValueAtTime(1, now + up);
+      } else {
+        proj.clatter.frequency.exponentialRampToValueAtTime(2, now + down);
+        proj.motor.frequency.exponentialRampToValueAtTime(25, now + down);
+        proj.env.gain.linearRampToValueAtTime(0, now + down);
+        proj.track.gain.linearRampToValueAtTime(0, now + 0.3);
+      }
+    };
+    // A picture clunking into the projector's gate.
+    const clunk = () => {
+      if (!ready || muted) return;
+      const now = ctx.currentTime;
+      proj.clunk.frequency.cancelScheduledValues(now);
+      proj.clunk.frequency.setValueAtTime(130, now);
+      proj.clunk.frequency.exponentialRampToValueAtTime(55, now + 0.12);
+      proj.clunkGain.gain.cancelScheduledValues(now);
+      proj.clunkGain.gain.setValueAtTime(FILM.clunk, now);
+      proj.clunkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+      proj.clickGain.gain.cancelScheduledValues(now);
+      proj.clickGain.gain.setValueAtTime(FILM.click, now + 0.05);
+      proj.clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    };
+    // The screen's roller ratcheting for `seconds`, as it unrolls or rolls back up.
+    const roll = (seconds) => {
+      if (!ready || muted) return;
+      const now = ctx.currentTime;
+      proj.rollGain.gain.cancelScheduledValues(now);
+      proj.rollGain.gain.setValueAtTime(0, now);
+      proj.rollGain.gain.linearRampToValueAtTime(FILM.roll, now + 0.15);
+      proj.rollGain.gain.setValueAtTime(FILM.roll, now + seconds - 0.2);
+      proj.rollGain.gain.linearRampToValueAtTime(0, now + seconds);
+    };
     const setVolume = (value) => {
       volume = clamp(value, 0, 1);
       try {
@@ -596,11 +696,12 @@
       for (const key of Object.keys(bed)) bed[key] = null;
       for (const key of Object.keys(test)) test[key] = null;
       for (const key of Object.keys(sis)) sis[key] = null;
+      for (const key of Object.keys(proj)) proj[key] = null;
       sisVoice.pos = null;
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, projector, clunk, roll, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
