@@ -12674,15 +12674,34 @@ scene("hub", { label: "timechain doorway canvas2d", exclusive: true, query: "sol
 scene("hub", { label: "timechain resident", steps: [{ name: "timechain resident", why: "regression: Sani slept in HQ on ordinary visits, leaving his island empty", run: async (b) => {
   const r = await b.evaluate(`(() => {
     const B = __ooga, ${sphereLocal}, c = B.cavemen.get("SaniExp");
-    B.advance(0.5, 1 / 60);
-    const inside = { visible: c.root.visible, held: T.residentInside, fromMiddle: Math.hypot(c.root.position.x - T.place.x, c.root.position.z - T.place.z) };
-    B.pilot.possess(c); B.advance(0.3, 1 / 60);
-    const out = { driven: B.pilot.player === c, visible: c.root.visible, fromDoors: local(c.root.position) - SP.THRESHOLD };
-    B.pilot.release(true); B.refreshStates(); B.advance(0.5, 1 / 60);
-    return { inside, out, again: { visible: c.root.visible, held: T.residentInside } };
+    // Ordinary visits keep Sani present as the Sphere's host. Debug visits
+    // retain activity-derived states, which can age into away between runs.
+    const other = B.cavemen.get("bc1gui"), saved = [c, other].map(cave => ({
+      lastCommitAt: cave.contributor.lastCommitAt, lastContributionAt: cave.contributor.lastContributionAt, override: cave.override
+    }));
+    try {
+      for (const cave of [c, other]) {
+        cave.contributor.lastCommitAt = cave.contributor.lastContributionAt = 1;
+        cave.override = "chilling";
+      }
+      B.refreshStates();
+      B.advance(0.5, 1 / 60);
+      const inside = { visible: c.root.visible, held: T.residentInside, fromMiddle: Math.hypot(c.root.position.x - T.place.x, c.root.position.z - T.place.z) };
+      B.pilot.possess(c); B.advance(0.3, 1 / 60);
+      const out = { driven: B.pilot.player === c, visible: c.root.visible, fromDoors: local(c.root.position) - SP.THRESHOLD };
+      B.pilot.release(true); B.refreshStates(); B.advance(0.5, 1 / 60);
+      return { inside, out, again: { visible: c.root.visible, held: T.residentInside }, other: other.state,
+        activity: BL.contributors.stateFor(c.contributor) };
+    } finally {
+      [c, other].forEach((cave, i) => {
+        cave.contributor.lastCommitAt = saved[i].lastCommitAt; cave.contributor.lastContributionAt = saved[i].lastContributionAt;
+        cave.override = saved[i].override;
+      });
+      B.refreshStates();
+    }
   })()`);
   record("timechain resident: Sani lives in the Sphere's rooms, out of sight inside the closed ball, comes out onto the bridge when driven and goes back in when let go",
-    !r.inside.visible && r.inside.held && r.inside.fromMiddle < 0.5 && r.out.driven && r.out.visible && r.out.fromDoors > 1 && !r.again.visible && r.again.held, JSON.stringify(r));
+    r.activity === "away" && r.other === "away" && !r.inside.visible && r.inside.held && r.inside.fromMiddle < 0.5 && r.out.driven && r.out.visible && r.out.fromDoors > 1 && !r.again.visible && r.again.held, JSON.stringify(r));
 } }] });
 const roomPage = (room, query = "") => `${src}?debug=1&nosim=1${clock(`character=portlandhodl&pos=0${query ? "&" + query : ""}`)}#/sphere-${room}`;
 const roomGo = (room) => `(() => { const B = window.__ooga; B.go("timechain", "${room}"); for (let i = 0; i < 150 && (B.transitioning || B.scene !== "timechain" || B.timechain.room.id !== ${room}); i++) B.advance(1 / 30, 1 / 30); B.advance(0.3, 1 / 30); B.housekeep(); const s = B.stats(); return { scene: B.scene, room: B.timechain.room.id, records: B.renderer.stats.records, nodes: s.allNodes, targets: s.targets, dom: s.dom, timers: s.timers, requests: s.requests }; })()`;

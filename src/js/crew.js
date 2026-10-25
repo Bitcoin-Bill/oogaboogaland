@@ -682,8 +682,8 @@
     });
     const stateOf = (cave) => {
       const activity = contributors.stateFor(cave.contributor);
-      // A signed-in owner can arrive even after their activity expired; other away NPCs stay away.
-      return activity === "away" && !ctx.playerName && !(cave.override && (cave === player || BL.net?.ownCharacter?.()?.handle === cave.traits.name))
+      // Owners and the scene's resident can keep their override after activity expires; other away NPCs stay away.
+      return activity === "away" && !ctx.playerName && !(cave.override && (cave === player || cave.traits.name === ctx.residentName || BL.net?.ownCharacter?.()?.handle === cave.traits.name))
         ? "away" : cave.override || activity;
     };
     const groundY = (cave) => {
