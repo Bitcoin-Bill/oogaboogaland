@@ -4040,6 +4040,42 @@ const canvasSurfaceCacheChecks = async () => {
   steady.paints = paints - steady.paints;
   record("Canvas surface shading: a curved board drawn as ten faces under a moving sun shades at most once a frame and reallocates nothing, and the surfaces beside it keep their slots",
     curved.paints <= 60 && curved.allocations <= 2 && steady.paints <= 8 && board.size === 8, JSON.stringify({ curved, steady, size: board.size }));
+  const paintStart = source.indexOf("    const paintStyles ="), paintEnd = source.indexOf("    const canvasShades =", paintStart);
+  if (paintStart < 0 || paintEnd < 0) throw new Error("Canvas surface painting not found");
+  const paintSurface = new Function(`${source.slice(paintStart, paintEnd)} return paintCanvasSurface;`)();
+  const input = { width: 64, height: 32 }, mask = { width: 64, height: 32 }, rows = [];
+  const image = { get width() { return 64; }, set width(value) { throw new Error(`Unexpected canvas resize: ${value}`); },
+    get height() { return 32; }, set height(value) { throw new Error(`Unexpected canvas resize: ${value}`); } };
+  const shades = [{ r: 64, g: 128, b: 255, ar: 0, ag: 0, ab: 0 }, { r: 638, g: 383, b: 128, ar: 7, ag: 11, ab: 3 }];
+  // Exercise the production painter without a filter API, then reuse the same backing and context after an
+  // overbright draw. This checks supported API use and state ownership, without emulating rendered pixels.
+  const draws = [], fills = [], clears = [];
+  const context = { globalAlpha: 1, globalCompositeOperation: "source-over", fillStyle: "#000",
+    get filter() { throw new Error("Canvas filter is unavailable"); },
+    set filter(value) { throw new Error(`Canvas filter is unavailable: ${value}`); },
+    clearRect(...rect) { clears.push(rect); },
+    fillRect(...rect) { fills.push({ rect, mode: this.globalCompositeOperation, alpha: this.globalAlpha }); },
+    drawImage(value) {
+      if (value !== input && value !== image && value !== mask) throw new Error("Unexpected canvas source");
+      if (!Number.isFinite(this.globalAlpha) || this.globalAlpha < 0 || this.globalAlpha > 1) throw new Error("Invalid Canvas alpha");
+      draws.push({ source: value, mode: this.globalCompositeOperation, alpha: this.globalAlpha });
+    },
+    getImageData() { throw new Error("Unexpected Canvas readback"); },
+    putImageData() { throw new Error("Unexpected Canvas pixel upload"); }
+  };
+  for (const shade of [shades[0], shades[1], shades[0]]) {
+    draws.length = fills.length = clears.length = 0;
+    paintSurface(image, context, { canvas: input, background: [12, 32, 48] }, shade, mask);
+    const sourceDraws = draws.filter(draw => draw.source === input), selfDraws = draws.filter(draw => draw.source === image), last = draws.at(-1);
+    rows.push({ source: sourceDraws.length === 1 && sourceDraws[0].mode === "source-over" && sourceDraws[0].alpha === 1,
+      coverage: last.source === mask && last.mode === "destination-in" && last.alpha === 1,
+      backing: clears.length === 1 && clears.concat(fills.map(fill => fill.rect)).every(rect => rect.join() === "0,0,64,32"),
+      light: fills.some(fill => fill.mode === "multiply") && selfDraws.every(draw => draw.mode === "lighter")
+        && (shade === shades[1] ? selfDraws.length > 0 : selfDraws.length === 0),
+      state: context.globalAlpha === 1 && context.globalCompositeOperation === "source-over" });
+  }
+  record("Canvas surface compatibility: the production painter needs no filter, readback or resize, keeps source and coverage draws, uses valid additive alpha for overbright light, and restores context state before reuse",
+    rows.every(row => Object.values(row).every(Boolean)), JSON.stringify(rows));
 };
 // Every file in src/characters/ must register once and build a whole Ooga, so a
 // new contributor is covered without editing this suite.
@@ -11758,6 +11794,15 @@ const variantCacheChecks = BL => {
   M.release("foliage-cache", []); M.assertReleased("foliage-cache");
   const nextFoliage = foliage();
   record("foliage ownership: hidden render alternatives follow their source cache, preserve collision and geometry bytes, and rebuild after release", coherent && nextFoliage !== source && nextFoliage.foliageLods !== lods);
+  const rendererSource = readFileSync(join(root, "src/js/gl-renderer.js"), "utf8"), start = rendererSource.indexOf("    const prepareScene ="), end = rendererSource.indexOf("    // One owned texture per canvas surface", start);
+  if (start < 0 || end < 0) throw new Error("Scene resource preparation not found");
+  let paints = 0;
+  const prepareScene = new Function("BL", `${rendererSource.slice(start, end)} return prepareScene;`)({ models: { paintFoliageAtlas: surface => { paints++; return M.paintFoliageAtlas(surface); } } });
+  const alternatives = M.addLods(new Set([nextFoliage])), cold = !nextFoliage.foliageLods.far.imageSurface.canvas;
+  prepareScene(alternatives);
+  const warm = nextFoliage.foliageLods.far.imageSurface.canvas, once = paints === 1;
+  prepareScene(alternatives);
+  record("foliage preparation: all live far alternatives rasterize before first use, repeat preparation reuses the atlas and geometry-only construction stays DOM-free", cold && !!warm && once && paints === 1 && nextFoliage.foliageLods.far.imageSurface.canvas === warm);
   M.release("foliage-cache", []); M.assertReleased("foliage-cache"); M.setScope(null);
 };
 
