@@ -19449,8 +19449,9 @@ scene("dsb",{label:"rescue care",query:"&view=rescue-door&weather=clear&time=120
   await rescueStep(b);await rescueTap(b,dog.x,dog.y+.25,dog.z);await rescueStep(b);
   const fed=await b.evaluate('(()=>{const d=__ooga.dsb.rescue.dogs.dog();return {state:d.state,hunger:d.hunger,level:__ooga.level};})()');
   record("Rescue browser: a hungry dog sits, and a real click feeds it one banana off the shared pile",dog.state==="sit"&&fed.state==="eat"&&fed.hunger===0&&fed.level===dog.level-1,JSON.stringify({dog,fed}));
-  // The pile is scooped where it lies; the dog is stood aside so the click finds the pile, not the dog.
-  const poop=await b.evaluate(`(()=>{${RESCUE_LOOK}const D=__ooga.dsb,R=D.rescue.dogs;R.hold(false);for(let i=0;i<45;i++)BL.scenes.dsb.update(1/15,i/15);R.poop();for(let i=0;i<2;i++)BL.scenes.dsb.update(1/15,i/15);R.hold(true);const k=R.stats().poops-1,at=R.poopAt(k),d=R.dog();R.place(d.slot,at.x+2.5,at.z-2.5,0);look(at.x,at.z);D.rescue.save();return {k,at,saved:${RESCUE_SAVED}.poops.length/3};})()`);
+  // The pile is scooped where it lies; the dog, and any stray from the homes by the rescue's door, is stood aside so
+  // the click finds the pile, not a dog.
+  const poop=await b.evaluate(`(()=>{${RESCUE_LOOK}const D=__ooga.dsb,R=D.rescue.dogs;R.hold(false);for(let i=0;i<45;i++)BL.scenes.dsb.update(1/15,i/15);R.poop();for(let i=0;i<2;i++)BL.scenes.dsb.update(1/15,i/15);R.hold(true);const k=R.stats().poops-1,at=R.poopAt(k),d=R.dog();R.place(d.slot,at.x+2.5,at.z-2.5,0);for(const e of R.strays())if(Math.hypot(e.x-at.x,e.z-at.z)<1.5)R.place(e.slot,at.x-2.5,at.z+2.5,0);look(at.x,at.z);D.rescue.save();return {k,at,saved:${RESCUE_SAVED}.poops.length/3};})()`);
   await rescueStep(b);await rescueTap(b,poop.at.x,poop.at.y+.08,poop.at.z);await rescueStep(b);
   const scooped=await b.evaluate('({poops:__ooga.dsb.rescue.dogs.stats().poops,scooped:__ooga.dsb.rescue.store.scooped})');
   record("Rescue browser: the dog's poop lands in the Chora, is saved, and a real click scoops it",poop.saved===poop.k+1&&scooped.poops===poop.k&&scooped.scooped===1,JSON.stringify({poop,scooped}));
