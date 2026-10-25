@@ -61,9 +61,10 @@
   // frame, as wide as the arch, in the hall's cyan; and where whoever comes back out of the hangar stands, a step out of
   // the door on the walkway facing back along it, the view just inside the doorway behind it.
   const HANGAR_OPENING = { minX: -FM.HANGAR_DOOR.half, maxX: FM.HANGAR_DOOR.half, floorY: 0, ceilingY: FM.HANGAR_DOOR.top }, HANGAR_TINT = BL.factoryWindow.TINT;
-  // How the hangar door answers whoever comes near, as ₿IFRÖST's windows do: fully within DOOR_NEAR metres of its
-  // opening, not at all past DOOR_FAR, easing at DOOR_EASE a second, its arch's glow brightening by up to DOOR_BRIGHTEN.
-  const DOOR_NEAR = 1.4, DOOR_FAR = 7.5, DOOR_EASE = 5, DOOR_BRIGHTEN = 1.9;
+  // How the hangar door answers whoever comes near, as ₿IFRÖST's windows do: from DOOR_FAR metres of its opening,
+  // growing faster the nearer they come, and fully only at the doorway itself (DOOR_NEAR), easing at DOOR_EASE a second,
+  // its arch's glow brightening by up to DOOR_BRIGHTEN.
+  const DOOR_NEAR = 0, DOOR_FAR = 12, DOOR_EASE = 5, DOOR_BRIGHTEN = 3.2;
   const HANGAR_ARRIVAL = { yaw: -Math.PI / 2, pitch: 0.12, dist: FOLLOW.min, position: { x: LAYOUT.hangar.x + 1.4, y: LAYOUT.hangar.y, z: LAYOUT.hangar.z } };
   // `entrance` is the balcony's view across the core; the rest frame one station each.
   const PRESETS = {
@@ -2056,7 +2057,7 @@
     if (hg) {
       if (hg.window) hg.window.update(camera);
       const p = hg.node.position, want = clamp((DOOR_FAR - Math.max(0, Math.hypot(at.x - p.x, at.y - p.y - 1, at.z - p.z) - 2)) / (DOOR_FAR - DOOR_NEAR), 0, 1);
-      hg.near += (want * want * (3 - 2 * want) - hg.near) * Math.min(1, dt * DOOR_EASE);
+      hg.near += (want * want - hg.near) * Math.min(1, dt * DOOR_EASE);
       hg.glow.glow = 1 + DOOR_BRIGHTEN * hg.near;
       hg.phase.update(dt, elapsed);
       hg.phase.body.update(dt);
