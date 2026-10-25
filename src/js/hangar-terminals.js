@@ -35,11 +35,12 @@
   // pages each kind of terminal turns through.
   const PAGES = { build: [1, 0], route: [3, 2.5], rebal: [3, 0.8], log: [6, 1.5], mood: [6, 0], display: [2, 1.6], blueprint: [1, 0], systems: [1, 0], countdown: [2, 1.4], showing: [2, 2] };
   const TURNS = { crew: ["build", "route", "rebal", "log", "mood", "display"], jet: ["blueprint", "systems", "route", "countdown", "mood", "display"] };
-  // The show's beats, s: the screen unrolling, the lamp striking, a splice's flash of bare light, the tail flapping
-  // after THE END, the lamp out while the motor runs down, the screen rolling up; how long a leader's frame, a card, a
-  // picture and the title hold; the reels' turn at full, rad/s; the gate's weave, m, and how often it, the grain and the
-  // flicker move on, s; and the light the picture throws on the floor, its reach and colour.
-  const SHOW = { down: 3, strike: 0.9, splice: 0.09, runout: 1.8, dark: 1.4, up: 3, leader: 0.25, card: 4, picture: 4.5, title: 5, reel: 5 };
+  // The show's beats, s: the screen's case let down from where it is stowed (and wound back up after), the screen
+  // unrolling, the lamp striking, a splice's flash of bare light, the tail flapping after THE END, the lamp out while
+  // the motor runs down, the screen rolling up; how long a leader's frame, a card, a picture and the title hold; the
+  // reels' turn at full, rad/s; the gate's weave, m, and how often it, the grain and the flicker move on, s; and the
+  // light the picture throws on the floor, its reach and colour.
+  const SHOW = { hoist: 2.5, down: 3, strike: 0.9, splice: 0.09, runout: 1.8, dark: 1.4, up: 3, leader: 0.25, card: 4, picture: 4.5, title: 5, reel: 5 };
   const WEAVE = { x: 0.012, y: 0.02, jump: 0.05, every: 1 / 24, grain: 1 / 14 }, LIGHT = { reach: 15, color: [1, 0.9, 0.72], power: 1.6 };
   const STRIKE = [[0.12, 1], [0.22, 0.15], [0.36, 1], [0.44, 0.35], [0.9, 1]];
 
@@ -561,10 +562,10 @@
     addChild(head, glow, ...reels);
     const cradle = createNode({ geometry: P.cradle });
     const beam = createNode({ position: { ...B.position }, rotation: { ...B.rotation }, geometry: B.geometry, sightHidden: true, visible: false });
-    const SC = L.show.screen, frame = createNode({ position: { x: SC.x, y: SC.y, z: SC.z }, geometry: S.frame });
-    const rods = createNode({ position: { x: SC.x, y: S.chord, z: SC.z }, scale: { x: 1, y: S.chord - SC.y - 0.15, z: 1 }, geometry: S.rods });
-    const cloth = createNode({ position: { x: SC.x, y: S.top, z: SC.z }, geometry: S.cloth, visible: false });
-    const batten = createNode({ position: { x: SC.x, y: S.top, z: SC.z }, geometry: S.batten });
+    const SC = L.show.screen, frame = createNode({ position: { x: SC.x, y: SC.stow, z: SC.z }, geometry: S.frame });
+    const rods = createNode({ position: { x: SC.x, y: S.chord, z: SC.z }, scale: { x: 1, y: S.chord - SC.stow - 0.15, z: 1 }, geometry: S.rods });
+    const cloth = createNode({ position: { x: SC.x, y: SC.stow - S.under, z: SC.z }, geometry: S.cloth, visible: false });
+    const batten = createNode({ position: { x: SC.x, y: SC.stow - S.under, z: SC.z }, geometry: S.batten });
     const slide = createNode({ position: { x: pic.x, y: pic.y, z: pic.z }, geometry: X.light, sightHidden: true, visible: false });
     const grain = X.grain.map((geometry) => createNode({ position: { x: pic.x, y: pic.y, z: pic.z + 0.01 }, geometry, sightHidden: true, visible: false, smokeOpacity: 0.85, depthBias: FRONT }));
     const flicker = createNode({ position: { x: pic.x, y: pic.y, z: pic.z + 0.02 }, geometry: X.black, sightHidden: true, visible: false, smokeOpacity: 0, depthBias: 2 * FRONT });
@@ -572,25 +573,27 @@
     live.push(X.light, X.black, ...X.grain);
 
     // ---- the show ----
-    // `phase` and its time; the screen's unrolling (0 up, 1 down) and where a roll back up began; the lamp's and the
-    // motor's levels; the film, the frame showing and its time, a splice's flash left; where the next frames get
-    // painted; and the gate's weave, the grain's and the flicker's clocks.
-    let phase = "idle", t = 0, unroll = 0, upFrom = 0, lamp = 0, motor = 0, film = null, index = 0, at = 0, splice = 0, painted = 0;
+    // `phase` and its time; the screen's case let down (0 stowed, 1 down) and where its winding back up began; its
+    // unrolling (0 up, 1 down) and where a roll back up began; the lamp's and the motor's levels; the film, the frame
+    // showing and its time, a splice's flash left; where the next frames get painted; and the gate's weave, the
+    // grain's and the flicker's clocks.
+    let phase = "idle", t = 0, hoist = 0, hoistFrom = 0, unroll = 0, upFrom = 0, lamp = 0, motor = 0, film = null, index = 0, at = 0, splice = 0, painted = 0;
     let weaveT = 0, grainT = 0, shownGrain = -1, wx = 0, wy = 0, flick = 0, clock = 0, near = -1, beep = false;
     // The light the picture throws on the floor now (`lights`).
     const light = { level: 0 };
-    const running = () => phase === "down" || phase === "strike" || phase === "film";
+    const running = () => phase === "lower" || phase === "down" || phase === "strike" || phase === "film";
     const go = (next) => { phase = next; t = 0; };
     const start = () => {
       film = reel(BL.jetFeed.reading());
       index = at = splice = painted = 0;
       beep = false;
-      go("down");
-      audio.roll(SHOW.down);
+      go("lower");
+      audio.roll(SHOW.hoist);
       toast("Projector on · the Jet's history on the big screen over the runway.");
     };
     const stop = () => {
-      if (phase === "down") { upFrom = unroll; go("up"); audio.roll(SHOW.up * upFrom); }
+      if (phase === "lower") { hoistFrom = hoist; go("raise"); audio.roll(SHOW.hoist * hoistFrom); }
+      else if (phase === "down") { upFrom = unroll; go("up"); audio.roll(SHOW.up * upFrom); }
       else go("runout");
       toast("Projector off.");
     };
@@ -634,7 +637,10 @@
       clock += dt;
       t += dt;
       // The show's beats.
-      if (phase === "down") {
+      if (phase === "lower") {
+        hoist = smooth(t / SHOW.hoist);
+        if (t >= SHOW.hoist) { hoist = 1; go("down"); audio.roll(SHOW.down); }
+      } else if (phase === "down") {
         unroll = smooth(t / SHOW.down);
         if (t >= SHOW.down) { go("strike"); audio.projector(true); }
       } else if (phase === "strike") {
@@ -654,20 +660,27 @@
       } else if (phase === "up") {
         lamp = 0;
         unroll = upFrom * (1 - smooth(t / (SHOW.up * Math.max(0.2, upFrom))));
-        if (unroll <= 0.001) { unroll = 0; go("idle"); }
+        if (unroll <= 0.001) { unroll = 0; hoistFrom = hoist; go("raise"); audio.roll(SHOW.hoist); }
+      } else if (phase === "raise") {
+        hoist = hoistFrom * (1 - smooth(t / (SHOW.hoist * Math.max(0.2, hoistFrom))));
+        if (hoist <= 0.001) { hoist = 0; go("idle"); }
       }
       // A frame or two painted ahead of the one showing, one a frame.
-      if (film && painted < film.length && painted <= index + 2 + (phase === "down" ? 24 : 0)) frameOf(film[painted++], pic.w, pic.h);
+      if (film && painted < film.length && painted <= index + 2 + (phase === "lower" || phase === "down" ? 24 : 0)) frameOf(film[painted++], pic.w, pic.h);
       // The reels turning with the motor, the lamp's glow, the beam.
       motor += ((phase === "strike" || phase === "film" || phase === "runout" ? 1 : 0) - motor) * Math.min(1, dt * (motor < 0.5 ? 1.2 : 0.8));
       for (let i = 0; i < reels.length; i++) reels[i].rotation.x -= SHOW.reel * motor * dt;
       glow.glow = 0.25 + 1.4 * lamp;
       beam.visible = lamp > 0.3 && unroll > 0.99;
-      // The screen: the cloth stretched as far as it has unrolled, the batten at its foot.
-      const drop = SC.drop * unroll;
+      // The screen: its case as far down as it is let, on its rods from the gantry, the cloth stretched under it as far
+      // as it has unrolled, the batten at its foot.
+      const caseY = SC.stow + (SC.y - SC.stow) * hoist, drop = SC.drop * unroll;
+      frame.position.y = caseY;
+      rods.scale.y = S.chord - caseY - 0.15;
+      cloth.position.y = caseY - S.under;
       cloth.visible = drop > 0.02;
       cloth.scale.y = Math.max(0.001, drop);
-      batten.position.y = S.top - drop;
+      batten.position.y = caseY - S.under - drop;
       // The picture: bare light while the lamp strikes, through a splice and on the tail; the frame showing otherwise,
       // once its picture has loaded. It weaves in the gate, the grain runs over it and the flicker darkens it by turns.
       const lit = lamp > 0.3 && unroll > 0.99;
@@ -741,7 +754,7 @@
         press, get phase() { return phase; }, get index() { return index; }, get frame() { return film && film[index] ? film[index].key : null; }, get film() { return film ? film.map((e) => e.key) : []; },
         // Skip to frame `i` of the film, or with none the next.
         skip: (i) => { if (phase === "film") { index = Math.max(0, Math.min(film.length - 1, i === undefined ? index + 1 : i)) - 1; advance(); } return index; },
-        get unroll() { return unroll; }, get lamp() { return lamp; }, get light() { return light.level; }, get clock() { return clock; }, set clock(v) { clock = v; }
+        get hoist() { return hoist; }, get unroll() { return unroll; }, get lamp() { return lamp; }, get light() { return light.level; }, get clock() { return clock; }, set clock(v) { clock = v; }
       }
     };
   };

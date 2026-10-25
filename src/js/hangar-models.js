@@ -92,9 +92,10 @@
     // The film show the terminals start (`hangar-terminals.js`): the old projector's cradle hung from the second gantry
     // in over the runway, as a cinema's over its seats, [x, y, z] of its deck, between the lanterns there and low enough
     // that its reels clear the truss; and the roll-down screen hung from a gantry far down the runway facing the door,
-    // its roller's middle [x, y, z], under the lanterns there and clear of the hangar's sign seen from the door, with
-    // its cloth's width and how far it unrolls.
-    show: { projector: [2.75, 10.9, 14], screen: { x: 0, y: 9.8, z: -18, w: 8, drop: 4.6 } },
+    // its roller's middle [x, y, z] let down for the show, under the lanterns there and clear of the hangar's sign seen
+    // from the door, the height it is wound back up to between shows (`stow`, just under the lantern over the runway,
+    // out of the sign's way from anywhere on the floor), its cloth's width and how far it unrolls.
+    show: { projector: [2.75, 10.9, 14], screen: { x: 0, y: 9.8, z: -18, stow: 12.45, w: 8, drop: 4.6 } },
     toolChests: [[8.3, 0.4, -Math.PI / 2], [-16.2, 20.8, 0.4]],
     // Crates about the floor, [x, z, turn, stacked], and the blue floor lamps, [x, z].
     crates: [[-7.6, 12, 0.2, 2], [-8.5, 11.2, -0.3, 1], [-7.7, 3.4, 0.1, 1], [-7.8, -15.4, -0.2, 2], [-8.7, -16, 0.4, 1], [-7.6, -24, 0.3, 1],
