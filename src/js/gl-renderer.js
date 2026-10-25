@@ -4564,6 +4564,8 @@ void main() {
       prepareGeometry: (geometry) => { if (lost || !pollPrograms()) return false; recordFor(geometry); return true; },
       createRig: createRendererRig,
       releaseUnused,
+      // Read-only, on demand: inspecting resident identities never materializes a GPU record.
+      geometryRecords: () => records.keys(),
       dispose,
       get quality() {
         return qualityName;
