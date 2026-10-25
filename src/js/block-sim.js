@@ -286,25 +286,26 @@
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
       climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0,
-      detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
+      detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
     for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
-    const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
+    const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, ox: 0, oz: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const powers = ARENA.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
-    const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
+    const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
     const sim = { live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
-  const emit = (sim, type, team, actor, x, y, z) => {
+  // `by` is who caused it, when that is someone else (the thrower whose shot splatted `actor`).
+  const emit = (sim, type, team, actor, x, y, z, by = -1) => {
     if (sim.eventCount >= sim.events.length) return;
     const e = sim.events[sim.eventCount++];
-    e.type = type; e.team = team; e.actor = actor; e.x = x; e.y = y; e.z = z;
+    e.type = type; e.team = team; e.actor = actor; e.by = by; e.x = x; e.y = y; e.z = z;
   };
   const refill = (a) => {
     let more = false;
@@ -349,7 +350,7 @@
       a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = a.jump2At = a.tries = a.netted = a.progT = 0;
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
-      a.captures = a.splats = 0;
+      a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
       a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -586,7 +587,7 @@
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
     const c = Math.cos(pitch), sx = Math.sin(yaw) * c, sz = Math.cos(yaw) * c;
-    s.live = true; s.kind = kind; s.team = a.team; s.owner = id; s.t = 0;
+    s.live = true; s.kind = kind; s.team = a.team; s.owner = id; s.t = 0; s.ox = a.x; s.oz = a.z;
     s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.25 : CONFIG.SHOT_Y);
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
@@ -597,14 +598,21 @@
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
-  const splat = (sim, a, bonk = false) => {
+  // `s` is the shot that did it, if any: its thrower is credited with the hit, and a sniper's range is kept.
+  const splat = (sim, a, bonk = false, s = null) => {
+    const by = s ? s.owner : -1;
+    if (s && by >= 0) {
+      const o = sim.actors[by];
+      o.hits++;
+      if (s.kind === "sniper") o.longShot = Math.max(o.longShot, Math.hypot(a.x - s.ox, a.z - s.oz));
+    }
     a.splat = CONFIG.SPLAT_S * (sim.halving[a.team] > 0 ? 0.5 : 1);
     a.bonked = bonk;
     a.guard = a.netted = 0;
     a.vx = a.vz = 0;
     a.splats++;
     a.painted = Math.min(1, a.painted + 0.34);
-    emit(sim, bonk ? "bonk" : "splat", a.team, a.id, a.x, a.y + 1, a.z);
+    emit(sim, bonk ? "bonk" : "splat", a.team, a.id, a.x, a.y + 1, a.z, by);
     if (a.holding) { a.holding = false; emit(sim, "smash", a.team, a.id, a.x, a.y + 2, a.z); }
     if (a.riding) { a.riding = false; a.vy = 0; emit(sim, "unzip", a.team, a.id, a.x, a.y, a.z); }
     dropFlag(sim, a, "knock");
@@ -617,7 +625,7 @@
     for (const a of sim.actors) {
       if (a.team === s.team || !open(a)) continue;
       const dy = s.y - (a.y + 0.9);
-      if ((a.x - s.x) ** 2 + (a.z - s.z) ** 2 + dy * dy < r * r) splat(sim, a);
+      if ((a.x - s.x) ** 2 + (a.z - s.z) ** 2 + dy * dy < r * r) splat(sim, a, false, s);
     }
   };
 
@@ -807,6 +815,7 @@
       f.state = "carried";
       f.carrier = a.id;
       a.carrying = f.team;
+      if (f === own) a.rescues++;
       emit(sim, f === own ? "rescue" : "pickup", f.team, a.id, f.x, 0, f.z);
     }
     // Your own flag carried back onto your stand is home again.
@@ -1053,7 +1062,7 @@
       else if (hit && s.kind === "net") {
         hit.netted = CONFIG.NET_S;
         emit(sim, "net", hit.team, hit.id, hit.x, hit.y + 1, hit.z);
-      } else if (hit) splat(sim, hit, s.kind === "crate");
+      } else if (hit) splat(sim, hit, s.kind === "crate", s);
       if (s.kind === "crate") landCrate(sim, s);
       else if (!hit) emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
     }

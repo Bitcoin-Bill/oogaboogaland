@@ -300,7 +300,7 @@
     closeQuiz();
     phase = "board";
     el.board.hidden = false;
-    el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = el.toolBar.hidden = true;
+    el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = el.toolBar.hidden = el.map.hidden = el.feed.hidden = true;
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === selection.team));
@@ -327,7 +327,8 @@
     result = null;
     closeQuiz();
     el.board.hidden = el.results.hidden = true;
-    el.strip.hidden = el.toolBar.hidden = false;
+    el.strip.hidden = el.toolBar.hidden = el.map.hidden = el.feed.hidden = false;
+    for (const li of el.feedItems) { li.textContent = ""; delete li.dataset.team; }
     el.notice.hidden = false;
     hud.el.act.hidden = !COARSE;
     hud.setAct("Jump");
@@ -352,7 +353,7 @@
     // The fastest win is kept for the usual first to three; every round still counts.
     const best = game.recordBlock({ won, ms: sim.target === C.CAPTURES ? ms : 0 });
     result = { won, ms, best };
-    el.strip.hidden = el.toolBar.hidden = true;
+    el.strip.hidden = el.toolBar.hidden = el.map.hidden = el.feed.hidden = true;
     el.center.hidden = el.notice.hidden = true;
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
@@ -362,7 +363,19 @@
     el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)} · first to ${sim.target}${best ? " · fastest win yet!" : ""}`;
     const me = sim.actors[0];
     el.stats.innerHTML = "";
-    for (const [label, value] of [["Your captures", me.captures], ["Times splatted", me.splats], ["Fastest win", game.state.block.best ? fmt(game.state.block.best) : "—"], ["Rounds won", `${game.state.block.wins} of ${game.state.block.games}`]]) {
+    // The round's highlights: its most valuable Ooga, the sharpest shot, the longest sniper hit.
+    let mvp = 0, shooter = 0, sniper = 0;
+    const worth = (a) => a.captures * 3 + a.rescues * 2 + a.hits;
+    for (let i = 1; i < sim.actors.length; i++) {
+      const a = sim.actors[i];
+      if (worth(a) > worth(sim.actors[mvp])) mvp = i;
+      if (a.hits > sim.actors[shooter].hits) shooter = i;
+      if (a.longShot > sim.actors[sniper].longShot) sniper = i;
+    }
+    const rows = [["Round MVP", `${nameOf(mvp)} · ${sim.actors[mvp].captures} mined, ${sim.actors[mvp].hits} splats`], ["Most splats", `${nameOf(shooter)} · ${sim.actors[shooter].hits}`]];
+    if (sim.actors[sniper].longShot > 0) rows.push(["Longest sniper shot", `${nameOf(sniper)} · ${Math.round(sim.actors[sniper].longShot)} m`]);
+    rows.push(["Your captures", me.captures], ["Your splats", me.hits], ["Times splatted", me.splats], ["Fastest win", game.state.block.best ? fmt(game.state.block.best) : "—"], ["Rounds won", `${game.state.block.wins} of ${game.state.block.games}`]);
+    for (const [label, value] of rows) {
       const li = document.createElement("li"), span = document.createElement("span"), b = document.createElement("b");
       span.textContent = label;
       b.textContent = String(value);
@@ -439,10 +452,87 @@
     else if (me && t === "unzip") c.zipOff();
     else if (me && (t === "jump" || t === "jump2")) c.jump();
   };
+  // The name shown for Ooga i: "You" for the visitor, else its display name.
+  const nameOf = (i) => {
+    if (i === 0) return "You";
+    const n = sim.actors[i].name;
+    return n ? contributors.traitsFor(n).display || n : `${sim.actors[i].team === "blue" ? "Blue" : "Red"} ${i}`;
+  };
+  // The action feed: the newest line on top, four kept.
+  const feed = (text, team) => {
+    const items = el.feedItems;
+    for (let i = items.length - 1; i > 0; i--) {
+      items[i].textContent = items[i - 1].textContent;
+      if (items[i - 1].dataset.team) items[i].dataset.team = items[i - 1].dataset.team; else delete items[i].dataset.team;
+    }
+    items[0].textContent = text;
+    if (team) items[0].dataset.team = team; else delete items[0].dataset.team;
+  };
+  const TEAM_NAME = { blue: "Blue", red: "Red" };
+  const log = (e) => {
+    const t = e.type, who = e.actor >= 0 ? nameOf(e.actor) : "";
+    if ((t === "splat" || t === "bonk") && e.by >= 0) feed(`${nameOf(e.by)} ${t === "bonk" ? "bonked" : "splatted"} ${who}`, sim.actors[e.by].team);
+    else if (t === "pickup") feed(`${who} grabbed the ${TEAM_NAME[e.team]} block`, sim.actors[e.actor].team);
+    else if (t === "rescue") feed(`${who} rescued the ${TEAM_NAME[e.team]} block`, e.team);
+    else if (t === "capture") feed(`${who} mined a block! ${TEAM_NAME[e.team]} ${sim.score[e.team]}`, e.team);
+    else if (t === "power") feed(`${who} got ${({ boots: "lightning boots", halving: "the halving", cold: "cold storage", laser: "laser eyes" })[SIM.POWERS[e.y]]}`, e.team);
+    else if (t === "zip") feed(`${who} took the zipline`, e.team);
+    else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
+    else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
+  };
+  // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
+  // (`mapBase`), then the blocks and every Ooga, ten times a second.
+  let mapBase = null, mapT = 0;
+  const MAP_K = 2;
+  const mapX = (x) => ((sim.team === "blue" ? x : -x) + SIM.ARENA.W) * MAP_K;
+  const mapY = (z) => ((sim.team === "blue" ? z : -z) + SIM.ARENA.L) * MAP_K;
+  const drawMapBase = () => {
+    const c = document.createElement("canvas");
+    c.width = el.map.width; c.height = el.map.height;
+    const g = c.getContext("2d");
+    g.fillStyle = "#8a7550";
+    g.fillRect(0, 0, c.width, c.height);
+    for (const b of SIM.ARENA.BLOCKS) {
+      if (b[4] - (b[5] || 0) < 0.5 && (b[5] || 0) > 0.5) continue;
+      const x0 = mapX(b[0]), x1 = mapX(b[1]), y0 = mapY(b[2]), y1 = mapY(b[3]);
+      g.fillStyle = (b[5] || 0) > 1.5 ? "#6a5032" : "#4a4440";
+      g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.max(1, Math.abs(x1 - x0)), Math.max(1, Math.abs(y1 - y0)));
+    }
+    for (const t of SIM.TEAMS) {
+      const s = SIM.ARENA.stands[t];
+      g.strokeStyle = BM.TEAM[t].paint;
+      g.lineWidth = 2;
+      g.strokeRect(mapX(s.x) - 4, mapY(s.z) - 4, 8, 8);
+    }
+    mapBase = c;
+  };
+  const drawMap = (dt, elapsed) => {
+    mapT -= dt;
+    if (mapT > 0) return;
+    mapT = 0.1;
+    if (!mapBase || mapBase.team !== sim.team) { drawMapBase(); mapBase.team = sim.team; }
+    const g = el.mapCtx;
+    g.drawImage(mapBase, 0, 0);
+    for (const t of SIM.TEAMS) {
+      const f = sim.flags[t];
+      if (f.state === "dropped" && Math.sin(elapsed * 10) < 0) continue;
+      g.fillStyle = BM.ORANGE;
+      g.fillRect(mapX(f.x) - 3, mapY(f.z) - 3, 6, 6);
+      g.fillStyle = BM.TEAM[t].paint;
+      g.fillRect(mapX(f.x) - 2, mapY(f.z) - 2, 4, 4);
+    }
+    for (let i = sim.actors.length - 1; i >= 0; i--) {
+      const a = sim.actors[i];
+      g.fillStyle = i === 0 ? "#ffffff" : BM.TEAM[a.team].light;
+      const r = i === 0 ? 3 : 2;
+      g.fillRect(mapX(a.x) - r, mapY(a.z) - r, r * 2, r * 2);
+    }
+  };
   const readEvents = () => {
     for (let i = 0; i < sim.eventCount; i++) {
       const e = sim.events[i], mine = e.team === sim.team, me = e.actor === 0;
       hear(e, me, mine);
+      log(e);
       if (e.type === "miss") stamp(e.team, e.x, e.y, e.z);
       else if (e.type === "splat") {
         stamp(SIM.other(e.team), e.x, 0, e.z);
@@ -1082,6 +1172,7 @@
     if (phase === "board") boardView(elapsed);
     else updateCamera(dt);
     poseWeather(dt);
+    if (phase === "play") drawMap(dt, elapsed);
     if (sim) {
       // The held sounds: the wind's strength, rain in a storm, and the whir while the visitor rides a zipline.
       audio.state.wind = phase === "play" ? sim.weather.strength / C.WIND.storm : 0;
@@ -1199,6 +1290,11 @@
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
+    el.map = document.getElementById("block-map");
+    el.mapCtx = el.map.getContext("2d");
+    el.feed = document.getElementById("block-feed");
+    el.feedItems = [...el.feed.children];
+    mapBase = null;
     el.power = document.getElementById("block-power");
     el.powerWord = document.getElementById("block-power-word");
     el.staminaK = -1;
