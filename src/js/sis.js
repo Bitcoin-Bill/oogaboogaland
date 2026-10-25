@@ -1,21 +1,27 @@
 // Kortik's Sis in the Lightning Jet Hangar: the chief engineer of a Jet she is sure will never fly, always on the move
-// on the Jet's side of the hall between her spots (`LAYOUT.sis.spots`), walking or, often, running. At one she tries to
-// fix the Jet with her hammer, swinging it up and down onto the gear, a wingtip, the nose gear or an engine, sparks
-// and a clang each hit; at another she pulls her goggles down and inspects an engine or the crates, pointing and
-// tapping; she stands back and admires the Jet, hopeful for a moment, then goes red and shakes her fist at it; she
-// glares at the booth or the door, tapping her foot; she paces up and down, muttering; and now and then she marches up
-// to the visitor's Ooga and yells at them about the Jet. She picks what to do next at random, never the spot she just
-// left, so it never reads as a loop, keeps quiet a while between lines, and glares at whoever comes near.
+// all round the Jet between her spots (`LAYOUT.sis.spots`), on the floor on both its sides and up its stair along the
+// gangway by the cockpit, walking or, often, running. At one she tries to fix the Jet with her hammer, swinging it up
+// and down onto the gear, a wing, the nose gear, an engine or the canopy, sparks and a clang each hit; at another she
+// pulls her goggles down and inspects an engine, a wing or the crates, pointing and tapping; she stands back and
+// admires the Jet, hopeful for a moment, then goes red and shakes her fist at it; she glares at the booth or the door,
+// tapping her foot; she paces up and down, muttering; and now and then she runs at the visitor's Ooga screaming and
+// swearing and yells at them about the Jet. She picks what to do next at random, never the spot she just left, so it
+// never reads as a loop, keeps quiet a while between lines, and glares at whoever comes near.
+//
+// She speaks in her own voice (`hangarAudio.voice`): yelled, screamed, muttered or whispered as the line wants, each
+// swear a grawlix that her voice bleeps, from where she stands, so she is heard across the hall; her boots thud where
+// she walks.
 //
 // When someone presses the static fire's red button she freaks out: "WHO PRESSED THAT?!", and she runs from the
 // engines with her arms flailing (or, already far off, cowers where she is), cowers with her arms over her head as
 // they roar, cries "THAT ENGINE ISN'T—" as they falter, and the blast knocks her flat on her back, sooted and smoking.
 // She comes to with the presser, gets up blaming everyone else, and goes to hammer the engine.
 //
-// She walks a grid of the hall's floor built once a visit from the hangar's own checks (`HM.clearAt`, `HM.supportAt`),
-// kept off the runway, out of the static fire booth's box and clear of the crew's posts; a trip is planned by A* over
-// it and pulled straight wherever the floor allows (`HM.walkable`). The visitor's Ooga stops her; she waits, then goes
-// somewhere else. She is a walk block for the Oogas (`actor`). Everything runs on the rig's fixed nodes and
+// She walks a grid of her part of the hall built once a visit from the hangar's own checks (`HM.clearAt`,
+// `HM.supportAt`, `HM.walkable`), each cell with a place on the floor and one up the Jet's stair or along its gangway
+// where those stand over it, kept off the runway, out of the static fire booth's box and clear of the crew's posts; a
+// trip is planned by A* over it and pulled straight wherever the floor allows. The visitor's Ooga stops her; she waits,
+// then goes somewhere else. She is a walk block for the Oogas (`actor`). Everything runs on the rig's fixed nodes and
 // preallocated arrays; update allocates nothing.
 (() => {
   "use strict";
@@ -29,12 +35,17 @@
   // Her body for the floor and the Oogas, m; the grid's cell; her walk and run, m/s, and their strides, radians of
   // the walk cycle a metre; how fast she turns, rad/s; how long a trip she may run, and how often she does.
   const RADIUS = 0.45, HEIGHT = 2, CELL = 0.5, WALK = 1.6, RUN = 3.8, STRIDE = { walk: 4.2, run: 3.1 }, YAW_RATE = 7, RUN_FROM = 7, RUN_CHANCE = 0.6;
+  // Where the grid's high places start, m off the floor (lower is the floor or a stair's foot); the most a step
+  // between two places may climb or drop; and the height she looks for the stair and the gangway from, just under
+  // the gangway, so the catwalks above stay out of reach.
+  const LOW = 0.65, RISE = 0.5, UP = HM.LAYOUT.gangway.y - 0.5;
   // How long each thing takes, s, [least, most]; how likely each is when she picks the next, by its kind; how long the
   // visitor may stand in her way before she goes elsewhere.
   const TIMES = { fix: [6, 10], inspect: [4.5, 7], admire: [5, 7], glare: [3, 5], pace: [7, 10], yell: [3.2, 4] }, BLOCKED = 1.4;
   const WEIGHT = { fix: 0.4, inspect: 0.22, admire: 0.14, pace: 0.12, glare: 0.12 };
-  // Marching up to the visitor: from how far, how often at most, how likely when she picks, and how near she stops.
-  const VISIT = { reach: 14, every: 30, chance: 0.3, stop: 1.9 };
+  // Running at the visitor: from how far (across the runway she stops at its edge and yells over it), how often at
+  // most, how likely when she picks, and how near she stops.
+  const VISIT = { reach: 32, every: 20, chance: 0.35, stop: 1.9 };
   // A hammer swing, s, and when in it the hammer lands; the quiet she keeps between lines, s.
   const SWING = 1.05, LAND = 0.58, QUIET = [7, 14];
   // How each pose eases toward its target, per second.
@@ -42,24 +53,36 @@
   // Her standing pose: her right arm raised with the hammer's handle over her shoulder, her left fist on her hip; each
   // part's rotation, [x, y, z].
   const POSE = { armR: [-0.55, 0, -0.75], foreR: [-1.9, 0, 0.4], hammer: [Math.PI / 2 + 0.25, 0, 0.7], armL: [0.15, 0, 0.7], foreL: [-0.2, 0, -1.7], head: [0.08, 0, 0] };
-  const MAX_PATH = 96;
-  // What she says: about the Jet, about Lightning, while she hammers, and the rare hopeful moment.
+  const MAX_PATH = 160;
+  // What she says: about the Jet, about Lightning, while she hammers and as she goes for it, as she runs at the
+  // visitor and once she has caught up with them, muttering, the rare hopeful moment, the rare lines, and the static
+  // fire's. A swear is a grawlix, which her voice bleeps.
   const LINES = {
-    jet: ["THIS THING WILL NEVER FLY!", "IT'S TOO HEAVY! IT'LL NEVER TAKE OFF!", "WE NEED BIGGER ENGINES!", "I WISH ELON MUSK WAS HERE!"],
-    lightning: ["I JUST REBALANCED THAT THING!", "WHY IS ALL THE LIQUIDITY ON THE WRONG SIDE?!", "MY BROTHER STILL REBALANCES MANUALLY! LIKE A CAVEMAN!"],
+    jet: ["THIS THING WILL NEVER FLY!", "IT'S TOO HEAVY! IT'LL NEVER TAKE OFF!", "WE NEED BIGGER ENGINES!", "I WISH ELON MUSK WAS HERE!", "WHO DESIGNED THIS PIECE OF #@$%?!", "WHERE THE #@%& IS THE FLIGHT MANUAL?!"],
+    lightning: ["#@$%&*! ANOTHER CHANNEL?!", "I JUST REBALANCED THAT THING!", "WHY IS ALL THE LIQUIDITY ON THE WRONG SIDE?!", "MY BROTHER STILL REBALANCES MANUALLY! LIKE A CAVEMAN!"],
     hammer: ["COME ON, YOU STUPID THING!", "JUST... ONE... MORE... HIT!"],
-    mutter: ["This thing will never fly...", "Too heavy. Way too heavy...", "Bigger engines. We need bigger engines...", "I just rebalanced that thing..."],
+    rage: ["AH, #@$% IT! WHERE'S MY HAMMER?!"],
+    charge: ["HEY! YOU!", "YOU! YES, YOU!", "WHO THE #@$% LET YOU IN HERE?!", "OI! DON'T TOUCH MY #@$%ING JET!"],
+    caught: ["DO YOU KNOW HOW HEAVY THIS #@$%ING THING IS?!", "YOU WANT TO HELP? FIND ME BIGGER ENGINES!", "STOP STANDING AROUND AND HAND ME A WRENCH!", "THIS #@$% WILL NEVER FLY! NEVER!"],
+    mutter: ["This thing will never fly...", "Too heavy. Way too heavy...", "Bigger engines. We need bigger engines...", "I just rebalanced that thing...", "Stupid #@$% engines..."],
     hope: ["Huh... maybe this thing might actually work."],
+    rare: ["IF THIS THING FLIES, I'LL EAT MY HARD HAT!", "WHO KEEPS OPENING CHANNELS TO MY TOASTER?!", "FORCE-CLOSED?! WHO FORCE-CLOSED MY CHANNEL?!"],
     panic: ["WHO PRESSED THAT?!", "THAT ENGINE ISN'T—"],
     blame: ["THAT WASN'T MY FAULT!", "WHO TOUCHED MY ENGINES?!", "I TOLD YOU THAT ENGINE WASN'T READY!", "NOBODY SAW THAT. NOBODY!"]
   };
+  // How she says each (a style of `hangarAudio.voice`); how often a line about the Jet or Lightning comes out a rare
+  // one instead, and a yell a scream.
+  const STYLE = { jet: "yell", lightning: "yell", hammer: "yell", rage: "scream", charge: "scream", caught: "yell", mutter: "mutter", hope: "soft", rare: "yell", panic: "scream", blame: "yell" };
+  const RARE = 0.08, SCREAM = 0.2;
   // The static fire: where she runs to, the nearer of them (beside the booth and by the far wall's crates, both where
-  // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast knocks her down, how far it slides her, how long she takes to fall and to get
-  // up, and how long she blames everyone after; her soot and how fast it fades.
+  // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast
+  // knocks her down, how far it slides her, how long she takes to fall and to get up, and how long she blames
+  // everyone after; her soot and how fast it fades.
   const FLEE = [[10.4, 12.4], [22.4, 9.2]];
   const PANIC = { far: 14, knock: 26, slide: 0.8, fall: 0.35, rise: 0.6, blame: 3.6, soot: 0.8, fade: 0.08, run: 1.15 };
 
-  // `fx` for her lines and sparks, `audio` for her hammer's clang, `fire` the static fire test she freaks out at.
+  // `fx` for her lines and sparks, `audio` for her voice, her boots and her hammer's clang, `fire` the static fire test
+  // she freaks out at.
   const create = ({ fx, audio, fire }) => {
     const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), SPARK = HM.blast().spark;
     const node = createNode({ position: { x: S.x, y: k.HIP, z: S.z }, rotation: { x: 0, y: S.turn, z: 0 } });
@@ -68,53 +91,76 @@
     const pick = (lo, hi) => lo + rand() * (hi - lo);
     const one = (list) => list[Math.floor(rand() * list.length)];
 
-    // ---- the floor she walks: a grid of cells, each clear for her body on the floor itself ----
-    const [X0, X1, Z0, Z1] = S.floor, NX = Math.ceil((X1 - X0) / CELL), NZ = Math.ceil((Z1 - Z0) / CELL), N = NX * NZ;
-    const open = new Uint8Array(N), cx = (i) => X0 + (i % NX + 0.5) * CELL, cz = (i) => Z0 + (Math.floor(i / NX) + 0.5) * CELL;
+    // ---- where she walks: a grid of cells, each with two places to stand, low (the floor, or a stair's foot) and
+    // high (up the Jet's stair and along its gangway), each open where it is clear for her body ----
+    const [X0, X1, Z0, Z1] = S.floor, NX = Math.ceil((X1 - X0) / CELL), NZ = Math.ceil((Z1 - Z0) / CELL), N = NX * NZ, M = N * 2;
+    const open = new Uint8Array(M), feetOf = new Float32Array(M);
+    const cx = (i) => X0 + (i % N % NX + 0.5) * CELL, cz = (i) => Z0 + (Math.floor(i % N / NX) + 0.5) * CELL;
     const F = HM.LAYOUT.fireTest, fc = Math.cos(F.turn), fs = Math.sin(F.turn);
-    // What she keeps out of besides what the floor blocks: the booth's striped box with the presser's place in it, and
-    // the crew's posts on the floor.
+    // What she keeps out of on the floor besides what the floor blocks: the booth's striped box with the presser's
+    // place in it, and the crew's posts.
     const keptOut = (x, z) => {
       const dx = x - F.x, dz = z - F.z, lx = dx * fc - dz * fs, lz = dx * fs + dz * fc;
       if (lx > -2.6 && lx < 2.6 && lz > -1.6 && lz < 2.4) return true;
-      for (const [px, py, pz, r] of HM.LAYOUT.crew) if (py === 0 && Math.hypot(x - px, z - pz) < r + 0.9) return true;
+      for (const [px, py, pz, r] of HM.LAYOUT.crew) if (py === 0 && Math.hypot(x - px, z - pz) < r + RADIUS + 0.1) return true;
       return false;
     };
-    // A cell is asked as a step from far outside the hall, so a cell inside anything the floor blocks reads as shut
-    // (a step from inside a block may always walk out of it).
-    for (let i = 0; i < N; i++) {
-      const x = cx(i), z = cz(i);
-      open[i] = HM.supportAt(x, z, 0) < 0.05 && HM.clearAt(x, z, 0, RADIUS + 0.1, x + 1e4, z) && !keptOut(x, z) ? 1 : 0;
+    // A place is asked as a step from far outside the hall, so one inside anything the floor blocks reads as shut
+    // (a step from inside a block may always walk out of it); and the floor is shut under a stair lower than she is.
+    for (let c = 0; c < N; c++) {
+      const x = cx(c), z = cz(c), low = HM.supportAt(x, z, 0), high = HM.supportAt(x, z, UP);
+      feetOf[c] = low; feetOf[N + c] = high;
+      open[c] = low < LOW && (high < LOW || high - low > HEIGHT) && HM.clearAt(x, z, low, RADIUS, x + 1e4, z) && !keptOut(x, z) ? 1 : 0;
+      open[N + c] = high >= LOW && HM.clearAt(x, z, high, RADIUS, x + 1e4, z) ? 1 : 0;
     }
-    const cellAt = (x, z) => {
+    // Each place's way on to its eight neighbours' (-1 where there is none), to whichever of the neighbour's places
+    // is nearer her height first: across the flat floor any two open side by side, a diagonal only past two open ones;
+    // anywhere on a stair or the gangway, a step the hangar's own floor says she can take, climbing or dropping no
+    // more than RISE.
+    const DX = [1, -1, 0, 0, 1, 1, -1, -1], DZ = [0, 0, 1, -1, 1, -1, 1, -1];
+    const link = new Int32Array(M * 8).fill(-1);
+    for (let a = 0; a < M; a++) {
+      if (!open[a]) continue;
+      const c = a % N, ix = c % NX, iz = (c - ix) / NX;
+      for (let d = 0; d < 8; d++) {
+        const jx = ix + DX[d], jz = iz + DZ[d];
+        if (jx < 0 || jz < 0 || jx >= NX || jz >= NZ) continue;
+        const n = jz * NX + jx, nearer = Math.abs(feetOf[n] - feetOf[a]) <= Math.abs(feetOf[N + n] - feetOf[a]);
+        for (let l = 0; l < 2; l++) {
+          const b = nearer === (l === 0) ? n : N + n;
+          if (!open[b] || Math.abs(feetOf[a] - feetOf[b]) > RISE) continue;
+          const flat = feetOf[a] < 0.05 && feetOf[b] < 0.05;
+          if (flat ? d < 4 || open[iz * NX + jx] && open[jz * NX + ix] : HM.walkable(cx(a), cz(a), cx(b), cz(b), feetOf[a], RADIUS)) { link[a * 8 + d] = b; break; }
+        }
+      }
+    }
+    // The open place nearest (x, z) about the height `y`, searching out ring by ring.
+    const nearestOpen = (x, z, y = 0) => {
       const ix = Math.floor((x - X0) / CELL), iz = Math.floor((z - Z0) / CELL);
-      return ix < 0 || iz < 0 || ix >= NX || iz >= NZ ? -1 : iz * NX + ix;
-    };
-    // The open cell nearest (x, z), searching out ring by ring.
-    const nearestOpen = (x, z) => {
-      const c = cellAt(x, z);
-      if (c >= 0 && open[c]) return c;
-      const ix = Math.floor((x - X0) / CELL), iz = Math.floor((z - Z0) / CELL);
-      for (let r = 1; r < 24; r++) {
+      for (let r = 0; r < 24; r++) {
         let best = -1, bestD = Infinity;
         for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
           const jx = ix + dx, jz = iz + dz;
-          if (jx < 0 || jz < 0 || jx >= NX || jz >= NZ || !open[jz * NX + jx]) continue;
-          const d = (cx(jz * NX + jx) - x) ** 2 + (cz(jz * NX + jx) - z) ** 2;
-          if (d < bestD) { bestD = d; best = jz * NX + jx; }
+          if (jx < 0 || jz < 0 || jx >= NX || jz >= NZ) continue;
+          for (let l = 0; l < 2; l++) {
+            const i = l * N + jz * NX + jx;
+            if (!open[i] || Math.abs(feetOf[i] - y) > 1.2) continue;
+            const d = (cx(i) - x) ** 2 + (cz(i) - z) ** 2;
+            if (d < bestD) { bestD = d; best = i; }
+          }
         }
         if (best >= 0) return best;
       }
       return -1;
     };
-    // Her spots that stand on open floor, and the visitor's, a spot of its own moved to them each time.
-    const spots = S.spots.filter(([, x, z]) => nearestOpen(x, z) >= 0).map(([name, x, z, kind, lx, ly, lz]) => ({ name, x, z, kind, lx, ly, lz, cell: nearestOpen(x, z), dur: 0, paceYaw: 0 }));
+    // Her spots that stand on open ground, and the visitor's, a spot of its own moved to them each time.
+    const spots = S.spots.filter(([, x, z, , , , , y = 0]) => nearestOpen(x, z, y) >= 0).map(([name, x, z, kind, lx, ly, lz, y = 0]) => ({ name, x, z, kind, lx, ly, lz, cell: nearestOpen(x, z, y), dur: 0, paceYaw: 0 }));
     for (const s of spots) s.paceYaw = Math.atan2(s.lx - s.x, s.lz - s.z) + Math.PI / 2;
     const visitorSpot = { name: "visitor", x: 0, z: 0, kind: "yell", lx: 0, ly: 1.6, lz: 0, cell: -1, dur: 0, paceYaw: 0 };
 
-    // ---- A* over the grid, eight ways round, no corner cut, into preallocated arrays ----
-    const g = new Float32Array(N), f = new Float32Array(N), from = new Int32Array(N), state = new Uint8Array(N), heap = new Int32Array(N);
+    // ---- A* over the places, along their links, into preallocated arrays ----
+    const g = new Float32Array(M), f = new Float32Array(M), from = new Int32Array(M), state = new Uint8Array(M), heap = new Int32Array(M);
     let heapN = 0;
     const push = (i) => {
       let n = heapN++;
@@ -134,8 +180,10 @@
       if (heapN) heap[n] = last;
       return top;
     };
-    const DX = [1, -1, 0, 0, 1, 1, -1, -1], DZ = [0, 0, 1, -1, 1, -1, 1, -1];
-    const octile = (a, b) => { const ax = Math.abs(a % NX - b % NX), az = Math.abs(Math.floor(a / NX) - Math.floor(b / NX)); return Math.max(ax, az) + 0.4142 * Math.min(ax, az); };
+    const octile = (a, b) => {
+      const ca = a % N, cb = b % N, ax = Math.abs(ca % NX - cb % NX), az = Math.abs(Math.floor(ca / NX) - Math.floor(cb / NX));
+      return Math.max(ax, az) + 0.4142 * Math.min(ax, az);
+    };
     const search = (start, goal) => {
       state.fill(0);
       heapN = 0;
@@ -146,13 +194,9 @@
         if (c === goal) return true;
         if (state[c] === 2) continue;
         state[c] = 2;
-        const ix = c % NX, iz = (c - ix) / NX;
         for (let d = 0; d < 8; d++) {
-          const jx = ix + DX[d], jz = iz + DZ[d];
-          if (jx < 0 || jz < 0 || jx >= NX || jz >= NZ) continue;
-          const n = jz * NX + jx;
-          if (!open[n] || state[n] === 2) continue;
-          if (d >= 4 && (!open[iz * NX + jx] || !open[jz * NX + ix])) continue;
+          const n = link[c * 8 + d];
+          if (n < 0 || state[n] === 2) continue;
           const cost = g[c] + (d >= 4 ? 1.4142 : 1);
           if (state[n] === 1 && cost >= g[n]) continue;
           g[n] = cost; f[n] = cost + octile(n, goal); from[n] = c; state[n] = 1;
@@ -161,20 +205,21 @@
       }
       return false;
     };
-    // A trip from (x, z) to a cell as waypoints, the grid's cells pulled straight wherever the floor allows.
-    const cells = new Int32Array(N), path = new Float32Array(MAX_PATH * 2);
+    // A trip from where she stands to a place as waypoints, the grid's places pulled straight wherever the floor allows
+    // from the height of the last.
+    const cells = new Int32Array(M), path = new Float32Array(MAX_PATH * 2);
     let pathN = 0, pathAt = 0;
     const plan = (x, z, goal) => {
-      const start = nearestOpen(x, z);
+      const start = nearestOpen(x, z, feet);
       pathN = pathAt = 0;
       if (start < 0 || goal < 0 || !search(start, goal)) return false;
       let n = 0;
       for (let c = goal; c >= 0; c = from[c]) cells[n++] = c;
-      let ax = x, az = z, i = n - 1;
+      let ax = x, az = z, ay = feet, i = n - 1;
       while (i >= 0 && pathN < MAX_PATH) {
         let j = 0;
-        while (j < i && !HM.walkable(ax, az, cx(cells[j]), cz(cells[j]), 0, RADIUS)) j++;
-        ax = cx(cells[j]); az = cz(cells[j]);
+        while (j < i && !HM.walkable(ax, az, cx(cells[j]), cz(cells[j]), ay, RADIUS)) j++;
+        ax = cx(cells[j]); az = cz(cells[j]); ay = feetOf[cells[j]];
         path[pathN * 2] = ax; path[pathN * 2 + 1] = az; pathN++;
         i = j - 1;
       }
@@ -184,25 +229,33 @@
     // ---- what she does ----
     const p = node.position;
     const actor = { x: S.x, y: 0, z: S.z, radius: RADIUS, height: HEIGHT };
-    let clock = 0, blinkAt = BLINK[0], shut = 0, look = 0, yaw = S.turn, phase = 0, moving = 0, speed = WALK;
+    // `feet`: the height she stands at, the floor or up the stair or the gangway.
+    let clock = 0, blinkAt = BLINK[0], shut = 0, look = 0, yaw = S.turn, phase = 0, moving = 0, speed = WALK, feet = 0;
     // `doing`: the thing at a spot, or "walk"; its spot, how long it has run; the spot she last left; how long she has
-    // been stood in the way; whether she has gone red; the quiet left before her next line and how long her mouth runs.
+    // been stood in the way; whether she has gone red; the quiet left before her next line and how long her voice runs.
     let doing = "glare", spot = null, t = 0, last = null, blocked = 0, furious = false, quiet = 2, talk = 0, visitedAt = -Infinity;
     // Pacing: up and down a short line through where she stopped; the hammer's swings while she fixes.
     let paceA = 0, paceDir = 1, paceX = 0, paceZ = 0, swingT = 0, swings = 0;
-    const say = (text, dur = 2.6) => {
-      fx.say(k, text, dur);
-      talk = Math.min(2.2, 0.4 + text.length * 0.05);
+    // A line in her voice, her mouth running as long as it sounds and its bubble up a little longer.
+    const say = (text, style, dur = 2.6) => {
+      talk = audio.voice(text, style, p);
+      fx.say(k, text, Math.max(dur, talk + 0.8));
       quiet = pick(QUIET[0], QUIET[1]);
     };
-    const maybeSay = (list, chance) => { if (quiet <= 0 && rand() < chance) say(one(list)); };
+    // A line from one of her pools, now and then a rare one instead, now and then screamed.
+    const sayFrom = (pool, dur) => {
+      const rare = (pool === "jet" || pool === "lightning") && rand() < RARE;
+      const style = STYLE[pool] === "yell" && rand() < SCREAM ? "scream" : STYLE[pool];
+      say(one(LINES[rare ? "rare" : pool]), style, dur);
+    };
+    const maybeSay = (pool, chance) => { if (quiet <= 0 && rand() < chance) sayFrom(pool); };
     // The static fire's hold on her: whether she is in it, its line at the malfunction said, how far down she is (0
     // standing, 1 flat), which way the blast slides her, her soot and when she last smoked.
     const A = BL.hangarFire.AT;
     let panicking = false, warned = false, down = 0, slideX = 0, slideZ = 0, soot = 0, smokeAt = 0;
     const startPanic = () => {
       panicking = true; warned = false; down = 0; t = 0;
-      say(LINES.panic[0], 2.4);
+      say(LINES.panic[0], STYLE.panic, 2.4);
       const b = fire.blast, here = Math.hypot(p.x - b.x, p.z - b.z);
       let goal = -1, best = Infinity;
       for (const [x, z] of FLEE) {
@@ -221,14 +274,22 @@
     };
     const smudge = (k2) => { for (let i = 0; i < SOOTED.length; i++) P[SOOTED[i]].scorch = k2; };
     const SOOTED = ["torso", "head", "armR", "armL", "foreR", "foreL", "legR", "legL", "shinR", "shinL"];
+    // Where the visitor's Ooga stands its feet.
+    const feetAt = (driven) => driven.root.position.y - (driven.baseY || 0);
+    // The visitor's spot moved to just short of their Ooga, if she can get there, or null.
+    const visit = (driven) => {
+      const q = driven.root.position, d = Math.hypot(q.x - p.x, q.z - p.z);
+      if (d >= VISIT.reach || d <= VISIT.stop + 0.5) return null;
+      const k2 = (d - VISIT.stop) / d;
+      visitorSpot.cell = nearestOpen(p.x + (q.x - p.x) * k2, p.z + (q.z - p.z) * k2, feetAt(driven));
+      if (visitorSpot.cell < 0) return null;
+      visitedAt = clock; visitorSpot.x = cx(visitorSpot.cell); visitorSpot.z = cz(visitorSpot.cell);
+      return visitorSpot;
+    };
     const nextSpot = (driven) => {
       if (driven && clock - visitedAt > VISIT.every && rand() < VISIT.chance) {
-        const q = driven.root.position, d = Math.hypot(q.x - p.x, q.z - p.z);
-        if (d < VISIT.reach && d > VISIT.stop + 0.5) {
-          const k2 = (d - VISIT.stop) / d;
-          visitorSpot.cell = nearestOpen(p.x + (q.x - p.x) * k2, p.z + (q.z - p.z) * k2);
-          if (visitorSpot.cell >= 0) { visitedAt = clock; visitorSpot.x = cx(visitorSpot.cell); visitorSpot.z = cz(visitorSpot.cell); return visitorSpot; }
-        }
+        const s = visit(driven);
+        if (s) return s;
       }
       let total = 0;
       for (const s of spots) if (s !== last) total += WEIGHT[s.kind];
@@ -240,6 +301,8 @@
       }
       return spots[0];
     };
+    // Off to a spot: running at the visitor, screaming at them as she sets off; or walking, or now and then running, to
+    // one of hers, swearing at the Jet now and then as she goes to hammer it.
     const goTo = (s) => {
       spot = s;
       blocked = 0;
@@ -247,6 +310,8 @@
       const far = Math.hypot(cx(s.cell) - p.x, cz(s.cell) - p.z);
       speed = s === visitorSpot || far > RUN_FROM && rand() < RUN_CHANCE ? RUN : WALK;
       doing = "walk";
+      if (s === visitorSpot) sayFrom("charge", 2);
+      else if (s.kind === "fix") maybeSay("rage", 0.25);
     };
     const arrive = () => {
       last = spot;
@@ -256,9 +321,9 @@
       furious = false;
       swingT = 0; swings = 0;
       if (doing === "pace") { paceA = 0; paceDir = 1; paceX = p.x; paceZ = p.z; }
-      if (doing === "fix") maybeSay(LINES.hammer, 0.5);
-      else if (doing === "yell") say(one(rand() < 0.6 ? LINES.jet : LINES.lightning), 3);
-      else if (doing === "admire" && rand() < 0.3) say(LINES.hope[0], 2.8);
+      if (doing === "fix") maybeSay("hammer", 0.5);
+      else if (doing === "yell") { sayFrom("caught", 3); spot.dur = Math.max(spot.dur, talk + 0.6); }
+      else if (doing === "admire" && rand() < 0.3) say(LINES.hope[0], STYLE.hope, 2.8);
     };
     const turnTo = (wantYaw, dt) => {
       let d = wantYaw - yaw;
@@ -275,9 +340,22 @@
       want.armRx = POSE.armR[0]; want.armRz = POSE.armR[2]; want.foreRx = POSE.foreR[0]; want.foreRz = POSE.foreR[2]; want.hamX = POSE.hammer[0]; want.hamZ = POSE.hammer[2];
       want.headX = 0.08; want.headZ = 0; want.lean = 0; want.crouch = 0; want.sway = 0;
     };
+    // On along her waypoints at `speed`, her feet on whatever she walks over; whether she stepped, and whether she got
+    // to the last.
+    let arrived = false;
+    const along = (dt) => {
+      const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
+      const step = Math.min(d, speed * dt);
+      p.x += dx / (d || 1) * step; p.z += dz / (d || 1) * step;
+      feet = HM.supportAt(p.x, p.z, feet);
+      arrived = d - step < 0.05 && ++pathAt >= pathN;
+      return step > 0;
+    };
 
     // Once a frame with the Ooga the visitor drives here (or null) and where the view is.
+    let seen = null;
     const update = (dt, driven, eye) => {
+      seen = driven;
       clock += dt;
       t += dt;
       quiet -= dt;
@@ -297,15 +375,15 @@
             const d = Math.hypot(p.x - b.x, p.z - b.z) || 1;
             slideX = (p.x - b.x) / d; slideZ = (p.z - b.z) / d;
             soot = PANIC.soot;
-          } else if (ft >= A.result) { doing = "blame"; t = 0; say(one(LINES.blame), 3); }
+          } else if (ft >= A.result) { doing = "blame"; t = 0; sayFrom("blame", 3); }
         }
         if (doing === "flee") {
-          const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
-          if (d > 0.01) wantYaw = Math.atan2(dx, dz);
-          const step = Math.min(d, speed * dt);
-          p.x += dx / (d || 1) * step; p.z += dz / (d || 1) * step;
-          stepping = step > 0;
-          if (d - step < 0.05 && ++pathAt >= pathN) { doing = "cower"; stepping = false; }
+          if (pathAt < pathN) {
+            const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1];
+            if (Math.hypot(wx - p.x, wz - p.z) > 0.01) wantYaw = Math.atan2(wx - p.x, wz - p.z);
+            stepping = along(dt);
+          }
+          if (pathAt >= pathN) { doing = "cower"; stepping = false; }
           face = H.redOpen;
           want.armLx = -2.6 + Math.sin(clock * 15) * 0.5; want.armLz = 0.4; want.foreLx = -0.5; want.foreLz = 0;
           want.armRx = -2.6 + Math.cos(clock * 13) * 0.5; want.armRz = -0.4; want.foreRx = -0.5; want.foreRz = 0;
@@ -319,18 +397,18 @@
           want.armLx = -2.9; want.armLz = 0.25; want.foreLx = -1.6; want.foreLz = 0;
           want.armRx = -2.9; want.armRz = -0.25; want.foreRx = -1.6; want.foreRz = 0;
           want.headX = 0.25;
-          if (!warned && ft >= A.warning + 0.2) { warned = true; say(LINES.panic[1], 1.6); }
+          if (!warned && ft >= A.warning + 0.2) { warned = true; say(LINES.panic[1], STYLE.panic, 1.6); }
         } else if (doing === "down") {
           // Thrown flat by the blast and out cold until the presser comes to, then getting up.
           if (ft < A.result) {
             down = Math.min(1, t / PANIC.fall);
             if (t < PANIC.fall + 0.1) {
               const k2 = PANIC.slide * dt / (PANIC.fall + 0.1), nx = p.x + slideX * k2, nz = p.z + slideZ * k2;
-              if (HM.walkable(p.x, p.z, nx, nz, 0, RADIUS)) { p.x = nx; p.z = nz; }
+              if (HM.walkable(p.x, p.z, nx, nz, feet, RADIUS)) { p.x = nx; p.z = nz; }
             }
           } else {
             down = Math.max(0, 1 - (ft - A.result) / PANIC.rise);
-            if (down === 0) { doing = "blame"; t = 0; say(one(LINES.blame), 3); }
+            if (down === 0) { doing = "blame"; t = 0; sayFrom("blame", 3); }
           }
           wantYaw = yaw;
           face = H.closed;
@@ -346,45 +424,48 @@
           if (t > PANIC.blame) endPanic();
         }
       } else if (doing === "walk") {
-        // On along her waypoints, turning to each, stopping short of the visitor's Ooga.
+        // On along her waypoints, turning to each, stopping short of the visitor's Ooga where it stands in her way.
         const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
         if (d > 0.01) wantYaw = Math.atan2(dx, dz);
         const step = Math.min(d, speed * dt), nx = p.x + dx / (d || 1) * step, nz = p.z + dz / (d || 1) * step;
         const q = driven && driven.root.position, gap = RADIUS + (driven ? driven.bodyRadius || 0.4 : 0) + 0.1;
-        if (q && Math.hypot(nx - q.x, nz - q.z) < gap && Math.hypot(nx - q.x, nz - q.z) < Math.hypot(p.x - q.x, p.z - q.z)) {
+        if (q && Math.abs(feetAt(driven) - feet) < 1.5 && Math.hypot(nx - q.x, nz - q.z) < gap && Math.hypot(nx - q.x, nz - q.z) < Math.hypot(p.x - q.x, p.z - q.z)) {
           blocked += dt;
           glareAt = q;
           if (blocked > BLOCKED) goTo(nextSpot(null));
         } else {
-          p.x = nx; p.z = nz;
-          stepping = step > 0;
-          if (d - step < 0.05 && ++pathAt >= pathN) { arrive(); stepping = false; }
+          stepping = along(dt);
+          if (arrived) { arrive(); stepping = false; }
         }
         if (speed > WALK) { want.lean = 0.18; want.armLx = 0; want.armLz = 0.25; want.foreLx = -1.4; want.foreLz = 0; }
         else { want.armLx = 0; want.armLz = 0.18; want.foreLx = -0.35; want.foreLz = 0; }
-        if (spot === visitorSpot) face = H.redOpen;
+        if (spot === visitorSpot) {
+          // Running at them, red, her fist up and shaking.
+          face = H.redOpen;
+          want.armLx = -2.5 + Math.sin(clock * 16) * 0.3; want.armLz = 0.35; want.foreLx = -0.8;
+        }
       } else if (doing === "pace") {
         // Up and down a three-metre line, fast, head down, turning sharply at each end, muttering.
         speed = 2.2;
         const half = 1.5, hx = Math.sin(spot.paceYaw), hz = Math.cos(spot.paceYaw);
         paceA += paceDir * speed * dt;
-        if (Math.abs(paceA) > half) { paceA = Math.sign(paceA) * half; paceDir = -paceDir; maybeSay(LINES.mutter, 0.35); }
+        if (Math.abs(paceA) > half) { paceA = Math.sign(paceA) * half; paceDir = -paceDir; maybeSay("mutter", 0.35); }
         const nx = paceX + hx * paceA, nz = paceZ + hz * paceA;
-        if (HM.walkable(p.x, p.z, nx, nz, 0, RADIUS)) { p.x = nx; p.z = nz; stepping = true; } else paceDir = -paceDir;
+        if (HM.walkable(p.x, p.z, nx, nz, feet, RADIUS)) { p.x = nx; p.z = nz; feet = HM.supportAt(p.x, p.z, feet); stepping = true; } else paceDir = -paceDir;
         wantYaw = Math.atan2(hx * paceDir, hz * paceDir);
         want.headX = 0.3; want.armLx = 0; want.armLz = 0.18; want.foreLx = -0.35; want.foreLz = 0;
         if (t > spot.dur) goTo(nextSpot(driven));
       } else {
         // At a spot: facing what she came for, the visitor's Ooga when she has come to yell at them.
-        if (doing === "yell" && driven) { visitorSpot.lx = driven.root.position.x; visitorSpot.lz = driven.root.position.z; }
+        if (doing === "yell" && driven) { visitorSpot.lx = driven.root.position.x; visitorSpot.lz = driven.root.position.z; visitorSpot.ly = feetAt(driven) + 1.6; }
         wantYaw = Math.atan2(spot.lx - p.x, spot.lz - p.z);
-        const u = t / spot.dur, up = Math.atan2(spot.ly - 1.75, Math.hypot(spot.lx - p.x, spot.lz - p.z));
+        const u = t / spot.dur, up = Math.atan2(spot.ly - feet - 1.75, Math.hypot(spot.lx - p.x, spot.lz - p.z));
         if (doing === "fix") {
           // Swinging the hammer up over her head and down onto the Jet, again and again, a breath between some.
           swingT += dt;
-          if (swingT > SWING + (swings % 3 === 2 ? 0.7 : 0.1)) { swingT = 0; swings++; if (swings % 3 === 0) maybeSay(LINES.hammer, 0.45); }
+          if (swingT > SWING + (swings % 3 === 2 ? 0.7 : 0.1)) { swingT = 0; swings++; if (swings % 3 === 0) maybeSay("hammer", 0.45); }
           swingNow = Math.min(1, swingT / SWING);
-          const height = Math.max(0, Math.min(1, (spot.ly - 0.6) / 2.4));
+          const height = Math.max(0, Math.min(1, (spot.ly - feet - 0.6) / 2.4));
           want.lean = 0.22 - height * 0.25; want.armLx = -0.5; want.armLz = 0.55; want.foreLx = -0.3; want.foreLz = 0;
           want.headX = -up * 0.6;
           face = swings % 4 === 3 ? H.goggles : H.open;
@@ -400,7 +481,7 @@
           want.headX = Math.max(-0.6, -up);
           want.sway = Math.sin(clock * 1.4) * 0.05;
           if (u > 0.62) {
-            if (!furious) { furious = true; maybeSay(LINES.jet, 0.8); }
+            if (!furious) { furious = true; maybeSay("jet", 0.8); }
             face = H.redOpen;
             want.armLx = -2.5 + Math.sin(clock * 16) * 0.25; want.armLz = 0.3; want.foreLx = -0.8; want.foreLz = 0;
             want.crouch = u < 0.68 ? 0.06 : 0;
@@ -416,10 +497,15 @@
       }
       turnTo(wantYaw, dt);
       node.rotation.y = yaw;
-      // The walk: legs and the free arm swinging with her stride, a bob, eased in and out as she starts and stops.
+      // The walk: legs and the free arm swinging with her stride, a bob, eased in and out as she starts and stops; a
+      // boot coming down each half stride.
       moving += ((stepping ? 1 : 0) - moving) * Math.min(1, dt * 10);
       const run = speed > WALK ? 1 : 0;
-      if (stepping) phase += speed * (run ? STRIDE.run : STRIDE.walk) * dt;
+      if (stepping) {
+        const was = Math.floor(phase / Math.PI);
+        phase += speed * (run ? STRIDE.run : STRIDE.walk) * dt;
+        if (Math.floor(phase / Math.PI) !== was) audio.boot(p.x, feet, p.z, run);
+      }
       const swing = Math.sin(phase) * moving, legAmp = run ? 0.95 : 0.55, kneeAmp = run ? 1.3 : 0.7;
       P.legR.rotation.x = -swing * legAmp;
       P.legL.rotation.x = swing * legAmp;
@@ -435,7 +521,7 @@
       P.foreL.rotation.z = cur.foreLz;
       if (swingNow >= 0) {
         // The swing: wound up over her head, brought down hard to where the hammer lands, and lifted again.
-        const height = Math.max(0, Math.min(1, (spot.ly - 0.6) / 2.4)), strike = -0.85 - height * 1.5;
+        const height = Math.max(0, Math.min(1, (spot.ly - feet - 0.6) / 2.4)), strike = -0.85 - height * 1.5;
         const up1 = swingNow < 0.45 ? swingNow / 0.45 : 1, down = swingNow < 0.45 ? 0 : Math.min(1, (swingNow - 0.45) / (LAND - 0.45));
         const lift = swingNow > 0.75 ? (swingNow - 0.75) / 0.25 : 0;
         const wound = -2.9, armX = swingNow < 0.45 ? cur.armRx + (wound - cur.armRx) * up1 * up1 * (3 - 2 * up1) : swingNow < LAND ? wound + (strike - wound) * down * down : strike + (cur.armRx - strike) * lift;
@@ -462,12 +548,12 @@
       P.torso.scale.y = 1 + breath * 0.012;
       k.root.rotation.x = cur.lean;
       k.root.rotation.z = cur.sway;
-      p.y = k.HIP - cur.crouch + Math.abs(Math.sin(phase)) * moving * (run ? 0.07 : 0.035);
+      p.y = k.HIP + feet - cur.crouch + Math.abs(Math.sin(phase)) * moving * (run ? 0.07 : 0.035);
       if (down > 0) {
-        // Flat on her back from the hip, at her body's half depth off the floor.
+        // Flat on her back from the hip, at her body's half depth off what she stands on.
         const e2 = down * down * (3 - 2 * down);
         k.root.rotation.x = -Math.PI / 2 * e2;
-        p.y = k.HIP + (0.22 - k.HIP) * e2;
+        p.y = k.HIP + feet + (0.22 - k.HIP) * e2;
       }
       // The blast's soot fading off her, smoking a while.
       if (soot > 0) {
@@ -501,15 +587,16 @@
       else if ((blinkAt -= dt) <= 0) { shut = SHUT; blinkAt = pick(BLINK[0], BLINK[1]); }
       const mouth = talk > 0 && Math.sin(clock * 18) > -0.2;
       P.head.geometry = face === H.closed ? H.closed : face === H.redOpen ? (mouth ? H.redTalk : H.redOpen) : face === H.goggles ? (mouth ? H.gogglesTalk : H.goggles) : mouth ? H.talk : shut > 0 ? H.closed : H.open;
-      actor.x = p.x; actor.z = p.z;
+      actor.x = p.x; actor.y = feet; actor.z = p.z;
     };
     // Her other faces, off the graph until she wears them, kept on the GPU.
     const liveGeometry = (set) => { for (const geo of Object.values(H)) set.add(geo); };
-    // For debugging: send her to a spot by name, and what she is doing.
+    // For debugging: send her to a spot by name, or running at the visitor's Ooga, and what she is doing.
     const debug = {
       go: (name) => { const s = spots.find((q) => q.name === name); if (s) goTo(s); return !!s; },
+      charge: () => { const s = !panicking && seen && visit(seen); if (s) goTo(s); return !!s; },
       get doing() { return doing; }, get panicking() { return panicking; }, get down() { return down; }, get spot() { return spot && spot.name; }, get spots() { return spots.map((s) => s.name); }, get path() { return pathN; },
-      get position() { return { x: p.x, z: p.z }; }, open: () => { let n = 0; for (let i = 0; i < N; i++) n += open[i]; return n; }
+      get position() { return { x: p.x, y: feet, z: p.z }; }, open: () => { let n = 0; for (let i = 0; i < M; i++) n += open[i]; return n; }
     };
     goTo(nextSpot(null));
 

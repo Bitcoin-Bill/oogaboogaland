@@ -68,8 +68,9 @@
     // the presser lands.
     fireTest: { x: 8, z: 11, turn: -Math.PI / 2, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [-6, 6.5, 18], look: [5, 0.8, 10] } },
     // Kortik's Sis: where she starts, by the Jet's nose off the runway, facing the runway and the door; the floor she
-    // roams, [x0, x1, z0, z1], the Jet's side of the hall clear of the runway; and her spots, each [name, x, z, what
-    // she does there, and the point she looks at, x, y, z].
+    // roams, [x0, x1, z0, z1], the Jet's side of the hall clear of the runway, its stair and its gangway; and her spots
+    // all round the Jet, each [name, x, z, what she does there, the point she looks at, x, y, z, and, up the stair,
+    // the height she stands at].
     sis: {
       x: 9.8, z: 16.6, turn: -Math.PI / 4, floor: [5.9, 26.4, -30, 24.4],
       spots: [
@@ -77,7 +78,10 @@
         ["right engine", 17.3, 5.7, "fix", 17, 3, 4.75], ["tail", 15, 8.4, "admire", 15, 6.5, 2], ["wingtip", 20.7, -0.8, "fix", 19.6, 1.4, -0.8],
         ["right wing", 21.6, -5.6, "inspect", 18.8, 1.4, -2.5], ["right flank", 20.6, -14, "admire", 16.6, 4.2, -14], ["gear", 18.6, -19.5, "fix", 17.45, 0.9, -19.5],
         ["crates", 19.3, 7.3, "inspect", 19.6, 0.8, 5.2], ["booth", 11.8, 14.4, "glare", 8, 1.6, 11], ["door", 9.6, 22.4, "glare", 0, 3, 27],
-        ["floor", 13.6, 15.6, "pace", 13.6, 1.6, 12], ["hall", 22.4, 15, "pace", 22.4, 1.6, 11]
+        ["floor", 13.6, 15.6, "pace", 13.6, 1.6, 12], ["hall", 22.4, 15, "pace", 22.4, 1.6, 11],
+        ["left wing", 7, -6.6, "inspect", 8, 3.1, -8.9], ["left trestle", 6.4, -11.4, "fix", 7.2, 3, -10.4], ["left flank", 7.2, -17, "admire", 13, 5.6, -17],
+        ["cockpit", 11.3, -17.6, "fix", 12.6, 6, -17.6, 5], ["canopy", 11, -14.6, "admire", 15, 6.6, -14.2, 5], ["gangway", 11, -9.6, "pace", 13, 5.6, -9.6, 5],
+        ["wing root", 11.1, -11.8, "inspect", 13, 4.8, -11.8, 5]
       ]
     },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the

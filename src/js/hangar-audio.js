@@ -15,6 +15,12 @@
 // beeps; the blast's boom and crack, iron clattering down after it; and the presser's hearing muffled from the blast
 // until they come to, a ringing in their ears over it. Everything passes a limiter, so the roar is loud and never
 // clips. `setVolume` sets the hangar's level (localStorage `ooga-hangar-volume`, 0..1).
+//
+// Kortik's Sis has a voice of her own (`voice`): a buzz and a breath through three formants, a syllable for each run
+// of vowels in her line with the formants of its vowel, pauses at its punctuation, a stressed last syllable before a
+// "!" or a "?", and the censor's bleep over each grawlix; muttered, yelled, screamed or whispered, each line at its own
+// pitch and pace. It is placed where she stands while she talks, her yells heard across the hall. Her boots thud
+// where she walks (`boot`), and her hammer clangs on the Jet (`clang`).
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -30,6 +36,20 @@
   const TEST = { siren: 0.2, whine: 0.2, whoosh: 0.16, whoomph: 0.8, roar: 0.9, crackle: 0.4, rumble: 0.6, clank: 0.5, alarm: 0.09, boom: 1, boomNoise: 0.9, crack: 0.7, ring: 0.05 };
   // How far the blast muffles the presser's hearing, Hz.
   const MUFFLED = 320, CLEAR = 20000;
+  // Kortik's Sis's ways of saying a line: her pitch, Hz; a syllable's length and the gap after it, s; how loud; how far
+  // a stressed last syllable bends her pitch; how much of her is buzz and how much breath; her voice's shake, Hz either
+  // way; and the least she is heard at anywhere in the hall. Her voice falls to half at SIS_REF metres, her boots at
+  // BOOT_REF.
+  const SIS_STYLE = {
+    mutter: { f0: 185, len: 0.085, gap: 0.03, level: 0.16, end: 0.85, buzz: 1, breath: 0.12, shake: 0, least: 0 },
+    yell: { f0: 300, len: 0.115, gap: 0.03, level: 0.34, end: 1.18, buzz: 1, breath: 0.22, shake: 0, least: 0.1 },
+    scream: { f0: 430, len: 0.14, gap: 0.025, level: 0.4, end: 1.3, buzz: 1, breath: 0.3, shake: 16, least: 0.14 },
+    soft: { f0: 215, len: 0.13, gap: 0.05, level: 0.16, end: 0.9, buzz: 0.1, breath: 1, shake: 0, least: 0 }
+  };
+  const SIS_REF = 9, BOOT_REF = 5, BLEEP = 0.3;
+  // Her vowels' first two formants, Hz, by the letter that starts a syllable (a woman's, after Peterson and Barney),
+  // and the third, which stays put.
+  const FORMANTS = { 65: [850, 1220], 69: [610, 2330], 73: [430, 2480], 79: [590, 920], 85: [760, 1400], 89: [310, 2790] }, SCHWA = [640, 1500], F3 = 2900;
 
   // `spots`: the door's shield and the launch shield, { x, y, z } each, the tunnel's axis { y, z0, z1 }, and the test's
   // booth and the middle of the Jet's engines, { x, y, z } each.
@@ -42,7 +62,9 @@
     } catch {
       muted = false;
     }
-    const bed = {}, test = {};
+    const bed = {}, test = {}, sis = {};
+    // Her voice while she talks: where she stands (her node's position, read live), until when, and its least level.
+    const sisVoice = { pos: null, until: 0, least: 0 };
     // Where the visitor hears from and the way the view faces on the ground, and where the last spot was placed.
     const ear = { x: 0, y: 0, z: 0, fx: 0, fz: -1 }, AT = { level: 0, pan: 0 };
 
@@ -203,6 +225,28 @@
       test.ringGain = gain(0, master);
       test.ring = osc("sine", 3150, test.ringGain);
       test.ring2 = osc("sine", 3195, test.ringGain);
+      // Kortik's Sis: her buzz (a saw with its shake) and her breath into three formants, a syllable's envelope after
+      // them, the bleep beside it, and her level and side where she stands; her boots' thud and knock.
+      sis.pan = panner();
+      sis.level = gain(0, sis.pan);
+      sis.env = gain(0, sis.level);
+      sis.f1 = filter("bandpass", 850, 7, sis.env);
+      sis.f2 = filter("bandpass", 1220, 9, gain(0.7, sis.env));
+      sis.f3 = filter("bandpass", F3, 10, gain(0.3, sis.env));
+      sis.buzzGain = gain(1, null);
+      sis.breathGain = gain(0, null);
+      for (const g of [sis.buzzGain, sis.breathGain]) { g.connect(sis.f1); g.connect(sis.f2); g.connect(sis.f3); }
+      sis.buzz = osc("sawtooth", 300, sis.buzzGain);
+      sis.breath = hissOf(sis.breathGain);
+      sis.shake = gain(0, sis.buzz.frequency);
+      sis.shaker = osc("sine", 7, sis.shake);
+      sis.bleepGain = gain(0, sis.level);
+      sis.bleep = osc("sine", 1000, sis.bleepGain);
+      sis.bootPan = panner();
+      sis.bootGain = gain(0, sis.bootPan);
+      sis.boot = hissOf(filter("lowpass", 220, 0.9, sis.bootGain));
+      sis.knockGain = gain(0, sis.bootPan);
+      sis.knock = osc("sine", 90, sis.knockGain);
     };
 
     // The whole test, from a press now, on the sequence's times `AT` (seconds from the press): every voice's levels and
@@ -370,6 +414,15 @@
       set(test.boothPan.pan, AT.pan, now);
       place(spots.engines.x, spots.engines.y, spots.engines.z, 1);
       set(test.enginePan.pan, AT.pan * 0.6, now);
+      if (sisVoice.until > now) placeSis(now, false);
+    };
+    // Her voice's level and side from where she stands now, eased, or at once as a line starts.
+    const placeSis = (now, snap) => {
+      const q = sisVoice.pos;
+      place(q.x, q.y + 1, q.z, SIS_REF);
+      const level = Math.max(sisVoice.least, AT.level);
+      if (snap) { sis.level.gain.cancelScheduledValues(now); sis.level.gain.setValueAtTime(level, now); sis.pan.pan.cancelScheduledValues(now); sis.pan.pan.setValueAtTime(AT.pan, now); }
+      else { set(sis.level.gain, level, now); set(sis.pan.pan, AT.pan, now); }
     };
 
     const setMuted = (value) => {
@@ -397,6 +450,94 @@
       T.dingGain.gain.setValueAtTime(k * 0.35, now);
       T.dingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
     };
+    // Kortik's Sis says `text` in `style` (a key of SIS_STYLE) from where `pos` stands, cutting off whatever she was
+    // saying: a syllable for each run of vowels in a word, voiced with that vowel's formants; a bleep over a word with
+    // a grawlix in it; a short gap between words and longer pauses at commas, "...", and a sentence's end, her last
+    // syllable before a "!" or a "?" stressed, a dash cutting her off. Returns how long she sounds, s, the same whether
+    // or not the hall can play it yet, so her mouth runs as long.
+    const voice = (text, style, pos) => {
+      const S = SIS_STYLE[style], play = ready && !muted, now = play ? ctx.currentTime : 0;
+      const pitch = S.f0 * (0.92 + Math.random() * 0.18), tempo = 0.9 + Math.random() * 0.2;
+      if (play) {
+        for (const param of [sis.env.gain, sis.bleepGain.gain, sis.buzz.frequency, sis.f1.frequency, sis.f2.frequency]) param.cancelScheduledValues(now);
+        sis.env.gain.setTargetAtTime(0.0001, now, 0.01);
+        sis.bleepGain.gain.setTargetAtTime(0, now, 0.01);
+        sis.buzzGain.gain.setValueAtTime(S.buzz, now);
+        sis.breathGain.gain.setValueAtTime(S.breath, now);
+        sis.shake.gain.setValueAtTime(S.shake, now);
+        sisVoice.pos = pos; sisVoice.least = S.least;
+        placeSis(now, true);
+      }
+      const len = S.len * tempo, gap = S.gap * tempo, level = Math.max(0.0002, S.level);
+      let t = 0.03, n = text.length, i = 0, count = 0;
+      while (i < n) {
+        if (text.charCodeAt(i) === 32) { i++; continue; }
+        // One word, [i, j): a grawlix in it, its vowel runs, and the punctuation it ends on.
+        let j = i, grawlix = false, runs = 0, letters = 0;
+        for (; j < n && text.charCodeAt(j) !== 32; j++) {
+          const r = text.charCodeAt(j), c = r & ~32;
+          if (r === 35 || r === 64 || r === 36 || r === 37 || r === 38 || r === 42) grawlix = true;
+          if (c >= 65 && c <= 90) letters++;
+          if (FORMANTS[c] && !FORMANTS[text.charCodeAt(j - 1) & ~32]) runs++;
+        }
+        const end = text.charCodeAt(j - 1), dots = j - i > 2 && text.charCodeAt(j - 2) === 46 && end === 46;
+        const stress = end === 33 || end === 63, rise = text.charCodeAt(j - 1) === 63 || text.charCodeAt(j - 2) === 63;
+        if (grawlix) {
+          if (play) {
+            sis.bleepGain.gain.setValueAtTime(0, now + t);
+            sis.bleepGain.gain.linearRampToValueAtTime(level * 0.55, now + t + 0.01);
+            sis.bleepGain.gain.setValueAtTime(level * 0.55, now + t + BLEEP);
+            sis.bleepGain.gain.linearRampToValueAtTime(0, now + t + BLEEP + 0.01);
+          }
+          t += BLEEP + gap;
+        } else if (letters) {
+          // Each syllable: its pitch falling a little along the line, stressed at the end, rising for a question.
+          let k = i;
+          for (let s2 = 0; s2 < Math.max(1, runs); s2++) {
+            while (k < j && !FORMANTS[text.charCodeAt(k) & ~32]) k++;
+            const v = k < j ? FORMANTS[text.charCodeAt(k) & ~32] : SCHWA, last = s2 === Math.max(1, runs) - 1;
+            while (k < j && FORMANTS[text.charCodeAt(k) & ~32]) k++;
+            const l = last && stress ? len * 1.5 : len, f = pitch * (1 - Math.min(0.12, count * 0.006)) * (0.94 + Math.random() * 0.12);
+            const bend = last && stress ? (rise ? S.end * 1.08 : S.end) : 1 + (Math.random() - 0.5) * 0.06;
+            if (play) {
+              const at = now + t, peak = last && stress ? level : level * 0.82;
+              sis.buzz.frequency.setValueAtTime(f, at);
+              sis.buzz.frequency.linearRampToValueAtTime(f * bend, at + l);
+              sis.f1.frequency.setValueAtTime(v[0], at);
+              sis.f2.frequency.setValueAtTime(v[1], at);
+              sis.env.gain.setValueAtTime(0.0001, at);
+              sis.env.gain.exponentialRampToValueAtTime(peak, at + 0.018);
+              sis.env.gain.setValueAtTime(peak, at + l * 0.7);
+              sis.env.gain.exponentialRampToValueAtTime(0.0001, at + l);
+            }
+            t += l + gap;
+            count++;
+          }
+        }
+        // The pause after the word: a beat between words, longer at a comma, "..." and a sentence's end, none at a dash.
+        t += end === 8212 ? 0 : dots ? 0.3 * tempo : end === 44 ? 0.12 * tempo : stress || end === 46 ? 0.16 * tempo : 0.035 * tempo;
+        i = j;
+      }
+      if (play) sisVoice.until = now + t;
+      return t;
+    };
+    // Her boot coming down at (x, y, z), heavier at a run.
+    const boot = (x, y, z, run) => {
+      if (!ready || muted) return;
+      place(x, y, z, BOOT_REF);
+      if (AT.level < 0.02) return;
+      const now = ctx.currentTime, k = (run ? 0.5 : 0.3) * AT.level * (0.85 + Math.random() * 0.3);
+      sis.bootPan.pan.setValueAtTime(AT.pan, now);
+      sis.bootGain.gain.cancelScheduledValues(now);
+      sis.bootGain.gain.setValueAtTime(k, now);
+      sis.bootGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      sis.knock.frequency.cancelScheduledValues(now);
+      sis.knock.frequency.setValueAtTime(95, now);
+      sis.knock.frequency.exponentialRampToValueAtTime(48, now + 0.08);
+      sis.knockGain.gain.cancelScheduledValues(now);
+      sis.knockGain.gain.setValueAtTime(k * 0.6, now);
+      sis.knockGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    };
     const setVolume = (value) => {
       volume = clamp(value, 0, 1);
       try {
@@ -417,10 +558,12 @@
       ready = false;
       for (const key of Object.keys(bed)) bed[key] = null;
       for (const key of Object.keys(test)) test[key] = null;
+      for (const key of Object.keys(sis)) sis[key] = null;
+      sisVoice.pos = null;
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
