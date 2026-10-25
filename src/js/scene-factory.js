@@ -81,7 +81,7 @@
     lookout: view(-16, 19, -14, 0.7, 0.15, 14),
     study: view(19, 8.6, 12, -Math.PI / 2 + 0.2, 0.2, 11),
     // The hangar's door over Kortik's station, from across the pit.
-    hangar: view(-20.2, 7.4, LAYOUT.hangar.z, Math.PI / 2, 0.14, 13),
+    hangar: view(-20.2, 8.2, LAYOUT.hangar.z, Math.PI / 2, 0.1, 16),
     galleries: view(4, 17, -16, 0, 0.14, 17)
   };
   const RENDER_OPTS = {
@@ -1083,11 +1083,12 @@
     leaving = true;
     go("hub");
   };
-  // Into the Lightning Jet Hangar as the same Ooga: `leave` hands it on, as it does on the way out.
+  // Into the Lightning Jet Hangar as the same Ooga: `leave` hands it on, as it does on the way out. As the island hands
+  // one over at its mouth, nothing held or hovered here carries into the hangar.
   const enterHangar = () => {
-    if (leaving) return;
+    if (leaving || !go("hangar")) return;
     leaving = true;
-    go("hangar");
+    pilot.controls.reset(); input.reset(); pilot.setActive(false); hud.tooltip.hide();
   };
   // Whether (p) has come through the hangar door's shield, inside its opening: an Ooga whose feet stand `baseY` under
   // p, walked past the plane, or the free view flown to within `margin` of it.

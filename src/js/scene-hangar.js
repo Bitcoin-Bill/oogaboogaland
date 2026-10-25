@@ -62,12 +62,14 @@
   };
   const targets = [];
 
-  // Back to the hall as the same Ooga, onto the walkway at the door.
+  // Back to the hall as the same Ooga, onto the walkway at the door, nothing held or hovered here carried out.
   const leaveHangar = () => {
     if (leaving) return;
     world.pilotDetached = !pilot.player;
     world.pilot = pilot.player ? pilot.player.traits.name : null;
-    leaving = go("factory");
+    if (!go("factory")) return;
+    leaving = true;
+    pilot.controls.reset(); input.reset(); pilot.setActive(false); hud.tooltip.hide();
   };
   const onKey = (e) => {
     if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !leaving) return pilot.resetCamera();
