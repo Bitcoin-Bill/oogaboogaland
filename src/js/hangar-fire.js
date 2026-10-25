@@ -1,13 +1,13 @@
-// The Lightning Jet Hangar's engine static fire test: the booth behind the Jet's right engine (`HM.fireStation`,
-// standing at `LAYOUT.fireTest`, its back to the engines) and the test its big red button starts, about ten seconds
-// from the press to waking up (`AT`). The press flips the guard and sinks the button, the siren sounds and the lights
-// flash; the engines spool up, the throats glowing; they light, roaring, each throwing its plume (a white core in a
-// blue mantle inside the orange envelope, shock diamonds, the heat's shimmer drifting back) while the Jet shudders and
-// the floor's dust blows aft; they falter, the plumes coughing and spitting sparks; and they blow up in a cartoon
-// blast: a flash, fireballs, smoke, a shockwave over the floor, sparks and bits of iron, the view shaking. The presser
-// is thrown backward and lies out cold on their back, sooted, the stun birds circling, their view dimmed and their
-// hearing muffled and ringing (the sound is `hangar-audio.js`'s `test`); after about three seconds they come to, get
-// up and play on, and the screen says how the test went. From the press the controls are the test's and the view
+// The Lightning Jet Hangar's engine static fire test: the booth beside the runway behind the Jet's left engine
+// (`HM.fireStation`, standing at `LAYOUT.fireTest`, its back to the Jet) and the test its big red button starts, about
+// ten seconds from the press to waking up (`AT`). The press flips the guard and sinks the button, the siren sounds and
+// the lights flash; the engines spool up, the throats glowing; they light, roaring, each throwing its plume (a white
+// core in a blue mantle inside the orange envelope, shock diamonds, the heat's shimmer drifting back) while the Jet
+// shudders and the floor's dust blows aft; they falter, the plumes coughing and spitting sparks; and they blow up in a
+// cartoon blast: a flash, fireballs, smoke, a shockwave over the floor, sparks and bits of iron, the view shaking. The
+// presser is thrown backward and lies out cold on their back, sooted, the stun birds circling, their view dimmed and
+// their hearing muffled and ringing (the sound is `hangar-audio.js`'s `test`); after about three seconds they come to,
+// get up and play on, and the screen says how the test went. From the press the controls are the test's and the view
 // glides out to watch it all from the show's place, handed back as the presser opens their eyes. A pad, if there is
 // one, rumbles in step. Then a cooldown, the lamps under the screen filling, until the booth is ready again. Only the
 // presser is knocked down; nothing is lost.
@@ -32,10 +32,10 @@
   const GUARD_OPEN = 1.95, GUARD_TIME = 0.25, PRESS_DEPTH = 0.04, REACH = 1.7, FEET = 0.5, STROBE = 6, DIM = 0.12, FRONT = -0.15;
   // The plume: the shock diamonds down its core, its heat's rings, and how long it takes to light.
   const DIAMONDS = [0.75, 1.5, 2.25, 3], HAZE = 4, LIGHT_UP = 0.3;
-  // The blast: where it stands (behind the right engine's nozzle, from its exit), its pools' sizes, how near it the
-  // presser must be to be knocked down, how fast they are thrown away from it and up, how long they take to tip over
-  // and to get up, and the view's shake.
-  const BLAST_AT = { dx: -0.6, dy: -0.3, dz: 0.6 }, FIREBALLS = 22, SMOKE = 16, SPARKS = 50, IRON = 8, KNOCK_REACH = 14;
+  // The blast: where it stands (behind the nozzle nearest the booth, from its exit toward the Jet's middle), its pools'
+  // sizes, how near it the presser must be to be knocked down, how fast they are thrown backward and up, how long they
+  // take to tip over and to get up, and the view's shake.
+  const BLAST_AT = { dx: 0.6, dy: -0.3, dz: 0.6 }, FIREBALLS = 22, SMOKE = 16, SPARKS = 50, IRON = 8, KNOCK_REACH = 14;
   const THROW = 6.5, THROW_UP = 5.5, TIP = 0.45, GET_UP = 0.5, QUAKE = { fire: 0.035, warning: 0.08, boom: 0.6, tau: 0.45 };
   // How long the view takes to glide from the presser's to the show's (`LAYOUT.fireTest.view`).
   const GLIDE = 1.2;
@@ -98,7 +98,9 @@
       addChild(root, n);
       return p;
     });
-    const last = plumes[plumes.length - 1], blastAt = { x: last.x + BLAST_AT.dx, y: last.y + BLAST_AT.dy, z: last.z + BLAST_AT.dz };
+    let nearest = plumes[0];
+    for (const p of plumes) if (Math.hypot(p.x - L.x, p.z - L.z) < Math.hypot(nearest.x - L.x, nearest.z - L.z)) nearest = p;
+    const inward = Math.sign(J.x - nearest.x) || 1, blastAt = { x: nearest.x + BLAST_AT.dx * inward, y: nearest.y + BLAST_AT.dy, z: nearest.z + BLAST_AT.dz };
 
     // ---- the blast's pools: each fireball and smoke puff's own direction, size and timing drawn once ----
     const rand = mulberry32(7700);

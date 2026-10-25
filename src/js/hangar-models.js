@@ -61,11 +61,12 @@
     jetStairs: [10.6, 0, 3.4, 10.6, 5, -4.6, 1.6],
     // Trestles under the wings, [x, z].
     trestles: [[8, -8.9], [22, -8.9]],
-    // The engine static fire test's booth behind the Jet's right engine, clear of its exhaust: where it stands and the
-    // way its front faces, square to the hall with its back to the engines so the presser looks over it at them, and
-    // the cables' far ends under the pods, [x, z]; and where the test is watched from, its eye and where it looks,
-    // framing the booth, both plumes and where the presser lands.
-    fireTest: { x: 20.6, z: 9.8, turn: 0, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [10.5, 7, 25], look: [19.5, 2, 12.5] } },
+    // The engine static fire test's booth beside the runway behind the Jet's left engine, clear of its exhaust: where it
+    // stands and the way its front faces, toward the runway with its back to the Jet, so the presser walks up to it
+    // from the runway and looks over it at the engines, and the cables' far ends under the pods, [x, z]; and where the
+    // test is watched from across the runway, its eye and where it looks, framing the booth, both plumes and where
+    // the presser lands.
+    fireTest: { x: 8, z: 11, turn: -Math.PI / 2, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [-6, 6.5, 18], look: [5, 0.8, 10] } },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
@@ -74,7 +75,7 @@
     // Crates about the floor, [x, z, turn, stacked], and the blue floor lamps, [x, z].
     crates: [[-7.6, 12, 0.2, 2], [-8.5, 11.2, -0.3, 1], [-7.7, 3.4, 0.1, 1], [-7.8, -15.4, -0.2, 2], [-8.7, -16, 0.4, 1], [-7.6, -24, 0.3, 1],
       [-16.4, 1.2, 0.5, 1], [-15.6, -15, -0.2, 2], [-12, -29, 0.2, 2], [-13, -28.4, -0.3, 1],
-      [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [7.6, 11.4, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [25, -12, 0, 1], [16.5, -30.4, -0.3, 1]],
+      [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [20.6, 9.8, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [25, -12, 0, 1], [16.5, -30.4, -0.3, 1]],
     floorLamps: [[-6.3, 20], [-6.3, 8], [-6.3, -4], [-6.3, -16], [-6.3, -28], [6.3, 20], [6.3, -28], [-11.8, 21.2], [-17.4, -3.2], [-11.6, -24],
       [5.9, 6.3], [5.9, -29.3], [24.9, 6.3], [24.9, -29.3], [6.3, 13.5]],
     // The two boards on the left wall under the catwalk, both square to it and held off it on their mounts: the
