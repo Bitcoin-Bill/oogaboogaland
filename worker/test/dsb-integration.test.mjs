@@ -575,13 +575,13 @@ test("the alarm wakes at the earliest of sweep, door expiry and cleanup retry, a
 
 // Regression (#193 review): stored cleanup made SFU calls inside the constructor's blockConcurrencyWhile, where two
 // stuck 10 s jobs pass the 30 s limit and reset the island's only room. The block loads the jobs; an alarm due now retries.
-test("a woken room makes no SFU call inside its constructor's block and retries stored cleanup from an alarm due now", async () => {
-  let inBlock = false, callsInBlock = 0, closed = 0;
+test("a woken room defers stored cleanup outside its constructor's block and waits for future alarms without an SFU", async () => {
+  let inBlock = false, callsInBlock = 0, closed = 0, configured = false;
   const sfu = {
     getSession: async () => { if (inBlock) callsInBlock++; return { tracks: [] }; },
     closeTracks: async (_session, mids) => { if (inBlock) callsInBlock++; closed++; return { tracks: mids.map(mid => ({ mid })) }; },
   };
-  const Room = roomClass({ sfuClient: () => sfu });
+  const Room = roomClass({ sfuClient: () => configured ? sfu : null });
   const saved = new Map([["voiceCleanup", [{ session: "stored", revision: 0, mids: ["0"], midVersions: { 0: 0 }, inspect: true, inspectUntil: 0 }]]]);
   const alarms = []; let block = null;
   const ctx = {
@@ -589,6 +589,21 @@ test("a woken room makes no SFU call inside its constructor's block and retries 
     blockConcurrencyWhile: fn => { inBlock = true; block = fn().finally(() => { inBlock = false; }); return block; },
     storage: { get: async key => Array.isArray(key) ? null : structuredClone(saved.get(key)), put: async (k, v) => saved.set(k, structuredClone(v)), getAlarm: async () => alarms.at(-1) ?? null, setAlarm: async at => alarms.push(at) },
   };
+  const disabled = new Room(ctx, {});
+  await block;
+  assert.equal(disabled.cleanupJobs.length, 1, "the stored job is loaded without an SFU");
+  assert.equal(disabled.cleanupAt, 0, "missing SFU configuration leaves no immediate cleanup deadline");
+  assert.equal(alarms.length, 0, "missing SFU configuration sets no immediate wake alarm");
+  const now = Date.now();
+  assert.equal(disabled.nextAlarm(now), now + protocol.SWEEP_MS);
+  for (let i = 0; i < 2; i++) {
+    await disabled.alarm();
+    assert.ok(alarms.at(-1) > Date.now(), "each wake schedules a future alarm instead of spinning");
+    assert.equal(disabled.cleanupJobs.length, 1, "cleanup ownership is retained without an SFU");
+    assert.deepEqual(disabled.cleanupJobs, saved.get("voiceCleanup"));
+  }
+  assert.equal(closed, 0);
+  configured = true; alarms.length = 0;
   const before = Date.now(), room = new Room(ctx, {});
   await block;
   assert.equal(callsInBlock, 0, "no SFU call inside the block");

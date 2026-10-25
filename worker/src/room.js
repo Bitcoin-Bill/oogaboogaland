@@ -76,7 +76,7 @@ export class Room extends DurableObject {
       if (this.studio.hostId && (!this.players.has(this.studio.hostId) || this.players.get(this.studio.hostId).zone !== STUDIO_ZONE || !studioHostAllowed(env, this.studio.hostId))) this.suspendStudio();
       // Stored cleanup retries from an alarm due now, never inside this block: each SFU call may take its 10 s, and a
       // block past 30 s resets the island's only room, presence and voice with it.
-      if (this.cleanupJobs.length) {
+      if (this.sfu && this.cleanupJobs.length) {
         this.cleanupAt = Date.now();
         const set = await ctx.storage.getAlarm();
         if (set === null || set > this.cleanupAt) await ctx.storage.setAlarm(this.cleanupAt);
