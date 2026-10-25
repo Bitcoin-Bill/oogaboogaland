@@ -560,14 +560,10 @@
     return out;
   };
 
-  // Decks, bridges, stairs and the core's walkway ring: all the timber, as one mesh.
-  const scaffold = cached(() => {
-    const L = LAYOUT, geos = [], r = L.ring, R = r.outer - 0.15, e = L.entrance, [[, , a0, a1], [s1x0, s1x1, s1z0]] = L.walk;
-    const place = (parts, x, y, z) => { for (const g of parts) geos.push(moved(g, x, y, z)); };
-    // Whether (x, y, z) stands on a deck's rail line, where that rail's cut ends carry the posts.
-    const DECKS = [...L.bays, L.switchboard, L.platform, L.lookout, ...L.galleries, e];
-    const atRail = (x, y, z) => DECKS.some((d) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 0.2 && Math.abs(z - d.z) < d.d / 2 + 0.2 &&
-      (Math.abs(Math.abs(x - d.x) - (d.w / 2 - 0.1)) < 0.15 || Math.abs(Math.abs(z - d.z) - (d.d / 2 - 0.1)) < 0.15));
+  // Where the timber's rails run, shared by the mesh (`scaffold`) and the floor an Ooga walks (`FLOOR`): the bridges'
+  // sides from rail line to rail line, and the cuts each deck's rails leave where something lands on them (`cutsFor`).
+  const railPlan = cached(() => {
+    const L = LAYOUT, r = L.ring, R = r.outer - 0.15, e = L.entrance, [[, , a0, a1]] = L.walk;
     // A bridge's two sides, each from where it leaves the rail line `from` of what it starts on to where it meets the
     // rail line `to` of what it lands on: `t0` and `t1` the fractions along it, `a` and `b` the points. A line is a
     // function of a side's ends giving that fraction: the circle round the core's walkway going out, or a line x = x.
@@ -618,17 +614,53 @@
       landings.push([e.x - e.w / 2 + 0.1, e.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1]);
     }
     const cutsFor = (d) => landings.filter(([x, y, z]) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 1 && Math.abs(z - d.z) < d.d / 2 + 1).map(([x, , z, ...rest]) => [x - d.x, z - d.z, ...rest]);
+    return { ringBridges, topBridges, cutsFor };
+  });
+  // Every deck and the edges it is railed along (`deckParts`' `rails`), with how far its posts reach down where that is
+  // not to whatever stands under it: railed all round, open only where something lands on it (`railPlan`'s cuts); the
+  // galleries' backs are the wall, and they hang from it on brackets rather than stand on posts, which would land in
+  // the porches below them; Kortik's switchboard stands along his deck's west edge, where a rail would be.
+  const deckRailing = cached(() => {
+    const L = LAYOUT;
+    return [...L.bays.map((b) => [b, "nsew"]), [L.switchboard, "nsew"], [L.platform, "nsew"], [L.kortik, "nse"], [L.lookout, "nsew"],
+      [L.lookoutDeck, "nsew", 0], [L.lookoutApproach, "ew", 0], [L.landing, "s"], ...L.galleries.map((g) => [g, "swe", 0]), [L.entrance, "nwe"]];
+  });
+  // The rails along level 2's walkway round the right wall, from the balcony's rail to the Harbor porch's, every corner
+  // one shared post; along both sides of the hangar's walkway on the left while it is open; and along each line's porch
+  // out to its peer tunnel from its deck's rail: [x0, z0, x1, z1, y, ends], as `railParts` takes them.
+  const walkRails = cached(() => {
+    const L = LAYOUT, e = L.entrance, [[, , a0, a1], [s1x0, s1x1, s1z0]] = L.walk, out = [];
+    const ex = e.x + e.w / 2 - 0.1, wx = s1x0 + 0.1;
+    out.push([ex, a0 + 0.1, wx, a0 + 0.1, e.y, [false, true]], [ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, e.y, [false, true]], [wx, a0 + 0.1, wx, s1z0 - 0.1, e.y, [false, true]]);
+    if (hangarEntry()) {
+      const [[x0, , z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1;
+      for (const z of [z0 + 0.1, z1 - 0.1]) out.push([lx, z, x0 + 0.1, z, e.y, [false, true]]);
+    }
+    for (const t of L.tunnels) {
+      const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
+      if (t.turn === 0) for (const x of [x0 + 0.1, x1 - 0.1]) out.push([x, z0, x, z1 + 0.1, t.y, [true, false]]);
+      else {
+        const inner = b.x + s * (b.w / 2 - 0.1), face = t.x - s * 0.5;
+        out.push([inner, z0 + 0.1, face, z0 + 0.1, t.y, [false, true]]);
+        // The Harbor line's porch meets the walkway along its hall-side edge.
+        out.push(t.x > 0 ? [inner, z1 - 0.1, wx, z1 - 0.1, t.y, [false, false]] : [inner, z1 - 0.1, face, z1 - 0.1, t.y, [false, true]]);
+      }
+    }
+    return out;
+  });
+
+  // Decks, bridges, stairs and the core's walkway ring: all the timber, as one mesh.
+  const scaffold = cached(() => {
+    const L = LAYOUT, geos = [], r = L.ring, R = r.outer - 0.15, e = L.entrance;
+    const place = (parts, x, y, z) => { for (const g of parts) geos.push(moved(g, x, y, z)); };
+    // Whether (x, y, z) stands on a deck's rail line, where that rail's cut ends carry the posts.
+    const DECKS = [...L.bays, L.switchboard, L.platform, L.lookout, ...L.galleries, e];
+    const atRail = (x, y, z) => DECKS.some((d) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 0.2 && Math.abs(z - d.z) < d.d / 2 + 0.2 &&
+      (Math.abs(Math.abs(x - d.x) - (d.w / 2 - 0.1)) < 0.15 || Math.abs(Math.abs(z - d.z) - (d.d / 2 - 0.1)) < 0.15));
+    const { ringBridges, topBridges, cutsFor } = railPlan();
     // A deck's posts reach down to whatever stands under each: a lower floor, a tunnel's rock ledge, or the pit.
     const deckAt = (d, rails, drop = (x, z) => d.y - groundUnder(d.x + x, d.z + z, d.y)) => place(deckParts(d.w, d.d, drop, rails, Math.round(d.x * 7 + d.z), cutsFor(d)), d.x, d.y, d.z);
-    // Every deck is railed all round, open only where something lands on it; the galleries' backs are the wall, and
-    // they hang from it on brackets rather than stand on posts, which would land in the porches below them.
-    for (const b of L.bays) deckAt(b, "nsew");
-    for (const d of [L.switchboard, L.platform]) deckAt(d, "nsew");
-    // Kortik's switchboard stands along its west edge, where a rail would be.
-    deckAt(L.kortik, "nse");
-    deckAt(L.lookout, "nsew");
-    deckAt(L.lookoutDeck, "nsew", 0);
-    deckAt(L.lookoutApproach, "ew", 0);
+    for (const [d, rails, drop] of deckRailing()) deckAt(d, rails, drop);
     // Brackets carry the lantern deck out from the tower's four legs.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) geos.push(beam(L.lookout.x + sx * 0.9, L.lookoutDeck.y - 1.4, L.lookout.z + sz * 0.9,
       L.lookout.x + sx * 2.2, L.lookoutDeck.y - 0.4, L.lookout.z + sz * 2.2, 0.16, TIMBER_DK));
@@ -643,9 +675,7 @@
         geos.push(beam(l.x - tx * l.width / 2, y, l.z - tz * l.width / 2, l.x + tx * l.width / 2, y, l.z + tz * l.width / 2, 0.09, TIMBER_LT));
       }
     }
-    deckAt(L.landing, "s");
     for (const g of L.galleries) {
-      deckAt(g, "swe", 0);
       const back = HALL.back + 2, front = g.z + g.d / 2;
       for (const x of galleryBrackets(g)) {
         geos.push(beam(x, g.y - 0.55, back, x, g.y - 0.55, front - 0.2, 0.26, TIMBER_DK), beam(x, g.y - 2.9, back, x, g.y - 0.68, front - 0.7, 0.2, TIMBER));
@@ -658,35 +688,19 @@
         for (const z of [g.z - g.d / 4, g.z + g.d / 4]) geos.push(beam(wall, g.y - 0.55, z, end - s * 0.2, g.y - 0.55, z, 0.26, TIMBER_DK), beam(wall, g.y - 2.6, z, end - s * 0.6, g.y - 0.68, z, 0.2, TIMBER));
       }
     }
-    // The balcony the visitor enters on, running out from the tunnel, open at its front to the stairway and on its
-    // right to the walkway.
-    deckAt(e, "nwe");
-    // Level 2's walkway round the right wall, posted down to the pit floor and railed along the hall side from the
-    // balcony's rail to the Harbor porch's, every corner one shared post; and each line's porch out to its peer
-    // tunnel, railed along both sides from its deck's rail.
+    // Level 2's walkway round the right wall, posted down to the pit floor; while the hangar is open, its walkway on the
+    // left, straight from the balcony's rail to the hangar's door in the left wall, its posts standing on the lowered
+    // outcrop where they come down on it; each line's porch out to its peer tunnel; and their rails (`walkRails`).
     for (const [x0, x1, z0, z1] of L.walk) place(deckParts(x1 - x0, z1 - z0, e.y, "", 17), (x0 + x1) / 2, e.y, (z0 + z1) / 2);
-    const ex = e.x + e.w / 2 - 0.1, wx = s1x0 + 0.1;
-    place(railParts(ex, a0 + 0.1, wx, a0 + 0.1, [false, true]), 0, e.y, 0);
-    place(railParts(ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, [false, true]), 0, e.y, 0);
-    place(railParts(wx, a0 + 0.1, wx, s1z0 - 0.1, [false, true]), 0, e.y, 0);
-    // While the hangar is open, its walkway on the left: straight from the balcony's rail to the hangar's door in the
-    // left wall, railed along both sides to the wall, its posts standing on the lowered outcrop where they come down on it.
     if (hangarEntry()) {
-      const [[x0, x1, z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      const [[x0, x1, z0, z1]] = L.walkLeft, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       place(deckParts(x1 - x0, z1 - z0, (x, z) => e.y - outcropTop(cx + x, cz + z), "", 19), cx, e.y, cz);
-      for (const z of [z0 + 0.1, z1 - 0.1]) place(railParts(lx, z, x0 + 0.1, z, [false, true]), 0, e.y, 0);
     }
     for (const t of L.tunnels) {
-      const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
+      const [x0, x1, z0, z1] = porchOf(t);
       place(deckParts(x1 - x0, z1 - z0, t.turn ? t.y : 0.3, "", 23), (x0 + x1) / 2, t.y, (z0 + z1) / 2);
-      if (t.turn === 0) for (const x of [x0 + 0.1, x1 - 0.1]) place(railParts(x, z0, x, z1 + 0.1, [true, false]), 0, t.y, 0);
-      else {
-        const inner = b.x + s * (b.w / 2 - 0.1), face = t.x - s * 0.5;
-        place(railParts(inner, z0 + 0.1, face, z0 + 0.1, [false, true]), 0, t.y, 0);
-        // The Harbor line's porch meets the walkway along its hall-side edge.
-        place(t.x > 0 ? railParts(inner, z1 - 0.1, wx, z1 - 0.1, [false, false]) : railParts(inner, z1 - 0.1, face, z1 - 0.1, [false, true]), 0, t.y, 0);
-      }
     }
+    for (const [ax, az, bx, bz, y, ends] of walkRails()) place(railParts(ax, az, bx, bz, ends), 0, y, 0);
     // The core's walkway: a ring of planks round the chamber's foot, each cut to its wedge so the ring closes
     // without gaps at its rim, posted down to the pit.
     const planks = 28;
