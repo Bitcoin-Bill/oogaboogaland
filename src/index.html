@@ -852,7 +852,7 @@
       <section class="garage" id="block-board" aria-label="Block Frenzy sides">
         <div class="garage-head">
           <h2><span data-sign>Block Frenzy</span></h2>
-          <p class="help">Pick a side. Steal the rivals' Bitcoin block (their colour), carry it to your own stand while your block is home. Three captures wins.</p>
+          <p class="help" id="block-board-help">Pick a side. Steal the rivals' Bitcoin block (their colour), carry it to your own stand while your block is home. First to 3 captures wins.</p>
         </div>
         <div class="garage-columns">
           <div class="garage-col">
@@ -860,6 +860,13 @@
             <div class="block-sides">
               <button type="button" class="block-side" data-team="blue" aria-pressed="true">Blue fort</button>
               <button type="button" class="block-side" data-team="red" aria-pressed="false">Red fort</button>
+            </div>
+            <h3 class="section-head">Captures to win</h3>
+            <div class="block-sides block-targets">
+              <button type="button" class="block-side block-target" data-target="1" aria-pressed="false">1</button>
+              <button type="button" class="block-side block-target" data-target="3" aria-pressed="true">3</button>
+              <button type="button" class="block-side block-target" data-target="5" aria-pressed="false">5</button>
+              <button type="button" class="block-side block-target" data-target="7" aria-pressed="false">7</button>
             </div>
             <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
             <select class="block-ooga" id="block-ooga"></select>

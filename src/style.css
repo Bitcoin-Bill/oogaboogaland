@@ -9131,6 +9131,11 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   cursor: pointer;
 }
 
+.block-target {
+  flex: 1 1 44px;
+  background: #5a3a22;
+}
+
 .block-side[data-team="blue"] {
   background: #1d4fa8;
 }

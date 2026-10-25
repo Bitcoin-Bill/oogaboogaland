@@ -14,7 +14,8 @@
 // rockets (straight, burst on impact) and nets (slow a rival and stop their jumps for `NET_S`). A paint hit or a burst
 // splats a rival: frozen for `SPLAT_S`, unable to move, throw or carry, and a carrier drops the flag where they stand.
 // Then `GUARD_S` of fresh-paint protection. Walking onto your own stand refills grenades, rockets and nets. Nobody
-// dies, nobody is removed, nobody has health. First team to `CAPTURES` wins.
+// dies, nobody is removed, nobody has health. First team to the round's `target` captures wins (`CAPTURES` unless the
+// player who starts it picks another).
 //
 // Crates: wooden boxes anyone can push by walking into them and stand on. Each fort starts with a few, each team has
 // a stock to place (`build`) on its own half, and a round opens with `PREP_S` of fortifying, each side kept to its
@@ -258,7 +259,7 @@
   // A round. `team` is the player's colour; `seed` seeds the bots and the weather; `prep` the fortifying seconds.
   // `names` names the four Oogas: the player first, then their teammate, then the two rivals (only carried for the
   // scene).
-  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S } = {}) => {
+  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S, target = CONFIG.CAPTURES } = {}) => {
     const rival = other(team);
     const actors = [0, 1, 2, 3].map((i) => ({
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
@@ -276,7 +277,7 @@
     const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { team, rival, seed, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { team, rival, seed, target, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -787,7 +788,7 @@
       a.captures++;
       sim.score[a.team]++;
       emit(sim, "capture", a.team, a.id, stand.x, 0, stand.z);
-      if (sim.score[a.team] >= CONFIG.CAPTURES) {
+      if (sim.score[a.team] >= sim.target) {
         sim.over = true;
         sim.winner = a.team;
         emit(sim, "win", a.team, a.id, stand.x, 0, stand.z);

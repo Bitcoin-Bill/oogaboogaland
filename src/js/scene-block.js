@@ -72,7 +72,11 @@
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const pick = (list, i) => list[i % list.length];
   // Kept for the page's life: the side last chosen.
-  const selection = { team: "blue", ooga: null };
+  // The side, the Ooga and the captures to win the visitor picked on the board; the target is remembered in this
+  // browser (`TARGET_KEY`) for next time.
+  const TARGETS = [1, 3, 5, 7], TARGET_KEY = "oogaboogaland.blockTarget";
+  const savedTarget = () => { try { const n = Number(localStorage.getItem(TARGET_KEY)); return TARGETS.includes(n) ? n : 3; } catch { return 3; } };
+  const selection = { team: "blue", ooga: null, target: 3 };
 
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
@@ -288,6 +292,7 @@
     sim.team = selection.team;
     sim.rival = SIM.other(selection.team);
     for (let i = 0; i < 4; i++) sim.actors[i].team = i < 2 ? sim.team : sim.rival;
+    sim.target = selection.target;
     SIM.reset(sim, (Date.now() & 0x7fffffff) || 1);
     paintTeams();
     for (const s of splats) s.visible = false;
@@ -317,14 +322,15 @@
     closeQuiz();
     phase = "results";
     const won = sim.winner === sim.team, ms = Math.round(sim.time * 1000);
-    const best = game.recordBlock({ won, ms });
+    // The fastest win is kept for the usual first to three; every round still counts.
+    const best = game.recordBlock({ won, ms: sim.target === C.CAPTURES ? ms : 0 });
     result = { won, ms, best };
     el.strip.hidden = el.toolBar.hidden = true;
     el.center.hidden = el.notice.hidden = true;
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.resultTitle.textContent = won ? "Blocks mined!" : "Rivals mined it";
-    el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)}${best ? " · fastest win yet!" : ""}`;
+    el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)} · first to ${sim.target}${best ? " · fastest win yet!" : ""}`;
     const me = sim.actors[0];
     el.stats.innerHTML = "";
     for (const [label, value] of [["Your captures", me.captures], ["Times splatted", me.splats], ["Fastest win", game.state.block.best ? fmt(game.state.block.best) : "—"], ["Rounds won", `${game.state.block.wins} of ${game.state.block.games}`]]) {
@@ -401,7 +407,7 @@
         else notice(me ? "Block dropped · grab it again, or a teammate can" : "Their block is down! Grab it", 2500);
       } else if (e.type === "go") {
         center("GO!", 900);
-        notice(COARSE ? `Steal the ${sim.rival} block · bring it home · Pass throws it` : `Steal the ${sim.rival} block · bring it home · Tab throws it to a friend`, 4500);
+        notice(`First to ${sim.target} · steal the ${sim.rival} block · bring it home · ${COARSE ? "Pass" : "Tab"} throws it to a friend`, 4500);
       } else if (e.type === "build") {
         fx.burst(e.x, 0.6, e.z, 8, WOOD_BITS, 1.6);
         if (me) updateTools();
@@ -1012,6 +1018,12 @@
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
   };
+  const chooseTarget = (n) => {
+    selection.target = n;
+    for (const b of el.targets) b.setAttribute("aria-pressed", String(Number(b.dataset.target) === n));
+    el.boardHelp.textContent = `Pick a side. Steal the rivals' Bitcoin block (their colour), carry it to your own stand while your block is home. First to ${n} capture${n === 1 ? "" : "s"} wins.`;
+    try { localStorage.setItem(TARGET_KEY, String(n)); } catch { /* private window: the pick lasts this visit */ }
+  };
   const chooseTeam = (team) => {
     selection.team = team;
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === team));
@@ -1032,6 +1044,11 @@
       el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(`block-${id}`);
     }
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
+    el.targets = [...document.querySelectorAll("#block-board [data-target]")];
+    el.boardHelp = document.getElementById("block-board-help");
+    el.onTarget = (e) => { chooseTarget(Number(e.currentTarget.dataset.target)); e.currentTarget.blur(); };
+    for (const b of el.targets) b.addEventListener("click", el.onTarget);
+    chooseTarget(savedTarget());
     el.paintBtn = document.getElementById("block-paint");
     el.toolBar = document.getElementById("block-tools");
     el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
@@ -1190,6 +1207,7 @@
     window.clearTimeout(centerTimer);
     window.clearTimeout(noticeTimer);
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
+    for (const b of el.targets) b.removeEventListener("click", el.onTarget);
     el.paintBtn.removeEventListener("pointerdown", el.onPaint);
     el.toolBar.hidden = true;
     for (const b of el.tools) b.removeEventListener("click", el.onTool);
