@@ -1673,14 +1673,26 @@
     }
     // The gap behind each board, where a head would meet its lower edge.
     for (const b of Object.values(L.boards)) block(HALL.x0, b.x + 0.35, b.z - b.w * b.scale / 2, b.z + b.w * b.scale / 2, -1, 2.2);
-    // The workstations, the terminals, the tool chests, the crates and the floor lamps.
+    // The workstations, the terminals, the tool chests, the crates and the floor lamps; a desk or a crate turned on
+    // the floor by the box round its turned footprint, so nothing sinks into a corner, a desk's in four lengths along it
+    // so the boxes keep close to its edges.
+    const turned = (hx, hz, turn) => {
+      const c = Math.abs(Math.cos(turn)), sn = Math.abs(Math.sin(turn));
+      return [hx * c + hz * sn, hx * sn + hz * c];
+    };
     for (const [x, z, turn] of L.stations) {
-      const across = Math.abs(Math.sin(turn)) > 0.7;
-      around(x, z, across ? 0.5 : 1.1, across ? 1.1 : 0.5, 1.3);
+      const [hx, hz] = turned(1.1 / 4, 0.5, turn), c = Math.cos(turn), sn = Math.sin(turn);
+      for (let k = 0; k < 4; k++) {
+        const u = (k - 1.5) * 0.55;
+        around(x + u * c, z - u * sn, hx, hz, 1.3);
+      }
     }
     for (const [x, z] of L.kiosks) around(x, z, 0.4, 0.4, 1.4);
     for (const [x, z] of L.toolChests) around(x, z, 0.6, 0.6, 1.4);
-    for (const [x, z, , stacked] of L.crates) around(x, z, 0.55, 0.55, stacked > 1 ? 1.5 : 0.85);
+    for (const [x, z, a, stacked] of L.crates) {
+      const [hx, hz] = turned(0.55, 0.55, a);
+      around(x, z, hx, hz, stacked > 1 ? 1.5 : 0.85);
+    }
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
