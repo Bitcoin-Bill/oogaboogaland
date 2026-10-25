@@ -347,6 +347,66 @@
     }
   };
 
+  // A mechanic's rolling tool chest in its own frame, its front toward +z, the floor at y 0, built fresh each call (the
+  // parts are placed in place): the roll cab on four casters, five drawers of every depth down its front, each a face
+  // standing proud of the cab with a chrome pull bar between black end caps, the second from the top pulled out on a
+  // row of sockets; a black rubber worktop with a wrench and a screwdriver left on it, and a chrome push handle on its
+  // side; and the top box on its back half, three shallow drawers, side handles, a lid with a chrome latch, and the
+  // hangar's lightning bolt on a badge.
+  const CHEST = { red: "#b8231b", face: "#c92b21", dark: "#7e1712", chrome: "#d6dbe1", black: "#1d1f24", rubber: "#2a2c30", gold: "#ffc83a" };
+  const toolChest = () => {
+    const C = CHEST, f = [];
+    // Casters, each a wheel turned on its axle under a bracket.
+    for (const [cx, cz] of [[-0.42, -0.22], [0.42, -0.22], [-0.42, 0.22], [0.42, 0.22]]) {
+      f.push(moved(turnedZ(lathe({ profile: [[0, -0.02], [0.045, -0.02], [0.055, -0.012], [0.055, 0.012], [0.045, 0.02], [0, 0.02]], segments: 10, color: C.black }), Math.PI / 2), cx, 0.055, cz));
+      f.push(box({ w: 0.06, h: 0.05, d: 0.07, color: "#8d949c", offset: { x: cx, y: 0.115, z: cz } }));
+    }
+    // The cab, its plinth and corner trims.
+    f.push(bevelBox({ w: 1, h: 0.8, d: 0.58, color: C.red, bevel: 0.02, offset: { y: 0.54 } }));
+    f.push(box({ w: 1.01, h: 0.05, d: 0.59, color: C.black, offset: { y: 0.165 } }));
+    for (const sx of [-1, 1]) f.push(box({ w: 0.03, h: 0.8, d: 0.03, color: C.dark, offset: { x: sx * 0.49, y: 0.54, z: 0.28 } }));
+    // The drawers, bottom up, and the open one's box and sockets.
+    const drawer = (y0, h, out = 0) => {
+      const z = 0.295 + out;
+      f.push(bevelBox({ w: 0.9, h: h - 0.012, d: 0.02, color: C.face, bevel: 0.006, offset: { y: y0 + h / 2, z } }));
+      f.push(box({ w: 0.66, h: 0.022, d: 0.03, color: C.chrome, offset: { y: y0 + h - 0.04, z: z + 0.025 } }));
+      for (const sx of [-1, 1]) f.push(box({ w: 0.04, h: 0.03, d: 0.04, color: C.black, offset: { x: sx * 0.35, y: y0 + h - 0.04, z: z + 0.02 } }));
+      if (!out) return;
+      for (const sx of [-1, 1]) f.push(box({ w: 0.015, h: h - 0.03, d: out, color: C.red, offset: { x: sx * 0.44, y: y0 + h / 2, z: 0.285 + out / 2 } }));
+      f.push(box({ w: 0.87, h: 0.01, d: out, color: "#3a1210", offset: { y: y0 + 0.012, z: 0.285 + out / 2 } }));
+      for (let k = 0; k < 8; k++) f.push(moved(lathe({ profile: [[0.018 - k * 0.0008, 0], [0.018 - k * 0.0008, 0.05]], segments: 8, color: C.chrome }), -0.33 + k * 0.095, y0 + 0.017, 0.285 + out / 2));
+    };
+    let y = 0.155;
+    for (const [h, out] of [[0.24, 0], [0.16, 0], [0.12, 0], [0.1, 0.14], [0.1, 0]]) { drawer(y, h + 0.012, out); y += h + 0.012; }
+    // The worktop and what was left on it.
+    f.push(box({ w: 1.02, h: 0.025, d: 0.6, color: C.rubber, offset: { y: 0.952 } }));
+    f.push(moved(turnedY(box({ w: 0.28, h: 0.014, d: 0.035, color: "#9aa3ad" }), 0.4), 0.18, 0.972, 0.2));
+    f.push(moved(turnedY(box({ w: 0.06, h: 0.016, d: 0.07, color: "#9aa3ad" }), 0.4), 0.31, 0.972, 0.255));
+    f.push(moved(turnedY(bevelBox({ w: 0.11, h: 0.034, d: 0.034, color: C.gold, bevel: 0.008 }), -0.3), -0.3, 0.982, 0.22));
+    f.push(moved(turnedY(box({ w: 0.13, h: 0.01, d: 0.01, color: "#9aa3ad" }), -0.3), -0.18, 0.98, 0.257));
+    // The push handle on the right.
+    for (const dz of [-0.2, 0.2]) f.push(box({ w: 0.06, h: 0.025, d: 0.025, color: C.chrome, offset: { x: 0.53, y: 0.86, z: dz } }));
+    f.push(box({ w: 0.025, h: 0.025, d: 0.44, color: C.chrome, offset: { x: 0.565, y: 0.86, z: 0 } }));
+    // The top box: its body on the cab's back half, drawers, side handles, the lid and its latch, and the badge.
+    f.push(bevelBox({ w: 0.98, h: 0.34, d: 0.42, color: C.red, bevel: 0.02, offset: { y: 1.135, z: -0.07 } }));
+    let ty = 0.975;
+    for (const h of [0.1, 0.08, 0.08]) {
+      f.push(bevelBox({ w: 0.9, h: h - 0.012, d: 0.02, color: C.face, bevel: 0.006, offset: { y: ty + h / 2, z: 0.15 } }));
+      f.push(box({ w: 0.5, h: 0.018, d: 0.026, color: C.chrome, offset: { y: ty + h - 0.03, z: 0.172 } }));
+      ty += h;
+    }
+    for (const sx of [-1, 1]) {
+      f.push(box({ w: 0.05, h: 0.022, d: 0.022, color: C.chrome, offset: { x: sx * 0.51, y: 1.2, z: -0.16 } }), box({ w: 0.05, h: 0.022, d: 0.022, color: C.chrome, offset: { x: sx * 0.51, y: 1.2, z: 0.02 } }));
+      f.push(box({ w: 0.022, h: 0.022, d: 0.2, color: C.chrome, offset: { x: sx * 0.535, y: 1.2, z: -0.07 } }));
+    }
+    f.push(bevelBox({ w: 1, h: 0.07, d: 0.44, color: C.dark, bevel: 0.025, offset: { y: 1.34, z: -0.07 } }));
+    f.push(box({ w: 0.09, h: 0.04, d: 0.02, color: C.chrome, offset: { y: 1.3, z: 0.155 } }));
+    f.push(box({ w: 0.16, h: 0.06, d: 0.008, color: C.black, offset: { x: -0.34, y: 1.255, z: 0.162 } }));
+    f.push(moved(prism([[-0.012, 0.024], [0.02, 0.024], [0.004, 0.002], [-0.02, 0.002]], 0.006, C.gold, 0.4), -0.345, 1.255, 0.167));
+    f.push(moved(prism([[-0.006, -0.002], [0.018, -0.002], [-0.014, -0.026], [0.002, -0.002]], 0.006, C.gold, 0.4), -0.34, 1.255, 0.167));
+    return f;
+  };
+
   // The crew's workstations, the terminals on stands, the tool chests, the crates (some stacked, a lantern on the
   // tallest), and the blue floor lamps. Screens glow, so they are their own mesh, and so do the lamps (`lampGlow`, for
   // the Factory's window into the hangar; the scene stands a `floorLamp` of its own on each base to light them one at a
@@ -385,14 +445,7 @@
       placed(flat, f, x, 0, z, turn);
       placed(glow, g, x, 0, z, turn);
     }
-    for (const [x, z, turn] of L.toolChests) {
-      const f = [];
-      f.push(bevelBox({ w: 0.95, h: 1.05, d: 0.6, color: "#b3261e", bevel: 0.04, offset: { y: 0.6 } }));
-      for (let k = 0; k < 4; k++) f.push(box({ w: 0.82, h: 0.02, d: 0.02, color: "#e8e8e8", offset: { y: 0.3 + k * 0.22, z: 0.31 } }));
-      f.push(box({ w: 1, h: 0.06, d: 0.64, color: "#8e1d17", offset: { y: 1.15 } }));
-      for (const dx of [-0.36, 0.36]) f.push(box({ w: 0.08, h: 0.08, d: 0.08, color: "#1d1f24", offset: { x: dx, y: 0.04 } }));
-      placed(flat, f, x, 0, z, turn);
-    }
+    for (const [x, z, turn] of L.toolChests) placed(flat, toolChest(), x, 0, z, turn);
     const crate = (x, y, z, a, s) => {
       flat.push(moved(turnedY(bevelBox({ w: 0.9 * s, h: 0.8 * s, d: 0.9 * s, color: TIMBER, bevel: 0.05 }), a), x, y + 0.4 * s, z));
       for (const h of [0.16, 0.64]) flat.push(moved(turnedY(box({ w: 0.92 * s, h: 0.06 * s, d: 0.92 * s, color: TIMBER_DK }), a), x, y + h * s, z));
@@ -1421,7 +1474,7 @@
       around(x, z, across ? 0.5 : 1.1, across ? 1.1 : 0.5, 1.3);
     }
     for (const [x, z] of L.kiosks) around(x, z, 0.4, 0.4, 1.4);
-    for (const [x, z] of L.toolChests) around(x, z, 0.55, 0.55, 1.1);
+    for (const [x, z] of L.toolChests) around(x, z, 0.6, 0.6, 1.4);
     for (const [x, z, , stacked] of L.crates) around(x, z, 0.55, 0.55, stacked > 1 ? 1.5 : 0.85);
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
     // The lanterns' posts by the runway.
