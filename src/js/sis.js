@@ -967,7 +967,8 @@
     };
     goTo(nextSpot(null));
 
-    return { node, props, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; } };
+    // How cross she is, 0 to 4 by her anger, 5 while she smashes: the terminals' mood page shows it.
+    return { node, props, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; }, get mood() { return rampage ? 5 : Math.min(4, anger); } };
   };
 
   BL.sis = { create };
