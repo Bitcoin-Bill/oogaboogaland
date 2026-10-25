@@ -11,7 +11,7 @@
 // once it passes `HUNGRY`, eats a banana from the shared pile when tapped, and while fed poops in the Chora on a
 // jittered timer, on the ground only. Left empty for `STARVE_SECONDS` it goes back to the rescue (`onRelease`).
 //
-// Every dog lives in one space: the Chora (`OUT`), the rescue's yard (`YARD`), or with its Ooga (`WITH`), wherever that
+// Every dog lives in one space: the Chora (`CHORA`), the rescue's yard (`YARD`), or with its Ooga (`WITH`), wherever that
 // Ooga is. The scene says each frame which space the visitor stands in (`update`'s `at`); a dog in another space is
 // neither drawn nor picked, and waits there unmoved, so the rooms and the Chora share coordinates and one floor query.
 //
