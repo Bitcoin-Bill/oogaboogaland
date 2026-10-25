@@ -1652,15 +1652,16 @@
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
     for (const [sx, , sz0, , , sz1, w] of L.catwalkStairs) block(sx - w / 2, sx + w / 2, Math.min(sz0, sz1) + 3.6, Math.max(sz0, sz1), -1, 0.3);
     // The dock: the gangway's posts alone (as `dock` stands them, `deckPosts`), so a walker goes freely in under the
-    // decks between them, its cross braces passing over the head but near the posts; and under its stair two metres
-    // up from its foot, from the floor, low enough that the widest Ooga on the stair clears it. The Jet itself stands
-    // in the way by its cells (`jetIn`).
+    // decks between them, its cross braces passing over the head but near the posts; and under its stair from two
+    // metres up its foot to where it clears a walker's head (`HEADROOM` over the floor, the stair's own depth with it),
+    // from the floor, low enough that the widest Ooga on the stair clears it, so a walker on the floor passes under its
+    // high end. The Jet itself stands in the way by its cells (`jetIn`).
     for (const [z0, z1, posts] of g.decks) {
       if (!posts) continue;
       for (const [px, pz] of models.deckPosts(g.w, z1 - z0)) around(g.x + px, (z0 + z1) / 2 + pz, 0.2, 0.2, g.y - 0.6);
     }
-    const [jx, , jz0, , , jz1, jw] = L.jetStairs;
-    block(jx - jw / 2, jx + jw / 2, jz1, jz0 - 2, -1, 0.3);
+    const [jx, , jz0, , jy1, jz1, jw] = L.jetStairs, HEADROOM = 2.3;
+    block(jx - jw / 2, jx + jw / 2, jz0 + (jz1 - jz0) * Math.min(1, HEADROOM / jy1), jz0 - 2, -1, 0.3);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
     // The test booth: its console, and the barrier's rails low enough to jump, each the box round its footprint turned
     // into the hangar (square to it, so each box is its footprint).
