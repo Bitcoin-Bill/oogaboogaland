@@ -52,7 +52,9 @@
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
   const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
-  const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net" };
+  const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net", 5: "sniper" };
+  // Each tool's gun (`BM.gun` takes the gun's index times two plus the team's); Lift shows none.
+  const GUN_OF = { paint: 0, grenade: 1, rocket: 2, net: 3, sniper: 4, crate: 0, grab: -1 };
   const WEATHER_WORDS = { clear: "Clear", breeze: "Windy", storm: "Storm" };
   const RAIN = 140;
   // Sky, light and haze from the island's clock, as the drop's.
@@ -75,7 +77,7 @@
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
-  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null;
+  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false;
   let tool = "paint", flash = 0, flashT = 0;
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
@@ -113,7 +115,16 @@
       const bubble = createNode({ geometry: BM.bubble(), visible: false });
       const netted = createNode({ geometry: BM.draped(), visible: false });
       const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
-      addChild(body, ring, blob, bubble, netted, held);
+      const trolley = createNode({ geometry: BM.trolley(), position: { x: 0, y: C.ZIP_HANG + 0.15, z: 0 }, visible: false });
+      addChild(body, ring, blob, bubble, netted, held, trolley);
+      // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
+      let gun = null;
+      if (cave) {
+        const h = cave.headOffset / 1.1, u = h / 16;
+        gun = createNode({ geometry: BM.gun(0), position: { x: 0, y: -10 * u, z: 0.03 }, rotation: { x: Math.PI / 2, y: 0, z: 0 }, scale: { x: h / 1.5, y: h / 1.5, z: h / 1.5 }, visible: false });
+        addChild(cave.parts.armR, gun);
+        if (cave.parts.club) cave.parts.club.visible = false;
+      }
       place(body);
       if (cave) input.add(cave.parts.torso, { kind: "ooga", index: i, priority: 1 });
       // A companion a character file hangs on its Ooga (`parts.dog`) is let off the lead here: it is lifted off the
@@ -125,7 +136,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, gun, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -400,6 +411,11 @@
       } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
       else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
       else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
+      else if (e.type === "rifle") { if (me) { center("SNIPER RIFLE!", 1000); notice("5 rounds · press 5 (or R) · V for the scope · E rides the zipline", 3600); updateTools(); } }
+      else if (e.type === "cache") { fx.burst(e.x, e.y + 0.5, e.z, 10, ORANGE_BITS, 1.6); if (me) { notice("Ammo cache! Grenades, rockets and nets refilled", 1800); updateTools(); } }
+      else if (e.type === "climbed") { if (me) updateTools(); }
+      else if (e.type === "zip") { if (me) { center("ZIP!", 700); notice("Space lets go early", 1600); } }
+      else if (e.type === "unzip") { if (me) updateTools(); }
       else if (e.type === "waiting") {
         if (me) { center("NOT YET!", 1200); notice("Your own block isn't home, so you can't score. Hold on here while your team brings it back, or go get it", 4000); }
         else if (mine) notice("Teammate is waiting at our stand · get our block home so they can score", 3000);
@@ -471,13 +487,14 @@
       return thrown;
     }
     const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
-    const lob = tool === "grenade" ? 0.3 : tool === "rocket" ? 0 : tool === "net" ? -0.12 : -0.09;
+    const lob = tool === "grenade" ? 0.3 : tool === "rocket" || tool === "sniper" ? 0 : tool === "net" ? -0.12 : -0.09;
     const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
     const ok = SIM.fire(sim, 0, Math.atan2(dx, dz), pitch, tool);
     // Say why a throw didn't go, so the tools never seem locked: paint on you, a quiz bubble, or an empty tool.
     if (!ok && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
     else if (!ok && a.trapped > 0) notice("Answer the question to get out first", 1100);
-    else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your own stand`, 1400);
+    else if (!ok && tool === "sniper" && a.sniper <= 0) notice("No sniper rounds · climb a sniper tower for the rifle", 1600);
+    else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your stand or an ammo cache`, 1400);
     return ok;
   };
   const chooseTool = (k) => {
@@ -486,7 +503,7 @@
   };
   // The next tool along (or back), skipping any that are empty, then Lift for the crates; a right click or R steps
   // through them.
-  const ORDER = ["paint", "grenade", "rocket", "net", "grab"];
+  const ORDER = ["paint", "grenade", "rocket", "net", "sniper", "grab"];
   const cycleTool = (dir = 1) => {
     const a = sim.actors[0];
     let i = ORDER.indexOf(tool);
@@ -520,6 +537,7 @@
       const n = b.querySelector("b");
       if (n) n.textContent = k === "paint" ? "∞" : k === "crate" ? String(a.crates) : String(a[k]);
       if (k === "pass") b.disabled = !a.carrying && !a.holding;
+      if (k === "zip") b.disabled = !SIM.nearZip(sim, a);
       if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
@@ -578,6 +596,14 @@
     if (sim.actors[0].holding) return paint();
     if (SIM.pass(sim, 0, cam.face)) return true;
     notice("Nothing to throw · pick up a block, or a crate with F", 1100);
+    return false;
+  };
+  // Ride your tower's zipline down into the rival fort, from the platform by its gap.
+  const zipNow = () => {
+    if (phase !== "play") return false;
+    if (SIM.zip(sim, 0, cam.face)) return true;
+    const a = sim.actors[0];
+    notice(sim.prep > 0 ? "The zipline opens when the round starts" : a.holding ? "Put the crate down first (F)" : "Climb your sniper tower's ladder and stand by the cable to ride", 1600);
     return false;
   };
   const dropBlock = () => {
@@ -643,6 +669,14 @@
       a.netted.visible = s.netted > 0;
       a.held.visible = s.holding && !(i === 0 && cam.first);
       if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
+      a.trolley.visible = s.riding;
+      // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
+      const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
+      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0;
+      if (a.gun) {
+        a.gun.visible = armed;
+        if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
+      }
       // A crate to the head shows stars, not paint.
       a.blob.visible = s.splat > 0 && !s.bonked;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
@@ -663,6 +697,13 @@
         p.legL.rotation.x = p.legR.rotation.x = 0;
         continue;
       }
+      if (s.riding || s.climbing) {
+        // Hanging from the trolley, or hand over hand up a ladder.
+        const k = s.climbing ? Math.sin(elapsed * 9) * 0.4 : 0;
+        p.armL.rotation.x = -2.9 + k; p.armR.rotation.x = -2.9 - k;
+        p.legL.rotation.x = s.climbing ? -k : 0.3; p.legR.rotation.x = s.climbing ? k : -0.2;
+        continue;
+      }
       if (!s.grounded) {
         // In the air: knees up, arms out for balance.
         p.legR.rotation.x = -0.7; p.legL.rotation.x = 0.3;
@@ -677,8 +718,13 @@
       if (s.carrying || s.holding) {
         // Both hands up holding the block (or a crate) overhead.
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
+      } else if (armed) {
+        // Gun up and forward, the other hand under it; a big launcher sits higher, on the shoulder.
+        const kick = s.cooldown > (s.bot ? C.BOT_COOLDOWN : SIM.TOOLS.paint.cool) - 0.12 ? 0.18 : 0;
+        p.armR.rotation.x = (g === 2 ? -1.75 : -1.45) - kick;
+        p.armL.rotation.x = g === 2 ? -1.9 : -1.25;
       } else {
-        p.armR.rotation.x = s.cooldown > (s.bot ? C.BOT_COOLDOWN : C.COOLDOWN) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
+        p.armR.rotation.x = s.cooldown > (s.bot ? C.BOT_COOLDOWN : SIM.TOOLS.paint.cool) - 0.2 ? -1.5 : -0.2 - swing * 0.35;
         p.armL.rotation.x = -0.2 + swing * 0.35;
       }
       // Guard after a splat blinks the ring.
@@ -762,6 +808,15 @@
       pads[i].glow = t.dark > 0 ? 0.12 : 0.75 + 0.25 * Math.sin(elapsed * 3 + i);
     }
     if (quiz.open) el.quizFill.style.width = `${Math.max(0, sim.actors[0].trapped / C.TRAP_MAX_S * 100).toFixed(1)}%`;
+    // An ammo cache glows while it's ready and goes grey while it rests.
+    for (let i = 0; i < caches.length; i++) caches[i].geometry = BM.cache(sim.caches[i].dark > 0 ? 1 : 0);
+    // The zipline button wakes as the visitor reaches the cable, with a word the first time.
+    const near = phase === "play" && SIM.nearZip(sim, sim.actors[0]);
+    if (near !== zipNear) {
+      zipNear = near;
+      updateTools();
+      if (near) notice(COARSE ? "Zip rides the zipline into their fort" : "E rides the zipline into their fort", 2200);
+    }
   };
   const poseShots = () => {
     for (let i = 0; i < sim.shots.length; i++) {
@@ -784,9 +839,23 @@
       const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
       setVec(camera.position, x + Math.sin(cam.yaw) * 0.25, eye, z + Math.cos(cam.yaw) * 0.25);
       setVec(camera.target, x + Math.sin(cam.yaw) * c * 10, eye + Math.sin(up) * 10, z + Math.cos(cam.yaw) * c * 10);
+      // The sniper's scope narrows the view; the gun in hand sits low and right of the eye.
+      const scoped = tool === "sniper" && me.sniper > 0;
+      camera.fov = damp(camera.fov, (scoped ? 22 : 58) * Math.PI / 180, 10, dt);
+      const g = GUN_OF[tool], showGun = g >= 0 && !scoped && !me.carrying && !me.holding && !me.riding && !me.climbing && me.splat <= 0 && me.trapped <= 0;
+      fpGun.visible = showGun;
+      if (showGun) {
+        fpGun.geometry = BM.gun(g * 2 + TEAM_INDEX[me.team]);
+        const fx2 = Math.sin(cam.yaw) * c, fz2 = Math.cos(cam.yaw) * c, fy2 = Math.sin(up), rx = -Math.cos(cam.yaw), rz = Math.sin(cam.yaw);
+        setVec(fpGun.position, camera.position.x + fx2 * 0.55 + rx * 0.24, eye + fy2 * 0.55 - (g === 2 ? 0.12 : 0.22), camera.position.z + fz2 * 0.55 + rz * 0.24);
+        fpGun.rotation.y = cam.yaw;
+        fpGun.rotation.x = -up;
+      }
       setVec(RENDER_OPTS.shadowCenter, x, 0, z);
       return;
     }
+    camera.fov = damp(camera.fov, 58 * Math.PI / 180, 10, dt);
+    if (fpGun) fpGun.visible = false;
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view.
     const c = Math.cos(cam.pitch), hx = -Math.sin(cam.yaw) * c, hz = -Math.cos(cam.yaw) * c, hy = Math.sin(cam.pitch), by = y + CAM.height;
     let dist = CAM.dist;
@@ -806,6 +875,8 @@
   // The board shows the whole fort from above its gate, slowly turning.
   const boardView = (elapsed) => {
     const t = selection.team, s = SIM.ARENA.stands[t], a = elapsed * 0.12;
+    camera.fov = 58 * Math.PI / 180;
+    if (fpGun) fpGun.visible = false;
     setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
     setVec(camera.target, s.x, 1, s.z * 0.8);
   };
@@ -867,6 +938,7 @@
     if (e.key === "b" || e.key === "B") buildCrate();
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
+    if (e.key === "e" || e.key === "E") zipNow();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
   };
@@ -894,7 +966,7 @@
     el.toolBar = document.getElementById("block-tools");
     el.passBtn = document.querySelector('#block-tools [data-tool="pass"]');
     el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
-    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else chooseTool(k); };
+    el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
     el.staminaK = -1;
@@ -939,6 +1011,16 @@
       blocks[t] = { node, tickRoot };
     }
     pads = SIM.ARENA.traps.map(([x, z]) => place(createNode({ geometry: BM.pad(), position: { x, y: 0, z } })));
+    // The sniper towers' ladders and rifle racks, the ziplines, and the ammo caches.
+    for (const t of SIM.TEAMS) {
+      const l = SIM.ARENA.ladders[t], [x0, x1, z0, z1] = SIM.ARENA.towers[t], i = TEAM_INDEX[t];
+      place(createNode({ geometry: BM.ladder(), position: { x: l.dx < 0 ? x1 + 0.05 : x0 - 0.05, y: 0, z: (l.zone[2] + l.zone[3]) / 2 } }));
+      place(createNode({ geometry: BM.rack(i), position: { x: l.dx < 0 ? x0 + 0.7 : x1 - 0.7, y: C.TOWER_TOP, z: (z0 + z1) / 2 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }));
+      place(createNode({ geometry: BM.zipline(i) }));
+    }
+    caches = SIM.ARENA.caches.map(([x, y, z]) => place(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
+    // The gun in view in first person.
+    fpGun = place(createNode({ geometry: BM.gun(0), visible: false }));
     shots = [];
     for (let i = 0; i < C.MAX_SHOTS; i++) shots.push(place(createNode({ geometry: BM.ball(0), visible: false })));
     crates = [];
@@ -994,7 +1076,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon and Lift · Tab throws what you hold · F lifts, stacks, sets crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · W into a ladder climbs · E zipline · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -1062,7 +1144,8 @@
     input.dispose();
     hud.dispose();
     phase = "board";
-    sim = blocks = shots = splats = ticks = pads = crates = rain = result = null;
+    sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = result = null;
+    zipNear = false;
     hud = hooks = input = fx = controls = clock = null;
     blockScene.input = blockScene.debug = blockScene.agentControls = null;
     return { targets: count };

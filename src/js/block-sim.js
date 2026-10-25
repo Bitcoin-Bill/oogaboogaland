@@ -46,7 +46,8 @@
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8],
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
-    WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7
+    WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
+    TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
   // many a full refill holds (0 for no limit).
@@ -55,7 +56,9 @@
     grenade: { speed: 12, lift: 4.5, gravity: 14, life: 2.2, r: 0.45, blast: 2.6, cool: 0.8, max: 3 },
     rocket: { speed: 28, lift: 0, gravity: 0, life: 1.6, r: 0.55, blast: 3.2, cool: 1.2, max: 1 },
     net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 },
-    crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 }
+    crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 },
+    // The sniper rifle: found only at the top of a sniper tower, five rounds, fast, flat and long.
+    sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 5 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
@@ -99,6 +102,22 @@
   }
   for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4], b[5]]);
   BLOCKS.push(at(0, 4.6, 1.6, 1, 1), at(0, -4.6, 1.6, 1, 1));
+  // A sniper tower beside each fort, turned half round between the halves: four posts, a platform at `TOWER_TOP`, a
+  // parapet with a gap over the ladder on the side facing the fort, and a thatched roof. The ladder is a climb zone,
+  // not a block (`LADDERS`); the rifle rack is on the platform; the zipline leaves from the platform's gap side and
+  // runs down into the rival fort (`ZIPS`).
+  const TOP = CONFIG.TOWER_TOP, RAIL = TOP + 0.9;
+  const TOWER = [-19, -16, 24.5, 27.5], GAP = [25.4, 26.6];
+  const towerBlocks = ([x0, x1, z0, z1]) => [
+    [x0, x0 + 0.4, z0, z0 + 0.4, TOP - 0.3, 0], [x1 - 0.4, x1, z0, z0 + 0.4, TOP - 0.3, 0], [x0, x0 + 0.4, z1 - 0.4, z1, TOP - 0.3, 0], [x1 - 0.4, x1, z1 - 0.4, z1, TOP - 0.3, 0],
+    [x0, x1, z0, z1, TOP, TOP - 0.3],
+    [x0, x0 + 0.25, z0, z1, RAIL, TOP], [x0, x1, z0, z0 + 0.25, RAIL, TOP], [x0, x1, z1 - 0.25, z1, RAIL, TOP],
+    [x1 - 0.25, x1, z0, GAP[0], RAIL, TOP], [x1 - 0.25, x1, GAP[1], z1, RAIL, TOP],
+    [x0 - 0.2, x1 + 0.2, z0 - 0.2, z1 + 0.2, TOP + 2.8, TOP + 2.5]
+  ];
+  // Red's is blue's turned half round: every box mirrored through the centre.
+  const turned = (b) => [-b[1], -b[0], -b[3], -b[2], b[4], b[5]];
+  for (const b of towerBlocks(TOWER)) BLOCKS.push(b, turned(b));
   const TEAMS = ["blue", "red"];
   // Blue's half, as [x, z]; red's are the same turned half round (`-x, -z`).
   const flip = (list) => list.map(([x, z]) => [-x, -z]);
@@ -118,8 +137,21 @@
     traps: [[-10, 13], [10, -13], [10, 13], [-10, -13], [-17, 0], [17, 0], [-4.5, 4.5], [4.5, -4.5]],
     crates: { blue: FORT_CRATES, red: flip(FORT_CRATES) },
     plug: { blue: PLUG, red: flip(PLUG) },
-    alley: { blue: ALLEY, red: flip(ALLEY) }
+    alley: { blue: ALLEY, red: flip(ALLEY) },
+    // Each tower's footprint [x0, x1, z0, z1] and the ladder up its fort-facing side: a zone [x0, x1, z0, z1] to climb
+    // in, and the way into the tower (dx, dz) a climber pushes toward.
+    towers: { blue: TOWER, red: turned([...TOWER, 0, 0]).slice(0, 4) },
+    ladders: { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0 }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0 } },
+    // A team's zipline: from its tower's gap (where the hands hang, `ZIP_HANG` over the feet) down into the rival fort.
+    zips: {
+      blue: { ax: -16.6, ay: TOP + CONFIG.ZIP_HANG, az: 26, bx: -3.5, by: 3.1, bz: -28.5 },
+      red: { ax: 16.6, ay: TOP + CONFIG.ZIP_HANG, az: -26, bx: 3.5, by: 3.1, bz: 28.5 }
+    },
+    // Ammo caches: one on each stilt hut's floor and one on the centre deck. A cache refills grenades, rockets and nets
+    // like a stand, then goes dark for `CACHE_S`.
+    caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]]
   };
+  for (const t of TEAMS) { const z = ARENA.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   const other = (team) => team === "blue" ? "red" : "blue";
   const mulberry32 = (seed) => () => {
     seed = seed + 0x6d2b79f5 | 0;
@@ -229,7 +261,8 @@
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
-      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0, holding: false, bonked: false,
+      waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
+      climbing: false, riding: false, zipT: 0, lastKind: "paint",
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
@@ -237,9 +270,10 @@
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
+    const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { team, rival, seed, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { team, rival, seed, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -292,6 +326,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -306,6 +341,7 @@
     for (const t of TEAMS) homeFlag(sim.flags[t]);
     for (const s of sim.shots) s.live = false;
     for (const t of sim.traps) t.dark = 0;
+    for (const c of sim.caches) c.dark = 0;
     const w = sim.weather;
     w.kind = "clear"; w.left = CONFIG.WEATHER_S[0]; w.angle = sim.rng() * Math.PI * 2; w.strength = 0; w.target = CONFIG.WIND.clear; w.x = w.z = 0;
     sim.score.blue = sim.score.red = 0;
@@ -456,6 +492,47 @@
     emit(sim, "trap", a.team, a.id, t.x, 0, t.z);
     dropFlag(sim, a, "knock");
   };
+  // On the platform of your own tower by the gap, take the zipline down into the rival fort. Not while fortifying,
+  // nor holding a crate.
+  const nearZip = (sim, a) => {
+    const z = ARENA.zips[a.team];
+    return sim.prep <= 0 && !a.holding && a.y > CONFIG.TOWER_TOP - 0.1 && Math.hypot(a.x - z.ax, a.z - z.az) < CONFIG.ZIP_R;
+  };
+  const zip = (sim, id = 0) => {
+    const a = sim.actors[id];
+    if (sim.over || a.riding || a.splat > 0 || a.trapped > 0 || !nearZip(sim, a)) return false;
+    a.riding = true;
+    a.zipT = 0;
+    a.climbing = false;
+    emit(sim, "zip", a.team, id, a.x, a.y, a.z);
+    return true;
+  };
+  // A rider slides along their line at `ZIP_SPEED`, hands on the cable; at its end (or on a jump) they let go and fall.
+  const ride = (sim, a, dt, letGo) => {
+    const z = ARENA.zips[a.team];
+    a.zipT = Math.min(1, a.zipT + CONFIG.ZIP_SPEED * dt / z.len);
+    a.x = z.ax + (z.bx - z.ax) * a.zipT;
+    a.z = z.az + (z.bz - z.az) * a.zipT;
+    a.y = z.ay + (z.by - z.ay) * a.zipT - CONFIG.ZIP_HANG;
+    a.vx = (z.bx - z.ax) / z.len * CONFIG.ZIP_SPEED;
+    a.vz = (z.bz - z.az) / z.len * CONFIG.ZIP_SPEED;
+    a.vy = 0;
+    a.grounded = false;
+    a.heading = Math.atan2(a.vx, a.vz);
+    if (a.zipT >= 1 || letGo) {
+      a.riding = false;
+      a.vx *= 0.3; a.vz *= 0.3;
+      emit(sim, "unzip", a.team, a.id, a.x, a.y, a.z);
+    }
+  };
+  // The ladder zone of whichever tower actor `a` stands at, or null.
+  const ladderAt = (a) => {
+    for (const t of TEAMS) {
+      const l = ARENA.ladders[t], [x0, x1, z0, z1] = l.zone;
+      if (a.x >= x0 - 0.1 && a.x <= x1 + 0.1 && a.z >= z0 && a.z <= z1) return l;
+    }
+    return null;
+  };
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     const a = sim.actors[id], tool = TOOLS[kind];
@@ -471,6 +548,7 @@
     if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
     a.cooldown = a.bot ? Math.max(tool.cool, CONFIG.BOT_COOLDOWN) : tool.cool;
     a.heading = yaw;
+    if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
@@ -483,6 +561,7 @@
     a.painted = Math.min(1, a.painted + 0.34);
     emit(sim, bonk ? "bonk" : "splat", a.team, a.id, a.x, a.y + 1, a.z);
     if (a.holding) { a.holding = false; emit(sim, "smash", a.team, a.id, a.x, a.y + 2, a.z); }
+    if (a.riding) { a.riding = false; a.vy = 0; emit(sim, "unzip", a.team, a.id, a.x, a.y, a.z); }
     dropFlag(sim, a, "knock");
   };
   const open = (a) => a.splat <= 0 && a.guard <= 0 && a.trapped <= 0;
@@ -637,6 +716,17 @@
     }
     const stand = ARENA.stands[a.team], home = a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R;
     if (home && refill(a)) emit(sim, "refill", a.team, a.id, a.x, a.y, a.z);
+    // The rifle rack at the top of either tower.
+    if (a.y > CONFIG.TOWER_TOP - 0.3 && a.sniper < TOOLS.sniper.max) {
+      for (const t of TEAMS) {
+        const [x0, x1, z0, z1] = ARENA.towers[t];
+        if (a.x > x0 && a.x < x1 && a.z > z0 && a.z < z1) { a.sniper = TOOLS.sniper.max; emit(sim, "rifle", a.team, a.id, a.x, a.y, a.z); break; }
+      }
+    }
+    for (const c of sim.caches) {
+      if (c.dark > 0 || Math.abs(a.y - c.y) > 0.5 || (a.x - c.x) ** 2 + (a.z - c.z) ** 2 > CONFIG.CACHE_R * CONFIG.CACHE_R) continue;
+      if (refill(a)) { c.dark = CONFIG.CACHE_S; emit(sim, "cache", a.team, a.id, c.x, c.y, c.z); }
+    }
     if (sim.prep > 0) return;
     const r2 = CONFIG.PICK_R * CONFIG.PICK_R;
     if (a.blocked) {
@@ -788,6 +878,13 @@
         jump = !!input.jump;
         input.jump = 0;
       }
+      // On a zipline the cable carries you; a jump lets go.
+      if (a.riding) {
+        ride(sim, a, dt, jump && free);
+        a.moving = CONFIG.ZIP_SPEED;
+        if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
+        continue;
+      }
       // A jump from the ground, and one more in the air, carrying or not; a net stops both.
       if (jump && free && a.netted <= 0) {
         const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
@@ -810,9 +907,23 @@
       a.pushing = false;
       pushCrates(sim, a);
       resolve(a, CONFIG.BODY_R);
+      // A ladder: pushing into a tower's ladder climbs it, and at the top steps onto the platform.
+      const ladder = !a.bot && free && a.netted <= 0 && !a.holding && a.y < CONFIG.TOWER_TOP ? ladderAt(a) : null;
+      a.climbing = !!ladder && input.x * ladder.dx + input.z * ladder.dz > 0.3;
       // Height: fall onto whatever is underneath, and stop at a floor overhead.
       const ground = groundAt(a.x, a.z, a.y);
-      if (a.vy !== 0 || a.y > ground) {
+      if (a.climbing) {
+        a.x = (ladder.zone[0] + ladder.zone[1]) / 2;
+        a.vx = a.vz = a.vy = 0;
+        a.y = Math.min(CONFIG.TOWER_TOP, a.y + CONFIG.CLIMB * dt);
+        a.grounded = false;
+        a.jumps = 0;
+        if (a.y >= CONFIG.TOWER_TOP) {
+          a.x += ladder.dx * 0.9; a.z += ladder.dz * 0.9;
+          a.grounded = true; a.climbing = false;
+          emit(sim, "climbed", a.team, a.id, a.x, a.y, a.z);
+        }
+      } else if (a.vy !== 0 || a.y > ground) {
         a.vy -= CONFIG.FALL * dt;
         a.y += a.vy * dt;
         const ceiling = ceilingAt(a.x, a.z, a.y - a.vy * dt);
@@ -832,6 +943,7 @@
     }
     for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
+    for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
     for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
     settleCrates(sim, dt);
     // Throws in flight: gravity and the wind, then a rival in the way or anything solid.
@@ -840,7 +952,7 @@
       const tool = TOOLS[s.kind];
       s.t += dt;
       s.vy -= tool.gravity * dt;
-      const drift = (s.kind === "rocket" ? 0.3 : 1) * CONFIG.SHOT_WIND * dt;
+      const drift = (s.kind === "rocket" ? 0.3 : s.kind === "sniper" ? 0.1 : 1) * CONFIG.SHOT_WIND * dt;
       s.vx += wind.x * drift; s.vz += wind.z * drift;
       s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
       let hit = null;
@@ -871,5 +983,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, pass, build, grab, zip, nearZip, escape, clearLine, solidAt, resolve, groundAt };
 })();

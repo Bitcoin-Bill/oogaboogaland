@@ -3,14 +3,14 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { box, bevelBox, merge, moved, turnedY, cached, variants, geometry, pushVert, face } = BL.models;
+  const { box, bevelBox, merge, moved, turnedY, cached, variants, geometry, pushVert, face, tube } = BL.models;
   const { hexToRgb } = BL.math;
   const SIM = BL.blockSim, A = SIM.ARENA;
   const TEAM = {
     blue: { paint: "#3a8dff", deep: "#1d4fa8", light: "#9cc8ff" },
     red: { paint: "#ff4a3a", deep: "#a8261d", light: "#ffb0a6" }
   };
-  const ORANGE = "#f7931a", CREAM = "#fff3d6";
+  const ORANGE = "#f7931a", CREAM = "#fff3d6", TOP = SIM.CONFIG.TOWER_TOP;
   // The ₿ in a 7 x 9 grid, top row first: the strokes stand proud of the block's faces.
   const GLYPH = [
     "..#.#..",
@@ -49,8 +49,12 @@
     for (const b of A.BLOCKS) {
       const w = b[1] - b[0], d = b[3] - b[2], bottom = b[5] || 0, h = b[4] - bottom, x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2, y = bottom + h / 2;
       const fort = Math.abs(z) > 22 && Math.abs(z) < 34, team = z > 0 ? "blue" : "red";
-      const post = w < 1 && d < 1, roof = bottom > 4, floor = bottom > 1.5 && h < 0.5 && !roof, hutWall = bottom > 1.5 && !floor && !roof;
-      if (roof) {
+      const post = w < 1 && d < 1, deck = b[4] === TOP, rail = bottom === TOP, roof = bottom > 4 && !deck && !rail, floor = bottom > 1.5 && h < 0.5 && !roof, hutWall = bottom > 1.5 && !floor && !roof;
+      if (rail) {
+        // A sniper tower's parapet: planks with a team-painted cap.
+        parts.push(bevelBox({ w, h, d, color: "#8a6440", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.04, h: 0.12, d: d + 0.04, color: TEAM[team].paint, emissive: 0.2, offset: { x, y: b[4] + 0.06, z } }));
+      } else if (roof) {
         // Thatch: a straw slab with a darker fringe.
         parts.push(bevelBox({ w, h, d, color: "#b8924a", offset: { x, y, z } }));
         parts.push(box({ w: w + 0.1, h: 0.08, d: d + 0.1, color: "#8a6a32", offset: { x, y: bottom + 0.02, z } }));
@@ -250,5 +254,82 @@
     geo.castShadow = false;
     return geo;
   });
-  BL.blockModels = { TEAM, ORANGE, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, SPLATS: 6 };
+  // The guns, each in its own frame with the grip at the origin and the muzzle along +z, in team colours (variants by
+  // team): a paintball marker with a hopper, a chunky grenade launcher with a drum, a big shoulder rocket launcher, a
+  // net gun with a flared mouth and a long sniper rifle with a scope.
+  const GUNS = ["paint", "grenade", "rocket", "net", "sniper"];
+  const METAL = "#3a3a40", DARK = "#24242a";
+  const gun = variants((i) => {
+    const kind = GUNS[i >> 1], t = SIM.TEAMS[i & 1], c = TEAM[t], parts = [];
+    const grip = () => parts.push(box({ w: 0.07, h: 0.18, d: 0.09, color: DARK, offset: { y: -0.08, z: -0.02 } }));
+    if (kind === "paint") {
+      grip();
+      parts.push(bevelBox({ w: 0.1, h: 0.12, d: 0.36, color: METAL, offset: { y: 0.03, z: 0.08 } }));
+      parts.push(box({ w: 0.05, h: 0.05, d: 0.32, color: DARK, offset: { y: 0.05, z: 0.4 } }));
+      parts.push(bevelBox({ w: 0.16, h: 0.16, d: 0.18, color: c.paint, emissive: 0.4, offset: { y: 0.17, z: 0.06 } }));
+      parts.push(box({ w: 0.06, h: 0.07, d: 0.16, color: c.deep, offset: { y: 0.0, z: -0.16 } }));
+    } else if (kind === "grenade") {
+      grip();
+      parts.push(bevelBox({ w: 0.14, h: 0.14, d: 0.4, color: "#4a4a3a", offset: { y: 0.04, z: 0.1 } }));
+      parts.push(bevelBox({ w: 0.2, h: 0.2, d: 0.2, color: c.deep, offset: { y: 0.0, z: 0.02 } }));
+      parts.push(box({ w: 0.15, h: 0.15, d: 0.24, color: DARK, offset: { y: 0.06, z: 0.38 } }));
+      parts.push(box({ w: 0.17, h: 0.04, d: 0.05, color: c.paint, emissive: 0.6, offset: { y: 0.06, z: 0.5 } }));
+    } else if (kind === "rocket") {
+      // Sits on the shoulder: the grip under its middle, a long fat tube with a sight and an orange warhead peeping out.
+      parts.push(box({ w: 0.07, h: 0.16, d: 0.09, color: DARK, offset: { y: -0.12, z: 0.05 } }));
+      parts.push(bevelBox({ w: 0.24, h: 0.24, d: 1.25, color: c.deep, offset: { y: 0.04, z: 0.1 } }));
+      parts.push(box({ w: 0.27, h: 0.27, d: 0.12, color: c.paint, emissive: 0.4, offset: { y: 0.04, z: 0.68 } }));
+      parts.push(box({ w: 0.27, h: 0.27, d: 0.12, color: METAL, offset: { y: 0.04, z: -0.5 } }));
+      parts.push(box({ w: 0.14, h: 0.14, d: 0.1, color: ORANGE, emissive: 1, offset: { y: 0.04, z: 0.74 } }));
+      parts.push(box({ w: 0.05, h: 0.1, d: 0.14, color: DARK, offset: { x: 0.1, y: 0.2, z: 0.25 } }));
+    } else if (kind === "net") {
+      grip();
+      parts.push(bevelBox({ w: 0.12, h: 0.12, d: 0.34, color: "#3f5a3a", offset: { y: 0.04, z: 0.08 } }));
+      parts.push(box({ w: 0.3, h: 0.3, d: 0.08, color: "#7fe08a", emissive: 0.5, offset: { y: 0.04, z: 0.32 } }));
+      parts.push(box({ w: 0.2, h: 0.2, d: 0.1, color: "#5a8a52", offset: { y: 0.04, z: 0.26 } }));
+      for (const [x, y] of [[-0.13, -0.09], [0.13, -0.09], [-0.13, 0.17], [0.13, 0.17]]) parts.push(box({ w: 0.04, h: 0.04, d: 0.04, color: "#c9b48a", offset: { x, y, z: 0.37 } }));
+    } else {
+      // The sniper rifle: a long stock and barrel, a team-coloured scope with glowing lenses.
+      grip();
+      parts.push(bevelBox({ w: 0.08, h: 0.1, d: 0.5, color: "#6a4a2a", offset: { y: 0.03, z: -0.12 } }));
+      parts.push(bevelBox({ w: 0.09, h: 0.1, d: 0.42, color: METAL, offset: { y: 0.04, z: 0.3 } }));
+      parts.push(box({ w: 0.04, h: 0.04, d: 0.62, color: DARK, offset: { y: 0.05, z: 0.8 } }));
+      parts.push(box({ w: 0.07, h: 0.07, d: 0.34, color: c.paint, emissive: 0.3, offset: { y: 0.15, z: 0.28 } }));
+      parts.push(box({ w: 0.05, h: 0.05, d: 0.02, color: "#bfe8ff", emissive: 1, offset: { y: 0.15, z: 0.46 } }));
+    }
+    return merge(...parts);
+  });
+  // A tower's ladder: two rails and rungs up the gap side to the platform, in the tower's own frame (+x away from it).
+  const ladder = cached(() => {
+    const parts = [], z0 = -0.5, z1 = 0.5;
+    for (const z of [z0, z1]) parts.push(box({ w: 0.08, h: TOP + 0.9, d: 0.08, color: "#5a3a22", offset: { y: (TOP + 0.9) / 2, z } }));
+    for (let y = 0.35; y < TOP; y += 0.4) parts.push(box({ w: 0.06, h: 0.06, d: z1 - z0, color: "#8a6440", offset: { y, z: 0 } }));
+    return merge(...parts);
+  });
+  // The rifle rack on a tower's platform: a low crossbar with a rifle on it.
+  const rack = variants((i) => merge(
+    box({ w: 0.08, h: 0.7, d: 0.08, color: "#5a3a22", offset: { x: -0.35, y: 0.35 } }), box({ w: 0.08, h: 0.7, d: 0.08, color: "#5a3a22", offset: { x: 0.35, y: 0.35 } }),
+    box({ w: 0.8, h: 0.06, d: 0.1, color: "#8a6440", offset: { y: 0.6 } }),
+    moved(turnedY(gun(8 + i), Math.PI / 2), 0, 0.7, 0)
+  ));
+  // A zipline: a cable sagging a little between its anchors, in the team's colour, and a pole at the low end.
+  const zipline = variants((i) => {
+    const z = A.zips[SIM.TEAMS[i]], c = TEAM[SIM.TEAMS[i]];
+    const cable = tube({ path: (t) => ({ x: z.ax + (z.bx - z.ax) * t, y: z.ay + (z.by - z.ay) * t + 0.15, z: z.az + (z.bz - z.az) * t }), radius: () => 0.04, rings: 24, segments: 4, colorFn: () => c.light, emissive: 0.5 });
+    return merge(cable,
+      box({ w: 0.16, h: z.by + 0.4, d: 0.16, color: "#5a3a22", offset: { x: z.bx, y: (z.by + 0.4) / 2, z: z.bz } }),
+      box({ w: 0.3, h: 0.3, d: 0.3, color: c.paint, emissive: 0.6, offset: { x: z.ax, y: z.ay + 0.15, z: z.az } }));
+  });
+  // A rider's trolley: a pulley block on the cable with a hand bar under it.
+  const trolley = cached(() => merge(box({ w: 0.14, h: 0.18, d: 0.3, color: METAL, offset: { y: 0.1 } }), box({ w: 0.6, h: 0.05, d: 0.05, color: DARK, offset: { y: -0.15 } }), box({ w: 0.04, h: 0.3, d: 0.04, color: DARK, offset: { y: 0 } })));
+  // An ammo cache: an olive box with an orange band and a glowing lid while it's ready; grey and dark while it rests.
+  const cache = variants((i) => {
+    const ready = i === 0;
+    return merge(
+      bevelBox({ w: 0.8, h: 0.45, d: 0.55, color: ready ? "#56603a" : "#4a4844", offset: { y: 0.23 } }),
+      box({ w: 0.82, h: 0.08, d: 0.57, color: ready ? ORANGE : "#6a6660", emissive: ready ? 0.9 : 0, offset: { y: 0.3 } }),
+      box({ w: 0.5, h: 0.05, d: 0.3, color: ready ? "#fff3a0" : "#5a5852", emissive: ready ? 1 : 0, offset: { y: 0.48 } })
+    );
+  });
+  BL.blockModels = { TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();
