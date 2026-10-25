@@ -61,6 +61,9 @@
   // frame, as wide as the arch, in the hall's cyan; and where whoever comes back out of the hangar stands, a step out of
   // the door on the walkway facing back along it, the view just inside the doorway behind it.
   const HANGAR_OPENING = { minX: -FM.HANGAR_DOOR.half, maxX: FM.HANGAR_DOOR.half, floorY: 0, ceilingY: FM.HANGAR_DOOR.top }, HANGAR_TINT = BL.factoryWindow.TINT;
+  // How the hangar door answers whoever comes near, as ₿IFRÖST's windows do: fully within DOOR_NEAR metres of its
+  // opening, not at all past DOOR_FAR, easing at DOOR_EASE a second, its arch's glow brightening by up to DOOR_BRIGHTEN.
+  const DOOR_NEAR = 1.4, DOOR_FAR = 7.5, DOOR_EASE = 5, DOOR_BRIGHTEN = 1.9;
   const HANGAR_ARRIVAL = { yaw: -Math.PI / 2, pitch: 0.12, dist: FOLLOW.min, position: { x: LAYOUT.hangar.x + 1.4, y: LAYOUT.hangar.y, z: LAYOUT.hangar.z } };
   // `entrance` is the balcony's view across the core; the rest frame one station each.
   const PRESETS = {
@@ -1264,13 +1267,13 @@
     // the hangar.
     if (FM.hangarEntry()) {
       const h = L.hangar, D = FM.HANGAR_DOOR, door = FM.hangarDoor();
-      const node = createNode({ position: { x: h.x, y: h.y, z: h.z }, rotation: { x: 0, y: h.turn, z: 0 } }), stone = createNode({ geometry: door.stone });
-      addChild(node, stone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: door.glimpse, sightHidden: true }));
+      const node = createNode({ position: { x: h.x, y: h.y, z: h.z }, rotation: { x: 0, y: h.turn, z: 0 } }), stone = createNode({ geometry: door.stone }), glow = createNode({ geometry: door.glow, sightHidden: true });
+      addChild(node, stone, glow, createNode({ geometry: door.glimpse, sightHidden: true }));
       setBoard(labelNode(node, D.sign[0], D.sign[1], D.sign[2]), "LIGHTNING JET\nHANGAR", "", true, { height: 1.3 });
       for (const side of [-1, 1]) addChild(node, createNode({ position: { x: side * (D.post + 0.75), y: 5.9, z: 0.6 }, geometry: FM.banner(2.2) }));
       addChild(root, node);
       const mouth = { x: h.x, z: h.z, ry: h.turn, floorY: h.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } };
-      s.hangar = { node, stone, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };
+      s.hangar = { node, stone, glow, near: 0, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };
       // Through the shield, the hangar as it stands, from its own stand-in (`hangar-window.js`; WebGL only, the glimpse
       // staying behind it and in its place on Canvas 2D).
       if (renderer.kind !== "canvas2d") {
@@ -2047,16 +2050,20 @@
       g.hum = 0.1 + Math.random() * 0.22;
       g.phase.ripples.pulse(GATE_OPENING.minX + Math.random() * (GATE_OPENING.maxX - GATE_OPENING.minX), Math.random() * GATE_OPENING.ceilingY, 0);
     }
-    // So does the hangar door's, in the same cyan.
+    // So does the hangar door's, in the same cyan; and, as ₿IFRÖST's windows do, the door answers whoever comes near
+    // (the Ooga driven here, or with none the view), its arch's studs and neon brightening and its field humming faster.
     const hg = s.hangar;
     if (hg) {
       if (hg.window) hg.window.update(camera);
+      const p = hg.node.position, want = clamp((DOOR_FAR - Math.max(0, Math.hypot(at.x - p.x, at.y - p.y - 1, at.z - p.z) - 2)) / (DOOR_FAR - DOOR_NEAR), 0, 1);
+      hg.near += (want * want * (3 - 2 * want) - hg.near) * Math.min(1, dt * DOOR_EASE);
+      hg.glow.glow = 1 + DOOR_BRIGHTEN * hg.near;
       hg.phase.update(dt, elapsed);
       hg.phase.body.update(dt);
       hg.phase.body.time = hg.phase.ripples.time;
       hg.hum -= dt;
       if (hg.hum <= 0) {
-        hg.hum = 0.12 + Math.random() * 0.25;
+        hg.hum = (0.12 + Math.random() * 0.25) * (1 - 0.65 * hg.near);
         hg.phase.ripples.pulse(HANGAR_OPENING.minX + Math.random() * (HANGAR_OPENING.maxX - HANGAR_OPENING.minX), Math.random() * HANGAR_OPENING.ceilingY, 0);
       }
     }
