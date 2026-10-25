@@ -92,12 +92,13 @@
     sulk: ["LEAVE ME ALONE!", "I SAID GO POKE MY BROTHER!"],
     fixed: ["There. Fixed it."],
     panic: ["WHO PRESSED THAT?!", "THAT ENGINE ISN'T—"],
-    blame: ["THAT WASN'T MY FAULT!", "WHO TOUCHED MY ENGINES?!", "I TOLD YOU THAT ENGINE WASN'T READY!", "NOBODY SAW THAT. NOBODY!"]
+    blame: ["THAT WASN'T MY FAULT!", "WHO TOUCHED MY ENGINES?!", "I TOLD YOU THAT ENGINE WASN'T READY!", "NOBODY SAW THAT. NOBODY!"],
+    tess: ["TESS! BUZZ OFF!", "NOT NOW, TESS!", "GET OUT OF MY FACE, YOU FLYING TOASTER!", "I CAN'T SEE THE #@$%ING JET!", "I'M FIXING IT! LEAVE ME BE!"]
   };
   // How she says each (a style of `hangarAudio.voice`); how often a line about the Jet or Lightning comes out a rare
   // one instead, and a yell a scream.
   const STYLE = { jet: "yell", lightning: "yell", hammer: "yell", rage: "scream", charge: "scream", caught: "yell", mutter: "mutter", hope: "soft", rare: "yell", panic: "scream", blame: "yell",
-    poke: "yell", rampage: "scream", smash: "yell", shove: "yell", chase: "scream", meltdown: "scream", sulk: "yell", fixed: "mutter", hush: "scream", quarrel: "scream" };
+    poke: "yell", rampage: "scream", smash: "yell", shove: "yell", chase: "scream", meltdown: "scream", sulk: "yell", fixed: "mutter", hush: "scream", quarrel: "scream", tess: "yell" };
   const RARE = 0.08, SCREAM = 0.2;
   // The static fire: where she runs to, the nearer of them (beside the booth and by the far wall's crates, both where
   // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast
@@ -114,6 +115,9 @@
   // how many blows she lands at a spot before running on, how long a swing takes, how many pokes at one spot send her
   // running to another, and the longest she keeps it up before she calls it fixed, s.
   const RAMPAGE = { stop: 4, drain: 2.2, hits: [3, 5], swing: 0.62, flee: 2, max: 50 };
+  // Tess buzzing round her head in her rampage (`distract`): how often she turns on her, s, how long she shouts at her
+  // with her fist up instead of swinging, and how much slower her swings come while Tess is there.
+  const DISTRACT = { every: [2.6, 4.2], look: 1.5, slow: 1.45 };
   // The Jet's damage, all mended in time: how many smoking dents it carries at once and how long each smokes, s.
   const MARKS = 8, MARK_LIFE = 25;
   // Her quarrel with Kortik next door: when his first shout comes through the hangar's door, and between shouts after,
@@ -398,6 +402,9 @@
     // line said; whether the visitor's Ooga stands near enough to poke her; and how hard the Jet is rocking.
     let anger = 0, coolAt = 0, pokeX = 0, pokeZ = 0, pokedAt = -Infinity, fitKind = 0, fitT = 0, fitLen = 1;
     let rampage = false, pips = 0, blows = 0, pokesHere = 0, rampAt = 0, calmUntil = 0, storming = false, chaseT = 0, chased = false, near = false, jolt = 0;
+    // Tess, while she buzzes round her in a rampage: where she is (read live), when Sis next turns on her and how long
+    // she has left shouting at her.
+    let tess = null, tessIn = 0, tessLook = 0;
     const smashes = spots.filter((s) => s.kind === "fix"), doorSpot = spots.find((s) => s.name === "door");
     const fit = (kind) => { fitKind = kind; fitLen = fitT = kind === 6 ? POKE.tantrum : POKE.fit; swingT = 0; };
     // A spot to smash, not the one she is at: at random, or the farther of two from whoever poked her.
@@ -569,6 +576,11 @@
         if (clock - pokedAt > 1) pips = Math.max(0, pips - dt / RAMPAGE.drain);
         if (clock - rampAt > RAMPAGE.max && fitT <= 0) giveUp();
       }
+      // Tess buzzing round her: now and then she stops smashing to shout at her.
+      if (rampage && tess && doing === "smash") {
+        if (tessLook > 0) tessLook -= dt;
+        else if ((tessIn -= dt) <= 0) { tessIn = pick(DISTRACT.every[0], DISTRACT.every[1]); tessLook = DISTRACT.look; say(one(LINES.tess), STYLE.tess, 1.6); }
+      } else tessLook = 0;
       near = !!driven && !panicking && Math.hypot(driven.root.position.x - p.x, driven.root.position.z - p.z) < POKE.reach && Math.abs(feetAt(driven) - feet) < POKE.rise;
       // Kortik shouting through the door now and then while she is free to hear it, and her answer once his line is out.
       if (answerIn > 0) { if ((answerIn -= dt) <= 0 && !panicking && !rampage) answerKortik(); }
@@ -722,11 +734,19 @@
         if (doing === "yell" && driven) { visitorSpot.lx = driven.root.position.x; visitorSpot.lz = driven.root.position.z; visitorSpot.ly = feetAt(driven) + 1.6; }
         wantYaw = Math.atan2(spot.lx - p.x, spot.lz - p.z);
         const u = t / spot.dur, up = Math.atan2(spot.ly - feet - 1.75, Math.hypot(spot.lx - p.x, spot.lz - p.z));
-        if (doing === "fix" || doing === "smash") {
+        if (doing === "smash" && tessLook > 0) {
+          // Turned on Tess buzzing round her head, red, the hammer up and her fist shaking at her.
+          wantYaw = Math.atan2(tess.x - p.x, tess.z - p.z);
+          swingT = 0;
+          face = H.redOpen;
+          want.armLx = -2.5 + Math.sin(clock * 16) * 0.3; want.armLz = 0.35; want.foreLx = -0.8; want.foreLz = 0;
+          want.armRx = -2.2; want.foreRx = -1.2; want.lean = -0.08;
+          want.headX = -Math.max(-0.6, Math.min(0.6, Math.atan2(tess.y - feet - 1.75, Math.hypot(tess.x - p.x, tess.z - p.z))));
+        } else if (doing === "fix" || doing === "smash") {
           // Swinging the hammer up over her head and down onto the Jet, again and again, a breath between some; in her
-          // rampage faster, with no breath between, red.
+          // rampage faster, with no breath between, red, and slower while Tess buzzes round her.
           const smash = doing === "smash";
-          swingLen = smash ? RAMPAGE.swing : SWING;
+          swingLen = smash ? RAMPAGE.swing * (tess ? DISTRACT.slow : 1) : SWING;
           swingT += dt;
           if (swingT > swingLen + (smash ? 0.05 : swings % 3 === 2 ? 0.7 : 0.1)) { swingT = 0; swings++; if (swings % 3 === 0) maybeSay(smash ? "smash" : "hammer", smash ? 0.7 : 0.45); }
           swingNow = Math.min(1, swingT / swingLen);
@@ -967,8 +987,13 @@
     };
     goTo(nextSpot(null));
 
+    // Tess come to distract her in a rampage, by where she is (read live), or gone (null).
+    const distract = (at) => {
+      if (at && !tess) { tessIn = pick(0.8, 1.6); tessLook = 0; }
+      tess = at;
+    };
     // How cross she is, 0 to 4 by her anger, 5 while she smashes: the terminals' mood page shows it.
-    return { node, props, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; }, get mood() { return rampage ? 5 : Math.min(4, anger); } };
+    return { node, props, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, distract, debug, get near() { return near; }, get rampaging() { return rampage; }, get mood() { return rampage ? 5 : Math.min(4, anger); } };
   };
 
   BL.sis = { create };
