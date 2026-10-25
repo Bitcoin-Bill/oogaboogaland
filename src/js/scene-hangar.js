@@ -1,7 +1,7 @@
 // The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway (`hangar-models.js` has
 // the hall): the landing inside the door, the runway down the middle and on through the launch tunnel's neon frames to
-// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it; the Jet docked beside the runway,
-// for now its box-out, with a stair up its flank; the mechanics' benches, and the repository's two boards on the wall.
+// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it; the Jet docked beside the runway
+// (`jet-models.js`) with a stair up its flank; the mechanics' benches, and the repository's two boards on the wall.
 // Until the hangar opens the scene stays `wip`, and the Factory builds no door to it (`FM.hangarEntry`) unless a page
 // opens it with ?wip=hangar.
 //
@@ -16,12 +16,14 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const { math, models, contributors, daylight, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
-  const FM = BL.factoryModels, HM = BL.hangarModels;
+  const FM = BL.factoryModels, HM = BL.hangarModels, JM = BL.jetModels;
   const { clamp } = math;
   const { createNode, addChild, removeChild, createCamera, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { LAYOUT } = HM, { HALL } = LAYOUT, DOOR = LAYOUT.door, TUN = LAYOUT.tunnel;
 
   const params = new URLSearchParams(location.search), DEBUG = params.has("debug");
+  // The Jet's construction stage: the one it has reached, or under debug the one `jetstage=` asks for.
+  const JET_STAGE = DEBUG && JM.STAGES[params.get("jetstage")] ? Number(params.get("jetstage")) : JM.STAGE;
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
   const PITCH = [-0.2, 1.3], DIST = [3, 30];
   const FOLLOW = { y: 0.9, min: 3, max: 7, pitch: [0.25, 0.8] };
@@ -35,7 +37,8 @@
   const PRESETS = {
     entrance: view(0, 3.5, 6, 0, 0.1, 20),
     runway: view(0, 4.5, -62, 0, 0.05, 18),
-    jet: view(10, 3.5, -4, -0.9, 0.2, 16),
+    // The Jet from behind its tail, the concept's own angle, the tunnel beyond its nose.
+    jet: view(10, 3.4, -4, -0.42, 0.14, 18),
     boards: view(-16.5, 4.5, 8, Math.PI / 2 - 0.35, 0.05, 12),
     door: view(0, 3.2, DOOR.z - 4, Math.PI, 0.12, 11)
   };
@@ -131,7 +134,7 @@
   };
 
   // The hangar for a visit: the hall and everything standing in it from the cached builds, the signs, the boards'
-  // frames, the Jet's box-out at its dock, the door back to the hall with its shield, and the launch shield.
+  // frames, the Jet at its dock, the door back to the hall with its shield, and the launch shield.
   const build = () => {
     const L = LAYOUT, s = {}, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), benches = HM.benches(), frames = HM.boardFrames();
     addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
@@ -143,10 +146,8 @@
     s.mouth = createNode({ geometry: tunnel.iron });
     s.benches = createNode({ geometry: benches.flat });
     addChild(root, s.mouth, s.benches);
-    // The Jet's box-out at its dock, nose to the tunnel.
-    const jet = HM.jetBoxOut();
-    s.jet = createNode({ position: { x: L.jet.x, y: 0, z: L.jet.z }, geometry: jet.body });
-    addChild(s.jet, createNode({ geometry: jet.glow, sightHidden: true }));
+    // The Jet at its dock, nose to the tunnel, as far built as its stage.
+    s.jet = createNode({ position: { x: L.jet.x, y: 0, z: L.jet.z }, geometry: JM.jet(JET_STAGE) });
     addChild(root, s.jet);
     // The boards' frames on the left wall, each with its title across its top and its screen dark until its face is painted.
     s.boards = {};

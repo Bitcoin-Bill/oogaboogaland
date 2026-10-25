@@ -1,0 +1,173 @@
+// Lightning Jet v2, the jet docked in the Lightning Jet Hangar, built in voxels a quarter of a metre across so the
+// renderer's block detail gives it its concept's blocky look: a white fuselage over a royal-blue belly with a gold
+// pinstripe between them and the bolt's roundel on each side, a dark glass canopy in its frame, swept wings edged in
+// blue, blue tailplanes and a blue fin carrying a big gold bolt, twin engine pods with gold intakes whose exhausts
+// glow, and its gear. Each part is shaped as its own set of cells (`PARTS`); a construction stage (`STAGES`) is the
+// parts fitted by then, merged into one mesh (`jet(stage)`, cached), so nothing fitted shows a face inside another.
+// `STAGE` is the stage the hangar shows, which the maintainer bumps by hand; `?debug=1&jetstage=N` previews another.
+//
+// In the jet's frame: the nose toward -z, y up, the origin on the floor under its middle. `SIZE` is its overall
+// size, `POINTS` where the hangar meets it (the cockpit's seat and eye, the canopy's hinge, the engines), `BOXES` the
+// boxes walkers keep out of, [x0, x1, z0, z1, from, to] between two heights of the feet, and `LIVERY` its colours.
+(() => {
+  "use strict";
+  const BL = window.BL = window.BL || {};
+  const { models } = BL;
+  const { cached, makeVox, voxelGeometry } = models;
+
+  const U = 0.25, CY = 3;
+  const LIVERY = { body: "#eef1f6", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", engine: "#2f8fe8" };
+  // The palette, by index: whites in two tones and a panel line, blues in two tones and the nose's darker one, the
+  // gold, the canopy's glass and frame, the nacelles in two tones, the intakes, the exhausts, the tyres and the struts.
+  const PALETTE = [null, LIVERY.body, "#e2e6ee", "#d3d8e2", LIVERY.blue, "#2b4dbb", "#1a2f7a", LIVERY.gold, LIVERY.glass, "#9aa3b0", "#c9ced6", "#b6bcc6", "#2a2d33", LIVERY.engine, "#1d1f24", "#5a6068"];
+  const WHITE = 1, WHITE_B = 2, PANEL = 3, BLUE = 4, BLUE_B = 5, NOSE = 6, GOLD = 7, GLASS = 8, FRAME = 9, NACELLE = 10, NACELLE_B = 11, INTAKE = 12, EXHAUST = 13, TYRE = 14, STRUT = 15;
+  const EMISSIVE = { [GLASS]: 0.22, [EXHAUST]: 0.75 };
+  const SIZE = { length: 18.5, span: 12.4, height: 8 };
+
+  const smooth = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+  // The fuselage's radius along its length: an ogive nose, swelling to the cabin, a long even body, and a taper to the
+  // tail, where the engines' exhausts stand out past it.
+  const radius = (z) => {
+    if (z < -9 || z > 9) return 0;
+    if (z < -6.5) return 1.3 * Math.pow(Math.sin((z + 9) / 2.5 * Math.PI / 2), 0.8);
+    if (z < -3.5) return 1.3 + 0.3 * smooth((z + 6.5) / 3);
+    if (z < 5) return 1.6;
+    return 1.6 - 0.6 * smooth((z - 5) / 4);
+  };
+  const inFuselage = (x, y, z) => {
+    const r = radius(z);
+    return r > 0 && (x / r) ** 2 + ((y - CY) / (r * 1.04)) ** 2 <= 1;
+  };
+  // The bolt, as one outline in -1..1 (u across, v up), for the fin and the roundels.
+  const BOLT = [[0.1, 1], [0.6, 1], [0.25, 0.2], [0.6, 0.2], [-0.25, -1], [-0.02, -0.15], [-0.38, -0.15]];
+  const inBolt = (u, v) => {
+    let inside = false;
+    for (let i = 0, j = BOLT.length - 1; i < BOLT.length; j = i++) {
+      const [ui, vi] = BOLT[i], [uj, vj] = BOLT[j];
+      if ((vi > v) !== (vj > v) && u < (uj - ui) * (v - vi) / (vj - vi) + ui) inside = !inside;
+    }
+    return inside;
+  };
+  // Two tones a colour, by cell, so a broad face reads as built of blocks.
+  const tone = (i, j, k, a, b) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & 2 ? b : a;
+
+  // Each part as a function of a cell's indices and centre, giving its colour or nothing; and the box of cells it may
+  // fill, [i0, i1, j0, j1, k0, k1].
+  const PARTS = {
+    // The fuselage: white over the blue belly, a gold pinstripe between, panel lines every two metres, the nose's tip
+    // in a darker blue, and the bolt's roundel on each flank behind the canopy.
+    body: {
+      box: [-8, 7, 4, 20, -36, 36],
+      cell: (i, j, k, x, y, z) => {
+        if (!inFuselage(x, y, z)) return null;
+        if (z < -8.4) return NOSE;
+        const r = radius(z), shell = Math.abs(x) > r * 0.72;
+        const dz = z + 1.1, dy = y - CY - 0.3;
+        if (shell && dz * dz + dy * dy <= 0.62) return inBolt(dz / 0.42, dy / 0.66) ? GOLD : BLUE;
+        if (y < CY - 0.5) return tone(i, j, k, BLUE, BLUE_B);
+        if (y < CY - 0.25) return GOLD;
+        return (k & 7) === 0 ? PANEL : tone(i, j, k, WHITE, WHITE_B);
+      }
+    },
+    // The canopy: a glass bubble over the cockpit, in its frame, with a bow across its middle.
+    canopy: {
+      box: [-4, 3, 13, 20, -30, -10],
+      cell: (i, j, k, x, y, z) => {
+        const cz = -5, cyTop = CY + radius(cz) * 0.8;
+        if ((x / 0.85) ** 2 + ((y - cyTop) / 0.8) ** 2 + ((z - cz) / 2.2) ** 2 > 1 || inFuselage(x, y, z)) return null;
+        return Math.abs(z - cz) < 0.13 || inFuselage(x, y - U, z) ? FRAME : GLASS;
+      }
+    },
+    // The wings, swept and set low with a little dihedral: white, their leading edges and tips blue.
+    wings: {
+      box: [-25, 24, 6, 12, -11, 9],
+      cell: (i, j, k, x, y, z) => {
+        const s = Math.abs(x);
+        if (s > 6.2 || s < 1) return null;
+        const f = s / 6, le = -2.6 + 3 * f, te = 2.2 - 0.6 * f, wy = CY - 0.75 + 0.06 * s, t = 0.55 - 0.3 * f;
+        if (z < le || z > te || Math.abs(y - wy) > Math.max(t / 2, 0.13)) return null;
+        return s > 5.5 || z - le < 0.45 ? BLUE : tone(i, j, k, WHITE, WHITE_B);
+      }
+    },
+    // The tail: the tailplanes, blue, and the fin over them, blue with a white leading edge and the gold bolt.
+    tail: {
+      box: [-14, 13, 12, 32, 18, 36],
+      cell: (i, j, k, x, y, z) => {
+        const s = Math.abs(x), plane = CY + 0.45;
+        if (s <= 3.3 && Math.abs(y - plane) <= 0.15 && z >= 5.8 + 1.8 * s / 3.3 && z <= 8.6) return tone(i, j, k, BLUE, BLUE_B);
+        const h = y - CY;
+        if (s > 0.25 || h < 0.9 || h > 5) return null;
+        const le = 4.8 + h / 5 * 2.8, te = 8.9 - h / 5 * 0.1;
+        if (z < le || z > te) return null;
+        if (z - le < 0.45) return WHITE;
+        return inBolt((z - 7.6) / 1, (h - 2.9) / 1.5) ? GOLD : tone(i, j, k, BLUE, BLUE_B);
+      }
+    },
+    // The engine pods either side of the tail: gold rings round dark intakes, grey nacelles, and the exhausts glowing.
+    engines: {
+      box: [-9, 8, 7, 17, 18, 37],
+      cell: (i, j, k, x, y, z) => {
+        if (z < 4.6 || z > 9.25) return null;
+        const ex = x < 0 ? -1.35 : 1.35, d = Math.hypot(x - ex, y - (CY - 0.35));
+        const r = z < 5 ? 0.74 : 0.78 - 0.16 * smooth((z - 5) / 4.25);
+        if (d > r) return null;
+        if (z < 4.85) return d > 0.5 ? GOLD : INTAKE;
+        if (z > 9) return d < 0.36 ? EXHAUST : INTAKE;
+        return tone(i, j, k, NACELLE, NACELLE_B);
+      }
+    },
+    // The gear: a nose leg and two main legs, each a strut and its wheels, hubs grey.
+    gear: {
+      box: [-8, 7, 0, 9, -27, 6],
+      cell: (i, j, k, x, y, z) => {
+        const wheel = (cx, cz, w) => Math.abs(x - cx) <= w && Math.hypot(y - 0.42, z - cz) <= 0.42;
+        if (wheel(0, -6.2, 0.26)) return Math.hypot(y - 0.42, z + 6.2) < 0.2 ? STRUT : TYRE;
+        for (const s of [-1, 1]) if (wheel(s * 1.5, 1, 0.26)) return Math.hypot(y - 0.42, z - 1) < 0.2 ? STRUT : TYRE;
+        if (Math.abs(x) < 0.13 && Math.abs(z + 6.2) < 0.13 && y > 0.75 && y < CY - 1.2) return STRUT;
+        for (const s of [-1, 1]) if (Math.abs(x - s * 1.5) < 0.13 && Math.abs(z - 1) < 0.13 && y > 0.75 && y < CY - 0.75) return STRUT;
+        return null;
+      }
+    }
+  };
+  // The parts fitted at each stage: the airframe on its gear, then its wings, its tail and engines, and last its canopy,
+  // when it is Jet v2 as it will fly.
+  const STAGES = { 1: ["body", "gear"], 2: ["body", "gear", "wings"], 3: ["body", "gear", "wings", "tail", "engines"], 4: ["body", "gear", "wings", "tail", "engines", "canopy"] };
+  const STAGE = 4;
+
+  // One part's cells, shaped once a page.
+  const cells = new Map();
+  const partCells = (name) => {
+    let out = cells.get(name);
+    if (out) return out;
+    const P = PARTS[name], [i0, i1, j0, j1, k0, k1] = P.box;
+    out = [];
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
+      const c = P.cell(i, j, k, (i + 0.5) * U, (j + 0.5) * U, (k + 0.5) * U);
+      if (c) out.push(i, j, k, c);
+    }
+    cells.set(name, out);
+    return out;
+  };
+  // The jet at a stage, its fitted parts' cells merged into one grid, the fuselage's last, so a cell two parts share
+  // takes the body's colour. Each stage's mesh is a cached build, released with the hangar's others.
+  const builds = {};
+  for (const [stage, parts] of Object.entries(STAGES)) builds[stage] = cached(() => {
+    const v = makeVox();
+    for (const name of [...parts.filter((p) => p !== "body"), "body"]) {
+      const c = partCells(name);
+      for (let n = 0; n < c.length; n += 4) v.set(c[n], c[n + 1], c[n + 2], c[n + 3]);
+    }
+    return voxelGeometry(v, { unit: U, palette: PALETTE, emissive: EMISSIVE });
+  });
+  const jet = (stage = STAGE) => (builds[stage] || builds[STAGE])();
+
+  const POINTS = {
+    seat: { x: 0, y: CY + 0.35, z: -5 }, eye: { x: 0, y: CY + 1.25, z: -5.4 }, hinge: { x: 0, y: CY + 1.3, z: -2.8 },
+    engines: [{ x: -1.35, y: CY - 0.35, z: 6.9 }, { x: 1.35, y: CY - 0.35, z: 6.9 }]
+  };
+  // The fuselage and its gear down to the floor, the engine pods, and the wings' roots, low enough to catch a head;
+  // under the wings farther out an Ooga walks upright.
+  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.15, 2.15, 4.6, 9.3, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]];
+
+  BL.jetModels = { SIZE, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
+})();

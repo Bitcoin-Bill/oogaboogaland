@@ -5,8 +5,8 @@
 // the bolt's royal-blue banners; timber catwalks run along both side walls on brackets, a stair up to each from the
 // back; on the right the Jet stands docked beside the runway, nose to the tunnel, with a scaffold and stair up its left
 // flank to the cockpit; on the left the mechanics' benches with their blue screens, and on the wall above them the two
-// boards, the repository's stats right after the door and its timeline farther in. The Jet here is its box-out, to the
-// size `jet-models.js` will build it at; the boards' faces are the scene's.
+// boards, the repository's stats right after the door and its timeline farther in. The Jet itself is `jet-models.js`'s;
+// the boards' faces are the scene's.
 //
 // `LAYOUT` is the one table of where everything stands, read by the scene too. The hangar's frame: +z runs back out
 // through the door to the hall, x to the right looking in, y 0 the floor. `supportAt`, `clearAt` and `walkable` are the
@@ -15,16 +15,14 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const { models, math } = BL;
-  const FM = BL.factoryModels;
-  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, prism, shaded, deckParts, stairParts } = models;
+  const FM = BL.factoryModels, JM = BL.jetModels;
+  const { cached, box, bevelBox, merge, noShadow, moved, turnedY, beam, lathe, deckParts, stairParts } = models;
   const { mulberry32 } = math;
   const TAU = Math.PI * 2;
 
   const STONE = ["#5b4a3e", "#524238", "#66544a", "#4a3d34"], STONE_DK = "#3a2f28", IRON = "#4a4d52", IRON_DK = "#2c2e33";
   const TIMBER = "#8a5a32", TIMBER_LT = "#a8703e", TIMBER_DK = "#5c3a1e";
   const RUNWAY = "#23262d", PAINT = "#ffd23a", MARKER = "#6fc8ff", NEON = "#3fa8ff", SCREEN = "#2f7fd8";
-  // The Jet's livery, for its box-out and the hangar's banners and signs.
-  const LIVERY = { body: "#e9edf3", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", engine: "#6fc8ff" };
 
   const LAYOUT = {
     HALL: { halfW: 20, back: -34, front: 30, h: 18 },
@@ -45,10 +43,9 @@
     catwalkY: 7.5, catwalks: [[-17, -14.6, -20, 24], [14.6, 17, -20, 24]],
     catwalkStairs: [[-15.8, 0, -31.5, -15.8, 7.5, -20, 1.6], [15.8, 0, -31.5, 15.8, 7.5, -20, 1.6]],
     gantries: [22, 14, 6, -2, -10, -18, -26], gantryY: 15,
-    // The Jet's dock right of the runway, nose to the tunnel: where its box-out stands on the floor, and the box-out's
-    // length, span and height (the size `jet-models.js` builds to). The scaffold's deck beside the cockpit and the
-    // stair up to it from in front of the nose.
-    jet: { x: 11, z: -4, length: 18, span: 12, height: 8 },
+    // The Jet's dock right of the runway, nose to the tunnel: where `jet-models.js`'s jet stands on the floor. The
+    // scaffold's deck beside its cockpit and the stair up to it from in front of the nose.
+    jet: { x: 11, z: -4 },
     jetDeck: { x: 7.95, y: 3.4, z: -9, w: 2.7, d: 4 },
     jetStairs: [7.4, 0, -16.5, 7.4, 3.4, -11, 1.6],
     // The mechanics' benches on the left, [x, z] each, and crates about the floor, [x, z, turn].
@@ -261,38 +258,7 @@
   };
   const boardFrames = cached(() => ({ stats: boardFrame(LAYOUT.boards.stats.w, LAYOUT.boards.stats.h), timeline: boardFrame(LAYOUT.boards.timeline.w, LAYOUT.boards.timeline.h) }));
 
-  // ---- the Jet's box-out and its dock ---------------------------------------------------------------------------
-
-  // The Jet as a box-out at the size `jet-models.js` will build it: a white fuselage turned on its length with a dark
-  // canopy, swept wings and tailplanes in the livery's blue, a blue fin with the bolt on both faces, twin engines whose
-  // exhausts glow, and its gear. In the Jet's frame: nose to -z, the origin on the floor under its middle.
-  const jetBoxOut = cached(() => {
-    const flat = [], round = [], glow = [], cy = 3, L = 9;
-    round.push(moved(turnedX(lathe({ profile: [[0, -L], [0.55, -L + 0.8], [1.15, -L + 2.2], [1.5, -L + 4], [1.6, -L + 7], [1.6, L - 4.5], [1.35, L - 1.4], [1.1, L], [0, L]], segments: 16, color: (t) => t > 0.42 && t < 0.47 ? LIVERY.gold : LIVERY.body }), Math.PI / 2), 0, cy, 0));
-    round.push(moved(turnedX(lathe({ profile: [[0, -1.7], [0.7, -0.9], [0.78, 0.4], [0.5, 1.5], [0, 1.6]], segments: 12, color: LIVERY.glass, emissive: 0.15 }), Math.PI / 2), 0, cy + 1.05, -L + 4.6));
-    // Wings and tailplanes: flat outlines in x and z, wound counter-clockwise, laid flat.
-    const flatWing = (pts, depth, color, x, y, z) => flat.push(moved(turnedX(prism(pts, depth, color), Math.PI / 2), x, y, z));
-    for (const s of [-1, 1]) {
-      const wing = [[0, -2.6], [s * 6, 0.6], [s * 6, 1.7], [0, 2.2]], tail = [[0, 5.6], [s * 3, 7.8], [s * 3, 8.6], [0, 8.6]];
-      flatWing(s > 0 ? wing : wing.slice().reverse(), 0.28, LIVERY.blue, 0, cy - 0.6, 0);
-      flatWing(s > 0 ? tail : tail.slice().reverse(), 0.18, LIVERY.blue, 0, cy + 0.4, 0);
-    }
-    // The fin: an outline in z and y, stood up along the fuselage, the bolt on each face.
-    const fin = prism([[5.2, 0], [8.9, 0], [8.9, 5], [7.8, 5]].map(([z, y]) => [-z, y]).reverse(), 0.3, LIVERY.blue);
-    flat.push(moved(turnedY(fin, Math.PI / 2), 0, cy + 1.2, 0));
-    for (const s of [-1, 1]) glow.push(moved(turnedY(FM.smoothBolt(2.2, 0.05, PAINT, 0.9), s > 0 ? Math.PI / 2 : -Math.PI / 2), s * 0.18, cy + 3.6, 7.8));
-    // Twin engines at the tail, their exhausts lit.
-    for (const s of [-1, 1]) {
-      round.push(moved(turnedX(lathe({ profile: [[0, -1.6], [0.62, -1.3], [0.72, 0.6], [0.6, 1.6], [0, 1.6]], segments: 12, color: "#c9ced6" }), Math.PI / 2), s * 1.25, cy - 0.3, L - 1.7));
-      glow.push(moved(turnedX(lathe({ profile: [[0.52, 0], [0.52, 0.05], [0, 0.06]], segments: 12, color: LIVERY.engine, emissive: 1 }), Math.PI / 2), s * 1.25, cy - 0.3, L - 0.08));
-    }
-    // The gear: a nose leg and two mains, each a strut and a wheel.
-    for (const [x, z] of [[0, -L + 2.6], [-1.3, 1], [1.3, 1]]) {
-      flat.push(box({ w: 0.16, h: cy - 1.4, d: 0.16, color: IRON, offset: { x, y: 0.4 + (cy - 1.4) / 2, z } }));
-      round.push(moved(turnedZ(lathe({ profile: [[0, -0.14], [0.42, -0.14], [0.42, 0.14], [0, 0.14]], segments: 12, color: "#1d1f24" }), Math.PI / 2), x, 0.42, z));
-    }
-    return { body: shaded(round, flat), glow: noShadow(merge(...glow)) };
-  });
+  // ---- the Jet's dock ----------------------------------------------------------------------------------------
 
   // The scaffold up the Jet's left flank: its deck beside the cockpit on posts, railed but where it meets the fuselage
   // and where its stair comes up from in front of the nose.
@@ -332,11 +298,9 @@
     const l = L.landing;
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
     for (const [sx, , sz0, , , sz1, w] of L.catwalkStairs) block(sx - w / 2, sx + w / 2, Math.min(sz0, sz1) + 3.6, Math.max(sz0, sz1), -1, 0.3);
-    // The Jet: its fuselage and engines down to the floor, its wings' tips and the nose leg; under the wings an Ooga
-    // walks upright.
+    // The Jet's own boxes, at its dock: its fuselage and gear, its engine pods and its wings' roots.
     const j = L.jet;
-    block(j.x - 1.65, j.x + 1.65, j.z - j.length / 2 + 0.6, j.z + j.length / 2, -1, j.height);
-    block(j.x - 2.1, j.x + 2.1, j.z + j.length / 2 - 3.4, j.z + j.length / 2, -1, 4);
+    for (const [x0, x1, z0, z1, from, to] of JM.BOXES) block(j.x + x0, j.x + x1, j.z + z0, j.z + z1, from, to);
     // The benches, the crates and the tool chest.
     for (const [x, z] of L.benches) block(x - 1, x + 1, z - 0.5, z + 0.5, -1, 1.2);
     for (const [x, z] of L.crates) block(x - 0.55, x + 0.55, z - 0.55, z + 0.55, -1, 0.85);
@@ -402,7 +366,7 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, LIVERY, STEP, shell, landing, runway, tunnel, isle, catwalks, dressing, benches, boardFrames, jetBoxOut, jetScaffold,
+    LAYOUT, STEP, shell, landing, runway, tunnel, isle, catwalks, dressing, benches, boardFrames, jetScaffold,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))
