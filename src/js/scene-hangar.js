@@ -1,6 +1,6 @@
 // The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway (`hangar-models.js` has
 // the hall): the landing inside the door, the runway down the middle and on through the launch tunnel's neon frames to
-// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it, the hall humming
+// the launch shield, sealed until Jet v2 flies, with space beyond it, the hall humming
 // (`hangar-audio.js`); the Jet docked beside the runway
 // (`jet-models.js`) with a stair tower up its flank; the crew's workstations, and the repository's two boards on the
 // wall. The crew are the Factory's own, gorillas in hard hats, each pacing its post. The boards read the repository
@@ -14,12 +14,13 @@
 // door's shield, Escape and the Leave button all take it back to the hall, onto the walkway at the door. The hangar is a
 // room of the Factory: its voice zone is in the Factory's group, so players here and in the hall hear each other.
 //
-// The sky through the tunnel is the island's: the hub's clock samples it every frame, and only its sky (gradient, sun,
-// moon and stars) is taken, the hall keeping its own warm light.
+// Past the launch shield is space, as ₿IFRÖST's dome shows its night: stars twinkling in their halos, the galaxy's
+// band, a ringed giant and a red world turning with their moons, and shooting stars; the hall keeps its own warm
+// light.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, daylight, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
+  const { math, models, contributors, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
   const FM = BL.factoryModels, HM = BL.hangarModels, JM = BL.jetModels;
   const { clamp } = math;
   const { createNode, addChild, removeChild, createCamera, stepTweens, tweenCount, traverseVisible } = BL.scene;
@@ -48,29 +49,24 @@
   };
   // In from the hall: on the landing a step in from the door, facing down the runway, the view in the doorway behind it.
   const ARRIVAL = { position: { x: 0, y: DOOR.y, z: DOOR.z - 3.4 }, target: { x: 0, y: DOOR.y + 1, z: DOOR.z - 3.4 }, yaw: 0, pitch: 0.12, dist: 2.8 };
-  // The hall's own light, warm, with the island's sky through the tunnel written into it each frame (`skyFrom`).
+  // The hall's own light, warm, and past the launch shield space, as ₿IFRÖST's night shows it: the sky pass paints its
+  // deep gradient, its twinkling stars and a moon low in the tunnel's end; `sun` is the sun's colour, which the night
+  // hides.
   const RENDER_OPTS = {
-    clear: [0.05, 0.05, 0.07], sky: [0.54, 0.38, 0.26], ground: [0.24, 0.16, 0.1],
+    clear: [0.01, 0.012, 0.035], sky: [0.54, 0.38, 0.26], ground: [0.24, 0.16, 0.1],
     direct: [0.7, 0.52, 0.36], directStrength: 0.36, ambientFloor: 0.4, light: { x: 0.25, y: 0.9, z: 0.35 },
-    horizon: new Float32Array(3), zenith: new Float32Array(3), sun: new Float32Array(3), sunDirection: { x: 0, y: 1, z: 0 },
-    moon: { x: 0, y: 1, z: 0 }, moonSun: { x: 0, y: -1, z: 0 }, starMatrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]), stars: 0,
-    clouds: 0.45, sea: -140, shadowCenter: { x: 2.5, y: 6, z: -2 }, shadowExtent: 42,
+    horizon: [0.07, 0.06, 0.18], zenith: [0.006, 0.008, 0.03], sun: [0.05, 0.05, 0.08], stars: 1,
+    moon: { x: 0.2, y: 0.13, z: -0.97 }, starMatrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    shadowCenter: { x: 2.5, y: 6, z: -2 }, shadowExtent: 42,
     lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, bloomStrength: 1
   };
-  // What the clock writes, as Ooga Drop keeps it; the hangar takes its sky from it.
-  const SKY = {
-    clear: new Float32Array(3), horizon: new Float32Array(3), zenith: new Float32Array(3), sky: new Float32Array(3), ground: new Float32Array(3), sun: new Float32Array(3), direct: new Float32Array(3),
-    light: { x: 0.55, y: 0.78, z: -0.25 }, sunDirection: { x: 0, y: 1, z: 0 }, moon: { x: 0, y: 1, z: 0 }, moonSun: { x: 0, y: -1, z: 0 }, starMatrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
-    stars: 0, torch: 0, day: 1, twilight: 0, lampFactor: 0, directStrength: 1, sunStrength: 1, moonStrength: 0, ambientFloor: 0.18, diffuseFloor: 0, shadowStrength: 1, shadowFloor: 0, shadowBias: 0.002, time: 0
-  };
-  const copy3 = (a, b) => { a.x = b.x; a.y = b.y; a.z = b.z; };
-  const skyFrom = (clock) => {
-    daylight.sample(clock.read(), SKY, clock.dayOfYear, daylight.ISLAND_LATITUDE_DEG, clock.continuousDay, clock.utcMs);
-    RENDER_OPTS.horizon.set(SKY.horizon); RENDER_OPTS.zenith.set(SKY.zenith); RENDER_OPTS.sun.set(SKY.sun);
-    copy3(RENDER_OPTS.sunDirection, SKY.sunDirection); copy3(RENDER_OPTS.moon, SKY.moon); copy3(RENDER_OPTS.moonSun, SKY.moonSun);
-    RENDER_OPTS.starMatrix.set(SKY.starMatrix);
-    RENDER_OPTS.stars = SKY.stars;
-  };
+  // The space past the shield, from ₿IFRÖST's dome (`bifrostModels.sky`): its stars, the twinkling ones in their halos,
+  // the galaxy's band and its shooting stars on a dome tipped so its zenith looks back down the tunnel and turned so
+  // the band crosses the tunnel's end; and its ringed giant and its red world, turning with their moons going round,
+  // hung past the tunnel's end and smaller, [x, y, z, scale] from it. Twinkling stars rest as bright as the rest and dip
+  // by `TWINKLE_DIP` of their glow; a shooting star streaks for `METEOR_LIFE` seconds, one every `METEOR_GAP`.
+  const SPACE = { tip: -Math.PI / 2, turn: -0.3, planets: [[-22, 18, -300, 0.55], [28, -2, -270, 0.8]] };
+  const TWINKLE_DIP = 1.08, METEOR_LIFE = 0.8, METEOR_GAP = [3, 9];
   const TIPS = {
     exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
     sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
@@ -84,7 +80,7 @@
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
 
-  let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null, clock = null;
+  let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   let unsubscribeFeed = null, boardsDirty = false, audio = null;
   const NO_ACTORS = [];
@@ -147,13 +143,85 @@
     return flight;
   };
 
+  // Space past the launch shield (`SPACE`), lighter on Canvas 2D: the dome tipped and turned with its stars, twinkling
+  // groups, halos, band and shooting stars waiting their turn, and the planets on nodes of their own, a turning one
+  // leaning on a node with its body and each band of its rings spinning at their own pace (`spins`), its day and night
+  // over it, and its moons going round it (`moons`), as ₿IFRÖST hangs them.
+  const buildSpace = (s) => {
+    const BM = BL.bifrostModels, night = BM.sky(renderer.kind === "canvas2d" ? 1 : 0);
+    const space = createNode({ position: { x: 0, y: TUN.y, z: TUN.z1 } }), turn = createNode({ rotation: { x: 0, y: SPACE.turn, z: 0 } }), dome = createNode({ rotation: { x: SPACE.tip, y: 0, z: 0 } });
+    s.twinkleFull = 1 / BM.TWINKLE_EMISSIVE;
+    s.twinkle = night.twinkle.map((geometry) => createNode({ geometry, sightHidden: true }));
+    s.halos = night.halos.map((geometry) => createNode({ geometry, sightHidden: true }));
+    addChild(dome, createNode({ geometry: night.stars, sightHidden: true }), ...s.twinkle, ...s.halos, createNode({ geometry: night.band, sightHidden: true }));
+    s.meteors = night.meteors.map((m) => {
+      const node = createNode({ geometry: m.geometry, visible: false, sightHidden: true });
+      addChild(dome, node);
+      return { node, dir: m.dir, len: m.len, t: 1 };
+    });
+    s.meteorWait = METEOR_GAP[0];
+    addChild(turn, dome);
+    addChild(space, turn);
+    s.spins = [];
+    s.moons = [];
+    SPACE.planets.forEach(([x, y, z, k], i) => {
+      const p = night.planets[i], planet = createNode({ position: { x, y, z }, scale: { x: k, y: k, z: k } });
+      if (p.body) {
+        const lean = createNode({ rotation: { x: 0, y: 0, z: p.tilt } });
+        for (const [geometry, rate] of [[p.body, p.turn], ...p.rings.map((ring) => [ring.geometry, ring.rate])]) {
+          const node = createNode({ geometry, sightHidden: true });
+          addChild(lean, node);
+          s.spins.push({ node, rate });
+        }
+        addChild(planet, lean);
+        for (const geometry of p.shade) addChild(planet, createNode({ geometry, scale: { x: p.r, y: p.r, z: p.r }, sightHidden: true }));
+      } else addChild(planet, createNode({ geometry: p.geometry, sightHidden: true }));
+      for (const m of p.moons) {
+        const node = createNode({ geometry: m.geometry, sightHidden: true });
+        addChild(planet, node);
+        s.moons.push({ node, a: m.a, rate: m.rate, phase: m.phase, u: m.u, v: m.v });
+      }
+      addChild(space, planet);
+    });
+    addChild(root, space);
+  };
+  // Space's life: stars twinkle a group at a time with their halos, the planets and their rings spin, moons go round
+  // their planets, and now and then a shooting star streaks down its way and fades.
+  const heavens = (s, dt, elapsed) => {
+    for (let i = 0; i < s.twinkle.length; i++) {
+      const u = Math.sin(elapsed * (1.1 + 0.29 * i) + i * 2.1) * Math.sin(elapsed * (0.37 + 0.07 * i) + i), d = u * u;
+      s.twinkle[i].glow = s.halos[i].glow = s.twinkleFull - TWINKLE_DIP * d * d;
+    }
+    for (let i = 0; i < s.spins.length; i++) s.spins[i].node.rotation.y += dt * s.spins[i].rate;
+    for (let i = 0; i < s.moons.length; i++) {
+      const m = s.moons[i], t = elapsed * m.rate + m.phase, x = Math.cos(t) * m.a, y = Math.sin(t) * m.a, p = m.node.position;
+      p.x = m.u[0] * x + m.v[0] * y; p.y = m.u[1] * x + m.v[1] * y; p.z = m.u[2] * x + m.v[2] * y;
+    }
+    s.meteorWait -= dt;
+    if (s.meteorWait <= 0) {
+      s.meteorWait = METEOR_GAP[0] + Math.random() * (METEOR_GAP[1] - METEOR_GAP[0]);
+      const m = s.meteors[Math.floor(Math.random() * s.meteors.length)];
+      if (m.t >= 1) { m.t = 0; m.node.visible = true; }
+    }
+    for (let i = 0; i < s.meteors.length; i++) {
+      const m = s.meteors[i];
+      if (m.t >= 1) continue;
+      m.t = Math.min(1, m.t + dt / METEOR_LIFE);
+      const k = m.t * m.len;
+      m.node.position.x = m.dir[0] * k; m.node.position.y = m.dir[1] * k; m.node.position.z = m.dir[2] * k;
+      m.node.glow = 1.4 * (1 - m.t);
+      m.node.smokeOpacity = Math.min(1, 3 * (1 - m.t));
+      m.node.visible = m.t < 1;
+    }
+  };
+
   // The hangar for a visit: the hall and everything standing in it from the cached builds, the signs, the boards, the
-  // Jet at its dock, the door back to the hall with its shield, and the launch shield.
+  // Jet at its dock, the door back to the hall with its shield, the launch shield and space past it.
   const build = () => {
     const L = LAYOUT, s = { crew: [] }, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), fixtures = HM.fixtures(), frames = HM.boardFrames();
     addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
       createNode({ geometry: HM.landing() }), createNode({ geometry: runway.flat }), createNode({ geometry: runway.glow, sightHidden: true }),
-      createNode({ geometry: tunnel.stone }), createNode({ geometry: tunnel.glow, sightHidden: true }), createNode({ geometry: HM.isle(), sightHidden: true }),
+      createNode({ geometry: tunnel.stone }), createNode({ geometry: tunnel.glow, sightHidden: true }),
       createNode({ geometry: HM.catwalks() }), createNode({ geometry: dressed.iron }), createNode({ geometry: dressed.banners }),
       createNode({ geometry: dressed.frame }), createNode({ geometry: dressed.glass, sightHidden: true }), createNode({ geometry: fixtures.glow, sightHidden: true }),
       createNode({ geometry: fixtures.frame }), createNode({ geometry: fixtures.glass, sightHidden: true }), createNode({ geometry: HM.dock() }));
@@ -319,10 +387,8 @@
 
   const enter = (ctx) => {
     ({ renderer, game, world, go, agentPlay } = ctx);
-    camera = createCamera({ fov: 55, near: 0.3, far: 420 });
+    camera = createCamera({ fov: 55, near: 0.3, far: 700 });
     root = createNode();
-    clock = daylight.createClock({ hour: DEBUG ? parseFloat(params.get("hour")) : NaN, daylen: DEBUG ? parseFloat(params.get("daylen")) : NaN, day: DEBUG ? parseFloat(params.get("day")) : NaN, time: DEBUG ? params.get("time") : null, now: new Date() });
-    skyFrom(clock);
     hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
     hud.setAreaLabel("LF");
     hooks = {};
@@ -390,6 +456,7 @@
     dust = BL.dressing.motes({ count: 220, span: 26, low: 0.5, high: 13 });
     addChild(root, dust.node);
     scene = build();
+    buildSpace(scene);
     hireCrew(scene);
     audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 } });
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
@@ -463,7 +530,6 @@
   };
   const update = (dt, elapsed) => {
     const s = scene;
-    skyFrom(clock);
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
     pilot.update(dt);
@@ -495,6 +561,7 @@
       } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
     glowNear(elapsed);
+    heavens(s, dt, elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
     if (boardsDirty) {
@@ -548,7 +615,7 @@
     const count = input.targetCount;
     input.dispose();
     hud.dispose();
-    scene = hud = hooks = input = pilot = fx = agentPlay = dust = people = avatar = playerWorld = node = clock = null;
+    scene = hud = hooks = input = pilot = fx = agentPlay = dust = people = avatar = playerWorld = node = null;
     hangarScene.input = hangarScene.debug = null;
     return { targets: count };
   };

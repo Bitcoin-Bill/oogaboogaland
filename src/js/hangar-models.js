@@ -1,7 +1,7 @@
 // The Lightning Jet Hangar's geometry: the long rock hall behind the Lightning Factory's door at the end of its left
 // walkway, as its concept draws it. A timber landing inside the door with steps down to the runway, which runs down the
 // middle of the floor between hazard-striped edges and blue marker lamps, and on through the launch tunnel's octagonal
-// frames, each lined with blue neon, to the launch shield at its far end, sealed until Jet v2 flies, the sky beyond.
+// frames, each lined with blue neon, to the launch shield at its far end, sealed until Jet v2 flies, space beyond.
 // Ochre truss gantries cross the vault, hung with lanterns on chains of every length and the bolt's royal-blue banners;
 // timber catwalks run along both side walls on brackets, a stair up to each from the back. On the right, in the
 // hall's wider half, the Jet stands docked beside the runway, nose to the tunnel, inside its striped bay: a timber
@@ -85,9 +85,7 @@
     // workstations, at the stats board, on the Jet's gangway, at its stair and its engine, and on both catwalks.
     crew: [[-9.5, 0, 18, 0.35, Math.PI], [-9.2, 0, 10.4, 0.35, Math.PI + 0.3], [-9.5, 0, -12.1, 0.35, Math.PI], [-13.5, 0, -11, 0.35, -Math.PI / 2],
       [HALL.x0 + 5.6, 0, 16.4, 0.8, -Math.PI / 2], [11, 5, -17.5, 0.9, Math.PI / 2], [7.4, 0, 0.4, 0.5, Math.PI / 2], [14.8, 0, 6.2, 0.4, Math.PI],
-      [HALL.x1 - 4.2, 7.5, 6, 2.2, -Math.PI / 2], [HALL.x0 + 4.2, 7.5, 0, 2.2, Math.PI / 2]],
-    // The far islet seen through the launch shield, past the tunnel's end.
-    isle: { x: 7, y: 9, z: -240, r: 11 }
+      [HALL.x1 - 4.2, 7.5, 6, 2.2, -Math.PI / 2], [HALL.x0 + 4.2, 7.5, 0, 2.2, Math.PI / 2]]
   };
 
   // A painted line on the floor from (ax, az) to (bx, bz), `w` wide, its top at `y`: yellow and black dashes.
@@ -209,18 +207,6 @@
     for (const s of [-1, 1]) iron.push(box({ w: 0.2, h: 1.1, d: 0.2, color: IRON_DK, offset: { x: s * 5.6, y: 0.55, z: hs } }));
     for (let k = 0; k < 14; k++) iron.push(box({ w: 0.8, h: 0.22, d: 0.18, color: k % 2 ? INK : PAINT, offset: { x: -5.6 + (k + 0.5) * 0.8, y: 1.05, z: hs } }));
     return { iron: merge(...iron), stone: merge(...stone), glow: noShadow(merge(...glow)) };
-  });
-
-  // Far off past the shield, a floating islet in the open sky: rock tapering to a point under a green crown and a tree,
-  // lit a little of itself as daylight would at that distance.
-  const isle = cached(() => {
-    const s = LAYOUT.isle, r = s.r;
-    return noShadow(moved(merge(
-      lathe({ profile: [[0, -r * 1.5], [r * 0.5, -r * 0.9], [r * 0.9, -r * 0.3], [r, 0], [0, 0]], segments: 9, color: "#6a5646", emissive: 0.3 }),
-      lathe({ profile: [[r * 1.02, 0], [r * 0.9, r * 0.12], [0, r * 0.16]], segments: 9, color: "#4f9a3a", emissive: 0.35 }),
-      moved(lathe({ profile: [[0.6, 0], [0.4, r * 0.4], [0, r * 0.42]], segments: 6, color: "#6b4a2a", emissive: 0.3 }), r * 0.2, r * 0.1, 0),
-      moved(lathe({ profile: [[r * 0.34, 0], [r * 0.22, r * 0.3], [0, r * 0.46]], segments: 7, color: "#3f8a35", emissive: 0.35 }), r * 0.2, r * 0.42, 0)
-    ), s.x, s.y, s.z));
   });
 
   // The catwalks along the side walls: plank decks bracketed into the rock (no posts to stand in front of the boards
@@ -932,7 +918,7 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, STEP, shell, landing, runway, tunnel, isle, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
+    LAYOUT, STEP, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))
