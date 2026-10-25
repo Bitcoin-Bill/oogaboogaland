@@ -278,15 +278,16 @@
   });
 
   // Every lantern in the hall, as `FM.lanterns` takes them: hung from the gantries on chains of every length (none
-  // over the hangar's sign or against the Jet's fin), on posts both sides of the runway and on the landing, and on the
-  // catwalks' rails. `hangDrop` is how far below a gantry's bottom chord each hung one's hook is, those over the
-  // runway's middle hung short so the tunnel's mouth stays clear from the door.
+  // over the hangar's sign, against the Jet's fin or in the film screen's way but the one it stows under), on posts
+  // both sides of the runway and on the landing, and on the catwalks' rails. `hangDrop` is how far below a gantry's
+  // bottom chord each hung one's hook is, those over the runway's middle hung short so the tunnel's mouth stays clear
+  // from the door.
   const hangDrop = (i, j) => HUNG_X[j] === 0 ? 0.4 : 0.8 + ((i * 7 + j * 3) % 5) * 0.75;
   const HUNG_X = [-17, -11, -5.5, 0, 5.5, 11, 16.5, 22];
   const lamps = cached(() => {
-    const L = LAYOUT, out = [], fin = (z) => z > L.jet.z + 6.6 && z < L.jet.z + 14;
+    const L = LAYOUT, S = L.show.screen, out = [], fin = (z) => z > L.jet.z + 6.6 && z < L.jet.z + 14;
     L.gantries.forEach((z, i) => HUNG_X.forEach((x, j) => {
-      if (z === L.signs.hangar[2] && Math.abs(x) < 3 || fin(z) && Math.abs(x - L.jet.x) < 1.6) return;
+      if (z === L.signs.hangar[2] && Math.abs(x) < 3 || fin(z) && Math.abs(x - L.jet.x) < 1.6 || z === S.z && x !== S.x && Math.abs(x - S.x) < S.w / 2 + 1) return;
       out.push(["hang", x, L.gantryY - 0.6 - hangDrop(i, j), z]);
     }));
     for (let z = L.runway.z0 - 5; z > HALL.back + 4; z -= 9) for (const s of [-1, 1]) out.push(["post", s * (L.runway.halfW + 1.6), 0, z, s < 0 ? 0 : Math.PI]);
