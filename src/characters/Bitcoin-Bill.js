@@ -1,4 +1,4 @@
-// Bitcoin Bill of Bitcoin Guide (bitcoinguide.app): salt-and-pepper hair swept back under a frayed beach straw hat,
+// Bitclank Bill, Bitcoin Bill of Bitcoin Guide (bitcoinguide.app): salt-and-pepper hair swept back under a frayed beach straw hat,
 // a full beard going grey at the chin, and glowing orange laser eyes. A tie-dye tank in blue and green with
 // a cord necklace and an orange coin, and his chihuahua at his heel wherever he goes, painted up like an alebrije in
 // violet, orange and turquoise.
@@ -56,7 +56,7 @@
   BL.characters.add({
     handle: "Bitcoin-Bill",
     github: "Bitcoin-Bill",
-    display: "Bitcoin Bill",
+    display: "Bitclank Bill",
     joined: 1792943472,
     lastCommit: 1792943472,
     look: {
