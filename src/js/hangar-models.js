@@ -1358,9 +1358,14 @@
     const l = L.landing;
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
     for (const [sx, , sz0, , , sz1, w] of L.catwalkStairs) block(sx - w / 2, sx + w / 2, Math.min(sz0, sz1) + 3.6, Math.max(sz0, sz1), -1, 0.3);
-    // The dock: under the gangway, and under its stair two metres up from its foot, from the floor, each low enough
-    // that the widest Ooga on the stair clears it. The Jet itself stands in the way by its cells (`jetIn`).
-    block(g.x - g.w / 2, g.x + g.w / 2, gz0, gz1, -1, g.y - 1);
+    // The dock: the gangway's posts alone (as `dock` stands them, `deckPosts`), so a walker goes freely in under the
+    // decks between them, its cross braces passing over the head but near the posts; and under its stair two metres
+    // up from its foot, from the floor, low enough that the widest Ooga on the stair clears it. The Jet itself stands
+    // in the way by its cells (`jetIn`).
+    for (const [z0, z1, posts] of g.decks) {
+      if (!posts) continue;
+      for (const [px, pz] of models.deckPosts(g.w, z1 - z0)) around(g.x + px, (z0 + z1) / 2 + pz, 0.2, 0.2, g.y - 0.6);
+    }
     const [jx, , jz0, , , jz1, jw] = L.jetStairs;
     block(jx - jw / 2, jx + jw / 2, jz1, jz0 - 2, -1, 0.3);
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
