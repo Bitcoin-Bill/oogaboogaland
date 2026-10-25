@@ -274,8 +274,8 @@
     controls.reset();
     tool = "paint";
     updateTools();
-    center(`FORTIFY! ${Math.ceil(sim.prep)}`, 0);
-    notice(COARSE ? "Fortify your fort: Crate drops a crate · push crates by walking into them" : "Fortify your fort: R drops a crate in front of you · push crates by walking into them", 0);
+    center(`BUILD ${Math.ceil(sim.prep)}`, 0);
+    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! R drops a crate · walk into crates to push", 0);
     updateStrip();
   };
   const finish = () => {
@@ -655,7 +655,7 @@
       readInput(dt);
       const prepWas = sim.prep;
       SIM.step(sim, dt, move);
-      if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) center(`FORTIFY! ${Math.ceil(sim.prep)}`, 0);
+      if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) center(`BUILD ${Math.ceil(sim.prep)}`, 0);
       readEvents();
       updateStrip();
       if (sim.over) finish();
