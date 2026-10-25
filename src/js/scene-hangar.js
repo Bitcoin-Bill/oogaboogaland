@@ -393,6 +393,15 @@
 
   const groundFor = (x, z, feet) => HM.supportAt(x, z, feet);
   const walkableFor = (ax, az, bx, bz, y, height, actor) => HM.walkable(ax, az, bx, bz, y, actor.bodyRadius || 0.35);
+  // In the air, the same clearance without the floor within a step, as the Factory keeps it, so a jump carries an Ooga
+  // over a deck's rail and it drops to whatever is below; on foot the edges still hold.
+  const flyableFor = (ax, az, bx, bz, y, height, actor) => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2)), radius = actor.bodyRadius || 0.35;
+    for (let i = 1; i <= steps; i++) {
+      if (!HM.clearAt(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, y, radius, ax + (bx - ax) * (i - 1) / steps, az + (bz - az) * (i - 1) / steps)) return false;
+    }
+    return true;
+  };
   // There is no banana pile in here. Space must jump even when the rifle needs ammunition.
   const reloadPolicy = { near: () => false, available: () => false };
   const clipProjectileTarget = (from, to) => {
@@ -501,7 +510,7 @@
     if (playerName) {
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
-      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, clipProjectileTarget, absorbProjectile, reloadPolicy };
+      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy };
       shared.onModelChange = () => {
         if (!avatar) return;
         scene.gate.phase.body.refresh(avatar.root);
