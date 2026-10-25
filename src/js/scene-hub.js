@@ -8710,7 +8710,10 @@
     gameMode: on => setGameMode(on, true),
     // Keep ring timing separate from the event's combat policy.
     ringDelay: delayGameRing,
-    lobbyOpen: (on, restore) => pilot.setMenuOpen(on, restore),
+    lobbyOpen: (on, restore) => {
+      hud.setPanelsHidden(on || gameMode);
+      pilot.setMenuOpen(on, restore);
+    },
     // The waiting room: the driven Ooga let go of (the free camera to watch from), and at the end the visitor's own
     // Ooga given back.
     spectate: (on) => {

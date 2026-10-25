@@ -5626,10 +5626,11 @@ const donationClientChecks = async () => {
   let priceClock = 1000, nextPriceTimer = 0;
   const rateContext = { window: { BL: {}, setTimeout: fn => { const id = ++nextPriceTimer; priceTimers.set(id, fn); return id; }, clearTimeout: id => priceTimers.delete(id) },
     document: { hidden: false, addEventListener: (name, fn) => priceListeners.set(name, fn), removeEventListener: name => priceListeners.delete(name) },
-    Date: { now: () => priceClock }, WebSocket: class { constructor(url) { this.url = url; priceSockets.push(this); } close() { this.closed = true; } } };
+    Date: { now: () => priceClock }, WebSocket: class { constructor(url) { this.url = url; this.readyState = 0; priceSockets.push(this); } close() { this.closed = true; this.readyState = 3; } } };
   runInNewContext(await readFile(new URL("../src/js/donation-rate.js", import.meta.url), "utf8"), rateContext);
   const rateNotices = [];
   const rates = rateContext.window.BL.donationRate, offOne = rates.watch(value => rateNotices.push(value && { ...value })), offTwo = rates.watch();
+  priceSockets[0].readyState = 1; priceSockets[0].onopen();
   priceSockets[0].onmessage({ data: JSON.stringify({ weightedPrice: "90000.12" }) });
   const sharedRate = priceSockets.length === 1 && rates.current.usdPerBtc === 90000.12 && !rates.current.stale
     && rates.current.live && rates.current.satsPerBanana > 1111 && rates.current.satsPerBanana < 1112
@@ -5639,14 +5640,24 @@ const donationClientChecks = async () => {
   rateContext.document.hidden = true; priceListeners.get("visibilitychange")();
   const hiddenRate = priceSockets[0].closed && rates.current.stale && priceTimers.size === 0 && rateNotices.at(-1)?.stale;
   rateContext.document.hidden = false; priceListeners.get("visibilitychange")();
+  priceSockets[1].readyState = 1; priceSockets[1].onopen();
   priceClock++; priceSockets[1].onmessage({ data: JSON.stringify({ weightedPrice: "91000" }) });
   const noticeCount = rateNotices.length;
   offOne(); priceClock++; priceSockets[1].onmessage({ data: JSON.stringify({ weightedPrice: "92000" }) });
   const retainedRate = !priceSockets[1].closed && rateNotices.length === noticeCount;
   offTwo(); offTwo();
+  // A quick panel close must not abort CONNECTING; reopening reuses that one
+  // handshake, and its eventual open closes it if the panel has gone away again.
+  const offPending = rates.watch(), pending = priceSockets.at(-1);
+  offPending();
+  const waiting = !pending.closed && priceTimers.size === 0;
+  const count = priceSockets.length, offAgain = rates.watch();
+  const reused = priceSockets.length === count && priceTimers.size === 1;
+  offAgain(); pending.readyState = 1; pending.onopen();
+  const pendingClosed = pending.closed && pending.onopen === null && pending.onmessage === null;
   record("donation rate: watchers share one socket, receive live and stale updates until released, reject invalid prices, pause while hidden, reconnect when visible, and close the last socket and its timers exactly once",
-    sharedRate && validRate && hiddenRate && retainedRate && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
-    JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, listeners: priceListeners.size, timers: priceTimers.size }));
+    sharedRate && validRate && hiddenRate && retainedRate && waiting && reused && pendingClosed && priceSockets[1].closed && priceListeners.size === 0 && priceTimers.size === 0,
+    JSON.stringify({ sharedRate, validRate, hiddenRate, retainedRate, waiting, reused, pendingClosed, listeners: priceListeners.size, timers: priceTimers.size }));
 
   // Regression: the pile showed whole gameplay stock (79) beside a panel valued at 77.97.
   const valueBL = { game: {}, scene: {}, donationRate: { current: null }, donations: { real: true,
@@ -8352,6 +8363,13 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
   record("ghost entry: the deferred herald loads", loaded && lazy, JSON.stringify({ loaded, lazy }));
   if (!loaded) return;
   if (!melee) await b.key("x");
+  const panels = await b.evaluate(`(() => {
+    const H = BL.scenes.hub.debug, touch = matchMedia('(pointer: coarse)').matches;
+    H.hud.selectTab("roster");
+    H.useProp(H.props.find(p => p.prop === "jumbotron"));
+    if (touch) { H.hud.closeBoard(); H.hud.el.tabs.find(t => t.dataset.tab === "roster").click(); }
+    return { touch, open: H.hud.el.sheet.dataset.open, boards: document.querySelectorAll('.board-floating[open]').length };
+  })()`);
   const entry = await b.evaluate(`(() => {
     // The herald drifts on the room clock, which \`advance\` does not step, and is a picture turned to the camera: hold the
     // clock, and shoot from between it and the camera, along the view, once the camera has followed, or the aim point
@@ -8374,19 +8392,23 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
     return { accepted, state: G.state, combat: B.crew.combatEnabled, game: H.gameMode, health: a.health.value === health,
       shots: a.weapon.shotsFired - before, shown: !document.getElementById("ghost-lobby").hidden,
       aiming: B.pilot.aiming, reticle: document.getElementById("weapon-reticle").hidden,
-      labelsHidden: getComputedStyle(document.getElementById("tooltip")).visibility === "hidden" };
+      labelsHidden: getComputedStyle(document.getElementById("tooltip")).visibility === "hidden",
+      panelsHidden: H.hud.el.sheet.hidden && Array.from(document.querySelectorAll('.board-floating[open]')).every(e => e.hidden) };
     } finally { net.serverNow = serverNow; }
   })()`);
   record(`ghost entry: ${melee ? "a club leaves the herald idle" : "an AK burst opens the lobby without readying automatically"} and HUB damage stays off`, entry.accepted && entry.state === (melee ? "IDLE" : "GATHER") && entry.shown === !melee && entry.health && !entry.game && !entry.combat && (melee ? entry.shots === 0 : entry.shots > 0 && entry.shots <= 3), JSON.stringify(entry));
   if (melee || !entry.shown) return;
   const released = await untilPage(b, '!document.pointerLockElement && !document.body.classList.contains("aim-cursor-focused") && document.getElementById("weapon-reticle").hidden');
-  record("ghost lobby: the menu releases mouse-look and hides world names without changing carry/combat mode", released && entry.labelsHidden && entry.aiming === !melee, JSON.stringify(entry));
+  record("ghost lobby: the menu releases mouse-look and hides world names, the sheet and Oogatron windows without changing carry/combat mode", released && entry.labelsHidden && entry.panelsHidden && entry.aiming === !melee, JSON.stringify(entry));
   const button = await b.evaluate(`(() => { const r = document.getElementById("ghost-lobby-${melee ? "decline" : "ready"}").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-  await b.click(button.x, button.y);
+  if (panels.touch) {
+    await b.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [button] });
+    await b.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  } else await b.click(button.x, button.y);
   const closed = await untilPage(b, 'document.getElementById("ghost-lobby").hidden');
   record("ghost lobby: world-name visibility is restored after closing", await b.evaluate('getComputedStyle(document.getElementById("tooltip")).visibility !== "hidden"'));
   const resumed = await b.evaluate(`({ aiming: __ooga.pilot.aiming, focus: document.body.classList.contains("aim-cursor-focused") || document.pointerLockElement === document.getElementById("scene"), reticle: !document.getElementById("weapon-reticle").hidden, combat: __ooga.crew.combatEnabled, game: BL.scenes.hub.debug.gameMode })`);
-  record(`ghost lobby: ${melee ? "declining keeps carry mode and a free cursor" : "Ready starts the hunt and restores crosshair control"}`, closed && (melee ? !resumed.aiming && !resumed.focus && !resumed.reticle && !resumed.game : resumed.aiming && resumed.focus && resumed.reticle && resumed.combat && resumed.game), JSON.stringify(resumed));
+  record("ghost lobby: Ready starts the hunt and restores crosshair control", closed && resumed.aiming && (panels.touch ? !resumed.focus : resumed.focus) && resumed.reticle && resumed.combat && resumed.game, JSON.stringify(resumed));
   if (melee || !resumed.game) return;
   await b.key("x");
   const locked = await b.evaluate(`(() => {
@@ -8404,16 +8426,51 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
   const hunt = await b.evaluate(`(() => {
     const B = __ooga, H = BL.scenes.hub.debug, G = H.halloween, C = BL.ghostSim.CONFIG, a = B.crew.player;
     G.simulate((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS) / 1000 + 0.5);
+    // The hunt clock and the hub's ring animation have separate debug steppers.
+    B.advance((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS) / 1000 + 2, 1 / 60);
+    const position = { ...a.root.position, y: a.root.position.y - a.baseY }, heading = a.root.rotation.y;
+    const crossRing = () => {
+      B.crew.relocatePlayer({ x: 20, y: H.island.surfaceAt(20, 0), z: 0 }, Math.PI / 2);
+      for (let i = 0; i < 60; i++) { B.crew.steer(1, 0); B.crew.update(1 / 60); }
+      const x = a.root.position.x;
+      B.crew.steer(0, 0); B.crew.relocatePlayer(position, heading);
+      return x;
+    };
+    const ringHeld = crossRing();
     const active = G.state, ghosts = G.sim.ghosts.filter(g => g.on && !g.dying).length, unlimited = a.weapon.unlimited;
     const shots = a.weapon.shotsFired, ammo = a.weapon.ammo;
     const fired = B.crew.fireWeapon(a, { x: a.root.position.x, y: 30, z: a.root.position.z }, 1);
     B.advance(0.3, 1 / 60);
     const shooting = fired && a.weapon.shotsFired > shots && a.weapon.ammo === ammo;
-    G.end(); B.advance(1 / 60, 1 / 60);
+    const sealed = G.walls.length > 0 && G.walls.every(w => {
+      const s = w.stop;
+      return w.node.visible && w.sealed && G.seal(s.cx + s.nx, s.cz + s.nz, s.cx - s.nx, s.cz - s.nz, s.base + 1);
+    });
+    const map = document.getElementById("ghost-minimap"), rect = map.getBoundingClientRect();
+    const minimap = !map.hidden && rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
+      && map.getContext("2d").getImageData(0, 0, map.width, map.height).data.some((v, i) => i % 4 === 3 && v > 0);
+    const key = code => document.getElementById("scene").dispatchEvent(new KeyboardEvent("keydown", { key: code.slice(3).toUpperCase(), code, shiftKey: true, bubbles: true }));
+    key("KeyH"); G.simulate((C.BONES.beamMs + C.BONES.fallMs) / 1000 + 0.2);
+    const bones = G.sim.brutes.find(b => b.on && b.kind === 1), hit = {};
+    BL.scene.updateWorld(BL.scenes.hub.root);
+    const skeleton = !!bones && BL.scenes.hub.input.weaponTargets.ray(hit, bones.x, 30, bones.z, 0, -1, 0, 50, null,
+      owner => owner.kind === "halloween" && owner.role === "brute" && G.sim.brutes[owner.slot] === bones);
+    if (bones) G.sim.hit(bones.id, 100, 1);
+    key("KeyE");
+    const me = G.sim.playerById(1), bot = G.sim.playerById(BL.ghostSim.REVIVE_BOT), down = !!bot && bot.seg === 0 && me.elixir === 1;
+    G.simulate(C.ELIXIR.reviveMs / 1000 + 0.2);
+    const revived = down && bot.seg > 0 && me.elixir === 0 && G.sim.state.reviveOf === bot.id;
+    G.end(); G.simulate(C.DAWN_MS / 1000 + 0.1); B.advance(1 / 60, 1 / 60);
+    const ringReleased = crossRing();
     B.pilot.modeAction("mode-toggle");
-    return { active, ghosts, unlimited, shooting, restored: !H.gameMode && !B.crew.combatEnabled && !a.weapon.unlimited && !B.crew.damage(a, 100) && B.crew.weaponsEnabled && !a.weapon.aiming };
+    return { active, ghosts, unlimited, shooting, sealed, minimap, skeleton, revived, ringHeld, ringReleased,
+      panels: { hidden: H.hud.el.sheet.hidden, open: H.hud.el.sheet.dataset.open, boards: document.querySelectorAll('.board-floating[open]:not([hidden])').length },
+      cleared: map.hidden && document.getElementById("ghost-hud").hidden && G.walls.every(w => !w.sealed),
+      restored: !H.gameMode && !B.crew.combatEnabled && !a.weapon.unlimited && !B.crew.damage(a, 100) && B.crew.weaponsEnabled && !a.weapon.aiming };
   })()`);
   record("ghost hunt: Ready progresses to an active round with ghosts and unlimited shooting; dawn restores harmless HUB weapons and carry switching", hunt.active === "ACTIVE" && hunt.ghosts > 0 && hunt.unlimited && hunt.shooting && hunt.restored, JSON.stringify(hunt));
+  record("ghost hunt: the ring holds and releases the player, walls seal the exits, the minimap fits and paints, a skeleton is shootable, and an elixir revives a fallen hunter", hunt.ringHeld > 20 && hunt.ringHeld <= 21.5 && hunt.ringReleased > 22 && hunt.sealed && hunt.minimap && hunt.skeleton && hunt.revived, JSON.stringify(hunt));
+  record("ghost hunt: teardown clears hunt UI and restores open or closed panel choices", hunt.cleared && !hunt.panels.hidden && hunt.panels.open === panels.open && hunt.panels.boards === panels.boards, JSON.stringify({ before: panels, after: hunt.panels, cleared: hunt.cleared }));
 } });
 const hubMelee = { name: "hub melee", why: "rule: focused quick taps recover their strike power over time, changing weapons cannot bypass recovery, and a charged strike doubles damage", run: async (b) => {
   await tapKey(b, "1");
@@ -12018,7 +12075,8 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       B.poolIsland.preview.sleep(a.traits.name, true);
       e.active = e.root.visible = false; e.sleep.stage = "";
       far();
-      for (let elapsed = 0; elapsed < 10 && !(a.bedTravel.mode === "rest" && e.sleep.stage === "asleep"); elapsed += 0.5) {
+      // A newly settled gorilla finishes its pose at full rate before sleeping ticks are throttled.
+      for (let elapsed = 0; elapsed < 10 && !(a.bedTravel.mode === "rest" && e.sleep.stage === "asleep" && !e.animation.settle); elapsed += 0.5) {
         B.advance(0.5, 1 / 60);
       }
       out.sleeping = a.state === "sleeping" && a.bedTravel.mode === "rest" && e.sleep.stage === "asleep";
@@ -15157,6 +15215,9 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
       tap("x"); sample("combat birds-eye again");
       const gestures = [], accountBefore = BL.net.state.me, backendBefore = BL.net.state.backend;
       BL.scenes.hub.debug.setGameMode(true); C.setAway(false);
+      // These camera targets include open sky; an arena wall rising between the two account cases
+      // turns the second sky ray into a surface pick. Exercise combat controls outside the ring.
+      BL.scenes.hub.debug.delayGameRing(Infinity);
       const pointer = (type, button = 2, buttons = type === "pointerdown" ? 2 : 0) => {
         const rect = canvas.getBoundingClientRect();
         canvas.dispatchEvent(new PointerEvent(type, { pointerId: 91, pointerType: "mouse", isPrimary: true, button, buttons,
@@ -16027,6 +16088,7 @@ scene("poker", { opts: PHONE_SIZE, steps: [phone("poker", { card: '[data-intro="
 } }] });
 scene("hub", { label: "weapons", query: "character=portlandhodl&weapon=2&mag=1&ammo=6&jetpack=1&gorillarage=1", steps: [hubCombatGate, ...[hubAk, hubMelee, hubJetpack].map(gameCombat)] });
 for (const melee of [false, true]) scene("hub", { label: `ghost entry ${melee ? "melee" : "shooting"}`, query: "halloween=1&character=portlandhodl&weapon=2&ammo=30", exclusive: true, steps: [hubGhostEntry(melee)] });
+scene("hub", { label: "ghost entry touch", opts: PHONE_SIZE, query: "halloween=1&character=portlandhodl&weapon=2&ammo=30", exclusive: true, steps: [hubGhostEntry(false)] });
 // Her greeting comes once a page, to a fresh landing nothing has moved, so the guide has its own page.
 scene("hub", { label: "guide", query: "character=portlandhodl&jetpack=1", steps: [hubGuide, hubAsk] });
 // Native pointer-lock assertions need sole focus; another browser lane can
