@@ -1354,6 +1354,25 @@
     strip(...L.jetStairs.slice(0, 6), L.jetStairs[6] - 0.2);
     const block = (x0, x1, z0, z1, from, to) => boxes.push(x0, x1, z0, z1, from, to);
     const around = (x, z, hx, hz, to) => block(x - hx, x + hx, z - hz, z + hz, -1, to);
+    // A stair's handrails, both sides (as `stairParts` puts them), each in half-metre lengths just outside the rail's
+    // line, so the widest Ooga still climbs between them; each length stands in the way from a little below a
+    // walker's head to over its feet where the stair is there, so a walker on the stair, or on the floor beside its
+    // low end, keeps to its side of the rail, and one on the floor walks under the rail where the stair is overhead.
+    // The hangar's stairs all run along z or x, so each length is the box round it.
+    const rails = (ax, ay, az, bx, by, bz, w) => {
+      const len = Math.hypot(bx - ax, bz - az), px = -(bz - az) / len, pz = (bx - ax) / len, n = Math.ceil(len / 0.5);
+      for (let i = 0; i < n; i++) {
+        const t0 = i / n, t1 = (i + 1) / n, h = ay + (by - ay) * (t0 + t1) / 2;
+        for (const s of [-1, 1]) {
+          const x0 = ax + (bx - ax) * t0 + px * s * (w / 2 + 0.05), z0 = az + (bz - az) * t0 + pz * s * (w / 2 + 0.05);
+          const x1 = ax + (bx - ax) * t1 + px * s * (w / 2 + 0.15), z1 = az + (bz - az) * t1 + pz * s * (w / 2 + 0.15);
+          block(Math.min(x0, x1), Math.max(x0, x1), Math.min(z0, z1), Math.max(z0, z1), h - 1.5, h + 0.9);
+        }
+      }
+    };
+    rails(...L.steps);
+    for (const st of L.catwalkStairs) rails(...st);
+    rails(...L.jetStairs);
     // Under the landing, beside its steps, and under the deep end of each stair, where no Ooga stands.
     const l = L.landing;
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
