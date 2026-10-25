@@ -59,7 +59,7 @@ card), `src/style.css` (the game's panels, appended), `test/run.mjs` (rules in t
 44 by 74 m, mirrored half round between the halves so neither side is favoured. Each fort has a back wall, side
 walls and a gated front wall, 2.4 m high, a stand inside and an alley behind with a crate to climb from. Between
 them: tall banded walls across the approach to break the long sight line, low cover, side rocks, a stilt hut on each
-side of each half (a floor at 2 m, walls with a window band at eye height, a roof, an open side), and a roofed centre
+side of each half (a floor at 2 m, walls with a window band at eye height, open to the sky, an open side), and an open centre
 deck with gaps in its parapets. Blocks carry `[x0, x1, z0, z1, top, bottom]`, so floors, roofs and upper wall bands
 float and anything whose top an Ooga reaches is somewhere to stand.
 

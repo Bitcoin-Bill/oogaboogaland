@@ -79,8 +79,8 @@
     // Low cover across the field and the side rocks.
     [-11, -5, 8.5, 9.5, 1.1, 0], [5, 11, 8.5, 9.5, 1.1, 0], [-20, -18, 4, 7, 1.6, 0], [18, 20, 4, 7, 1.6, 0]
   ];
-  // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, a roof,
-  // and its open side facing the field's edge. `s` is the side, -1 or 1.
+  // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, open to
+  // the sky so the camera can see in, and its open side facing the field's edge. `s` is the side, -1 or 1.
   for (const s of [-1, 1]) {
     const x0 = s > 0 ? 8 : -14, x1 = s > 0 ? 14 : -8, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
     for (const [px, pz] of [[x0 + 0.3, 11.3], [x1 - 0.3, 11.3], [x0 + 0.3, 15.7], [x1 - 0.3, 15.7]]) half.push(at(px, pz, 0.6, 0.6, 2));
@@ -90,13 +90,12 @@
     half.push([Math.min(inner, inner + 0.4 * s), Math.max(inner, inner + 0.4 * s), 11, 16, 4.2, 2.3]);
     // The open side keeps a short rail.
     half.push([Math.min(outer, outer - 0.4 * s), Math.max(outer, outer - 0.4 * s), 11, 12.5, 3.1, 2.3]);
-    half.push([x0 - 0.3, x1 + 0.3, 10.7, 16.3, 4.5, 4.2]);
   }
-  // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, a roof, and a crate by
+  // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, open to the sky, and a crate by
   // each gap to jump from. It is symmetric itself, so it goes in once.
   const BLOCKS = [];
   for (const [px, pz] of [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]]) BLOCKS.push(at(px, pz, 0.8, 0.8, 2.2));
-  BLOCKS.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2], [-3.4, 3.4, -3.4, 3.4, 4.9, 4.6]);
+  BLOCKS.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2]);
   for (const s of [-1, 1]) {
     BLOCKS.push([s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, -3.2, 3.2, 3.4, 2.5]);
     for (const [x0, x1] of [[-3.2, -1], [1, 3.2]]) BLOCKS.push([x0, x1, s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, 3.4, 2.5]);
