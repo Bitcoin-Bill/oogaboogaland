@@ -1,50 +1,83 @@
-// The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway: for now its shell, a
-// long rock hall under iron gantries with the runway down its middle to the launch tunnel's mouth, sealed until Jet v2
-// flies. The Jet, its scaffold and crew and the boards come with the hangar itself; until then the scene stays `wip`,
-// and the Factory builds no door to it (`FM.hangarEntry`) unless a page opens it with ?wip=hangar.
+// The Lightning Jet Hangar, behind the Lightning Factory's door at the end of its left walkway (`hangar-models.js` has
+// the hall): the landing inside the door, the runway down the middle and on through the launch tunnel's neon frames to
+// the launch shield, sealed until Jet v2 flies, with the island's own sky beyond it; the Jet docked beside the runway,
+// for now its box-out, with a stair up its flank; the mechanics' benches, and the repository's two boards on the wall.
+// Until the hangar opens the scene stays `wip`, and the Factory builds no door to it (`FM.hangarEntry`) unless a page
+// opens it with ?wip=hangar.
 //
 // Whoever walked in stays themselves: the Ooga the hall handed over (`world.pilot`), or on a page that opens here,
-// `character=`. It stands a few steps in from the door, looking down the runway. Walking back out through the door's
-// shield, Escape and the Leave button all take it back to the hall, onto the walkway at the door. The hangar is a room
-// of the Factory: its voice zone is in the Factory's group, so players here and in the hall hear each other.
+// `character=`. It stands on the landing a step in from the door, looking down the runway. Walking back out through the
+// door's shield, Escape and the Leave button all take it back to the hall, onto the walkway at the door. The hangar is a
+// room of the Factory: its voice zone is in the Factory's group, so players here and in the hall hear each other.
+//
+// The sky through the tunnel is the island's: the hub's clock samples it every frame, and only its sky (gradient, sun,
+// moon and stars) is taken, the hall keeping its own warm light.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
+  const { math, models, contributors, daylight, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod } = BL;
   const FM = BL.factoryModels, HM = BL.hangarModels;
   const { clamp } = math;
   const { createNode, addChild, removeChild, createCamera, stepTweens, tweenCount, traverseVisible } = BL.scene;
-  const { LAYOUT } = HM, { HALL } = LAYOUT, DOOR = LAYOUT.door;
+  const { LAYOUT } = HM, { HALL } = LAYOUT, DOOR = LAYOUT.door, TUN = LAYOUT.tunnel;
 
+  const params = new URLSearchParams(location.search), DEBUG = params.has("debug");
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
   const PITCH = [-0.2, 1.3], DIST = [3, 30];
   const FOLLOW = { y: 0.9, min: 3, max: 7, pitch: [0.25, 0.8] };
   const FLY = { speed: 6, perDist: 0.4, climb: 4, yMax: HALL.h - 3 };
-  // The door's shield, as wide as its arch, in the hall's cyan.
+  // The door's shield, as wide as its arch, in the hall's cyan; and the launch shield across the tunnel's end, in a
+  // paler blue.
   const OPENING = { minX: -DOOR.half, maxX: DOOR.half, floorY: 0, ceilingY: DOOR.top }, TINT = BL.factoryWindow.TINT;
+  const LAUNCH = { minX: -TUN.r + 0.6, maxX: TUN.r - 0.6, floorY: 0, ceilingY: TUN.y + TUN.r - 0.8 }, LAUNCH_TINT = [0.45, 0.72, 1];
   const view = (x, y, z, yaw, pitch, dist) => ({ yaw, pitch, dist, target: { x, y, z } });
-  // `entrance` stands inside the door and looks down the runway to the tunnel's mouth.
+  // `entrance` stands over the landing and looks down the runway to the tunnel's mouth, as the concept's entry view.
   const PRESETS = {
-    entrance: view(0, 3.5, 12, 0, 0.1, 20),
-    runway: view(0, 4.5, -22, 0, 0.08, 14),
+    entrance: view(0, 3.5, 6, 0, 0.1, 20),
+    runway: view(0, 4.5, -62, 0, 0.05, 18),
+    jet: view(10, 3.5, -4, -0.9, 0.2, 16),
+    boards: view(-16.5, 4.5, 8, Math.PI / 2 - 0.35, 0.05, 12),
     door: view(0, 3.2, DOOR.z - 4, Math.PI, 0.12, 11)
   };
-  // In from the hall: a few steps in from the door, facing down the runway, the view just inside the door behind it.
-  const ARRIVAL = { position: { x: 0, y: 0, z: DOOR.z - 3.5 }, target: { x: 0, y: 1, z: DOOR.z - 3.5 }, yaw: 0, pitch: 0.14, dist: 2.8 };
+  // In from the hall: on the landing a step in from the door, facing down the runway, the view in the doorway behind it.
+  const ARRIVAL = { position: { x: 0, y: DOOR.y, z: DOOR.z - 3.4 }, target: { x: 0, y: DOOR.y + 1, z: DOOR.z - 3.4 }, yaw: 0, pitch: 0.12, dist: 2.8 };
+  // The hall's own light, warm, with the island's sky through the tunnel written into it each frame (`skyFrom`).
   const RENDER_OPTS = {
-    clear: [0.05, 0.05, 0.07], sky: [0.34, 0.3, 0.3], ground: [0.14, 0.11, 0.09],
-    direct: [0.5, 0.45, 0.42], directStrength: 0.3, ambientFloor: 0.32,
-    sun: { x: 0.2, y: 0.9, z: 0.35 }, shadowCenter: { x: 0, y: 6, z: -2 }, shadowExtent: 40,
-    lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, bloomStrength: 0.95,
-    fog: [0.06, 0.06, 0.08], fogNear: 45, fogFar: 120
+    clear: [0.05, 0.05, 0.07], sky: [0.36, 0.3, 0.28], ground: [0.15, 0.11, 0.09],
+    direct: [0.52, 0.45, 0.4], directStrength: 0.28, ambientFloor: 0.3, light: { x: 0.25, y: 0.9, z: 0.35 },
+    horizon: new Float32Array(3), zenith: new Float32Array(3), sun: new Float32Array(3), sunDirection: { x: 0, y: 1, z: 0 },
+    moon: { x: 0, y: 1, z: 0 }, moonSun: { x: 0, y: -1, z: 0 }, starMatrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]), stars: 0,
+    clouds: 0.45, sea: -140, shadowCenter: { x: 0, y: 6, z: -2 }, shadowExtent: 40,
+    lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, bloomStrength: 1
+  };
+  // What the clock writes, as Ooga Drop keeps it; the hangar takes its sky from it.
+  const SKY = {
+    clear: new Float32Array(3), horizon: new Float32Array(3), zenith: new Float32Array(3), sky: new Float32Array(3), ground: new Float32Array(3), sun: new Float32Array(3), direct: new Float32Array(3),
+    light: { x: 0.55, y: 0.78, z: -0.25 }, sunDirection: { x: 0, y: 1, z: 0 }, moon: { x: 0, y: 1, z: 0 }, moonSun: { x: 0, y: -1, z: 0 }, starMatrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    stars: 0, torch: 0, day: 1, twilight: 0, lampFactor: 0, directStrength: 1, sunStrength: 1, moonStrength: 0, ambientFloor: 0.18, diffuseFloor: 0, shadowStrength: 1, shadowFloor: 0, shadowBias: 0.002, time: 0
+  };
+  const copy3 = (a, b) => { a.x = b.x; a.y = b.y; a.z = b.z; };
+  const skyFrom = (clock) => {
+    daylight.sample(clock.read(), SKY, clock.dayOfYear, daylight.ISLAND_LATITUDE_DEG, clock.continuousDay, clock.utcMs);
+    RENDER_OPTS.horizon.set(SKY.horizon); RENDER_OPTS.zenith.set(SKY.zenith); RENDER_OPTS.sun.set(SKY.sun);
+    copy3(RENDER_OPTS.sunDirection, SKY.sunDirection); copy3(RENDER_OPTS.moon, SKY.moon); copy3(RENDER_OPTS.moonSun, SKY.moonSun);
+    RENDER_OPTS.starMatrix.set(SKY.starMatrix);
+    RENDER_OPTS.stars = SKY.stars;
   };
   const TIPS = {
     exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
-    sign: ["Lightning Jet Hangar", "Lightning Jet v2 is being built in here. The hangar is still going up."],
-    mouth: ["Launch tunnel · sealed", "The runway opens when Jet v2 is ready to fly."]
+    sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
+    mouth: ["Launch tunnel · sealed", "The runway opens when Jet v2 is ready to fly."],
+    jet: ["Lightning Jet v2 · under construction", "The Jet is still being built. Its stair leads up to the cockpit."],
+    stats: ["Repo stats · drneski/lightning-jet", "The project's GitHub stats show here, fetched once as you come in."],
+    timeline: ["Lightning Jet timeline", "The project's story, dated from its repository, shows here: its first release, every one since, and v2 ahead."],
+    bench: ["Mechanics' bench", "Where the crew works on the Jet."]
   };
+  // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
+  // it answers again.
+  const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
 
-  let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
+  let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null, clock = null;
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   const NO_ACTORS = [];
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
@@ -89,72 +122,149 @@
   };
   const onLootCleared = () => {};
 
-  // The hangar for a visit: its shell, runway, tunnel mouth and dressing from the cached builds, the sign over the
-  // runway, and the door back to the hall in the front wall with its shield across it.
+  // A label at (x, y, z) facing `turn`, its board behind its face.
+  const sign = (parent, l, x, y, z, turn = 0) => {
+    const n = createNode({ position: { x, y, z }, rotation: { x: 0, y: turn, z: 0 }, geometry: l.back });
+    addChild(n, createNode({ geometry: l.face }));
+    addChild(parent, n);
+    return n;
+  };
+
+  // The hangar for a visit: the hall and everything standing in it from the cached builds, the signs, the boards'
+  // frames, the Jet's box-out at its dock, the door back to the hall with its shield, and the launch shield.
   const build = () => {
-    const s = {}, shell = HM.shell(), runway = HM.runway(), mouth = HM.mouth(), dressed = HM.dressing(), door = FM.hangarDoor(), D = FM.HANGAR_DOOR;
-    addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: runway.flat }), createNode({ geometry: runway.glow, sightHidden: true }),
-      createNode({ geometry: dressed.iron }), createNode({ geometry: dressed.banners }), createNode({ geometry: dressed.frame }), createNode({ geometry: dressed.glass, sightHidden: true }));
-    s.mouth = createNode({ geometry: mouth.iron });
-    addChild(root, s.mouth, createNode({ geometry: mouth.glow, sightHidden: true }));
-    const sign = FM.label("LIGHTNING JET HANGAR", "(Under Construction)", { height: 1.6 });
-    s.sign = createNode({ position: { x: 0, y: LAYOUT.sign.y, z: LAYOUT.sign.z }, geometry: sign.back });
-    addChild(s.sign, createNode({ geometry: sign.face }));
-    addChild(root, s.sign);
+    const L = LAYOUT, s = {}, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), benches = HM.benches(), frames = HM.boardFrames();
+    addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
+      createNode({ geometry: HM.landing() }), createNode({ geometry: runway.flat }), createNode({ geometry: runway.glow, sightHidden: true }),
+      createNode({ geometry: tunnel.stone }), createNode({ geometry: tunnel.glow, sightHidden: true }), createNode({ geometry: HM.isle(), sightHidden: true }),
+      createNode({ geometry: HM.catwalks() }), createNode({ geometry: dressed.iron }), createNode({ geometry: dressed.banners }),
+      createNode({ geometry: dressed.frame }), createNode({ geometry: dressed.glass, sightHidden: true }), createNode({ geometry: benches.glow, sightHidden: true }),
+      createNode({ geometry: HM.jetScaffold() }));
+    s.mouth = createNode({ geometry: tunnel.iron });
+    s.benches = createNode({ geometry: benches.flat });
+    addChild(root, s.mouth, s.benches);
+    // The Jet's box-out at its dock, nose to the tunnel.
+    const jet = HM.jetBoxOut();
+    s.jet = createNode({ position: { x: L.jet.x, y: 0, z: L.jet.z }, geometry: jet.body });
+    addChild(s.jet, createNode({ geometry: jet.glow, sightHidden: true }));
+    addChild(root, s.jet);
+    // The boards' frames on the left wall, each with its title across its top and its screen dark until its face is painted.
+    s.boards = {};
+    for (const [key, b] of Object.entries(L.boards)) {
+      const n = createNode({ position: { x: b.x, y: b.y, z: b.z }, rotation: { x: 0, y: b.turn, z: 0 }, geometry: frames[key].flat });
+      addChild(n, createNode({ geometry: frames[key].glow, sightHidden: true }));
+      sign(n, FM.label(key === "stats" ? "drneski/lightning-jet" : "LIGHTNING JET TIMELINE", "", { height: 0.9 }), 0, b.h / 2 - 0.42, 0.06);
+      const dark = models.box({ w: b.w, h: b.h, d: 0.04, color: "#0b1734", emissive: 0.6 });
+      addChild(n, createNode({ geometry: dark, sightHidden: true }));
+      addChild(root, n);
+      s.boards[key] = n;
+    }
+    // The signs: the hangar's over the runway between two lit bolts, hung from the last gantry on two rods; the right
+    // wall's call to work; and the plaque by the Jet's tail on its post.
+    const [hx, hy, hz] = L.signs.hangar, hangarSign = FM.label("LIGHTNING JET\nHANGAR", "", { height: 1.7 });
+    s.sign = sign(root, hangarSign, hx, hy, hz);
+    for (const side of [-1, 1]) {
+      addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 + 0.6), y: hy, z: hz + 0.05 }, geometry: FM.smoothBolt(1.2, 0.1, "#ffd23a", 1), sightHidden: true }));
+      addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 - 0.3), y: (hy + L.gantryY) / 2 + 0.4, z: hz - 0.05 }, geometry: models.box({ w: 0.06, h: L.gantryY - hy - 1.2, d: 0.06, color: "#2c2e33" }) }));
+    }
+    const [wx, wy, wz] = L.signs.work;
+    sign(root, FM.label("WORK\nBUILD\nTEST\nLAUNCH", "", { height: 1.6, style: "jet" }), wx, wy, wz, -Math.PI / 2);
+    const [px, py, pz] = L.signs.soon;
+    sign(root, FM.label("JET V2", "COMING SOON", { height: 1.1, style: "jet" }), px, py, pz);
+    addChild(root, createNode({ position: { x: px, y: (py - 0.6) / 2, z: pz - 0.1 }, geometry: models.box({ w: 0.14, h: py - 0.6, d: 0.14, color: "#5c3a1e" }) }));
+    // In the tunnel's mouth, a banner of the hangar's words either side.
+    for (const side of [-1, 1]) sign(root, FM.label("LAUNCH\nEXPLORE\nCONNECT\nOOGABOOGA", "", { height: 1, style: "jet" }), side * (TUN.r - 2.2), TUN.y + 2.6, HALL.back - 0.4);
     // The door, the Factory's own turned to face in, with the hall's warm dark through it and its sign the way back.
-    s.door = createNode({ position: { x: DOOR.x, y: 0, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
+    const door = FM.hangarDoor(), D = FM.HANGAR_DOOR;
+    s.door = createNode({ position: { x: DOOR.x, y: DOOR.y, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
     s.doorStone = createNode({ geometry: door.stone });
-    const back = FM.label("LIGHTNING\nFACTORY", "", { height: 1.3 }), backNode = createNode({ position: { x: D.sign[0], y: D.sign[1], z: D.sign[2] }, geometry: back.back });
-    addChild(backNode, createNode({ geometry: back.face }));
-    addChild(s.door, s.doorStone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: HM.hallGlimpse(), sightHidden: true }), backNode);
+    addChild(s.door, s.doorStone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: HM.hallGlimpse(), sightHidden: true }));
+    sign(s.door, FM.label("LIGHTNING\nFACTORY", "", { height: 1.3 }), D.sign[0], D.sign[1], D.sign[2]);
     addChild(root, s.door);
-    const mouthFrame = { x: DOOR.x, z: DOOR.z, ry: DOOR.turn, floorY: 0, room: { w: 4.4, h: 5, from: 0, to: 3.3 } };
-    s.gate = { hum: 0, phase: BL.labPhase.create(s.door, mouthFrame, OPENING, DOOR.plane, TINT) };
+    s.gate = { hum: 0, phase: BL.labPhase.create(s.door, { x: DOOR.x, z: DOOR.z, ry: DOOR.turn, floorY: DOOR.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } }, OPENING, DOOR.plane, TINT) };
+    // The launch shield across the tunnel's end, humming; it lets nothing through until Jet v2 flies.
+    const launch = createNode({ position: { x: 0, y: 0, z: TUN.z1 } });
+    addChild(root, launch);
+    s.launch = { hum: 0, armed: true, phase: BL.labPhase.create(launch, { x: 0, z: TUN.z1, ry: 0, floorY: 0, room: { w: 2 * TUN.r, h: LAUNCH.ceilingY, from: 0, to: 1 } }, LAUNCH, 0, LAUNCH_TINT) };
     const target = (n, kind, preset, radius) => {
       input.add(n, { kind, preset }, { radius });
       targets.push(n);
     };
     target(s.doorStone, "exit", null, 3);
     target(s.sign, "sign", "runway", 2.5);
-    target(s.mouth, "mouth", "runway", 5);
+    target(s.mouth, "mouth", "runway", 6);
+    target(s.jet, "jet", "jet", 6);
+    target(s.boards.stats, "stats", "boards", 4);
+    target(s.boards.timeline, "timeline", "boards", 4.5);
+    target(s.benches, "bench", null, 1.2);
     return s;
   };
 
-  // Point lights, most important first so the lowest tier keeps them: the door's cyan, the tunnel mouth's blue and the
-  // hall's warm middle; the lanterns share what is left, each flickering like a flame.
-  const LANTERN_GLOW = [1.3, 0.8, 0.36], LANTERN_REACH = 7.5;
-  let fixedLights = 0;
+  // Point lights, most important first so the lowest tier keeps them: the door's cyan, the landing, the dock's two work
+  // lamps, the boards' blue, the tunnel mouth's and the launch shield's; the lanterns share what is left, the nearest the
+  // view first, each flickering like a flame, as the Factory shares its own.
+  const LANTERN_GLOW = [1.3, 0.8, 0.36], LANTERN_REACH = 7.5, FIXED = 8;
   const lamp = (i, x, y, z, radius, r, g, b) => {
     const o = i * 8, l = RENDER_OPTS.lights;
     l[o] = x; l[o + 1] = y; l[o + 2] = z; l[o + 3] = radius; l[o + 4] = r; l[o + 5] = g; l[o + 6] = b; l[o + 7] = 0;
   };
   const lightUp = () => {
-    let n = 0;
-    lamp(n++, DOOR.x, 2.4, DOOR.z - 2, 8, TINT[0], TINT[1], TINT[2]);
-    lamp(n++, 0, LAYOUT.mouth.y, HALL.back + 3, 14, 0.35, 0.6, 1);
-    lamp(n++, 0, 9, 0, 24, 1, 0.66, 0.3);
-    fixedLights = n;
-    const hung = HM.dressing().lights;
-    for (let i = 0; i < hung.length && n < BL.glRenderer.POINT_LIGHT_CAPACITY; i += 4) lamp(n++, hung[i], hung[i + 1], hung[i + 2], LANTERN_REACH, ...LANTERN_GLOW);
-    RENDER_OPTS.lightCount = n;
+    const L = LAYOUT, B = L.boards;
+    lamp(0, DOOR.x, DOOR.y + 2.2, DOOR.z - 2, 8, TINT[0], TINT[1], TINT[2]);
+    lamp(1, 0, L.landing.y + 3, L.landing.z - 3, 12, 1, 0.66, 0.3);
+    lamp(2, L.jetDeck.x - 1, 6, L.jetDeck.z, 14, 1, 0.86, 0.62);
+    lamp(3, L.jet.x + 3, 6, L.jet.z + 6, 14, 1, 0.86, 0.62);
+    lamp(4, B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.35, 0.6, 1);
+    lamp(5, B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.35, 0.6, 1);
+    lamp(6, 0, TUN.y, HALL.back + 3, 16, 0.3, 0.55, 1);
+    lamp(7, 0, TUN.y, TUN.z1 + 4, 14, LAUNCH_TINT[0], LAUNCH_TINT[1], LAUNCH_TINT[2]);
+    RENDER_OPTS.lightCount = Math.min(BL.glRenderer.POINT_LIGHT_CAPACITY, FIXED + HM.dressing().lights.length / 4);
+  };
+  let poolScore = null;
+  // The shared slots go to the lanterns nearest the view, nearest first, by repeated minimum: no sort, no list.
+  const glowNear = (elapsed) => {
+    const P = HM.dressing().lights, n = P.length / 4, t = pilot.orbit.target, Lt = RENDER_OPTS.lights;
+    if (!poolScore) poolScore = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const dx = P[i * 4] - t.x, dy = P[i * 4 + 1] - t.y, dz = P[i * 4 + 2] - t.z;
+      poolScore[i] = dx * dx + dy * dy * 2 + dz * dz;
+    }
+    for (let slot = FIXED; slot < RENDER_OPTS.lightCount; slot++) {
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i < n; i++) if (poolScore[i] < bestD) { bestD = poolScore[i]; best = i; }
+      poolScore[best] = Infinity;
+      const k = 0.9 + Math.sin(elapsed * 9.3 + best * 1.7) * 0.06 + Math.sin(elapsed * 23.7 + best * 5.3) * 0.04, w = slot * 8;
+      Lt[w] = P[best * 4]; Lt[w + 1] = P[best * 4 + 1]; Lt[w + 2] = P[best * 4 + 2]; Lt[w + 3] = LANTERN_REACH;
+      Lt[w + 4] = LANTERN_GLOW[0] * k; Lt[w + 5] = LANTERN_GLOW[1] * k; Lt[w + 6] = LANTERN_GLOW[2] * k; Lt[w + 7] = 0;
+    }
   };
 
-  const groundFor = (x, z) => HM.supportAt(x, z);
-  const walkableFor = (ax, az, bx, bz) => HM.walkable(ax, az, bx, bz);
+  const groundFor = (x, z, feet) => HM.supportAt(x, z, feet);
+  const walkableFor = (ax, az, bx, bz, y, height, actor) => HM.walkable(ax, az, bx, bz, y, actor.bodyRadius || 0.35);
   // There is no banana pile in here. Space must jump even when the rifle needs ammunition.
   const reloadPolicy = { near: () => false, available: () => false };
-  const clipProjectileTarget = (from, to) => scene.gate.phase.ripples.absorb(from.x, from.y, from.z, to);
-  const absorbProjectile = (ax, ay, az, point, dt) => {
-    const gate = scene.gate.phase.ripples, bx = point.x, by = point.y, bz = point.z;
-    return gate.absorb(ax, ay, az, point) && gate.cross(ax, ay, az, bx, by, bz, dt);
+  const clipProjectileTarget = (from, to) => {
+    let clipped = scene.gate.phase.ripples.absorb(from.x, from.y, from.z, to);
+    if (scene.launch.phase.ripples.absorb(from.x, from.y, from.z, to)) clipped = true;
+    return clipped;
   };
-  // The door's passage, where the view may stand behind whoever comes in.
-  const inDoorway = (p) => Math.abs(p.x - DOOR.x) < DOOR.half && p.z > HALL.front - 2.5 && p.y < DOOR.top;
+  const absorbProjectile = (ax, ay, az, point, dt) => {
+    const bx = point.x, by = point.y, bz = point.z;
+    let hit = scene.gate.phase.ripples.absorb(ax, ay, az, point) ? scene.gate.phase.ripples : null;
+    if (scene.launch.phase.ripples.absorb(ax, ay, az, point)) hit = scene.launch.phase.ripples;
+    return !!hit && hit.cross(ax, ay, az, bx, by, bz, dt);
+  };
+  // The door's passage, where the view may stand behind whoever comes in; and the launch tunnel, where it may follow
+  // whoever walks down it.
+  const inDoorway = (p) => Math.abs(p.x - DOOR.x) < DOOR.half && p.z > HALL.front - 2.5 && p.y > DOOR.y && p.y < DOOR.y + DOOR.top;
+  const inTunnel = (p) => p.z < HALL.back + 2;
 
   const enter = (ctx) => {
     ({ renderer, game, world, go, agentPlay } = ctx);
-    camera = createCamera({ fov: 55, near: 0.3, far: 200 });
+    camera = createCamera({ fov: 55, near: 0.3, far: 420 });
     root = createNode();
+    clock = daylight.createClock({ hour: DEBUG ? parseFloat(params.get("hour")) : NaN, daylen: DEBUG ? parseFloat(params.get("daylen")) : NaN, day: DEBUG ? parseFloat(params.get("day")) : NaN, time: DEBUG ? params.get("time") : null, now: new Date() });
+    skyFrom(clock);
     hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
     hud.setAreaLabel("LF");
     hooks = {};
@@ -162,21 +272,34 @@
     const clampTarget = (p) => {
       p.y = clamp(p.y, 0.5, HALL.h - 3);
       if (inDoorway(p)) { p.z = Math.min(p.z, DOOR.z + 2); return; }
+      if (inTunnel(p)) {
+        p.x = clamp(p.x, -TUN.r + 2, TUN.r - 2);
+        p.y = Math.min(p.y, TUN.y + TUN.r - 2.5);
+        p.z = Math.max(p.z, TUN.holdShort - 1);
+        return;
+      }
       p.x = clamp(p.x, -HALL.halfW + 3, HALL.halfW - 3);
-      p.z = clamp(p.z, HALL.back + 3, HALL.front - 2);
+      p.z = Math.min(p.z, HALL.front - 2);
     };
-    // Inside the walls, which lean in as they rise; only the door's passage lets the eye nearer the front.
+    // Inside the walls, which lean in as they rise; the door's passage lets the eye nearer the front, and the launch
+    // tunnel lets it on down the runway, inside its frames and short of the shield.
     const clampCamera = (p) => {
       p.y = clamp(p.y, 0.6, HALL.h - 1.5);
       if (inDoorway(p)) { p.z = Math.min(p.z, DOOR.z + 3); return; }
       const lean = p.y / HALL.h * 2.6;
+      if (p.z < HALL.back + 1.6 + lean) {
+        p.x = clamp(p.x, -TUN.r + 1.5, TUN.r - 1.5);
+        p.y = Math.min(p.y, TUN.y + TUN.r - 1.8);
+        p.z = Math.max(p.z, TUN.z1 + 1.5);
+        return;
+      }
       p.x = clamp(p.x, -HALL.halfW + 1.6 + lean, HALL.halfW - 1.6 - lean);
-      p.z = clamp(p.z, HALL.back + 1.6 + lean, HALL.front - 1.6 - lean);
+      p.z = Math.min(p.z, HALL.front - 1.6 - lean);
     };
     pilot = pilotMod.create({
       renderer, canvas: ctx.canvas, camera, hud, presets: PRESETS, landing: "entrance", pitch: PITCH, dist: DIST,
       follow: FOLLOW, fly: FLY, clampTarget, clampCamera, ceilingAt: () => HALL.h - 1.5, coarse: COARSE, mayPossess,
-      close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: groundFor }
+      close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: (x, z) => HM.supportAt(x, z, feetOf()) }
     });
     const tipFor = (hit) => TIPS[hit.owner.kind] ? TIPS[hit.owner.kind][0] : "";
     Object.assign(hooks, {
@@ -204,7 +327,7 @@
     });
     hud.setStats(game.state);
     fx = fxMod.create({ root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: { x: 0, y: 10, z: 0 } });
-    dust = BL.dressing.motes({ count: 200, span: 24, low: 0.5, high: 12 });
+    dust = BL.dressing.motes({ count: 220, span: 26, low: 0.5, high: 13 });
     addChild(root, dust.node);
     scene = build();
     // The visitor's Ooga: `character=` on a page that opens here, else the one the hall handed over, else a free view.
@@ -219,20 +342,26 @@
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
       const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, clipProjectileTarget, absorbProjectile, reloadPolicy };
-      shared.onModelChange = () => { if (avatar) scene.gate.phase.body.refresh(avatar.root); };
+      shared.onModelChange = () => {
+        if (!avatar) return;
+        scene.gate.phase.body.refresh(avatar.root);
+        scene.launch.phase.body.refresh(avatar.root);
+      };
       people = shared.crew = BL.crew.create(shared);
       world.weapons = playerWorld.weapons;
       world.magazine = playerWorld.magazine;
       pilot.bind(shared);
       avatar = people.cavemen.get(playerName);
       if (pilot.loginViewRestored) {
-        Object.assign(avatar.root.position, { x: ARRIVAL.position.x, y: avatar.baseY, z: ARRIVAL.position.z });
+        Object.assign(avatar.root.position, { x: ARRIVAL.position.x, y: ARRIVAL.position.y + avatar.baseY, z: ARRIVAL.position.z });
         avatar.root.rotation.y = ARRIVAL.yaw + Math.PI;
       }
       pilot.possess(avatar);
       people.selectWeapon(avatar.weapon.selectedSlot, avatar);
       if (!pilot.loginViewRestored) pilot.navigate(ARRIVAL);
-      scene.gate.phase.body.track(avatar.root, avatar.traits.height * 2, Math.max(avatar.headOpen.verts.length, avatar.headClosed.verts.length));
+      const heads = Math.max(avatar.headOpen.verts.length, avatar.headClosed.verts.length);
+      scene.gate.phase.body.track(avatar.root, avatar.traits.height * 2, heads);
+      scene.launch.phase.body.track(avatar.root, avatar.traits.height * 2, heads);
     }
     unsubscribeAccount = BL.net.subscribe(accountChanged);
     // Other signed-in players in the hangar, as the Oogas they drive.
@@ -252,9 +381,22 @@
       hangar: { layout: LAYOUT, get scene() { return scene; }, get avatar() { return avatar; } }
     };
   };
+  const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
 
+  // A phase plane's hum: its glow follows, and it ripples now and then across its opening.
+  const hum = (g, opening, dt, elapsed, gap) => {
+    g.phase.update(dt, elapsed);
+    g.phase.body.update(dt);
+    g.phase.body.time = g.phase.ripples.time;
+    g.hum -= dt;
+    if (g.hum <= 0) {
+      g.hum = gap + Math.random() * gap * 2;
+      g.phase.ripples.pulse(opening.minX + Math.random() * (opening.maxX - opening.minX), opening.floorY + Math.random() * (opening.ceilingY - opening.floorY), 0);
+    }
+  };
   const update = (dt, elapsed) => {
     const s = scene;
+    skyFrom(clock);
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
     pilot.update(dt);
@@ -269,31 +411,28 @@
     remotes.update(dt);
     footsteps.update(drivenHere);
     node.tick(dt);
-    // The door's shield hums, and shows the outline of whoever walks through it.
-    const g = s.gate;
-    g.phase.update(dt, elapsed);
-    g.phase.body.update(dt);
-    g.phase.body.time = g.phase.ripples.time;
-    g.hum -= dt;
-    if (g.hum <= 0) {
-      g.hum = 0.12 + Math.random() * 0.25;
-      g.phase.ripples.pulse(OPENING.minX + Math.random() * (OPENING.maxX - OPENING.minX), Math.random() * OPENING.ceilingY, 0);
+    hum(s.gate, OPENING, dt, elapsed, 0.12);
+    hum(s.launch, LAUNCH, dt, elapsed, 0.18);
+    // Walked up to the hold-short bar, the launch shield ripples where they stand and says, once an approach, that it is
+    // sealed.
+    if (drivenHere) {
+      const z = drivenHere.root.position.z;
+      if (s.launch.armed && z < TUN.holdShort + SHIELD_NEAR) {
+        s.launch.armed = false;
+        s.launch.phase.ripples.pulse(clamp(drivenHere.root.position.x, LAUNCH.minX, LAUNCH.maxX), 1.4, 0);
+        hud.toast("Launch shield · sealed. The runway opens when Jet v2 is ready.");
+      } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
-    // The lanterns flicker like flames.
-    const L = RENDER_OPTS.lights;
-    for (let slot = fixedLights, j = 0; slot < RENDER_OPTS.lightCount; slot++, j++) {
-      const k = 0.9 + Math.sin(elapsed * 9.3 + j * 1.7) * 0.06 + Math.sin(elapsed * 23.7 + j * 5.3) * 0.04, o = slot * 8;
-      L[o + 4] = LANTERN_GLOW[0] * k; L[o + 5] = LANTERN_GLOW[1] * k; L[o + 6] = LANTERN_GLOW[2] * k;
-    }
+    glowNear(elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     // Back out through the door: walked past its shield, or flown up to it with the free view.
     if (!leaving) {
-      const through = (p, margin) => Math.abs(p.x - DOOR.x) <= DOOR.half && DOOR.z - p.z <= DOOR.plane + margin && p.y < DOOR.top + 1;
+      const through = (p, feet, margin) => Math.abs(p.x - DOOR.x) <= DOOR.half && DOOR.z - p.z <= DOOR.plane + margin && feet > DOOR.y - 0.3 && feet < DOOR.y + DOOR.top;
       if (pilot.player) {
-        if (through(pilot.player.root.position, 0)) leaveHangar();
+        if (through(pilot.player.root.position, pilot.player.root.position.y - pilot.player.baseY, 0)) leaveHangar();
       } else if (!avatar) {
         const a = pilot.controls.read();
-        if (Math.hypot(a.x, a.y) > 0.05 && through(camera.position, 0.9)) leaveHangar();
+        if (Math.hypot(a.x, a.y) > 0.05 && through(camera.position, camera.position.y, 0.9)) leaveHangar();
       }
     }
     stepTweens(dt);
@@ -313,6 +452,7 @@
     unsubscribeAccount = null;
     BL.net.setBody(null);
     scene.gate.phase.dispose();
+    scene.launch.phase.dispose();
     remotes.dispose();
     remotes = null;
     footsteps.dispose();
@@ -326,12 +466,12 @@
     const count = input.targetCount;
     input.dispose();
     hud.dispose();
-    scene = hud = hooks = input = pilot = fx = agentPlay = dust = people = avatar = playerWorld = node = null;
+    scene = hud = hooks = input = pilot = fx = agentPlay = dust = people = avatar = playerWorld = node = clock = null;
     hangarScene.input = hangarScene.debug = null;
     return { targets: count };
   };
   const liveGeometry = (set) => {
-    if (scene) scene.gate.phase.liveGeometry(set);
+    if (scene) { scene.gate.phase.liveGeometry(set); scene.launch.phase.liveGeometry(set); }
     if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
     if (remotes) remotes.liveGeometry(set);
   };

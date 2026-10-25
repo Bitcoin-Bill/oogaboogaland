@@ -293,12 +293,13 @@
   // what it does under it, set in the system's sans at a sign's size so it reads sharp from across the hall. The
   // lettering is a picture on the board's face (`imageSurface`), drawn unlit like a lit sign; `back` is the iron
   // board behind it. `height` is a two-line label's height in metres. Fixed labels are cached; a label whose
-  // reading changes passes `keep: false`, and the scene releases what it replaces. Styles: plain and `gold` (the study
-  // hall's sign, whose frame is its portal's).
+  // reading changes passes `keep: false`, and the scene releases what it replaces. Styles: plain, `gold` (the study
+  // hall's sign, whose frame is its portal's) and `jet` (the Lightning Jet Hangar's, the bolt's gold on its blue).
   const LABEL_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
   const LABEL_STYLES = {
     plain: { board: "#0d0b0a", edge: "rgba(236,226,206,0.6)", title: "#f8f4ec", sub: "#d6cfc1", back: IRON_DK },
-    gold: { board: "#1e140d", edge: "rgba(0,0,0,0)", title: "#fbe3a4", sub: "#e8c887", back: TIMBER_DK }
+    gold: { board: "#1e140d", edge: "rgba(0,0,0,0)", title: "#fbe3a4", sub: "#e8c887", back: TIMBER_DK },
+    jet: { board: "#1f3c9a", edge: "rgba(255,210,58,0.85)", title: "#ffd23a", sub: "#e4ebff", back: IRON_DK }
   };
   const labelCache = new Map();
   const label = (title, sub = "", { height = 1.25, style = "plain", keep = true } = {}) => {
