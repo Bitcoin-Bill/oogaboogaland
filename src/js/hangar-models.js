@@ -45,9 +45,10 @@
     // the shield; walkers stop at `holdShort`, the hazard bar's line.
     tunnel: { y: 5, r: 7, z0: -34, z1: -84, step: 5, holdShort: -82.8 },
     // The catwalks along both side walls at the gantries' feet, decks [x0, x1, z0, z1], and the stairs up to their back
-    // ends; and the truss gantries across the vault, by z, at the height they run.
-    catwalkY: 7.5, catwalks: [[HALL.x0 + 3, HALL.x0 + 5.4, -20, 24], [HALL.x1 - 5.4, HALL.x1 - 3, -20, 24]],
-    catwalkStairs: [[HALL.x0 + 4.2, 0, -31.5, HALL.x0 + 4.2, 7.5, -20, 1.6], [HALL.x1 - 4.2, 0, -31.5, HALL.x1 - 4.2, 7.5, -20, 1.6]],
+    // ends, their feet far enough from the back wall to walk up to them straight; and the truss gantries across the
+    // vault, by z, at the height they run.
+    catwalkY: 7.5, catwalks: [[HALL.x0 + 3, HALL.x0 + 5.4, -15, 24], [HALL.x1 - 5.4, HALL.x1 - 3, -15, 24]],
+    catwalkStairs: [[HALL.x0 + 4.2, 0, -26.5, HALL.x0 + 4.2, 7.5, -15, 1.6], [HALL.x1 - 4.2, 0, -26.5, HALL.x1 - 4.2, 7.5, -15, 1.6]],
     gantries: [22, 14, 6, -2, -10, -18, -26], gantryY: 15,
     // The Jet's dock right of the runway, nose to the tunnel: where `jet-models.js`'s jet stands on the floor, and the
     // striped bay round it, [x0, x1, z0, z1]. Its gangway along the left flank at the cockpit's sill, `w` wide at `x`
@@ -69,7 +70,7 @@
     // Crates about the floor, [x, z, turn, stacked], and the blue floor lamps, [x, z].
     crates: [[-7.6, 12, 0.2, 2], [-8.5, 11.2, -0.3, 1], [-7.7, 3.4, 0.1, 1], [-7.8, -15.4, -0.2, 2], [-8.7, -16, 0.4, 1], [-7.6, -24, 0.3, 1],
       [-16.4, 1.2, 0.5, 1], [-15.6, -15, -0.2, 2], [-12, -29, 0.2, 2], [-13, -28.4, -0.3, 1],
-      [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [7.6, 11.4, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [24.2, -22.5, 0, 1], [16.5, -30.4, -0.3, 1]],
+      [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [7.6, 11.4, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [25, -12, 0, 1], [16.5, -30.4, -0.3, 1]],
     floorLamps: [[-6.3, 20], [-6.3, 8], [-6.3, -4], [-6.3, -16], [-6.3, -28], [6.3, 20], [6.3, -28], [-11.8, 21.2], [-17.4, -3.2], [-11.6, -24],
       [5.9, 6.3], [5.9, -29.3], [24.9, 6.3], [24.9, -29.3], [6.3, 13.5]],
     // The two boards on the left wall under the catwalk, both square to it and held off it on their mounts: the
