@@ -263,9 +263,11 @@
       return false;
     };
     // A trip from where she stands to a place as waypoints, the grid's places pulled straight wherever the floor allows
-    // from the height of the last.
+    // from the height of the last, and only where walking there at that height ends on the place's own level (so a
+    // walk across the floor never stands in for the climb to a place up on the gangway over it).
     const cells = new Int32Array(M), path = new Float32Array(MAX_PATH * 2);
     let pathN = 0, pathAt = 0;
+    const straight = (ax, az, ay, c) => HM.walkable(ax, az, cx(c), cz(c), ay, RADIUS) && Math.abs(HM.supportAt(cx(c), cz(c), ay) - feetOf[c]) < 0.05;
     const plan = (x, z, goal) => {
       const start = nearestOpen(x, z, feet);
       pathN = pathAt = 0;
@@ -275,7 +277,7 @@
       let ax = x, az = z, ay = feet, i = n - 1;
       while (i >= 0 && pathN < MAX_PATH) {
         let j = 0;
-        while (j < i && !HM.walkable(ax, az, cx(cells[j]), cz(cells[j]), ay, RADIUS)) j++;
+        while (j < i && !straight(ax, az, ay, cells[j])) j++;
         ax = cx(cells[j]); az = cz(cells[j]); ay = feetOf[cells[j]];
         path[pathN * 2] = ax; path[pathN * 2 + 1] = az; pathN++;
         i = j - 1;
