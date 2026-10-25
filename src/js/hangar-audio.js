@@ -192,6 +192,13 @@
       test.boomNoise = hissOf(test.boomFilter);
       test.crackGain = gain(0, mix);
       test.crack = hissOf(filter("highpass", 2500, 0.7, test.crackGain));
+      // Kortik's Sis's hammer on the Jet: struck metal, a ring of noise and a ping, placed where it lands.
+      test.clangPan = panner();
+      test.clangGain = gain(0, test.clangPan);
+      test.clangFilter = filter("bandpass", 1800, 16, test.clangGain);
+      test.clang = hissOf(test.clangFilter);
+      test.dingGain = gain(0, test.clangPan);
+      test.ding = osc("triangle", 1500, test.dingGain);
       // The ringing in the presser's ears, past the muffle.
       test.ringGain = gain(0, master);
       test.ring = osc("sine", 3150, test.ringGain);
@@ -375,6 +382,21 @@
       else if (!muted) activate();
       return muted;
     };
+    // A hammer blow on the Jet at (x, y, z), each a little different, quieter with distance.
+    const clang = (x, y, z) => {
+      if (!ready || muted) return;
+      place(x, y, z, 7);
+      const now = ctx.currentTime, k = 0.55 * AT.level, f = 1300 + Math.random() * 1400, T = test;
+      T.clangPan.pan.setValueAtTime(AT.pan, now);
+      T.clangFilter.frequency.setValueAtTime(f, now);
+      T.clangGain.gain.cancelScheduledValues(now);
+      T.clangGain.gain.setValueAtTime(k, now);
+      T.clangGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      T.ding.frequency.setValueAtTime(f * 1.18, now);
+      T.dingGain.gain.cancelScheduledValues(now);
+      T.dingGain.gain.setValueAtTime(k * 0.35, now);
+      T.dingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    };
     const setVolume = (value) => {
       volume = clamp(value, 0, 1);
       try {
@@ -398,7 +420,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },

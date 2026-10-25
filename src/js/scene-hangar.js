@@ -90,6 +90,15 @@
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false, soundPanel = null;
   const NO_ACTORS = [];
+  // What walks the hall besides the crew, for the crew to keep clear of: the other players' Oogas and Kortik's Sis.
+  const ACTORS = [];
+  const outsideActors = () => {
+    ACTORS.length = 0;
+    const others = remotes ? remotes.actors() : NO_ACTORS;
+    for (let i = 0; i < others.length; i++) ACTORS.push(others[i]);
+    if (scene && scene.sis) ACTORS.push(scene.sis.actor);
+    return ACTORS;
+  };
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
   // frame, so signed-in players in the hangar hear each other and those in the hall (voice needs a driven Ooga).
   const mayPossess = (cave) => BL.net.mayDrive(cave.traits.name);
@@ -509,7 +518,7 @@
     targets.push(scene.fire.body);
     soundPanel = openSoundPanel();
     // Kortik's Sis, the hangar's chief engineer (`sis.js`).
-    scene.sis = BL.sis.create();
+    scene.sis = BL.sis.create({ fx, audio });
     addChild(root, scene.sis.node);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);
@@ -529,7 +538,7 @@
     if (playerName) {
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
-      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors: () => remotes ? remotes.actors() : NO_ACTORS, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
+      const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
         useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) };
       shared.onModelChange = () => {
         if (!avatar) return;
@@ -567,7 +576,7 @@
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; }, get sis() { return scene && scene.sis && scene.sis.debug; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -643,7 +652,7 @@
     if (people) people.update(dt, elapsed);
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
-    s.sis.update(dt, drivenHere ? drivenHere.root.position : camera.position);
+    s.sis.update(dt, drivenHere, camera.position);
     pilot.update(dt);
     s.fire.view(camera);
     if (s.window) s.window.update(camera);
