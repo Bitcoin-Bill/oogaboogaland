@@ -4139,7 +4139,7 @@ const characterChecks = async () => {
   for (const geo of worn) mirrorGeometries.add(geo);
   const spare = BL.models.spareMagazine();
   collect(spare.node);
-  for (const name of ["factory-models", "kortik-models", "tess"])
+  for (const name of ["jumbotron", "factory-kiosk", "factory-models", "kortik-models", "tess"])
     runInNewContext(await readFile(join(root, `src/js/${name}.js`), "utf8"), context);
   const kortik = BL.kortikModels.rig(), kortikHeads = ["headOpen", "headClosed", "headTalk", "redOpen", "redClosed", "redTalk"];
   collect(kortik.root);
@@ -10940,8 +10940,8 @@ const factoryGreeter = { name: "factory greeter", why: "rule: the guide notices 
     return { nearFaces: near.faces.length, farFaces: far.faces.length, switched: near !== far, expectedDetail,
       lowCoarse: lowNear === lowFar && (expectedDetail ? lowNear.faces.length < far.faces.length : lowNear === far),
       lightFaces: lowNear.faces.length, retainedFaces: [...set].reduce((sum, mesh) => sum + mesh.faces.length, 0),
-      entry, prepared: set.size === (expectedDetail ? 36 : 12),
-      stable: heldNear === near && farAgain === far && heldFar === far, retained: geometry.every(mesh => set.has(mesh) || mesh === BL.factoryModels.forgeWave().gold), count: set.size };
+      entry, prepared: set.size === (expectedDetail ? 37 : 13),
+      stable: heldNear === near && farAgain === far && heldFar === far, retained: geometry.every(mesh => set.has(mesh)), count: set.size };
   })()`);
   record("factory greeter: close-up detail switches with hysteresis and every animated tier remains in the visit's live geometry set",
     detail.switched === detail.expectedDetail && detail.stable && detail.retained && detail.lowCoarse && detail.prepared
@@ -16736,7 +16736,7 @@ scene("factory", { label: "lifecycle", exclusive: true, url: hubPage(src), steps
     await travel("factory");
     // One listener belongs to the hall and one to Tess; both leave with the scene.
     const hall = await b.evaluate('__factoryLife.subscriptions');
-    const lighter = await b.evaluate(`(() => { const set = new Set(); __ooga.factory.greeter.liveGeometry(set); return __ooga.renderer.quality === "low" && set.size === 12; })()`);
+    const lighter = await b.evaluate(`(() => { const set = new Set(); __ooga.factory.greeter.liveGeometry(set); return __ooga.renderer.quality === "low" && set.size === 13; })()`);
     const inFlight = await tip(`soak-${i}`);
     await travel("lab");
     const away = await b.evaluate('__factoryLife.subscriptions');
