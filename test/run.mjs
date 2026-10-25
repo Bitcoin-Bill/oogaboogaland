@@ -16846,6 +16846,10 @@ const rescueChecks = BL => {
     RD.save({dogs:{"ooga-1":pup("Rex",1,1,.1234567)},poops:[1.25,0,-2],scooped:4});const written=JSON.parse(store.get(RD.KEY)),rounded=written.dogs["ooga-1"].hunger===.123&&written.poops[0]===1.25&&written.scooped===4;
     const g=BL.game.create({catalog:[]}),apart=!("rescue" in g.state)&&!g.adoptDog&&!BL.game.RESCUE;store.set("oogaboogaland.v1","{}");g.resetAll();const reset=!store.has(RD.KEY)&&!store.has("oogaboogaland.v1");
     const hungry=D.hungerAfter(0,D.HUNGRY*D.HUNGER_SECONDS-1)<D.HUNGRY&&D.hungerAfter(0,D.HUNGRY*D.HUNGER_SECONDS+1)>=D.HUNGRY&&D.hungerAfter(.99,1e6)===1;
+    // Loading: every rescue module in DSB Land's deferred group, before dsb-interiors.js, which reads BL.rescueRoom.
+    const tags=[...readFileSync(join(root,"src/index.html"),"utf8").matchAll(/<script src="js\/([^"]+)"( data-defer="dsb")?><\/script>/g)].map(m=>[m[1],!!m[2]]),at=n=>tags.findIndex(t=>t[0]===n);
+    const deferred=["rescue-dogs.js","rescue-models.js","rescue-room.js","rescue-menu.js","rescue-dsb.js"].every((n,k,a)=>at(n)>=0&&tags[at(n)][1]&&at(n)<at("dsb-interiors.js")&&(!k||at(a[k-1])<at(n)));
+    record("Rescue loading: its five modules load with DSB Land's deferred code, in order and before dsb-interiors.js",deferred,JSON.stringify(tags.filter(t=>t[0].startsWith("rescue"))));
     record("Rescue saves: a key of its own, one dog for each of at most 16 logins (newest kept), every bad part dropped alone, the newest 512 piles, hunger to three decimals, the reset deleting it, and nothing in the island's save",loaded&&dropped&&unreadable&&rounded&&reset&&apart&&hungry,JSON.stringify({loaded,dropped,unreadable,rounded,reset,apart,hungry,kept:kept.length}));
     store.clear();
     // The address and room: VAC 1 keeps VACANT 21, its facade and approach; the room's every area is reachable.
