@@ -92,7 +92,7 @@
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false;
-  let tool = "paint", flash = 0, flashT = 0;
+  let tool = "paint", flash = 0, flashT = 0, audio = null;
   // The sniper scope: its zoom step (`ZOOMS`, degrees of view), and the tool and view to go back to off the tower.
   const ZOOMS = [34, 20, 11];
   const scope = { zoom: 0, tool: "paint", first: false };
@@ -264,6 +264,7 @@
     const item = T[quiz.index];
     if (k === quiz.right) {
       el.answers[k].dataset.mark = "right";
+      audio.cues.right();
       quiz.solved++;
       closeQuiz();
       SIM.escape(sim, 0);
@@ -272,6 +273,7 @@
       return;
     }
     el.answers[k].dataset.mark = "wrong";
+    audio.cues.wrong();
     el.answers[quiz.right].dataset.mark = "right";
     for (const b of el.answers) b.disabled = true;
     quiz.locked = true;
@@ -300,6 +302,7 @@
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   };
   const start = () => {
+    audio.unlock();
     if (!actors || !actors[0].cave) return;
     sim.team = selection.team;
     sim.rival = SIM.other(selection.team);
@@ -344,6 +347,8 @@
     hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.resultTitle.textContent = won ? "Blocks mined!" : "Rivals mined it";
+    (won ? audio.cues.win : audio.cues.lose)();
+    audio.state.zip = 0;
     el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)} · first to ${sim.target}${best ? " · fastest win yet!" : ""}`;
     const me = sim.actors[0];
     el.stats.innerHTML = "";
@@ -390,9 +395,36 @@
   };
 
   // The sim's events since the last frame: splats, sayings, notices.
+  // Each event's sound, quieter the further it happened from the visitor's Ooga; the visitor's own moments play full.
+  const hear = (e, me, mine) => {
+    const p = sim.actors[0], k = me ? 1 : clamp(1 - Math.hypot(e.x - p.x, e.z - p.z) / 32, 0.12, 1), c = audio.cues, t = e.type;
+    if (t === "fire") c.fire(k);
+    else if (t === "throw") { const kind = e.actor >= 0 ? sim.actors[e.actor].lastKind : ""; if (kind === "sniper") c.sniper(k); else if (kind === "rocket") c.rocket(k); else c.throw(k); }
+    else if (t === "splat") c.splat(me ? 1 : k);
+    else if (t === "miss" || t === "netmiss") c.miss(k);
+    else if (t === "pop") c.pop(k);
+    else if (t === "boom") c.boom(k);
+    else if (t === "net") c.net(k);
+    else if (t === "bonk") c.bonk(k);
+    else if (t === "boing") c.boing(k);
+    else if (t === "build" || t === "lift" || t === "set" || t === "smash") c.crate(k);
+    else if (t === "pickup" && (me || mine)) c.pickup();
+    else if (t === "rescue" && mine) c.rescue();
+    else if (t === "knock" || t === "drop") c.drop(k);
+    else if (t === "pass") c.pass(k);
+    else if (t === "capture") (mine ? c.capture : c.theirCapture)();
+    else if (t === "go") c.go();
+    else if (me && t === "trap") c.trap();
+    else if (me && (t === "refill" || t === "cache")) c.refill();
+    else if (me && t === "rifle") c.rifle();
+    else if (me && t === "zip") c.zipOn();
+    else if (me && t === "unzip") c.zipOff();
+    else if (me && (t === "jump" || t === "jump2")) c.jump();
+  };
   const readEvents = () => {
     for (let i = 0; i < sim.eventCount; i++) {
       const e = sim.events[i], mine = e.team === sim.team, me = e.actor === 0;
+      hear(e, me, mine);
       if (e.type === "miss") stamp(e.team, e.x, e.y, e.z);
       else if (e.type === "splat") {
         stamp(SIM.other(e.team), e.x, 0, e.z);
@@ -626,6 +658,7 @@
     if (lock && lock.catch) lock.catch(() => { });
   };
   const onLockedDown = (e) => {
+    audio.unlock();
     if (phase !== "play" || e.button !== 0 || quiz.open) return;
     paint();
     lockMouse();
@@ -831,7 +864,7 @@
     RENDER_OPTS.directStrength *= 1 - 0.55 * storm;
     RENDER_OPTS.sunStrength *= 1 - 0.55 * storm;
     flashT -= dt;
-    if (storm > 0.6 && flashT <= 0 && Math.random() < dt * 0.25) { flash = 1; flashT = 3; }
+    if (storm > 0.6 && flashT <= 0 && Math.random() < dt * 0.25) { flash = 1; flashT = 3; audio.cues.thunder(); }
     flash = Math.max(0, flash - dt * 5);
     RENDER_OPTS.ambientFloor = 0.22 + flash * 0.8;
     RENDER_OPTS.bloomStrength = 0.6 + flash * 1.2;
@@ -977,7 +1010,10 @@
       readInput(dt);
       const prepWas = sim.prep;
       SIM.step(sim, dt, move);
-      if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) center(`BUILD ${Math.ceil(sim.prep)}`, 0);
+      if (sim.prep > 0 && Math.ceil(sim.prep) !== Math.ceil(prepWas)) {
+        center(`BUILD ${Math.ceil(sim.prep)}`, 0);
+        if (sim.prep <= 3) audio.cues.count();
+      }
       readEvents();
       updateStrip();
       if (sim.over) finish();
@@ -992,6 +1028,13 @@
     if (phase === "board") boardView(elapsed);
     else updateCamera(dt);
     poseWeather(dt);
+    if (sim) {
+      // The held sounds: the wind's strength, rain in a storm, and the whir while the visitor rides a zipline.
+      audio.state.wind = phase === "play" ? sim.weather.strength / C.WIND.storm : 0;
+      audio.state.rain = phase === "play" && sim.weather.kind === "storm" ? 1 : 0;
+      audio.state.zip = phase === "play" && sim.actors[0].riding ? 1 : 0;
+    }
+    audio.update();
     fx.update(dt);
     stepTweens(dt);
   };
@@ -1006,6 +1049,7 @@
     hud.setStats(game.state);
   };
   const onKey = (e) => {
+    audio.unlock();
     if (e.key === "Escape") {
       if (phase === "play" && locked()) document.exitPointerLock();
       else if (phase === "play" && cam.first) setView(false);
@@ -1066,6 +1110,7 @@
     home = ctx.from === "arcade" ? "arcade" : "hub";
     hudMod.leaveTo("block", home);
     camera = createCamera({ fov: 58, near: 0.3, far: 400 });
+    audio = BL.blockAudio.create();
     root = createNode();
     clock = daylight.createClock({ hour: hourParam, day: dayParam, now: new Date() });
     hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: false });
@@ -1103,6 +1148,8 @@
     el.windKey = "";
     el.cross = document.getElementById("block-cross");
     el.viewBtn = document.getElementById("block-view-btn");
+    el.soundBtn = document.getElementById("block-sound-btn");
+    el.soundBtn.setAttribute("aria-pressed", String(!audio.muted));
     el.canvas = ctx.canvas;
     document.addEventListener("mousemove", onLockedMove);
     el.canvas.addEventListener("mousedown", onLockedDown);
@@ -1203,6 +1250,12 @@
       else if (action === "block-board") showBoard();
       else if (action === "block-drop") dropBlock();
       else if (action === "block-view") setView(!cam.first);
+      else if (action === "block-sound") {
+        audio.unlock();
+        audio.setMuted(!audio.muted);
+        el.soundBtn.setAttribute("aria-pressed", String(!audio.muted));
+        notice(audio.muted ? "Sound off" : "Sound on", 900);
+      }
       else if (action === "leave") go(home);
       else if (action === "act") act();
     });
@@ -1243,6 +1296,8 @@
     });
   };
   const leave = () => {
+    audio.dispose();
+    audio = null;
     window.clearInterval(stateTimer);
     window.clearTimeout(hintTimer);
     window.clearTimeout(centerTimer);
