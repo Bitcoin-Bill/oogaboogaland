@@ -75,23 +75,25 @@
   // The side, the Ooga, the captures to win, the Oogas a side and the bots' skill the visitor picked on the board; the
   // last three are remembered in this browser (`PICKS_KEY`) for next time.
   const TARGETS = [1, 3, 5, 7], SIZES = [2, 3, 4, 5], PICKS_KEY = "oogaboogaland.blockPicks";
-  const selection = { team: "blue", ooga: null, target: 3, size: 3, skill: "normal" };
+  const selection = { team: "blue", ooga: null, target: 3, size: 3, skill: "normal", map: "fort" };
   const loadPicks = () => {
     try {
       const p = JSON.parse(localStorage.getItem(PICKS_KEY) || "{}");
       if (TARGETS.includes(p.target)) selection.target = p.target;
       if (SIZES.includes(p.size)) selection.size = p.size;
       if (SIM.SKILLS[p.skill]) selection.skill = p.skill;
+      if (SIM.ARENAS[p.map]) selection.map = p.map;
     } catch { /* nothing saved, or storage closed: the defaults stand */ }
   };
   const savePicks = () => {
-    try { localStorage.setItem(PICKS_KEY, JSON.stringify({ target: selection.target, size: selection.size, skill: selection.skill })); } catch { /* the picks last this visit */ }
+    try { localStorage.setItem(PICKS_KEY, JSON.stringify({ target: selection.target, size: selection.size, skill: selection.skill, map: selection.map })); } catch { /* the picks last this visit */ }
   };
 
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
+  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
   // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
@@ -445,6 +447,7 @@
     else if (t === "pass") c.pass(k);
     else if (t === "capture") (mine ? c.capture : c.theirCapture)();
     else if (t === "go") c.go();
+    else if (t === "burn") c.burn(me ? 1 : k);
     else if (me && t === "trap") c.trap();
     else if (me && (t === "refill" || t === "cache")) c.refill();
     else if (me && t === "rifle") c.rifle();
@@ -478,6 +481,7 @@
     else if (t === "power") feed(`${who} got ${({ boots: "lightning boots", halving: "the halving", cold: "cold storage", laser: "laser eyes" })[SIM.POWERS[e.y]]}`, e.team);
     else if (t === "zip") feed(`${who} took the zipline`, e.team);
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
+    else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
@@ -492,7 +496,7 @@
     const g = c.getContext("2d");
     g.fillStyle = "#8a7550";
     g.fillRect(0, 0, c.width, c.height);
-    for (const b of SIM.ARENA.BLOCKS) {
+    for (const b of SIM.ARENAS[sim.map].BLOCKS) {
       if (b[4] - (b[5] || 0) < 0.5 && (b[5] || 0) > 0.5) continue;
       const x0 = mapX(b[0]), x1 = mapX(b[1]), y0 = mapY(b[2]), y1 = mapY(b[3]);
       g.fillStyle = (b[5] || 0) > 1.5 ? "#6a5032" : "#4a4440";
@@ -510,7 +514,7 @@
     mapT -= dt;
     if (mapT > 0) return;
     mapT = 0.1;
-    if (!mapBase || mapBase.team !== sim.team) { drawMapBase(); mapBase.team = sim.team; }
+    if (!mapBase || mapBase.key !== sim.team + sim.map) { drawMapBase(); mapBase.key = sim.team + sim.map; }
     const g = el.mapCtx;
     g.drawImage(mapBase, 0, 0);
     for (const t of SIM.TEAMS) {
@@ -642,11 +646,20 @@
         if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : "HALVING!", 900);
         notice(words[kind], 2600);
         updateStrip();
-      } else if (e.type === "mined") {
+      } else if (e.type === "burn") {
+        fx.burst(e.x, 0.4, e.z, 14, ORANGE_BITS, 2.4);
+        if (me) {
+          center("HOT FEET!", 1000);
+          notice(burnSeen ? "Hot feet! Jump 3 times to cool them" : "OUCH! You stepped in the fire · jump 3 times (Space) to cool your feet before you can run or throw", 3600);
+          burnSeen = true;
+        }
+      } else if (e.type === "jump" && me && sim.actors[0].burnt > 0) notice(`Hop! ${sim.actors[0].burnt} more to cool off`, 900);
+      else if (e.type === "cooled") { if (me) notice("Feet cooled · back in the game!", 1400); }
+      else if (e.type === "mined") {
         center(e.x ? `BLOCK ${e.x}!` : "BLOCK FOUND!", 1500);
         notice("A real Bitcoin block was just mined: every quiz pad and ammo cache is ready again", 3200);
         audio.cues.block();
-        for (const c of SIM.ARENA.caches) fx.burst(c[0], c[1] + 0.6, c[2], 10, ORANGE_BITS, 2);
+        for (const c of SIM.ARENAS[sim.map].caches) fx.burst(c[0], c[1] + 0.6, c[2], 10, ORANGE_BITS, 2);
       } else if (e.type === "trap") {
         fx.burst(e.x, 1, e.z, 12, QUIZ_BITS, 2);
         if (me) { center("QUIZ TRAP!", 1000); openQuiz(); }
@@ -892,7 +905,7 @@
       a.trolley.visible = s.riding;
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0;
+      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -915,6 +928,13 @@
         p.armR.rotation.x = -2 + Math.sin(elapsed * 2 + i) * 0.1;
         p.armL.rotation.x = -0.3;
         p.legL.rotation.x = p.legR.rotation.x = 0;
+        continue;
+      }
+      if (s.burnt > 0) {
+        // Hot feet: arms flapping, knees high.
+        const w = Math.sin(elapsed * 14 + i);
+        p.armL.rotation.x = -2.4 + w * 0.5; p.armR.rotation.x = -2.4 - w * 0.5;
+        p.legL.rotation.x = -0.9 * Math.max(0, w); p.legR.rotation.x = -0.9 * Math.max(0, -w);
         continue;
       }
       if (s.riding || s.climbing) {
@@ -1168,6 +1188,7 @@
     poseCompanions(dt, elapsed);
     poseStamina();
     posePads(elapsed);
+    poseFire(elapsed);
     poseShots();
     if (phase === "board") boardView(elapsed);
     else updateCamera(dt);
@@ -1233,12 +1254,68 @@
     if (n === selection.size && sim && sim.size === n) return;
     selection.size = n;
     savePicks();
-    if (!sim) return;
-    sim = SIM.create({ team: selection.team, seed: 1, size: n, skill: selection.skill, target: selection.target });
+    if (sim) recast();
+  };
+  // A fresh sim and a fresh cast for the board's picks.
+  const recast = () => {
+    sim = SIM.create({ team: selection.team, seed: 1, size: selection.size, skill: selection.skill, target: selection.target, map: selection.map });
     disposeActors();
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+  };
+  const chooseMap = (id) => {
+    for (const b of el.maps) b.setAttribute("aria-pressed", String(b.dataset.map === id));
+    if (id === selection.map && sim && sim.map === id) return;
+    selection.map = id;
+    savePicks();
+    if (!sim) return;
+    recast();
+    buildMap();
+    mapBase = null;
+  };
+  // Everything that belongs to the map, under one node so a new map replaces it whole: the ground and buildings, the
+  // quiz pads, power-up spots, trampolines, ammo caches, and the campfire with its three dancing potato Oogas.
+  const buildMap = () => {
+    if (mapRoot) {
+      removeChild(root, mapRoot);
+      const i = placed.indexOf(mapRoot);
+      if (i >= 0) placed.splice(i, 1);
+    }
+    const A = SIM.ARENAS[selection.map];
+    mapRoot = place(createNode());
+    const add = (node) => { addChild(mapRoot, node); return node; };
+    add(createNode({ geometry: BM.arena(SIM.MAPS.indexOf(selection.map)) }));
+    pads = A.traps.map(([x, z]) => add(createNode({ geometry: BM.pad(), position: { x, y: 0, z } })));
+    powerNodes = A.powers.map(([x, z]) => add(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
+    trampNodes = A.tramps.map(([x, z]) => add(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
+    caches = A.caches.map(([x, y, z]) => add(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
+    const [fx, fz] = A.fire;
+    add(createNode({ geometry: BM.firePit(), position: { x: fx, y: 0, z: fz } }));
+    fireNode = add(createNode({ geometry: BM.flames(), position: { x: fx, y: 0.05, z: fz } }));
+    dancers = [0, 1, 2].map((k) => {
+      const body = add(createNode({ geometry: BM.potato() }));
+      const armL = createNode({ geometry: BM.potatoArm(), position: { x: -0.5, y: 0.78, z: 0 } });
+      const armR = createNode({ geometry: BM.potatoArm(), position: { x: 0.5, y: 0.78, z: 0 } });
+      addChild(body, armL, armR);
+      return { body, armL, armR, k };
+    });
+  };
+  // The fire flickers and spits embers; the potato Oogas dance round it, hopping and waving.
+  const poseFire = (elapsed) => {
+    const [cx, cz] = SIM.ARENAS[sim.map].fire;
+    fireNode.scale.y = 1 + 0.18 * Math.sin(elapsed * 13) + 0.08 * Math.sin(elapsed * 31);
+    fireNode.scale.x = fireNode.scale.z = 1 + 0.06 * Math.sin(elapsed * 17);
+    fireNode.rotation.y = elapsed * 1.7;
+    if (Math.random() < 0.12) fx.burst(cx + (Math.random() - 0.5) * 0.4, 1, cz + (Math.random() - 0.5) * 0.4, 1, ORANGE_BITS, 0.9);
+    for (const d of dancers) {
+      const a = elapsed * 0.7 + d.k * Math.PI * 2 / 3, x = cx + Math.sin(a) * 1.8, z = cz + Math.cos(a) * 1.8;
+      setVec(d.body.position, x, Math.abs(Math.sin(elapsed * 5 + d.k * 1.3)) * 0.3, z);
+      d.body.rotation.y = Math.atan2(cx - x, cz - z) + Math.sin(elapsed * 3 + d.k) * 0.4;
+      d.body.rotation.z = Math.sin(elapsed * 5 + d.k * 1.3) * 0.12;
+      d.armL.rotation.z = -2.2 + Math.sin(elapsed * 7 + d.k) * 0.7;
+      d.armR.rotation.z = 2.2 - Math.sin(elapsed * 7 + d.k + 1) * 0.7;
+    }
   };
   const chooseSkill = (k) => {
     selection.skill = k;
@@ -1271,6 +1348,9 @@
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
     el.targets = [...document.querySelectorAll("#block-board [data-target]")];
     el.sizes = [...document.querySelectorAll("#block-board [data-size]")];
+    el.maps = [...document.querySelectorAll("#block-board [data-map]")];
+    el.onMap = (e) => { chooseMap(e.currentTarget.dataset.map); e.currentTarget.blur(); };
+    for (const b of el.maps) b.addEventListener("click", el.onMap);
     el.skills = [...document.querySelectorAll("#block-board [data-skill]")];
     loadPicks();
     el.onSize = (e) => { chooseSize(Number(e.currentTarget.dataset.size)); e.currentTarget.blur(); };
@@ -1279,6 +1359,7 @@
     for (const b of el.skills) b.addEventListener("click", el.onSkill);
     for (const b of el.sizes) b.setAttribute("aria-pressed", String(Number(b.dataset.size) === selection.size));
     chooseSkill(selection.skill);
+    for (const b of el.maps) b.setAttribute("aria-pressed", String(b.dataset.map === selection.map));
     el.boardHelp = document.getElementById("block-board-help");
     el.onTarget = (e) => { chooseTarget(Number(e.currentTarget.dataset.target)); e.currentTarget.blur(); };
     for (const b of el.targets) b.addEventListener("click", el.onTarget);
@@ -1324,7 +1405,6 @@
     const onTeam = (e) => { chooseTeam(e.currentTarget.dataset.team); e.currentTarget.blur(); };
     for (const b of el.teams) b.addEventListener("click", onTeam);
     el.onTeam = onTeam;
-    place(createNode({ geometry: BM.arena() }));
     blocks = {};
     ticks = {};
     for (const t of SIM.TEAMS) {
@@ -1340,18 +1420,15 @@
       }
       blocks[t] = { node, tickRoot };
     }
-    pads = SIM.ARENA.traps.map(([x, z]) => place(createNode({ geometry: BM.pad(), position: { x, y: 0, z } })));
-    // The sniper towers' ladders and rifle racks, the ziplines, and the ammo caches.
+    // The sniper towers' ladders and rifle racks and the ziplines, the same on every map.
     for (const t of SIM.TEAMS) {
       const l = SIM.ARENA.ladders[t], [x0, x1, z0, z1] = SIM.ARENA.towers[t], i = TEAM_INDEX[t];
       place(createNode({ geometry: BM.ladder(), position: { x: l.dx < 0 ? x1 + 0.05 : x0 - 0.05, y: 0, z: (l.zone[2] + l.zone[3]) / 2 } }));
       place(createNode({ geometry: BM.rack(i), position: { x: l.dx < 0 ? x0 + 0.7 : x1 - 0.7, y: C.TOWER_TOP, z: (z0 + z1) / 2 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }));
       place(createNode({ geometry: BM.zipline(i) }));
     }
-    powerNodes = SIM.ARENA.powers.map(([x, z]) => place(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
     for (const t of SIM.TEAMS) iceNodes[t] = place(createNode({ geometry: BM.ice(), visible: false }));
-    trampNodes = SIM.ARENA.tramps.map(([x, z]) => place(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
-    caches = SIM.ARENA.caches.map(([x, y, z]) => place(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
+    mapRoot = null;
     // The gun in view in first person.
     fpGun = place(createNode({ geometry: BM.gun(0), visible: false }));
     shots = [];
@@ -1363,7 +1440,8 @@
     splats = [];
     for (let i = 0; i < MAX_SPLATS; i++) splats.push(place(createNode({ geometry: BM.splat(0), visible: false, depthBias: 0.2 })));
     splatNext = 0;
-    sim = SIM.create({ team: selection.team, seed: 1, size: selection.size, skill: selection.skill, target: selection.target });
+    sim = SIM.create({ team: selection.team, seed: 1, size: selection.size, skill: selection.skill, target: selection.target, map: selection.map });
+    buildMap();
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
@@ -1466,6 +1544,7 @@
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
     for (const b of el.targets) b.removeEventListener("click", el.onTarget);
     for (const b of el.sizes) b.removeEventListener("click", el.onSize);
+    for (const b of el.maps) b.removeEventListener("click", el.onMap);
     for (const b of el.skills) b.removeEventListener("click", el.onSkill);
     el.paintBtn.removeEventListener("pointerdown", el.onPaint);
     el.toolBar.hidden = true;
@@ -1497,6 +1576,7 @@
     hud.dispose();
     phase = "board";
     sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
+    mapRoot = fireNode = dancers = null;
     for (const t of SIM.TEAMS) iceNodes[t] = null;
     zipNear = false;
     hud = hooks = input = fx = controls = clock = null;

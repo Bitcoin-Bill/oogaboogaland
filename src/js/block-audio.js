@@ -156,7 +156,8 @@
       zipOff: () => blip("triangle", 900, 400, 0.01, 0.05, 0.12, 0.14),
       thunder: () => { boomNoise(0.8, 2.6); boomNoise(0.5, 1.8); },
       block: () => { chord([12, 7, 12, 19], 0.11, "square", 0.08, 0.2); boomNoise(0.35, 1.2); },
-      power: () => chord([0, 7, 12, 19, 24], 0.04, "square", 0.04, 0.16)
+      power: () => chord([0, 7, 12, 19, 24], 0.04, "square", 0.04, 0.16),
+      burn: (k = 1) => { burst("splat", "splatFilter", 0.5 * k, 0.005, 0.6, 4000, 1500); blip("square", 880, 1320, 0.005, 0.08, 0.1, 0.16 * k); }
     };
     // The held layers follow `state` each frame: wind and rain from the weather (0 to 1), the whir from the zipline.
     const update = () => {

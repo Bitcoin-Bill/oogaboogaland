@@ -48,7 +48,7 @@
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
-    TRAMP_R: 1.0, BOUNCE: 13.5,
+    TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -64,50 +64,20 @@
     sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
-  // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
-  // [x0, x1, z0, z1, top, bottom], bottom 0 unless it floats: a floor, a roof or a wall's upper half. Anything whose
-  // top an Ooga can reach is somewhere to stand, so the map has a second storey: a double jump (`JUMP` then `JUMP2`)
-  // clears the forts' 2.4 m walls, reaches the stilt huts' floors and the centre deck, and gets into a fort from the
-  // alley behind it. Mirrored so neither side is favoured.
+  // The maps. A map is its blocks, each [x0, x1, z0, z1, top, bottom] (bottom 0 unless it floats: a floor, a roof or
+  // a wall's upper half), and the places on it. x runs across, z along, the ground is at y 0, blue's end is at +z and
+  // red's at -z, and red's half is blue's turned half round (`turned`, `flip`), so neither side is favoured. Anything
+  // whose top an Ooga can reach is somewhere to stand; a step no higher than `STEP_UP` is walked up.
   const W = 22, L = 37;
   // A box from its centre and size, for the posts and the crates.
   const at = (x, z, w, d, top, bottom = 0) => [x - w / 2, x + w / 2, z - d / 2, z + d / 2, top, bottom];
-  const half = [
-    // A fort: back, sides, the front either side of its gate; a crate in the alley behind to climb from.
-    [-8, 8, 32, 33, 2.4, 0], [-8, -7, 23, 32, 2.4, 0], [7, 8, 23, 32, 2.4, 0], [-8, -2.6, 23, 24, 2.4, 0], [2.6, 8, 23, 24, 2.4, 0],
-    at(0, 34.6, 2, 1.2, 1.1),
-    // Crates before the gate, and two tall walls either side of the approach to break the long sight line.
-    at(0, 19, 2.4, 1, 1.1), [-6.5, -3, 13, 14, 3.2, 0], [3, 6.5, 13, 14, 3.2, 0],
-    // Low cover across the field and the side rocks.
-    [-11, -5, 8.5, 9.5, 1.1, 0], [5, 11, 8.5, 9.5, 1.1, 0], [-20, -18, 4, 7, 1.6, 0], [18, 20, 4, 7, 1.6, 0]
-  ];
-  // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, open to
-  // the sky so the camera can see in, and its open side facing the field's edge. `s` is the side, -1 or 1.
-  for (const s of [-1, 1]) {
-    const x0 = s > 0 ? 8 : -14, x1 = s > 0 ? 14 : -8, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
-    for (const [px, pz] of [[x0 + 0.3, 11.3], [x1 - 0.3, 11.3], [x0 + 0.3, 15.7], [x1 - 0.3, 15.7]]) half.push(at(px, pz, 0.6, 0.6, 2));
-    half.push([x0, x1, 11, 16, 2.3, 2]);
-    // The wall facing the middle and the wall toward the fort: a lower band, a window, then an upper band.
-    for (const [z0, z1] of [[11, 11.4], [15.6, 16]]) half.push([x0, x1, z0, z1, 3.2, 2.3], [x0, x1, z0, z1, 4.2, 3.85]);
-    half.push([Math.min(inner, inner + 0.4 * s), Math.max(inner, inner + 0.4 * s), 11, 16, 4.2, 2.3]);
-    // The open side keeps a short rail.
-    half.push([Math.min(outer, outer - 0.4 * s), Math.max(outer, outer - 0.4 * s), 11, 12.5, 3.1, 2.3]);
-  }
-  // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, open to the sky, and a crate by
-  // each gap to jump from. It is symmetric itself, so it goes in once.
-  const BLOCKS = [];
-  for (const [px, pz] of [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]]) BLOCKS.push(at(px, pz, 0.8, 0.8, 2.2));
-  BLOCKS.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2]);
-  for (const s of [-1, 1]) {
-    BLOCKS.push([s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, -3.2, 3.2, 3.4, 2.5]);
-    for (const [x0, x1] of [[-3.2, -1], [1, 3.2]]) BLOCKS.push([x0, x1, s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, 3.4, 2.5]);
-  }
-  for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4], b[5]]);
-  BLOCKS.push(at(0, 4.6, 1.6, 1, 1), at(0, -4.6, 1.6, 1, 1));
-  // A sniper tower beside each fort, turned half round between the halves: four posts, a platform at `TOWER_TOP`, a
-  // parapet with a gap over the ladder on the side facing the fort, and a thatched roof. The ladder is a climb zone,
-  // not a block (`LADDERS`); the rifle rack is on the platform; the zipline leaves from the platform's gap side and
-  // runs down into the rival fort (`ZIPS`).
+  // Red's half is blue's turned half round: every box, and every spot, mirrored through the centre.
+  const turned = (b) => [-b[1], -b[0], -b[3], -b[2], b[4], b[5]];
+  const flip = (list) => list.map(([x, z]) => [-x, -z]);
+  const TEAMS = ["blue", "red"];
+  // A sniper tower beside each end, on every map: four posts, a platform at `TOWER_TOP`, a parapet with a gap over the
+  // ladder on the side facing in, and a thatched roof. The ladder is a climb zone, not a block (`ladders`); the rifle
+  // rack is on the platform; the zipline leaves from the platform's gap side and runs down into the other end (`zips`).
   const TOP = CONFIG.TOWER_TOP, RAIL = TOP + 0.9;
   const TOWER = [-19, -16, 24.5, 27.5], GAP = [25.4, 26.6];
   const towerBlocks = ([x0, x1, z0, z1]) => [
@@ -117,49 +87,143 @@
     [x1 - 0.25, x1, z0, GAP[0], RAIL, TOP], [x1 - 0.25, x1, GAP[1], z1, RAIL, TOP],
     [x0 - 0.2, x1 + 0.2, z0 - 0.2, z1 + 0.2, TOP + 2.8, TOP + 2.5]
   ];
-  // Red's is blue's turned half round: every box mirrored through the centre.
-  const turned = (b) => [-b[1], -b[0], -b[3], -b[2], b[4], b[5]];
-  for (const b of towerBlocks(TOWER)) BLOCKS.push(b, turned(b));
-  const TEAMS = ["blue", "red"];
-  // Blue's half, as [x, z]; red's are the same turned half round (`-x, -z`).
-  const flip = (list) => list.map(([x, z]) => [-x, -z]);
-  const FORT_CRATES = [[-4.6, 20.6], [4.6, 20.6], [-1.6, 29.6], [1.6, 29.6]];
-  // Where a defender plugs its gate at the start: one in the gate and two behind it, so pushing won't open it.
-  const PLUG = [[0, 21.4], [-1.3, 22.6], [1.3, 22.6]];
-  // Where an attacker bot drops its stock: across the alley behind its fort, to make the back way harder.
-  const ALLEY = [[-3, 35.6], [3, 35.6], [0, 31.1]];
-  const ARENA = {
-    W, L, BLOCKS,
-    stands: { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } },
-    // Where a defender waits: a little in front of its own gate.
-    guard: { blue: { x: 0, z: 17.2 }, red: { x: 0, z: -17.2 } },
-    // The quiz pads, turned half round between the halves like everything else.
-    traps: [[-10, 13], [10, -13], [10, 13], [-10, -13], [-17, 0], [17, 0], [-4.5, 4.5], [4.5, -4.5]],
-    crates: { blue: FORT_CRATES, red: flip(FORT_CRATES) },
-    plug: { blue: PLUG, red: flip(PLUG) },
-    alley: { blue: ALLEY, red: flip(ALLEY) },
-    // Each tower's footprint [x0, x1, z0, z1] and the ladder up its fort-facing side: a zone [x0, x1, z0, z1] to climb
-    // in, and the way into the tower (dx, dz) a climber pushes toward.
-    towers: { blue: TOWER, red: turned([...TOWER, 0, 0]).slice(0, 4) },
-    ladders: { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0 }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0 } },
-    // A team's zipline: from its tower's gap (where the hands hang, `ZIP_HANG` over the feet) down into the rival fort.
-    zips: {
+  // A map from blue's half (`half`, turned for red) and its middle (`middle`, put in once), with the towers added.
+  const turnedMap = (half, middle, steps = []) => {
+    const BLOCKS = [...middle], stepSet = new Set();
+    for (const b of half) { const r = turned(b); BLOCKS.push(b, r); if (steps.includes(b)) stepSet.add(b).add(r); }
+    for (const b of towerBlocks(TOWER)) BLOCKS.push(b, turned(b));
+    return { BLOCKS, steps: stepSet };
+  };
+  const both = (list) => ({ blue: list, red: flip(list) });
+
+  // Fort Chaos: a stone fort at each end, a double jump (`JUMP` then `JUMP2`) clearing its 2.4 m walls, stilt huts
+  // and a centre deck for a second storey, and the alley behind each fort as a back way in.
+  const fortChaos = () => {
+    const half = [
+      // A fort: back, sides, the front either side of its gate; a crate in the alley behind to climb from.
+      [-8, 8, 32, 33, 2.4, 0], [-8, -7, 23, 32, 2.4, 0], [7, 8, 23, 32, 2.4, 0], [-8, -2.6, 23, 24, 2.4, 0], [2.6, 8, 23, 24, 2.4, 0],
+      at(0, 34.6, 2, 1.2, 1.1),
+      // Crates before the gate, and two tall walls either side of the approach to break the long sight line.
+      at(0, 19, 2.4, 1, 1.1), [-6.5, -3, 13, 14, 3.2, 0], [3, 6.5, 13, 14, 3.2, 0],
+      // Low cover across the field and the side rocks.
+      [-11, -5, 8.5, 9.5, 1.1, 0], [5, 11, 8.5, 9.5, 1.1, 0], [-20, -18, 4, 7, 1.6, 0], [18, 20, 4, 7, 1.6, 0]
+    ];
+    // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, open
+    // to the sky so the camera can see in, and its open side facing the field's edge. `s` is the side, -1 or 1.
+    for (const s of [-1, 1]) {
+      const x0 = s > 0 ? 8 : -14, x1 = s > 0 ? 14 : -8, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
+      for (const [px, pz] of [[x0 + 0.3, 11.3], [x1 - 0.3, 11.3], [x0 + 0.3, 15.7], [x1 - 0.3, 15.7]]) half.push(at(px, pz, 0.6, 0.6, 2));
+      half.push([x0, x1, 11, 16, 2.3, 2]);
+      // The wall facing the middle and the wall toward the fort: a lower band, a window, then an upper band.
+      for (const [z0, z1] of [[11, 11.4], [15.6, 16]]) half.push([x0, x1, z0, z1, 3.2, 2.3], [x0, x1, z0, z1, 4.2, 3.85]);
+      half.push([Math.min(inner, inner + 0.4 * s), Math.max(inner, inner + 0.4 * s), 11, 16, 4.2, 2.3]);
+      // The open side keeps a short rail.
+      half.push([Math.min(outer, outer - 0.4 * s), Math.max(outer, outer - 0.4 * s), 11, 12.5, 3.1, 2.3]);
+    }
+    // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, open to the sky, and a
+    // crate by each gap to jump from. It is symmetric itself, so it goes in once.
+    const middle = [];
+    for (const [px, pz] of [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]]) middle.push(at(px, pz, 0.8, 0.8, 2.2));
+    middle.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2]);
+    for (const s of [-1, 1]) {
+      middle.push([s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, -3.2, 3.2, 3.4, 2.5]);
+      for (const [x0, x1] of [[-3.2, -1], [1, 3.2]]) middle.push([x0, x1, s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, 3.4, 2.5]);
+    }
+    middle.push(at(0, 4.6, 1.6, 1, 1), at(0, -4.6, 1.6, 1, 1));
+    // Fort Chaos mirrors its halves end to end rather than turning them; its huts and walls are symmetric across.
+    const BLOCKS = [...middle];
+    for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4], b[5]]);
+    for (const b of towerBlocks(TOWER)) BLOCKS.push(b, turned(b));
+    return {
+      id: "fort", name: "Fort Chaos", BLOCKS, steps: new Set(),
+      // Where a defender waits: a little in front of its own gate.
+      guard: { blue: { x: 0, z: 17.2 }, red: { x: 0, z: -17.2 } },
+      // The quiz pads.
+      traps: [[-10, 13], [10, -13], [10, 13], [-10, -13], [-17, 0], [17, 0], [-4.5, 4.5], [4.5, -4.5]],
+      crates: both([[-4.6, 20.6], [4.6, 20.6], [-1.6, 29.6], [1.6, 29.6]]),
+      // Where a defender plugs its gate at the start: one in the gate and two behind it, so pushing won't open it.
+      plug: both([[0, 21.4], [-1.3, 22.6], [1.3, 22.6]]),
+      // Where an attacker bot drops its stock: across the alley behind its fort, to make the back way harder.
+      alley: both([[-3, 35.6], [3, 35.6], [0, 31.1]]),
+      // Ammo caches: one on each stilt hut's floor and one on the centre deck. A cache refills grenades, rockets and
+      // nets like a stand, then goes dark for `CACHE_S`.
+      caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]],
+      // Trampolines flush with the ground: landing on one (or walking onto it) sends an Ooga flying, carrying or not,
+      // with the double jump still to come.
+      tramps: [[-15, 19], [15, -19], [12, 4], [-12, -4]],
+      // Power-up spots, each holding one of `POWERS` until someone runs through it.
+      powers: [[-6, 18], [6, -18], [16, 11], [-16, -11], [0, 9.5], [0, -9.5]],
+      // The campfire the potato Oogas dance round, out on the halfway line by the field's edge.
+      fire: [-20, 0]
+    };
+  };
+
+  // Ooga Town: a two-storey bank at each end with the block's stand in its open hall and a mezzanine over the back,
+  // reached by stairs; a pair of two-storey shops in each half, their upper floors joined by a footbridge over the
+  // street; market stalls, a fountain in the square and the campfire by the edge.
+  const oogaTown = () => {
+    const half = [], steps = [];
+    // The bank: back wall with a door, side walls rising to the mezzanine, the front either side of its doors.
+    half.push([-9, -1.2, 34, 35, 4, 0], [1.2, 9, 34, 35, 4, 0], [-9, -8, 24, 34, 4, 0], [8, 9, 24, 34, 4, 0], [-9, -2.5, 24, 25, 3, 0], [2.5, 9, 24, 25, 3, 0]);
+    // The mezzanine over the back of the hall, its parapet open over the stairs and in the middle to jump down.
+    half.push([-8, 8, 30.5, 34, 3, 2.7], [-8, -2.2, 30.5, 30.7, 3.9, 3], [2.2, 6, 30.5, 30.7, 3.9, 3]);
+    // Seven steps up the inside of the right wall to the mezzanine.
+    for (let k = 1; k <= 7; k++) { const b = [6, 8, 25.6 + (k - 1) * 0.7, 25.6 + k * 0.7, k * 3 / 7, 0]; half.push(b); steps.push(b); }
+    // The two shops of the half, one either side of the street.
+    for (const s of [-1, 1]) {
+      const x0 = s > 0 ? 9 : -16, x1 = s > 0 ? 16 : -9, xm = (x0 + x1) / 2, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
+      const lo = (v) => Math.min(v, v - 0.4 * s), hi = (v) => Math.max(v, v - 0.4 * s), li = (v) => Math.min(v, v + 0.4 * s), hiI = (v) => Math.max(v, v + 0.4 * s);
+      half.push([x0, x1, 14.6, 15, 3.9, 0], [x0, xm - 0.9, 8, 8.4, 3, 0], [xm + 0.9, x1, 8, 8.4, 3, 0]);
+      half.push([lo(outer), hi(outer), 8, 15, 3.9, 0]);
+      // The inner wall, with a door, stops at the upper floor so the footbridge runs straight on.
+      half.push([li(inner), hiI(inner), 8, 10.6, 3, 0], [li(inner), hiI(inner), 12.2, 15, 3, 0]);
+      // The upper floor over the back half, its parapet open over the stairs.
+      const sx0 = s > 0 ? 14.1 : -15.6, sx1 = s > 0 ? 15.6 : -14.1;
+      half.push([x0, x1, 11.5, 15, 3, 2.7], s > 0 ? [9.4, 14.1, 11.5, 11.7, 3.9, 3] : [-14.1, -9.4, 11.5, 11.7, 3.9, 3]);
+      for (let k = 1; k <= 7; k++) { const b = [sx0, sx1, 8.6 + (k - 1) * 0.414, 8.6 + k * 0.414, k * 3 / 7, 0]; half.push(b); steps.push(b); }
+    }
+    // The footbridge between the shops' upper floors, its rails and two posts.
+    half.push([-9, 9, 12, 14, 3, 2.7], [-9, 9, 12, 12.2, 3.8, 3], [-9, 9, 13.8, 14, 3.8, 3], at(-4, 13, 0.5, 0.5, 2.7), at(4, 13, 0.5, 0.5, 2.7));
+    // Market stalls before the bank and a low wall by the tower.
+    half.push(at(-4.5, 19, 3, 1, 1.1), at(4.5, 19, 3, 1, 1.1), [-20, -17, 16, 17, 1.4, 0]);
+    // The fountain in the square.
+    const middle = [[-1.5, 1.5, -1.5, 1.5, 0.8, 0], at(0, 0, 0.6, 0.6, 2.2)];
+    const { BLOCKS, steps: stepSet } = turnedMap(half, middle, steps);
+    return {
+      id: "town", name: "Ooga Town", BLOCKS, steps: stepSet,
+      guard: { blue: { x: 0, z: 21.5 }, red: { x: 0, z: -21.5 } },
+      traps: [[-12.5, 4], [12.5, -4], [7, 21], [-7, -21], [-19, 8], [19, -8], [0, 6.5], [0, -6.5]],
+      crates: both([[-4.6, 22], [4.6, 22], [-4.5, 27.5], [4.5, 27.5]]),
+      plug: both([[0, 24.5], [-1.3, 25.8], [1.3, 25.8]]),
+      alley: both([[-3, 36], [3, 36], [0, 33.4]]),
+      caches: [[12.5, 3, 13.5], [-12.5, 3, 13.5], [12.5, 3, -13.5], [-12.5, 3, -13.5], [0, 3, 32.5], [0, 3, -32.5]],
+      tramps: [[-15, 19], [15, -19], [-5, 4], [5, -4]],
+      powers: [[-6.5, 17], [6.5, -17], [19, 12], [-19, -12], [0, 4], [0, -4]],
+      fire: [-19.5, 0]
+    };
+  };
+  const ARENAS = { fort: fortChaos(), town: oogaTown() };
+  // What every map shares: its size, the stands, the towers with their ladders and ziplines.
+  for (const A of Object.values(ARENAS)) {
+    A.W = W; A.L = L;
+    A.stands = { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } };
+    // Each tower's footprint [x0, x1, z0, z1] and the ladder up its inward side: a zone [x0, x1, z0, z1] to climb in,
+    // and the way into the tower (dx, dz) a climber pushes toward.
+    A.towers = { blue: TOWER, red: turned([...TOWER, 0, 0]).slice(0, 4) };
+    A.ladders = { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0 }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0 } };
+    // A team's zipline: from its tower's gap (where the hands hang, `ZIP_HANG` over the feet) down into the other end.
+    A.zips = {
       blue: { ax: -16.6, ay: TOP + CONFIG.ZIP_HANG, az: 26, bx: -3.5, by: 3.1, bz: -28.5 },
       red: { ax: 16.6, ay: TOP + CONFIG.ZIP_HANG, az: -26, bx: 3.5, by: 3.1, bz: 28.5 }
-    },
-    // Ammo caches: one on each stilt hut's floor and one on the centre deck. A cache refills grenades, rockets and nets
-    // like a stand, then goes dark for `CACHE_S`.
-    caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]],
-    // Trampolines flush with the ground, two a half, turned half round: landing on one (or walking onto it) sends an
-    // Ooga flying, carrying or not, with the double jump still to come.
-    tramps: [[-15, 19], [15, -19], [12, 4], [-12, -4]],
-    // Power-up spots, two a half turned half round, each holding one of `POWERS` until someone runs through it.
-    powers: [[-6, 18], [6, -18], [16, 11], [-16, -11], [0, 9.5], [0, -9.5]]
-  };
+    };
+    for (const t of TEAMS) { const z = A.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
+  }
+  // The map being stepped: every world query below reads it (`use` sets it from the sim, as it does the crates).
+  let ARENA = ARENAS.fort, BLOCKS = ARENA.BLOCKS;
+  const MAPS = Object.keys(ARENAS);
   // The power-ups: lightning boots (a burst of speed), the halving (your side's splats last half as long), cold
   // storage (your block can't be lifted off its stand) and laser eyes (rapid paint).
   const POWERS = ["boots", "halving", "cold", "laser"];
-  for (const t of TEAMS) { const z = ARENA.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   const other = (team) => team === "blue" ? "red" : "blue";
   // The bots' skill: easy bots aim wider, wait longer before throwing, throw less often, run slower and see less far;
   // hard ones the other way. "normal" is the CONFIG values.
@@ -183,6 +247,11 @@
   // The crates of the sim being stepped; the world queries below see them as boxes alongside the fixed blocks.
   let CRATES = [];
   const CB = [0, 0, 0, 0, 0, 0];
+  // Point the world queries at sim's map and crates.
+  const use = (sim) => {
+    CRATES = sim.crates;
+    if (ARENA.id !== sim.map) { ARENA = ARENAS[sim.map]; BLOCKS = ARENA.BLOCKS; }
+  };
   const crateBox = (c) => { CB[0] = c.x - CONFIG.CRATE_HALF; CB[1] = c.x + CONFIG.CRATE_HALF; CB[2] = c.z - CONFIG.CRATE_HALF; CB[3] = c.z + CONFIG.CRATE_HALF; CB[4] = c.y + CONFIG.CRATE_H; CB[5] = c.y; return CB; };
   const boxCount = () => BLOCKS.length + CRATES.length;
   // The i-th box: a fixed block, then the live crates (a dead crate is an empty box nothing touches).
@@ -196,11 +265,12 @@
   const heightOf = (a) => a.crouch ? CONFIG.CROUCH_H : CONFIG.HEIGHT;
   // Push a body of radius r out of every box it overlaps in height, and the arena's edge, sliding along what it hits.
   // A body standing on a box's top, or passing under a floating one, is clear of it.
-  const resolve = (p, r) => {
+  // `step` is how far below its top a body's feet may be and still walk onto a box (a stair).
+  const resolve = (p, r, step = 0.05) => {
     const feet = p.y || 0, head = feet + heightOf(p);
     for (let i = 0, n = boxCount(); i < n; i++) {
       const b = boxAt(i);
-      if (feet >= b[4] - 0.05 || head <= b[5]) continue;
+      if (feet >= b[4] - step || head <= b[5]) continue;
       const cx = p.x < b[0] ? b[0] : p.x > b[1] ? b[1] : p.x, cz = p.z < b[2] ? b[2] : p.z > b[3] ? b[3] : p.z;
       const dx = p.x - cx, dz = p.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r) continue;
@@ -277,7 +347,9 @@
   // scene).
   // `size` Oogas a side (2 to `MAX_SIDE`): the player first, then their teammates, then the rivals. `skill` picks the
   // bots' `SKILLS`.
-  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S, target = CONFIG.CAPTURES, size = 2, skill = "normal" } = {}) => {
+  const create = ({ team = "blue", seed = 1, names = [], prep = CONFIG.PREP_S, target = CONFIG.CAPTURES, size = 2, skill = "normal", map = "fort" } = {}) => {
+    map = ARENAS[map] ? map : "fort";
+    const A = ARENAS[map];
     const rival = other(team);
     size = Math.max(2, Math.min(CONFIG.MAX_SIDE, size | 0));
     const actors = Array.from({ length: size * 2 }, (_, i) => ({
@@ -285,19 +357,19 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0,
+      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
     for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, ox: 0, oz: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
-    const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
-    const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
-    const powers = ARENA.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
+    const traps = A.traps.map(([x, z]) => ({ x, z, dark: 0 }));
+    const caches = A.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
+    const powers = A.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -339,7 +411,7 @@
   const reset = (sim, seed = sim.seed) => {
     sim.seed = seed;
     sim.rng = mulberry32(seed);
-    CRATES = sim.crates;
+    use(sim);
     for (const c of sim.crates) c.live = false;
     for (const t of TEAMS) for (const [x, z] of ARENA.crates[t]) addCrate(sim, t, x, z);
     for (const a of sim.actors) {
@@ -351,7 +423,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -408,12 +480,14 @@
   };
   // The player asks to drop what they carry; false when they carry nothing.
   const drop = (sim, id = 0) => {
+    use(sim);
     const a = sim.actors[id];
     return !sim.over && a.splat <= 0 && dropFlag(sim, a, "drop");
   };
   // Throw the carried block along `yaw` in a long arc (a pass). Anyone who could pick it up can catch it in the air;
   // its thrower only after `PASS_SAFE`. Where it lands it lies as a dropped block.
   const pass = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    use(sim);
     const a = sim.actors[id], f = a.carrying && sim.flags[a.carrying];
     if (sim.over || !f || a.splat > 0 || a.trapped > 0) return false;
     f.state = "flying";
@@ -447,6 +521,7 @@
   };
   // Place a crate a step from actor `id` along `yaw` (its heading if not given), on their own half, from their stock.
   const build = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    use(sim);
     const a = sim.actors[id];
     if (sim.over || a.splat > 0 || a.trapped > 0 || a.crates <= 0 || !a.grounded) return false;
     const x = a.x + Math.sin(yaw) * 1.4, z = a.z + Math.cos(yaw) * 1.4;
@@ -458,6 +533,7 @@
   // Pick up the nearest top crate in front of actor `id`, or, holding one, set it down a step ahead along `yaw`: on top
   // of a crate there (up to three high) or on whatever ground is there. Hands carrying a block can't take a crate.
   const grab = (sim, id = 0, yaw = sim.actors[id].heading) => {
+    use(sim);
     const a = sim.actors[id];
     if (sim.over || a.splat > 0 || a.trapped > 0 || !a.grounded) return false;
     const fx = a.x + Math.sin(yaw) * 1.3, fz = a.z + Math.cos(yaw) * 1.3;
@@ -525,11 +601,13 @@
   // into theirs to raid, or, with their block in hand, from their tower home. Not while fortifying, nor holding a
   // crate. Returns the line's team, or null.
   const nearZip = (sim, a) => {
+    use(sim);
     if (sim.prep > 0 || a.holding || a.y < CONFIG.TOWER_TOP - 0.1) return null;
     for (const t of TEAMS) { const z = ARENA.zips[t]; if (Math.hypot(a.x - z.ax, a.z - z.az) < CONFIG.ZIP_R) return t; }
     return null;
   };
   const zip = (sim, id = 0) => {
+    use(sim);
     const a = sim.actors[id];
     const line = sim.over || a.riding || a.splat > 0 || a.trapped > 0 ? null : nearZip(sim, a);
     if (!line) return false;
@@ -581,8 +659,9 @@
   };
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
+    use(sim);
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a))) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -713,7 +792,9 @@
     } else botGoal(sim, a);
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
-    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1);
+    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
+    // Burnt feet: a bot hops until they cool.
+    if (a.burnt > 0 && a.grounded) a.botJump = true;
     if (d > 0.4) {
       const h = steer(sim, a, goal.x, goal.z);
       a.vx = Math.sin(h) * speed; a.vz = Math.cos(h) * speed;
@@ -902,7 +983,7 @@
   // One fixed step. `input` is the player's: `x`, `z` a world-space move direction of length up to 1, `sprint`,
   // `jump` (a press), `crouch` (held), and optionally `face`, the yaw the player looks along. The scene throws, drops and builds through `fire`, `drop` and `build`.
   const tick = (sim, dt, input) => {
-    CRATES = sim.crates;
+    use(sim);
     sim.time += dt;
     const prepWas = sim.prep;
     if (sim.prep > 0) {
@@ -953,7 +1034,7 @@
           a.stamina = Math.min(CONFIG.SPRINT_S, a.stamina + dt * CONFIG.SPRINT_S / CONFIG.SPRINT_REFILL);
           if (a.tired && a.stamina >= CONFIG.SPRINT_S * CONFIG.SPRINT_MIN) a.tired = false;
         }
-        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1);
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
@@ -972,7 +1053,12 @@
       // A jump from the ground, and one more in the air, carrying or not; a net stops both.
       if (jump && free && a.netted <= 0) {
         const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
-        if (a.grounded) { a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1; emit(sim, "jump", a.team, a.id, a.x, a.y, a.z); }
+        if (a.grounded) {
+          a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1;
+          emit(sim, "jump", a.team, a.id, a.x, a.y, a.z);
+          // Each hop cools burnt feet a little; enough of them and the Ooga can run again.
+          if (a.burnt > 0 && --a.burnt === 0) emit(sim, "cooled", a.team, a.id, a.x, a.y, a.z);
+        }
         else if (a.jumps > 0) { a.vy = CONFIG.JUMP2 * k; a.jumps = 0; emit(sim, "jump2", a.team, a.id, a.x, a.y, a.z); }
       }
       a.x += a.vx * dt;
@@ -990,12 +1076,14 @@
       }
       a.pushing = false;
       pushCrates(sim, a);
-      resolve(a, CONFIG.BODY_R);
+      // On foot, a stair (a box no higher than `STEP_UP`) is walked up rather than walked into.
+      const stepUp = a.grounded ? CONFIG.STEP_UP : 0.05;
+      resolve(a, CONFIG.BODY_R, stepUp);
       // A ladder: pushing into a tower's ladder climbs it, and at the top steps onto the platform.
       const ladder = !a.bot && free && a.netted <= 0 && !a.holding && a.y < CONFIG.TOWER_TOP ? ladderAt(a) : null;
       a.climbing = !!ladder && input.x * ladder.dx + input.z * ladder.dz > 0.3;
       // Height: fall onto whatever is underneath, and stop at a floor overhead.
-      const ground = groundAt(a.x, a.z, a.y);
+      const ground = groundAt(a.x, a.z, a.y + (stepUp > 0.05 ? stepUp : 0));
       if (a.climbing) {
         a.x = (ladder.zone[0] + ladder.zone[1]) / 2;
         a.vx = a.vz = a.vy = 0;
@@ -1016,7 +1104,13 @@
           if (!a.grounded && a.vy < -1) emit(sim, "land", a.team, a.id, a.x, ground, a.z);
           a.y = ground; a.vy = 0; a.grounded = true; a.jumps = 0;
         } else a.grounded = false;
-      } else a.grounded = true;
+      } else { a.y = ground; a.grounded = true; }
+      // The campfire: feet in it burn, and burnt feet take `BURN_HOPS` jumps to cool.
+      if (a.grounded && a.y < 0.05 && free && a.burnt <= 0 && (a.x - ARENA.fire[0]) ** 2 + (a.z - ARENA.fire[1]) ** 2 < CONFIG.FIRE_R * CONFIG.FIRE_R) {
+        a.burnt = CONFIG.BURN_HOPS;
+        a.vy = 4.5; a.grounded = false; a.jumps = 0;
+        emit(sim, "burn", a.team, a.id, a.x, 0, a.z);
+      }
       if (a.grounded && a.y < 0.05 && free && a.netted <= 0 && trampAt(a)) {
         a.vy = CONFIG.BOUNCE; a.grounded = false; a.jumps = 1;
         emit(sim, "boing", a.team, a.id, a.x, 0, a.z);
@@ -1076,5 +1170,7 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENA, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENAS, MAPS, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  // The map last stepped (or reset), for the scene's and models' reads.
+  Object.defineProperty(BL.blockSim, "ARENA", { get: () => ARENA, enumerable: true });
 })();
