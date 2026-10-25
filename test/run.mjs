@@ -4025,6 +4025,31 @@ const mempoolFeedChecks = async () => {
   record("mempool feed: the socket wants blocks, stats and projections and never every transaction, a silent link is dropped and redialled, a hidden tab holds no socket and its return reseeds the tip without a block",
     wants && stalled && hiddenClosed && heldWhileHidden && reseeded, JSON.stringify({ wants, stalled, hiddenClosed, heldWhileHidden, reseeded, asked, liveEvents }));
 };
+const oogatronReplayChecks = async () => {
+  const source = await readFile(new URL("../src/js/oogatron-live.js", import.meta.url), "utf8");
+  let answer, tick;
+  const context = { document: { hidden: false, addEventListener() {}, removeEventListener() {} },
+    window: { setInterval(fn) { tick = fn; return 1; }, clearInterval() {} },
+    fetch: () => new Promise(resolve => { answer = resolve; }) };
+  runInNewContext(source, context);
+  const feed = context.window.BL.oogatronLive, early = [], late = [], later = [];
+  const stats = (commits) => ({ meta: { schema_version: 3 }, totals: { commits } });
+  feed.start();
+  feed.subscribe(event => { if (event.type === "stats") early.push(event); });
+  answer({ ok: true, json: async () => stats(1) });
+  await new Promise(resolve => setImmediate(resolve));
+  feed.subscribe(event => { if (event.type === "stats") late.push(event); });
+  const first = early.length === 1 && late.length === 1 && early[0].stats.totals.commits === 1 && late[0] === early[0];
+  tick();
+  answer({ ok: true, json: async () => stats(2) });
+  await new Promise(resolve => setImmediate(resolve));
+  feed.subscribe(event => later.push(event));
+  const newest = early.length === 2 && late.length === 2 && later.length === 1 && later[0].stats.totals.commits === 2;
+  feed.dispose();
+  feed.subscribe(event => later.push(event));
+  record("Oogatron feed: a hub subscribing after the first response gets the newest activity before crew placement, with no stale replay after disposal",
+    first && newest && later.length === 1, JSON.stringify({ first, newest, afterDispose: later.length }));
+};
 // The chain snapshot in Node: real payload shapes from both providers, one code path, no sockets.
 const chainSnapshotChecks = async () => {
   const source = await readFile(new URL("../src/js/chain.js", import.meta.url), "utf8"), math = await readFile(new URL("../src/js/math.js", import.meta.url), "utf8");
@@ -5669,6 +5694,60 @@ const hubWorkingArrival = { name: "hub working arrival", why: "regression: worki
   // Positions are measured directly: a crowded loading slot is not an oracle.
   record("working arrival: every Ooga starts upright beside the pile with no HQ or basement bed held", state.rows.length > 0 && state.rows.every(c => c.state === "working" && c.visible && c.surface === 0 && Math.abs(c.feet - c.surface) < 1e-6 && !c.bed && !c.quaternion && c.radius <= 11)
     && state.gap >= -1e-6 && !state.occupiedBeds, JSON.stringify(state));
+} };
+const hubLiveWake = { name: "hub live wake", why: "regression: live activity must clear HQ and basement mattresses before reuse, complete both exit walks, and return rainforest sleepers to the main level", run: async b => {
+  const state = await b.evaluate(`(() => {
+    const B = __ooga, scene = BL.scenes.hub, sleepers = B.crew.list.filter(c => c !== B.pilot.player && !c.override && c.state === "sleeping" && c.bedroll && c.bedTravel.mode === "rest");
+    const hotpixelgroup = sleepers.find(c => c.traits.name === "hotpixelgroup" && !c.bedroll.outdoor);
+    const hq = hotpixelgroup && !hotpixelgroup.bedroll.basement ? hotpixelgroup : sleepers.find(c => !c.bedroll.outdoor && !c.bedroll.basement);
+    const basement = hotpixelgroup?.bedroll.basement ? hotpixelgroup : sleepers.find(c => c.bedroll.basement);
+    const rainforest = sleepers.filter(c => c.bedroll.outdoor).slice(0, 2), actors = [hq, basement, ...rainforest];
+    if (actors.some(c => !c)) return { missing: actors.map(c => c?.traits.name || null) };
+    const beds = actors.map(c => c.bedroll), now = Date.now();
+    BL.contributors.applyActivity(actors.map((c, i) => ({ name: c.contributor.name,
+      lastCommitAt: now - (i & 1 ? 8 * 3600000 : 30000), repo: "oogaboogax/entropylab" })));
+    const started = actors.map((c, i) => {
+      const p = c.root.position, bed = beds[i], indoor = i < 2;
+      return { name: c.traits.name, state: c.state, mode: c.bedTravel.mode,
+        clear: c.root.visible && !c.root.quaternion && !c.bedroll && bed.sleeper !== c,
+        placed: indoor ? Math.hypot(p.x - bed.walkAt.x, p.z - bed.walkAt.z) < 1e-6 && Math.abs(p.y - c.baseY - bed.walkAt.y) < 1e-6
+          : p.y - c.baseY >= -1e-6 && B.island.surfaceAt(p.x, p.z) >= -1e-6 && !c.bedTravel.mode };
+    });
+    const nextSleeper = B.crew.list.find(c => c.state === "away" && c !== B.pilot.player);
+    if (!nextSleeper) return { started, missingNextSleeper: true };
+    nextSleeper.override = "sleeping";
+    B.crew.refreshStates(true);
+    let time = B.renderOpts.matrix.time, frames = 0;
+    while (actors[0].bedTravel.mode === "waiting" && frames++ < 600) {
+      B.crew.update(1 / 30, time += 1 / 30);
+      BL.scene.updateWorld(scene.root);
+    }
+    const worker = actors[0], route = worker.bedTravel, before = { ...worker.root.position }, savedIndex = route.index;
+    if (route.mode !== "walk" || before.y - worker.baseY >= -1e-6) return { started, missingRoute: route.mode, feet: before.y - worker.baseY };
+    // Force the last handoff while still underground: ordinary work must not take over there.
+    route.index = route.route.length - 1;
+    B.crew.update(1 / 30, time += 1 / 30);
+    const heldUnderground = !!worker.bedTravel.mode || worker.root.position.y - worker.baseY >= -1e-6;
+    if (!heldUnderground) return { started, prematureWork: worker.traits.name, feet: worker.root.position.y - worker.baseY };
+    Object.assign(worker.root.position, before);
+    route.index = savedIndex; worker.avoidance.tx = NaN;
+    while (actors.slice(0, 2).some(c => c.bedTravel.mode) && frames++ < 2400) {
+      B.crew.update(1 / 30, time += 1 / 30);
+      BL.scene.updateWorld(scene.root);
+      B.headquarters.solids.props.sync();
+    }
+    const arrived = actors.slice(0, 2).map(c => ({ name: c.traits.name, mode: c.bedTravel.mode,
+      feet: c.root.position.y - c.baseY, surface: B.island.surfaceAt(c.root.position.x, c.root.position.z) }));
+    const separate = beds.slice(0, 2).every((bed, i) => !bed.sleeper || bed.sleeper !== actors[i]
+      && Math.hypot(actors[i].root.position.x - bed.sleeper.root.position.x, actors[i].root.position.z - bed.sleeper.root.position.z)
+        >= actors[i].bodyRadius + bed.sleeper.bodyRadius);
+    return { started, arrived, heldUnderground, separate, frames, reused: beds.slice(0, 2).map(bed => bed.sleeper?.traits.name || null) };
+  })()`);
+  record("live wake: working and chilling Oogas exit HQ and basement without bed overlap, while rainforest sleepers return to the main level",
+    state.started?.every((row, i) => row.clear && row.placed && row.state === (i & 1 ? "chilling" : "working")
+      && (i < 2 ? row.mode === "waiting" || row.mode === "walk" : !row.mode))
+    && state.arrived?.every(row => row.feet >= -1e-6 && row.surface >= -1e-6) && state.heldUnderground
+    && state.separate && state.reused?.some(Boolean), JSON.stringify(state));
 } };
 // Away and back twice. The director's ?debug=1 leave contract throws inside advance on a broken leave,
 // and the second visit may hold no more GPU records, nodes, input targets or DOM than the first.
@@ -11239,7 +11318,7 @@ const hubDistantEffects = { name: "hub distant effects", why: "rule: distant por
       && animation.host.ooga >= 58 && animation.host.gorilla >= 58 && animation.network && animation.controlled >= 58, JSON.stringify(animation));
 } };
 scene("hub", { label: "distant effects", query: "pos=0", steps: [hubDistantEffects] });
-scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting] });
+scene("hub", { opts: !ONLY || onlyMatches(hubArrival.name) ? { initScript: `(${hubSleepWire.toString()})()` } : {}, steps: [hubArrival, { name: `work movement lab lanes ${1 / RATES[0]}Hz`, why: "regression: work walkers left their facing-right side of the lab lane", open: "on about 4 boots in 30 the lane targets sit on the centre or far side; unfixed", run: labLanes }, donation("hub"), hubWalking, hubMapNavigation, hubRainforestSteps, hubRoutes, hubFall, hubGrounding, trip("hub"), factoryActivityRouting, hubLiveWake] });
 scene("hub", { query: "ooga=portlandhodl:clank:lab,obl,lf&ooga=w-s-bitcoin:clank:lab,obl,lf&ooga=bc1gui:clank:lab,obl,lf&ooga=DrNeski:clank:lab,obl,lf&ooga=2140data:clank:lab,obl,lf", steps: [{ name: "work movement cave trips", why: "regression: off-lane cave traffic aimed through obstacles and started backwards detours", run: workCaveTrips }] });
 scene("hub", { label: "room sign", query: "pos=0", steps: [{ name: "room sign copies hash", why: "rule: tapping a room sign swings it and copies its displayed eight-character code with visible confirmation", run: async (b) => {
   const point = await b.evaluate(`(() => { const B = __ooga, sign = B.headquarters.roomSigns[0], n = sign.node; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (value) => { window.__roomHash = value; return Promise.resolve(); } } }); window.__roomSignBefore = sign.hits; B.pilot.release(true); B.pilot.navigate({ position: { x: n.position.x, y: n.position.y, z: n.position.z }, target: { x: n.position.x, y: n.position.y - 0.2, z: n.position.z }, yaw: n.rotation.y, pitch: 0, dist: 4 }); B.advance(0.6, 1 / 60); return B.project(n.position.x, n.position.y - 0.2, n.position.z, {}); })()`);
@@ -18173,7 +18252,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
   tessAnswerChecks(BL);
   const clearance = claimClearanceProof();
   record("hub footprint clearance: conservative rejection preserves circular boundaries, live reservations and exceptional numbers", clearance.failures === 0 && clearance.cases >= 4000, JSON.stringify(clearance));
-  await characterChecks(); await contributorActivityChecks(); await mempoolFeedChecks(); await debugActivityStatusChecks(); await soloDebugChecks(); await adaptiveQualityChecks(); await chainSnapshotChecks(); await dsbSharedDataChecks(); await timechainDataChecks(); await timechainRoomChecks(); await timechainBlockChecks(); await weatherStepChecks(); await poolLayoutChecks(); await gameRulesChecks(); await ghostHuntChecks(); await donationClientChecks(); await poolWildlifeChecks();
+  await characterChecks(); await contributorActivityChecks(); await mempoolFeedChecks(); await oogatronReplayChecks(); await debugActivityStatusChecks(); await soloDebugChecks(); await adaptiveQualityChecks(); await chainSnapshotChecks(); await dsbSharedDataChecks(); await timechainDataChecks(); await timechainRoomChecks(); await timechainBlockChecks(); await weatherStepChecks(); await poolLayoutChecks(); await gameRulesChecks(); await ghostHuntChecks(); await donationClientChecks(); await poolWildlifeChecks();
 
   // Scene state built directly instead of booted; seed 1 matches scene-hub.js.
   // Sealed cave guides need the hub's seal nodes, so probes reading them stay in the browser tier.
@@ -18530,7 +18609,7 @@ record("character visibility source bakes: ownership wrappers share exact immuta
     const saved = C.roster.map(c => ({ lastCommitAt: c.lastCommitAt, lastContributionAt: c.lastContributionAt, maintainer: c.maintainer }));
     C.roster.forEach((c, i) => { c.lastCommitAt = c.lastContributionAt = now - 48 * 3600000 - (C.roster.length - i) * 60000; c.maintainer = false; });
     const d = BL.headquartersModels.MATTRESS;
-    const bed = { x: 40, y: 0, z: 40, sr: 0, cr: 1, node: { rotation: { y: 0 } }, sleep: d,
+    const bed = { x: 40, y: 0, z: 40, sr: 0, cr: 1, node: { rotation: { y: 0 } }, sleep: d, walkAt: { x: 40 + d.width / 2 + 0.5, y: 0, z: 40 },
       collisionBoxes: new Float64Array([-d.width / 2, 0, -d.depth / 2, d.width / 2, d.surface, d.depth / 2,
         -0.45, d.surface, d.pillowZ - 0.25, 0.45, d.pillowTop, d.pillowZ + 0.25]) };
     const outdoors = C.roster.map((c, i) => ({ x: 10 + i * 4, y: 8, z: 10, outdoor: true, node: { rotation: { y: 0 } } }));

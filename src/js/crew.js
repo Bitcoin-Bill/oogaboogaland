@@ -1241,6 +1241,9 @@
         }
         const bed = cave.bedroll;
         standFromBed(cave);
+        // The lying pose is centered over the mattress. Start the return at its
+        // authored floor-side approach, clear of the next sleeper and the bed's collision shell.
+        setVec(cave.root.position, bed.walkAt.x, cave.baseY + bed.walkAt.y, bed.walkAt.z);
         releaseBedroll(cave);
         cave.state = state;
         cave.parts.head.geometry = cave.headOpen;
@@ -4084,7 +4087,8 @@
       if (travel.mode === "walk") {
         if (cave.hop > 0 || cave.hopV > 0) { runPlayer(cave, dt, false); return; }
         // The architectural route ends at the meadow. Only workers continue to a live eating slot.
-        if (!travel.toBed && cave.state !== "chilling" && travel.index >= travel.route.length - 1) {
+        if (!travel.toBed && cave.state !== "chilling" && travel.index >= travel.route.length - 1
+          && p.y - cave.baseY >= -1e-6) {
           travel.mode = ""; travel.route = null; travel.bed = null;
           if (cave.state === "working") { startMeal(cave); walkToSlot(cave, true); }
           else if (wanderSpot) startWander(cave);
@@ -4095,7 +4099,8 @@
         while (remaining > 1e-8 && travel.index < travel.route.length) {
           const target = travel.route[travel.index], dx = target.x - p.x, dz = target.z - p.z, distance = Math.hypot(dx, dz);
           if (distance < 1e-6) { travel.index++; continue; }
-          if (travel.index + 1 < travel.route.length && ctx.npcRouteBlocked && ctx.npcRouteBlocked(cave, target.x, target.y, target.z)) { travel.index++; continue; }
+          if (travel.index + 1 < travel.route.length && ctx.npcRouteBlocked && ctx.npcRouteBlocked(cave, target.x, target.y, target.z)
+            && ctx.bedRouteClear(cave, travel.route[travel.index + 1])) { travel.index++; continue; }
           // Scenery may cover an intermediate waypoint: aim around the prop toward the next one, never insist on it.
           // Keep the doorway turn until the shortcut is clear; temporary bodies still use local walking avoidance.
           if (distance < 3 && travel.index + 1 < travel.route.length && !npcWalkable(target.x, target.z, target.x, target.z, target.y, cave.bodyHeight, cave)) {
@@ -4116,6 +4121,15 @@
           standPose(cave);
           if (travel.toBed) lieDown(cave);
           else {
+            // Layered support can leave the feet below the meadow even when
+            // the final waypoint's x/z was reached. Never start work there.
+            if (p.y - cave.baseY < -1e-6 && underHome(p.x, p.z)) {
+              if (!ctx.initialWorkSpot || !ctx.initialWorkSpot(cave, NPC_RECOVERY_SPOT)) {
+                travel.mode = "waiting"; travel.route = null; travel.retry = 1;
+                return;
+              }
+              setVec(p, NPC_RECOVERY_SPOT.x, cave.baseY + NPC_RECOVERY_SPOT.y, NPC_RECOVERY_SPOT.z);
+            }
             travel.mode = ""; travel.route = null; travel.bed = null;
             if (cave.state === "chilling" && wanderSpot) startWander(cave);
             else { cave.root.rotation.y = Math.atan2(-p.x, -p.z); startMeal(cave); }
