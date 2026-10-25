@@ -189,22 +189,24 @@
   // lamps along both edges, the length of the floor and on through the tunnel; and on the floor beside it, the stripes
   // round the Jet's bay and along the crew's side. The lamps glow, so they are their own mesh (`glow`, for the Factory's
   // window into the hangar), and where each stands (`markers`, [x, z, ...]) for the scene's own, one `marker` each so
-  // it can light them one at a time.
+  // it can light them one at a time. Paint that crosses other paint stands a centimetre higher, the seams under the
+  // centre lines under the bands and chevrons under the edges, and round the bay the stripes along it over the ones
+  // across where they meet, so no two faces share a height and flicker.
   const runway = cached(() => {
-    const r = LAYOUT.runway, flat = [], glow = [], markers = [], len = r.z0 - r.z1, mid = (r.z0 + r.z1) / 2, top = 0.06;
+    const r = LAYOUT.runway, flat = [], glow = [], markers = [], len = r.z0 - r.z1, mid = (r.z0 + r.z1) / 2, top = 0.08;
     flat.push(box({ w: r.halfW * 2, h: 0.04, d: len, color: RUNWAY, offset: { y: 0.02, z: mid } }));
     for (let z = r.z0 - 2; z > r.z1; z -= 4) flat.push(box({ w: r.halfW * 2 - 0.7, h: 0.01, d: 0.05, color: SEAM, offset: { y: 0.045, z } }));
     for (const x of [-2.6, 2.6]) flat.push(box({ w: 0.05, h: 0.01, d: len - 0.4, color: SEAM, offset: { x, y: 0.045, z: mid } }));
     for (const x of [-0.18, 0.18]) flat.push(box({ w: 0.12, h: 0.02, d: len - 1, color: PAINT, offset: { x, y: 0.05, z: mid } }));
-    for (const s of [-1, 1]) hazard(flat, s * (r.halfW - 0.2), r.z0, s * (r.halfW - 0.2), r.z1, top, 0.3, 0.7);
+    for (const s of [-1, 1]) hazard(flat, s * (r.halfW - 0.2), r.z0, s * (r.halfW - 0.2), r.z1, top, 0.3, 0.7, 0.04);
     const band = (z, d = 0.5) => {
-      for (let k = 0; k < 10; k++) flat.push(box({ w: r.halfW * 0.2 - 0.02, h: 0.02, d, color: k % 2 ? INK : PAINT, offset: { x: -r.halfW + (k + 0.5) * r.halfW * 0.2, y: 0.05, z } }));
+      for (let k = 0; k < 10; k++) flat.push(box({ w: r.halfW * 0.2 - 0.02, h: 0.03, d, color: k % 2 ? INK : PAINT, offset: { x: -r.halfW + (k + 0.5) * r.halfW * 0.2, y: 0.055, z } }));
     };
     for (let z = r.z0 - 4; z > r.z1 + 6; z -= 8) band(z);
     band(r.z1 + 0.35, 0.7);
     for (let k = 0; k < 3; k++) for (const s of [-1, 1]) {
       const z = r.z1 + 2 + k * 1.2;
-      flat.push(moved(turnedY(box({ w: 2.4, h: 0.02, d: 0.35, color: PAINT }), s * 0.6), s * 1.1, 0.05, z));
+      flat.push(moved(turnedY(box({ w: 2.4, h: 0.03, d: 0.35, color: PAINT }), s * 0.6), s * 1.1, 0.055, z));
     }
     for (let z = r.z0 - 1; z > r.z1; z -= 3) for (const s of [-1, 1]) {
       flat.push(box({ w: 0.3, h: 0.08, d: 0.3, color: IRON_DK, offset: { x: s * (r.halfW + 0.45), y: 0.04, z } }));
@@ -214,9 +216,9 @@
     // The Jet's bay, striped all round, and the line along the crew's side of the runway.
     const [bx0, bx1, bz0, bz1] = LAYOUT.bay;
     hazard(flat, bx0, bz0, bx1, bz0, 0.025, 0.28);
-    hazard(flat, bx1, bz0, bx1, bz1, 0.025, 0.28);
+    hazard(flat, bx1, bz0, bx1, bz1, 0.03, 0.28);
     hazard(flat, bx1, bz1, bx0, bz1, 0.025, 0.28);
-    hazard(flat, bx0, bz1, bx0, bz0, 0.025, 0.28);
+    hazard(flat, bx0, bz1, bx0, bz0, 0.03, 0.28);
     hazard(flat, -5.9, 22, -5.9, HALL.back + 3, 0.025, 0.24, 0.8);
     return { flat: merge(...flat), glow: noShadow(merge(...glow)), markers: new Float32Array(markers) };
   });
@@ -949,9 +951,9 @@
   const fireStation = cached(() => {
     const body = [], details = [], panel = [], F = FIRE;
     const bolt = (out, x, y, z) => out.push(box({ w: 0.035, h: 0.035, d: 0.02, color: BOLT, offset: { x, y, z } }));
-    // The floor's stripes round the booth.
-    hazard(body, -2.2, -1.2, 2.2, -1.2, 0.025, 0.26, 0.45); hazard(body, 2.2, -1.2, 2.2, 1.5, 0.025, 0.26, 0.45);
-    hazard(body, 2.2, 1.5, -2.2, 1.5, 0.025, 0.26, 0.45); hazard(body, -2.2, 1.5, -2.2, -1.2, 0.025, 0.26, 0.45);
+    // The floor's stripes round the booth, its sides over its front and back where they meet.
+    hazard(body, -2.2, -1.2, 2.2, -1.2, 0.025, 0.26, 0.45); hazard(body, 2.2, -1.2, 2.2, 1.5, 0.03, 0.26, 0.45);
+    hazard(body, 2.2, 1.5, -2.2, 1.5, 0.025, 0.26, 0.45); hazard(body, -2.2, 1.5, -2.2, -1.2, 0.03, 0.26, 0.45);
     // The cabinet on its plinth, and the desk over it, a profile in (z, y) run across.
     body.push(bevelBox({ w: 2.5, h: 0.12, d: 1.0, color: FIRE_DK, bevel: 0.03, offset: { y: 0.06, z: -0.15 } }));
     body.push(bevelBox({ w: 2.4, h: 0.82, d: 0.9, color: FIRE_STEEL, bevel: 0.04, offset: { y: 0.53, z: -0.15 } }));
