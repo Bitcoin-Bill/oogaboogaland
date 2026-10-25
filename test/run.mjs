@@ -13920,12 +13920,16 @@ scene("hub", { label: "gorilla lab carry jump", exclusive: true, query: "charact
       && rage.identity && rage.cleanPose && rage.released,
     JSON.stringify({ ...state, rage }));
 } }].map(gameCombat) });
-scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1", steps: [{ name: "gorilla rage throw", why: "playthrough: an autonomous gorilla carries past nearby Oogas and rocks, visibly grabs raised outer targets before returning them to flat ground, pursues ordinary ground targets on foot, then throws with real terrain clearance before hunting again", run: async (b) => {
+scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1", steps: [{ name: "gorilla rage throw", outsideRing: true, why: "playthrough: an autonomous gorilla carries past nearby Oogas and rocks, visibly grabs raised outer targets before returning them to flat ground, pursues ordinary ground targets on foot, then throws with real terrain clearance before hunting again", run: async (b) => {
   const states = [], sceneryVisibility = await b.evaluate(`__ooga.props.map(prop => prop.node.visible)`);
   // Complete the production map with all scenery present before isolating
   // actors or adding contact props. Each spot uses at most 201 static checks.
   const mapBake = await b.evaluate(`(() => {
     const B = __ooga, map = BL.scenes.hub.debug.rageThrowMap;
+    // Combat normally hides the Mempool site. These perimeter cases need its
+    // real bridge and forest support present while the shared map is baked.
+    B.poolIsland.site.node.visible = true;
+    BL.scene.updateWorld(BL.scenes.hub.root); B.headquarters.solids.props.sync();
     const limit = Math.ceil(map.spots.length * 201 / 24) + 1;
     let frames = 0;
     while (!map.ready && frames < limit) { B.advance(1 / 60, 1 / 60); frames++; }
@@ -14040,7 +14044,7 @@ scene("hub", { label: "gorilla rage throw", query: "status=chillin&gorillarage=1
       cave.override = cave.state = "chilling"; cave.root.visible = true;
       cave.camp.seat = null; cave.camp.burning = cave.camp.rolling = cave.camp.panic.active = cave.roofEscape.active = false;
       cave.health.stunned = false; cave.hop = cave.hopV = cave.jumps = 0;
-      cave.act.kind = "idle"; cave.act.until = Infinity;
+      cave.act.kind = "idle"; cave.act.until = Infinity; cave.act.spot.sit = false;
       Object.assign(cave.root.position, { x: at.x, y: (cave === c ? initialFloor : B.island.surfaceAt(at.x, at.z)) + cave.baseY, z: at.z });
     }
     if (fixture === "crate" || raised) {
