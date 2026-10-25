@@ -41,7 +41,7 @@ card), `src/style.css` (the game's panels, appended), `test/run.mjs` (rules in t
 - **Crates.** Wooden crates anyone can push by walking into them, stand on, pick up (`F`), carry overhead, set down
   or stack three high (`F` again), or throw (click): a thrown crate that hits a rival stuns them as paint does (BONK!),
   then lands as a crate. Each fort starts with some, each Ooga
-  has three to place (`R`) on its own half, and a round opens with 20 s of fortifying with each side kept to its own
+  has three to place (`B`) on its own half, and a round opens with 20 s of fortifying with each side kept to its own
   half and the blocks locked: the bots plug their gates three deep and block their alleys, so getting in takes a push,
   a double jump over the wall, or the alley behind the fort. No crate lands on a stand.
 - **Quiz traps.** Eight green Matrix pads. Step on one and a bubble closes round you: you can't move, throw, pick up or
@@ -71,11 +71,11 @@ float and anything whose top an Ooga reaches is somewhere to stand.
 | A / D, Q / E | Turn; the chase camera swings round behind by itself (no mouse needed) |
 | Click the view, then move the mouse | Locks the mouse; moving it turns and aims. Escape lets go |
 | Left click or Enter | Throw the chosen tool at the crosshair (the crate, when holding one) |
-| Right click, wheel, 1 to 4 | Choose paint, grenade, rocket or net |
+| R, right click, wheel, 1 to 4 | Switch weapon: paint, grenade, rocket or net |
 | Space, Space again in the air | Jump, double jump |
 | Shift (held) | Sprint |
 | Tab or T | Pass the block |
-| R | Place a new crate from your stock |
+| B | Place a new crate from your stock |
 | F | Lift the crate in front, or set the held one down (stacking it) |
 | G | Drop the block |
 | C (held) | Crouch |
