@@ -526,6 +526,15 @@
     paint();
     lockMouse();
   };
+  // Tab passes in play, wherever the focus is: caught first, before the page's own key routing (which leaves Tab on a
+  // focused button to the browser) and before the browser moves the focus.
+  const onTabKey = (e) => {
+    if (e.key !== "Tab" || phase !== "play" || quiz.open) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    if (!e.repeat) passBlock();
+  };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   // Throw the carried block straight ahead, toward the crosshair, for a teammate to catch.
   const passBlock = () => {
@@ -813,7 +822,7 @@
       return;
     }
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
-    if (e.key === "Tab" || e.key === "t" || e.key === "T") { e.preventDefault(); passBlock(); }
+    if (e.key === "t" || e.key === "T") passBlock();
     if (e.key === "r" || e.key === "R") buildCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
@@ -862,6 +871,7 @@
     el.canvas.addEventListener("mousedown", onRightDown);
     el.canvas.addEventListener("contextmenu", noMenu);
     window.addEventListener("keydown", onCrouchKey);
+    window.addEventListener("keydown", onTabKey, true);
     window.addEventListener("keyup", onCrouchKey);
     el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
     el.paintBtn.addEventListener("pointerdown", el.onPaint);
@@ -993,6 +1003,7 @@
     el.canvas.removeEventListener("mousedown", onRightDown);
     el.canvas.removeEventListener("contextmenu", noMenu);
     window.removeEventListener("keydown", onCrouchKey);
+    window.removeEventListener("keydown", onTabKey, true);
     window.removeEventListener("keyup", onCrouchKey);
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.cross.hidden = true;
