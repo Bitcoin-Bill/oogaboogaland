@@ -63,10 +63,11 @@
     trestles: [[8, -8.9], [22, -8.9]],
     // The engine static fire test's booth beside the runway behind the Jet's left engine, clear of its exhaust: where it
     // stands and the way its front faces, toward the runway with its back to the Jet, so the presser walks up to it
-    // from the runway and looks over it at the engines, and the cables' far ends under the pods, [x, z]; and where the
+    // from the runway and looks over it at the engines, and where its cables plug in under the Jet's tail end, [x, z],
+    // under each pod forward of its nozzle and under the belly between them, all clear of the plumes; and where the
     // test is watched from across the runway, its eye and where it looks, framing the booth, both plumes and where
     // the presser lands.
-    fireTest: { x: 8, z: 11, turn: -Math.PI / 2, cables: [[13, 4.4], [15, 4], [17, 4.4]], view: { eye: [-6, 6.5, 18], look: [5, 0.8, 10] } },
+    fireTest: { x: 8, z: 11, turn: -Math.PI / 2, cables: [[12.6, -0.4], [15, 2], [17.4, -0.4]], view: { eye: [-6, 6.5, 18], look: [5, 0.8, 10] } },
     // Kortik's Sis: where she starts, by the Jet's nose off the runway, facing the runway and the door; the floor she
     // roams, [x0, x1, z0, z1], the Jet's side of the hall clear of the runway, its stair and its gangway; and her spots
     // all round the Jet, each [name, x, z, what she does there, the point she looks at, x, y, z, and, up the stair,
@@ -1056,13 +1057,24 @@
     };
   });
   // The cables from the console's back across the floor to boxes under the engine pods, in the hangar's frame.
+  // The booth's cables: from its back along the floor to under the Jet's tail end, and each up from there in a droop to
+  // its plug on the Jet's underside (`LAYOUT.fireTest.cables`), at the bottom of the Jet's cells there
+  // (`jetModels.columns`), a steel connector with a yellow collar.
   const fireCables = cached(() => {
-    const T = LAYOUT.fireTest, c = Math.cos(T.turn), s = Math.sin(T.turn), parts = [];
+    const T = LAYOUT.fireTest, c = Math.cos(T.turn), s = Math.sin(T.turn), parts = [], J = JM.columns(), j = LAYOUT.jet;
     const back = (x, z) => [T.x + x * c + z * s, T.z - x * s + z * c];
-    T.cables.forEach(([ex, ez], i) => {
-      const [ax, az] = back(-0.6 + i * 0.6, -0.65), mx = (ax + ex) / 2 + (i - 1) * 0.8, mz = (az + ez) / 2 + 0.6;
-      parts.push(floorCable(ax, az, mx, mz, ex, ez, i === 1 ? "#d9862a" : FIRE_BLACK));
-      parts.push(bevelBox({ w: 0.4, h: 0.3, d: 0.3, color: FIRE_STEEL, bevel: 0.03, offset: { x: ex, y: 0.15, z: ez } }), box({ w: 0.42, h: 0.04, d: 0.32, color: PAINT, offset: { x: ex, y: 0.24, z: ez } }));
+    const under = (x, z) => J.bottom[(Math.floor((x - j.x) / J.U) - J.i0) * J.nk + Math.floor((z - j.z) / J.U) - J.k0];
+    T.cables.forEach(([px, pz], i) => {
+      const color = i === 1 ? "#d9862a" : FIRE_BLACK, py = under(px, pz) - 0.12, [ax, az] = back(-0.6 + i * 0.6, -0.65);
+      // Where it comes down onto the floor: a little over a metre from under its plug, toward the booth.
+      const l = Math.hypot(ax - px, az - pz), fx = px + (ax - px) / l * 1.3, fz = pz + (az - pz) / l * 1.3;
+      const mx = (ax + fx) / 2 + (i - 1) * 0.8, mz = (az + fz) / 2 + 0.6;
+      parts.push(floorCable(ax, az, mx, mz, fx, fz, color));
+      parts.push(models.tube({
+        path: (t) => { const u = 1 - t; return { x: u * u * px + 2 * u * t * (px + (fx - px) * 0.15) + t * t * fx, y: u * u * py + 2 * u * t * 0.15 + t * t * 0.05, z: u * u * pz + 2 * u * t * (pz + (fz - pz) * 0.15) + t * t * fz }; },
+        radius: () => 0.05, rings: 18, segments: 6, colorFn: () => color
+      }));
+      parts.push(bevelBox({ w: 0.2, h: 0.16, d: 0.2, color: FIRE_STEEL, bevel: 0.03, offset: { x: px, y: py + 0.06, z: pz } }), box({ w: 0.22, h: 0.04, d: 0.22, color: PAINT, offset: { x: px, y: py - 0.02, z: pz } }));
     });
     return merge(...parts);
   });
