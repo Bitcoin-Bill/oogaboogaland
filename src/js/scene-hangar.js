@@ -100,7 +100,8 @@
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
     projector: ["The projector · Lightning Jet Pictures", "An old film projector. Any terminal by the runway starts the show."],
-    screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."]
+    screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."],
+    tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -149,6 +150,7 @@
       if (pilot.modeAction("mode-toggle")) { e.preventDefault(); return true; }
     }
     if (e.key === "Escape") {
+      if (scene && scene.guide.escape()) { e.preventDefault(); return true; }
       if (!pilot.escape()) leaveHangar();
       return true;
     }
@@ -637,6 +639,8 @@
       onTap: (hit) => {
         if (!hit) return;
         const o = hit.owner;
+        if (o.kind === "tess") return scene.guide.tap();
+        if (scene.guide.holding) return;
         if (o.kind === "exit") return leaveHangar();
         if (o.kind === "stats" || o.kind === "timeline") return hud.openBoard(scene.boardViews[o.kind]);
         if (o.kind === "firetest" && scene.fire.near && scene.fire.press()) return;
@@ -647,7 +651,7 @@
       },
       ...pilot.hooks
     });
-    hud.onPreset(pilot.goPreset);
+    hud.onPreset((name) => { if (!scene.guide.holding) pilot.goPreset(name); });
     hud.onAction((action) => {
       if (action === "leave") leaveHangar();
       else if (action === "reset-view") pilot.resetCamera();
@@ -689,6 +693,16 @@
     input.add(scene.terminals.projector, { kind: "projector", preset: null }, { radius: 1.2 });
     input.add(scene.terminals.screen, { kind: "screen", preset: null }, { radius: 4.5 });
     targets.push(scene.terminals.projector, scene.terminals.screen);
+    // Tess, the Factory's guide, helping out in here (`hangar-guide.js`): she greets whoever walks in once a page and
+    // shows them round, answers questions about the Jet, and flies to distract Kortik's Sis while she smashes it. Her
+    // beam finds Sis wherever she is (`sisHead`), and the projector and its screen.
+    scene.sisHead = { x: 0, y: 0, z: 0 };
+    scene.guide = BL.hangarGuide.create({
+      parent: root, input, fx, camera, pilot, visitor: () => people && people.player, world, hud, coarse: COARSE, landing: true,
+      quality: () => renderer.quality, busy: () => leaving || scene.fire.t >= 0,
+      targets: { sis: [scene.sisHead], show: [HM.projector().lens, HM.filmScreen().picture] }
+    });
+    scene.distraction = BL.hangarGuide.distraction(scene.sis);
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
     unsubscribeFeed = BL.jetFeed.subscribe(() => { boardsDirty = true; });
     if (!params.has("nosim") && params.get("jet") !== "0") BL.jetFeed.load();
@@ -743,7 +757,7 @@
     hangarScene.input = input;
     hangarScene.debug = {
       hud, camera, controls: pilot.controls, pilot, crew: people, cavemen: people ? people.cavemen : null,
-      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; }, get sis() { return scene && scene.sis && scene.sis.debug; }, get terminals() { return scene && scene.terminals && scene.terminals.debug; } }
+      hangar: { layout: LAYOUT, feed: BL.jetFeed, get scene() { return scene; }, get avatar() { return avatar; }, get audio() { return audio; }, get fire() { return scene && scene.fire; }, get sis() { return scene && scene.sis && scene.sis.debug; }, get terminals() { return scene && scene.terminals && scene.terminals.debug; }, get guide() { return scene && scene.guide; } }
     };
   };
   const feetOf = () => avatar ? avatar.root.position.y - avatar.baseY : 0;
@@ -821,7 +835,13 @@
     s.fire.update(dt, drivenHere);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
+    // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
+    const sp = s.sis.node.position;
+    s.sisHead.x = sp.x; s.sisHead.y = sp.y + 0.9; s.sisHead.z = sp.z;
+    if (s.sis.rampaging && !s.guide.lent) { s.guide.lend(s.distraction.drive); s.sis.distract(s.guide.root.position); }
+    else if (!s.sis.rampaging && s.guide.lent) { s.distraction.done(); s.guide.lend(null); s.sis.distract(null); }
     pilot.update(dt);
+    s.guide.update(dt, elapsed);
     s.fire.view(camera);
     if (s.window) s.window.update(camera);
     // The hall's hum hears from the Ooga driven here, or from the view's target.
@@ -863,8 +883,10 @@
         hud.toast("Launch shield · sealed. The runway opens when Jet v2 is ready.");
       } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
-    const fired = FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED);
-    glowNear(elapsed, fired + s.terminals.lights(RENDER_OPTS.lights, fired));
+    // The fire test's lights, the film's, and Tess's own, then the lanterns'.
+    const fired = FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED), shown = fired + s.terminals.lights(RENDER_OPTS.lights, fired);
+    s.guide.light(RENDER_OPTS.lights, shown * 8);
+    glowNear(elapsed, shown + 1);
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
     lampLife(s, dt, elapsed);
@@ -912,6 +934,7 @@
     scene.launch.phase.dispose();
     if (scene.window) scene.window.dispose();
     scene.fire.dispose();
+    scene.guide.dispose();
     soundPanel.dispose();
     soundPanel = null;
     for (const a of scene.crew) a.dispose();
@@ -939,6 +962,7 @@
       scene.gate.phase.liveGeometry(set); scene.launch.phase.liveGeometry(set);
       scene.sis.liveGeometry(set);
       scene.terminals.liveGeometry(set);
+      scene.guide.liveGeometry(set);
       for (const a of scene.crew) a.liveGeometry(set);
     }
     if (avatar) set.add(avatar.headOpen).add(avatar.headClosed);
