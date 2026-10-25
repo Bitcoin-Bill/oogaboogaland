@@ -512,6 +512,9 @@
       stars: [-4.3, -1.55, -1.85, -0.25], release: [-1.7, -1.55, 1.75, -0.25], jet: [1.9, -1.55, 4.3, 1.2] },
     mark: [-3.95, 1.6, 0.5], title: [-3.55, 1.72], about: [-3.55, 1.4], footer: -1.8
   };
+  // What Jet is now, as Jet 2.0's README puts it, which the stats board says under its name: the repository's
+  // description is still 1.7's, a rebalancer.
+  const JET_IS = "Jet 2.0: an autonomous economic engine for LND routing nodes.";
   const TIMELINE_FACE = { x0: -4.6, step: 1.84, y: 0.05, r: 0.48, bolt: [-4.95, 1.45], title: [-4.5, 1.52], intro: [1.08, 0.84], stopTitle: -0.66, stopDate: -0.87, stopText: -1.08, footer: -1.86 };
   const JETS = { stats: [[3.1, 0.28, 0.3, 0.06, 0.2, -0.35, -0.55]], timeline: [[3.75, 1.36, 0.3, 0.05, 0.14, -0.3, -0.5], [TIMELINE_FACE.x0 + 5 * TIMELINE_FACE.step, TIMELINE_FACE.y, 0.24, 0.021, 0.3, -0.3, -0.5]] };
   // The timeline's stops, written by hand; no date is. Each says where its date comes from in the reading: the
@@ -523,7 +526,7 @@
     { title: "EARLY REBALANCING", icon: "tools", date: ["1.1", "1.4"], text: "Full profitability, missed HTLCs, then a new rebalancer." },
     { title: "MAIN RELEASES", icon: "boxes", date: ["1.5", "1.6"], text: "LND 0.15, metrics, liquidity, probes and database cleanup." },
     { title: "LATEST RELEASE", icon: "crew", date: "latest", text: (r) => r.releases.length ? `${r.releases[0].tag}, with ${r.stars} stars and ${r.forks} forks so far.` : "No release yet." },
-    { title: "JET V2 AHEAD", icon: "jet", text: "Jet 2.0, rebuilt from the ground up. Coming soon." }
+    { title: "JET V2 AHEAD", icon: "jet", text: "Rebuilt from the ground up as an economic engine for routing nodes." }
   ];
   const BOARD_SCREEN = "#040a1e", TILE = "#0a1a45", EDGE = "#4a9dff", HEX = "#08163d", ICON = "#9fd0ff", GOLD = "#ffd23a";
   // The board's dark glass, its full width and height, behind the face.
@@ -785,8 +788,7 @@
     g.fill(mark);
     g.restore();
     write(S, BL.jetFeed.REPO, F.title[0], F.title[1], 0.34, WHITE, { bold: true, max: 7.6 });
-    const desc = r && r.description || "Lightning Jet", about = desc.includes(". ") ? desc.slice(0, desc.indexOf(". ") + 1) : desc;
-    write(S, about, F.about[0], F.about[1], 0.16, PALE, { max: 7.8 });
+    write(S, JET_IS, F.about[0], F.about[1], 0.16, PALE, { max: 7.8 });
     const milestone = r && r.milestones.length ? r.milestones[0] : null;
     const tiles = {
       commits: ["Commits", r ? number(r.commits) : "-", r ? `+${r.commitsWeek >= 100 ? "100+" : r.commitsWeek} this week` : "", GREEN],
@@ -835,7 +837,7 @@
       });
     }
     write(S, "LIGHTNING JET TIMELINE", F.title[0], F.title[1], 0.42, GOLD, { bold: true, max: 7.4 });
-    write(S, "Lightning Jet automates a Lightning node's rebalancing and fees.", F.title[0], F.intro[0], 0.15, WHITE, { max: 5.8 });
+    write(S, "It began as a rebalancer. Jet 2.0 is an economic engine for routing nodes.", F.title[0], F.intro[0], 0.15, WHITE, { max: 5.8 });
     write(S, r ? `From its first commit in ${new Date(r.createdAt).getUTCFullYear()} through ${r.releases.length} releases, and now Jet v2.` : "From its first commit to Jet v2.", F.title[0], F.intro[1], 0.15, WHITE, { max: 5.8 });
     STOPS.forEach((stop, i) => {
       const x = F.x0 + i * F.step, when = r ? stopDate(stop, r) : "", text = typeof stop.text === "function" ? r ? stop.text(r) : "" : stop.text;

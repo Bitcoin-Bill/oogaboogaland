@@ -1,10 +1,10 @@
 // Tess in the Lightning Jet Hangar, on the island guide's machinery (`hub-guide.js`, handed the hangar's own tables as
 // `guide`): she works the hangar's machines with her beam, notices a visitor walking in once a page and offers the
 // hangar's tour, a stop at each of its sights, until this browser has answered it; a tap on her brings it at any time.
-// Under her offer she answers questions about the Jet from the repository's own reading (`jetFeed.reading()`, as the
-// boards show it): what Jet is and does, who builds it, when it began, its releases, stars, forks, commits and issues,
-// what rebalancing, HTLCs and routing fees are to it, which nodes it runs on, where its code is, and Jet v2; a place in
-// the hangar is a trip there and back. What the page can't answer goes to the Worker as on the island, as a question
+// Under her offer she answers questions about the Jet: what it was and what Jet 2.0 is; from the repository's own
+// reading (`jetFeed.reading()`, as the boards show it) who builds it, when it began, its releases, stars, forks, commits
+// and issues; and what rebalancing, HTLCs and routing fees are to it, which nodes it runs on, where its code is, and
+// Jet v2. A place in the hangar is a trip there and back. What the page can't answer goes to the Worker as on the island, as a question
 // about the Lightning Factory, whose room the hangar is.
 //
 // When Kortik's Sis starts smashing the Jet, the scene lends Tess to a `distraction` (the guide's `lend`): she drops
@@ -33,7 +33,10 @@
     whoAmI: "I'm Tess, the Factory's guide. I help out in the hangar too.",
     takeThere: "Ask me to take you there!",
     jet: "This is Lightning Jet v2, still being built.",
-    jetWhat: "Lightning Jet is a fully automated rebalancer for Lightning nodes.",
+    jetWhat: "Lightning Jet began as a rebalancer for Lightning nodes.",
+    jetV2: "Jet 2.0 is much more: an autonomous economic engine for LND routing nodes.",
+    jetV2How: "It sets fees and refills channels from one model of what each channel's liquidity earns and costs.",
+    jetV2Why: "It records why it does everything, and when the evidence is thin, it does nothing.",
     jetStair: "Its stair goes up to the cockpit. You can even run along its top!",
     sis: "That's Kortik's Sis, the hangar's chief engineer.",
     sisPoke: "You can poke her. I really, really wouldn't.",
@@ -48,11 +51,11 @@
     v2: "Jet v2 is being rebuilt from the ground up, right here.",
     v2Shield: "It flies when it's ready. Until then the launch shield stays sealed!",
     rebalance: "Rebalancing moves a channel's liquidity to the side where payments need it.",
-    rebalanceJet: "Jet does it for you, automatically, and keeps it worth the fees.",
+    rebalanceJet: "Jet 2.0 refills a channel only when what it earns is worth more than the refill costs.",
     htlc: "An HTLC is a payment hopping through a channel.",
-    htlcMissed: "A missed one is a payment your node could have routed but couldn't. Jet watches for those.",
+    htlcMissed: "A missed one may be a payment your node could have routed. Jet counts it as a hint of demand, not proof.",
     fees: "Routing earns a node fees, a few sats a payment.",
-    feesJet: "Jet tracks what each channel earns, so it rebalances where it pays.",
+    feesJet: "Jet 2.0 nudges fees up on drained channels in demand and down on full, idle ones, a small step at a time.",
     nodes: "Jet works with LND nodes.",
     nodesMore: "Its releases added Docker, Voltage and Embassy along the way.",
     code: "Its code and its README are on GitHub.",
@@ -62,7 +65,7 @@
   };
   // The hangar's tour, one stop a sight, as the island's: where the view looks from and at, and her lines there.
   const STOPS = [
-    { id: "jet", title: "Lightning Jet v2", eye: [-2, 7.5, 14], look: [15, 3, -12], lines: ["jet", "jetWhat", "jetStair"] },
+    { id: "jet", title: "Lightning Jet v2", eye: [-2, 7.5, 14], look: [15, 3, -12], lines: ["jet", "jetWhat", "jetV2", "jetStair"] },
     { id: "sis", title: "Kortik's Sis", eye: [2, 5.5, 20], look: [13, 1.5, 6], lines: ["sis", "sisPoke"] },
     { id: "booth", title: "Engine static fire test", eye: [-1.5, 4, 17.5], look: [8, 1.4, 11], lines: ["booth", "boothMore"] },
     { id: "terminals", title: "Terminals and projector", eye: [-2, 3.4, 18], look: [-6.9, 1.2, 12.5], lines: ["terminals", "terminalsShow"] },
@@ -131,7 +134,6 @@
   const COUNT = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   // What she knows from the reading, as she says it; null for what it doesn't hold.
   const KNOWN = {
-    what: (r) => r.description.split(/(?<=\.)\s+/).join("\n"),
     builder: (r) => `${r.repo.split("/")[0]} builds it, out in the open on GitHub.\nIts repository is ${r.repo}.`,
     began: (r) => {
       const years = Math.floor((Date.now() - Date.parse(r.createdAt)) / (365.25 * 864e5)), first = r.releases[r.releases.length - 1];
@@ -158,7 +160,7 @@
     if (has(q, WORDS.tour)) return { lines: [], say: null, go: null, place: null, tour: true };
     const place = placeIn(q), trip = place >= 0 ? place : last !== null && has(q, WORDS.there) ? last : -1;
     if (trip >= 0 && has(q, WORDS.trip)) return reply(STOPS[trip].lines, trip, trip);
-    if (has(q, WORDS.v2)) return reply(["v2", "v2Shield"], null, 0);
+    if (has(q, WORDS.v2)) return reply(["v2", "jetV2", "jetV2How", "v2Shield"], null, 0);
     if (has(q, WORDS.builder)) return known("builder");
     if (has(q, WORDS.history)) return known("began", ["historyShow"]) || reply(["historyShow"]);
     if (has(q, WORDS.began)) return known("began");
@@ -172,7 +174,7 @@
     if (has(q, WORDS.nodes)) return reply(["nodes", "nodesMore"]);
     if (has(q, WORDS.code)) return reply(["code", "codeBoards"], null, 4);
     if (has(q, WORDS.kortik)) return reply(["kortik"], null, 6);
-    if (has(q, WORDS.what) && (place < 0 || place === 0)) return known("what") || reply(["jetWhat"]);
+    if (has(q, WORDS.what) && (place < 0 || place === 0)) return reply(["jetWhat", "jetV2", "jetV2How", "jetV2Why"]);
     if (place >= 0) return reply([...STOPS[place].lines.slice(0, 2), "takeThere"], null, place);
     return null;
   };

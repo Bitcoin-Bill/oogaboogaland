@@ -519,7 +519,7 @@
       });
       if (year < end) quiet(year + 1, end);
     }
-    out.push({ key: "v2", kind: "picture", icon: "jet", top: "COMING SOON", corner: "", title: "JET V2", line: "Rebuilt from the ground up. Then it flies.", hold: SHOW.title });
+    out.push({ key: "v2", kind: "picture", icon: "jet", top: "COMING SOON", corner: "", title: "JET V2", line: "Rebuilt as an economic engine for routing nodes.", hold: SHOW.title });
     out.push({ key: "end", kind: "end", hold: SHOW.card });
     return out;
   };
