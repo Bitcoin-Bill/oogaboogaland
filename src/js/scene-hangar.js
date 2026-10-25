@@ -67,6 +67,10 @@
   // by `TWINKLE_DIP` of their glow; a shooting star streaks for `METEOR_LIFE` seconds, one every `METEOR_GAP`.
   const SPACE = { tip: -Math.PI / 2, turn: -0.3, planets: [[-22, 18, -300, 0.55], [28, -2, -270, 0.8]] };
   const TWINKLE_DIP = 1.08, METEOR_LIFE = 0.8, METEOR_GAP = [3, 9];
+  // The tunnel's neon burns past full (`NEON_GLOW`), each frame's strip shimmering at its own pace, and every
+  // `NEON_STUTTER` seconds one stutters, dipping twice as a tired tube does; the light at the tunnel's mouth follows
+  // its first strip (`MOUTH_LIGHT`).
+  const NEON_GLOW = 1.7, NEON_STUTTER = [2.5, 7], MOUTH_LIGHT = [0.36, 0.66, 1.2];
   const TIPS = {
     exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
     sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
@@ -185,6 +189,23 @@
     });
     addChild(root, space);
   };
+  // The neon's flicker, and the mouth's light with it.
+  const neonLife = (s, dt, elapsed) => {
+    s.stutterWait -= dt;
+    if (s.stutterWait <= 0) {
+      s.stutterWait = NEON_STUTTER[0] + Math.random() * (NEON_STUTTER[1] - NEON_STUTTER[0]);
+      s.stutter = Math.floor(Math.random() * s.neon.length);
+      s.stutterAt = elapsed;
+    }
+    const since = elapsed - s.stutterAt;
+    for (let i = 0; i < s.neon.length; i++) {
+      let k = NEON_GLOW * (0.93 + 0.05 * Math.sin(elapsed * (7.3 + i * 1.7) + i * 2.3) + 0.03 * Math.sin(elapsed * (19.1 + i * 3.1) + i));
+      if (i === s.stutter && (since < 0.06 || since > 0.14 && since < 0.21)) k *= 0.22;
+      s.neon[i].glow = k;
+    }
+    const f = s.neon[0].glow / NEON_GLOW, o = 6 * 8, Lt = RENDER_OPTS.lights;
+    Lt[o + 4] = MOUTH_LIGHT[0] * f; Lt[o + 5] = MOUTH_LIGHT[1] * f; Lt[o + 6] = MOUTH_LIGHT[2] * f;
+  };
   // Space's life: stars twinkle a group at a time with their halos, the planets and their rings spin, moons go round
   // their planets, and now and then a shooting star streaks down its way and fades.
   const heavens = (s, dt, elapsed) => {
@@ -221,11 +242,17 @@
     const L = LAYOUT, s = { crew: [] }, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), fixtures = HM.fixtures(), frames = HM.boardFrames();
     addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
       createNode({ geometry: HM.landing() }), createNode({ geometry: runway.flat }), createNode({ geometry: runway.glow, sightHidden: true }),
-      createNode({ geometry: tunnel.stone }), createNode({ geometry: tunnel.glow, sightHidden: true }),
+      createNode({ geometry: tunnel.stone }),
       createNode({ geometry: HM.catwalks() }), createNode({ geometry: dressed.iron }), createNode({ geometry: dressed.banners }),
       createNode({ geometry: dressed.frame }), createNode({ geometry: dressed.glass, sightHidden: true }), createNode({ geometry: fixtures.glow, sightHidden: true }),
       createNode({ geometry: fixtures.frame }), createNode({ geometry: fixtures.glass, sightHidden: true }), createNode({ geometry: HM.dock() }));
     s.mouth = createNode({ geometry: tunnel.iron });
+    // The tunnel's neon, a strip on every frame, each flickering on its own (`neonLife`).
+    s.neon = tunnel.neonZ.map((z) => createNode({ position: { x: 0, y: 0, z }, geometry: tunnel.neon, sightHidden: true }));
+    addChild(root, ...s.neon);
+    s.stutter = -1;
+    s.stutterAt = 0;
+    s.stutterWait = NEON_STUTTER[0];
     s.fixtures = createNode({ geometry: fixtures.flat });
     addChild(root, s.mouth, s.fixtures);
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
@@ -340,7 +367,7 @@
     lamp(3, L.jet.x - 4, 7, L.jet.z + 12, 18, 1, 0.86, 0.62);
     lamp(4, B.stats.x + 2.5, B.stats.y, B.stats.z, 9, 0.24, 0.42, 0.72);
     lamp(5, B.timeline.x + 2.5, B.timeline.y, B.timeline.z, 10, 0.24, 0.42, 0.72);
-    lamp(6, 0, TUN.y, HALL.back + 3, 16, 0.3, 0.55, 1);
+    lamp(6, 0, TUN.y, HALL.back + 3, 16, MOUTH_LIGHT[0], MOUTH_LIGHT[1], MOUTH_LIGHT[2]);
     lamp(7, 0, TUN.y, TUN.z1 + 4, 14, LAUNCH_TINT[0], LAUNCH_TINT[1], LAUNCH_TINT[2]);
     lamp(8, -12, 6, 12, 16, 1, 0.66, 0.32);
     lamp(9, -12, 6, -12, 16, 1, 0.66, 0.32);
@@ -562,6 +589,7 @@
     }
     glowNear(elapsed);
     heavens(s, dt, elapsed);
+    neonLife(s, dt, elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
     if (boardsDirty) {

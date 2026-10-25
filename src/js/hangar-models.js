@@ -25,7 +25,7 @@
 
   const STONE = ["#5b4a3e", "#524238", "#66544a", "#4a3d34"], STONE_DK = "#3a2f28", IRON = "#4a4d52", IRON_DK = "#2c2e33";
   const TIMBER = "#8a5a32", TIMBER_LT = "#a8703e", TIMBER_DK = "#5c3a1e", GIRDER = "#86602f", GIRDER_DK = "#5e4223";
-  const RUNWAY = "#2a2e36", SEAM = "#3b404a", PAINT = "#ffd23a", INK = "#141414", MARKER = "#6fc8ff", NEON = "#3fa8ff";
+  const RUNWAY = "#2a2e36", SEAM = "#3b404a", PAINT = "#ffd23a", INK = "#141414", MARKER = "#6fc8ff", NEON = "#4fb4ff";
   const SCREEN = "#2f7fd8", SCREEN_INK = "#cfe8ff", FLOOR_LAMP = "#4aa8ff";
 
   // The hall is wider on the right, where the Jet docks, than on the left, where the crew works.
@@ -182,10 +182,11 @@
   });
 
   // The launch tunnel from the back wall to the shield: a stone sleeve, floored, walled and roofed, and inside it an
-  // octagonal iron frame every few metres, the mouth's heaviest, each with a neon strip round its inside; the hazard bar
-  // across the hold-short line. The neon glows, so it is its own mesh.
+  // octagonal iron frame every few metres, the mouth's heaviest, each with a neon strip round its inside, a white-hot
+  // core in a blue tube; the hazard bar across the hold-short line. Every frame's strip is the one `neon` ring, set at
+  // each of `neonZ` by the scene, which flickers each on its own.
   const tunnel = cached(() => {
-    const t = LAYOUT.tunnel, iron = [], stone = [], glow = [], len = t.z0 - t.z1, mid = (t.z0 + t.z1) / 2, half = t.r + 0.4;
+    const t = LAYOUT.tunnel, iron = [], stone = [], neon = [], neonZ = [], len = t.z0 - t.z1, mid = (t.z0 + t.z1) / 2, half = t.r + 0.4;
     stone.push(box({ w: half * 2 + 1, h: 0.4, d: len + 0.4, color: STONE[3], offset: { y: -0.2, z: mid } }));
     for (const s of [-1, 1]) stone.push(box({ w: 0.6, h: t.y + t.r + 0.6, d: len, color: STONE_DK, offset: { x: s * (half + 0.3), y: (t.y + t.r) / 2, z: mid } }));
     stone.push(box({ w: half * 2 + 1.2, h: 0.6, d: len, color: STONE_DK, offset: { y: t.y + t.r + 0.3, z: mid } }));
@@ -198,15 +199,18 @@
         const cut = (px, py, qx, qy) => py >= 0 ? [px, py] : [px + (qx - px) * (-py) / (qy - py), 0];
         const [cx0, cy0] = cut(ax, ay, bx, by), [cx1, cy1] = cut(bx, by, ax, ay);
         iron.push(beam(cx0, cy0, z, cx1, cy1, z, w, heavy ? IRON : IRON_DK));
-        const n = 0.93;
-        glow.push(beam(cx0 * n, t.y + (cy0 - t.y) * n, z + w / 2 + 0.04, cx1 * n, t.y + (cy1 - t.y) * n, z + w / 2 + 0.04, 0.12, NEON, 1));
+        if (i === 0) {
+          const n = 0.93, p0 = [cx0 * n, t.y + (cy0 - t.y) * n], p1 = [cx1 * n, t.y + (cy1 - t.y) * n];
+          neon.push(beam(p0[0], p0[1], 0, p1[0], p1[1], 0, 0.16, NEON, 1), beam(p0[0], p0[1], 0.07, p1[0], p1[1], 0.07, 0.055, "#e6f4ff", 1));
+        }
       }
+      neonZ.push(z + w / 2 + 0.04);
     }
     // The hazard bar across the hold-short line: a striped beam on two posts.
     const hs = t.holdShort - 0.4;
     for (const s of [-1, 1]) iron.push(box({ w: 0.2, h: 1.1, d: 0.2, color: IRON_DK, offset: { x: s * 5.6, y: 0.55, z: hs } }));
     for (let k = 0; k < 14; k++) iron.push(box({ w: 0.8, h: 0.22, d: 0.18, color: k % 2 ? INK : PAINT, offset: { x: -5.6 + (k + 0.5) * 0.8, y: 1.05, z: hs } }));
-    return { iron: merge(...iron), stone: merge(...stone), glow: noShadow(merge(...glow)) };
+    return { iron: merge(...iron), stone: merge(...stone), neon: noShadow(merge(...neon)), neonZ };
   });
 
   // The catwalks along the side walls: plank decks bracketed into the rock (no posts to stand in front of the boards
