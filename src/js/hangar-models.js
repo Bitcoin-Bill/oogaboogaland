@@ -1443,6 +1443,35 @@
     rails(...L.steps);
     for (const st of L.catwalkStairs) rails(...st);
     rails(...L.jetStairs);
+    // A deck's rails as `deckParts` stands them (`edges` of "nsew", each 0.1 in from its edge, with a gap where a stair
+    // comes up through it, `cuts` in the deck's frame as `deckParts` takes them), in the way of walkers on the deck from
+    // the rail's inner face out past the edge, so a body stops at a rail rather than in it; walkers below the deck pass.
+    const deckRails = (cx, y, cz, w, d, edges, cuts = []) => {
+      const hw = w / 2 - 0.1, hd = d / 2 - 0.1, from = y - 0.5, to = y + 1.1;
+      for (const [edge, z, z0, z1] of [["n", cz - hd, cz - hd - 0.15, cz - hd + 0.1], ["s", cz + hd, cz + hd - 0.1, cz + hd + 0.15]]) {
+        if (!edges.includes(edge)) continue;
+        let spans = [[cx - hw, cx + hw]];
+        for (const [kx, kz, half] of cuts) {
+          if (Math.abs(cz + kz - z) > 0.6) continue;
+          spans = spans.flatMap(([a, b]) => [[a, Math.min(b, cx + kx - half)], [Math.max(a, cx + kx + half), b]]).filter(([a, b]) => b - a > 0.12);
+        }
+        for (const [a, b] of spans) block(a, b, z0, z1, from, to);
+      }
+      if (edges.includes("w")) block(cx - hw - 0.15, cx - hw + 0.1, cz - hd, cz + hd, from, to);
+      if (edges.includes("e")) block(cx + hw - 0.1, cx + hw + 0.15, cz - hd, cz + hd, from, to);
+    };
+    const l0 = L.landing;
+    deckRails(l0.x, l0.y, l0.z, l0.w, l0.d, "new", [[L.steps[0] - l0.x, L.steps[5] - l0.z, L.steps[6] / 2 + 0.05]]);
+    L.catwalks.forEach(([x0, x1, z0, z1], i) => {
+      const [sx, , , , , sz1, sw] = L.catwalkStairs[i], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      deckRails(cx, L.catwalkY, cz, x1 - x0, z1 - z0, i ? "nsw" : "nse", [[sx - cx, sz1 - cz, sw / 2 + 0.05]]);
+    });
+    // The gangway: its first deck's end, its last deck's end round the stair, and the hall side end to end.
+    g.decks.forEach(([z0, z1], i) => {
+      const cz = (z0 + z1) / 2, edges = (i === 0 ? "n" : "") + (i === g.decks.length - 1 ? "s" : "");
+      if (edges) deckRails(g.x, g.y, cz, g.w, z1 - z0, edges, [[L.jetStairs[0] - g.x, (z1 - z0) / 2, L.jetStairs[6] / 2 + 0.05]]);
+    });
+    deckRails(g.x, g.y, (gz0 + gz1) / 2, g.w, gz1 - gz0 + 0.2, "w");
     // Under the landing, beside its steps, and under the deep end of each stair, where no Ooga stands.
     const l = L.landing;
     block(l.x - l.w / 2, l.x + l.w / 2, l.z - l.d / 2 + 0.05, l.z + l.d / 2, -1, l.y - 0.4);
