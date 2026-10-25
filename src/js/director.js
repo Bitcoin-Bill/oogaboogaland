@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const { scene, models, donations, glRenderer, canvasRenderer, game: gameMod, pile: pileMod, router: routerMod, scenes } = window.BL;
+  const { scene, models, donations, glRenderer, canvasRenderer, game: gameMod, pile: pileMod, router: routerMod, scenes, gamepad } = window.BL;
   // The optional build-time Oogatron snapshot loads before the director.
   // Activity uses each contributor's timestamp, never the snapshot build time.
   if (window.BL.jumbotronData) window.BL.contributors.applySnapshot(window.BL.jumbotronData);
@@ -293,11 +293,11 @@
     clearTweens();
     if (DEBUG && tweenCount()) throw new Error(`${tweenCount()} tweens survived clearTweens`);
     enter(next, place);
-    // Scene-only builder caches go with the visit; only the keep policy preserves the inactive hub's owners.
-    const retained = liveGeometry();
+    // Preserve only the retained hub's owners and the destination's explicit warm builders.
+    const retained = liveGeometry(), keptScenes = KEEP_HUB ? ["hub", next.id, ...(next.keeps || [])] : [next.id, ...(next.keeps || [])];
     if (leaving.id !== "hub" || !KEEP_HUB) {
-      models.release(leaving.id, KEEP_HUB ? ["hub", next.id] : [next.id], retained);
-      if (DEBUG && leaving.id !== next.id) models.assertReleased(leaving.id);
+      models.release(leaving.id, keptScenes, retained);
+      if (DEBUG && leaving.id !== next.id && !keptScenes.includes(leaving.id)) models.assertReleased(leaving.id);
     }
     renderer.releaseUnused(retained);
     if (DEBUG && renderer.stats.records > live.size) throw new Error(`${next.id}: ${renderer.stats.records} GPU records for ${live.size} live geometries`);
@@ -406,6 +406,7 @@
   let raf = 0;
   // Shared by the display loop and the debug `advance`, so a stepped frame is exactly a displayed one.
   const step = (dt, now) => {
+    gamepad.poll();
     elapsed += dt;
     if (transition) stepTransition(dt);
     sceneTime += dt;
