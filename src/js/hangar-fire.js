@@ -544,7 +544,7 @@
     };
 
     return {
-      group, body, cables, press, update, useNear, actLabel, view, unshake, lights, overlay, dispose, AT,
+      group, body, cables, press, update, useNear, actLabel, view, unshake, lights, overlay, dispose, AT, blast: blastAt,
       get phase() { return phase; }, get t() { return t; }, get near() { return near; }, get ready() { return ready(); }, get out() { return !!presser; }
     };
   };

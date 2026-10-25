@@ -518,7 +518,7 @@
     targets.push(scene.fire.body);
     soundPanel = openSoundPanel();
     // Kortik's Sis, the hangar's chief engineer (`sis.js`).
-    scene.sis = BL.sis.create({ fx, audio });
+    scene.sis = BL.sis.create({ fx, audio, fire: scene.fire });
     addChild(root, scene.sis.node);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);

@@ -7,6 +7,11 @@
 // to the visitor's Ooga and yells at them about the Jet. She picks what to do next at random, never the spot she just
 // left, so it never reads as a loop, keeps quiet a while between lines, and glares at whoever comes near.
 //
+// When someone presses the static fire's red button she freaks out: "WHO PRESSED THAT?!", and she runs from the
+// engines with her arms flailing (or, already far off, cowers where she is), cowers with her arms over her head as
+// they roar, cries "THAT ENGINE ISN'T—" as they falter, and the blast knocks her flat on her back, sooted and smoking.
+// She comes to with the presser, gets up blaming everyone else, and goes to hammer the engine.
+//
 // She walks a grid of the hall's floor built once a visit from the hangar's own checks (`HM.clearAt`, `HM.supportAt`),
 // kept off the runway, out of the static fire booth's box and clear of the crew's posts; a trip is planned by A* over
 // it and pulled straight wherever the floor allows (`HM.walkable`). The visitor's Ooga stops her; she waits, then goes
@@ -44,11 +49,18 @@
     lightning: ["I JUST REBALANCED THAT THING!", "WHY IS ALL THE LIQUIDITY ON THE WRONG SIDE?!", "MY BROTHER STILL REBALANCES MANUALLY! LIKE A CAVEMAN!"],
     hammer: ["COME ON, YOU STUPID THING!", "JUST... ONE... MORE... HIT!"],
     mutter: ["This thing will never fly...", "Too heavy. Way too heavy...", "Bigger engines. We need bigger engines...", "I just rebalanced that thing..."],
-    hope: ["Huh... maybe this thing might actually work."]
+    hope: ["Huh... maybe this thing might actually work."],
+    panic: ["WHO PRESSED THAT?!", "THAT ENGINE ISN'T—"],
+    blame: ["THAT WASN'T MY FAULT!", "WHO TOUCHED MY ENGINES?!", "I TOLD YOU THAT ENGINE WASN'T READY!", "NOBODY SAW THAT. NOBODY!"]
   };
+  // The static fire: where she runs to, the nearer of them (beside the booth and by the far wall's crates, both where
+  // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast knocks her down, how far it slides her, how long she takes to fall and to get
+  // up, and how long she blames everyone after; her soot and how fast it fades.
+  const FLEE = [[10.4, 12.4], [22.4, 9.2]];
+  const PANIC = { far: 14, knock: 26, slide: 0.8, fall: 0.35, rise: 0.6, blame: 3.6, soot: 0.8, fade: 0.08, run: 1.15 };
 
-  // `fx` for her lines and sparks, `audio` for her hammer's clang.
-  const create = ({ fx, audio }) => {
+  // `fx` for her lines and sparks, `audio` for her hammer's clang, `fire` the static fire test she freaks out at.
+  const create = ({ fx, audio, fire }) => {
     const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), SPARK = HM.blast().spark;
     const node = createNode({ position: { x: S.x, y: k.HIP, z: S.z }, rotation: { x: 0, y: S.turn, z: 0 } });
     addChild(node, k.root);
@@ -184,6 +196,31 @@
       quiet = pick(QUIET[0], QUIET[1]);
     };
     const maybeSay = (list, chance) => { if (quiet <= 0 && rand() < chance) say(one(list)); };
+    // The static fire's hold on her: whether she is in it, its line at the malfunction said, how far down she is (0
+    // standing, 1 flat), which way the blast slides her, her soot and when she last smoked.
+    const A = BL.hangarFire.AT;
+    let panicking = false, warned = false, down = 0, slideX = 0, slideZ = 0, soot = 0, smokeAt = 0;
+    const startPanic = () => {
+      panicking = true; warned = false; down = 0; t = 0;
+      say(LINES.panic[0], 2.4);
+      const b = fire.blast, here = Math.hypot(p.x - b.x, p.z - b.z);
+      let goal = -1, best = Infinity;
+      for (const [x, z] of FLEE) {
+        const d = Math.hypot(x - p.x, z - p.z), c = d < best ? nearestOpen(x, z) : -1;
+        if (c >= 0) { goal = c; best = d; }
+      }
+      if (here < PANIC.far && goal >= 0 && plan(p.x, p.z, goal)) { doing = "flee"; speed = RUN * PANIC.run; }
+      else { doing = "cower"; pathN = 0; }
+    };
+    // Up from the floor, blaming everyone, then off to hammer the engine that did it.
+    const endPanic = () => {
+      panicking = false;
+      down = 0;
+      const engine = spots.find((q) => q.kind === "fix" && q.name.includes("engine"));
+      goTo(engine || nextSpot(null));
+    };
+    const smudge = (k2) => { for (let i = 0; i < SOOTED.length; i++) P[SOOTED[i]].scorch = k2; };
+    const SOOTED = ["torso", "head", "armR", "armL", "foreR", "foreL", "legR", "legL", "shinR", "shinL"];
     const nextSpot = (driven) => {
       if (driven && clock - visitedAt > VISIT.every && rand() < VISIT.chance) {
         const q = driven.root.position, d = Math.hypot(q.x - p.x, q.z - p.z);
@@ -247,7 +284,68 @@
       talk = Math.max(0, talk - dt);
       stand();
       let face = H.open, wantYaw = yaw, stepping = false, glareAt = null, swingNow = -1;
-      if (doing === "walk") {
+      const ft = fire ? fire.t : -1;
+      if (!panicking && ft >= 0 && ft < A.boom) startPanic();
+      if (panicking && ft < 0 && doing !== "blame") endPanic();
+      if (panicking) {
+        // The static fire: running, cowering, knocked flat, getting up, blaming.
+        const b = fire.blast;
+        if ((doing === "flee" || doing === "cower") && ft >= A.boom) {
+          if (Math.hypot(p.x - b.x, p.z - b.z) < PANIC.knock) {
+            doing = "down"; t = 0;
+            yaw = Math.atan2(b.x - p.x, b.z - p.z);
+            const d = Math.hypot(p.x - b.x, p.z - b.z) || 1;
+            slideX = (p.x - b.x) / d; slideZ = (p.z - b.z) / d;
+            soot = PANIC.soot;
+          } else if (ft >= A.result) { doing = "blame"; t = 0; say(one(LINES.blame), 3); }
+        }
+        if (doing === "flee") {
+          const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
+          if (d > 0.01) wantYaw = Math.atan2(dx, dz);
+          const step = Math.min(d, speed * dt);
+          p.x += dx / (d || 1) * step; p.z += dz / (d || 1) * step;
+          stepping = step > 0;
+          if (d - step < 0.05 && ++pathAt >= pathN) { doing = "cower"; stepping = false; }
+          face = H.redOpen;
+          want.armLx = -2.6 + Math.sin(clock * 15) * 0.5; want.armLz = 0.4; want.foreLx = -0.5; want.foreLz = 0;
+          want.armRx = -2.6 + Math.cos(clock * 13) * 0.5; want.armRz = -0.4; want.foreRx = -0.5; want.foreRz = 0;
+          want.lean = 0.2;
+        } else if (doing === "cower") {
+          // Facing the engines, crouched, her arms over her head, shaking.
+          wantYaw = Math.atan2(b.x - p.x, b.z - p.z);
+          face = H.redOpen;
+          const shake = Math.sin(clock * 30) * 0.06;
+          want.crouch = 0.16; want.lean = -0.08 + shake;
+          want.armLx = -2.9; want.armLz = 0.25; want.foreLx = -1.6; want.foreLz = 0;
+          want.armRx = -2.9; want.armRz = -0.25; want.foreRx = -1.6; want.foreRz = 0;
+          want.headX = 0.25;
+          if (!warned && ft >= A.warning + 0.2) { warned = true; say(LINES.panic[1], 1.6); }
+        } else if (doing === "down") {
+          // Thrown flat by the blast and out cold until the presser comes to, then getting up.
+          if (ft < A.result) {
+            down = Math.min(1, t / PANIC.fall);
+            if (t < PANIC.fall + 0.1) {
+              const k2 = PANIC.slide * dt / (PANIC.fall + 0.1), nx = p.x + slideX * k2, nz = p.z + slideZ * k2;
+              if (HM.walkable(p.x, p.z, nx, nz, 0, RADIUS)) { p.x = nx; p.z = nz; }
+            }
+          } else {
+            down = Math.max(0, 1 - (ft - A.result) / PANIC.rise);
+            if (down === 0) { doing = "blame"; t = 0; say(one(LINES.blame), 3); }
+          }
+          wantYaw = yaw;
+          face = H.closed;
+          want.armLx = -2.8; want.armLz = 0.7; want.foreLx = -0.2; want.foreLz = 0;
+          want.armRx = -2.8; want.armRz = -0.7; want.foreRx = -0.2; want.foreRz = 0;
+        } else if (doing === "blame") {
+          // Red in the face, shaking her fist at whoever is here, or the booth: it wasn't her.
+          const B = driven ? driven.root.position : HM.LAYOUT.fireTest;
+          wantYaw = Math.atan2(B.x - p.x, B.z - p.z);
+          face = H.redOpen;
+          want.armLx = -2.4 + Math.sin(clock * 15) * 0.3; want.armLz = 0.35; want.foreLx = -0.7; want.foreLz = 0;
+          want.armRx = -2.2; want.foreRx = -1.2;
+          if (t > PANIC.blame) endPanic();
+        }
+      } else if (doing === "walk") {
         // On along her waypoints, turning to each, stopping short of the visitor's Ooga.
         const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
         if (d > 0.01) wantYaw = Math.atan2(dx, dz);
@@ -365,6 +463,21 @@
       k.root.rotation.x = cur.lean;
       k.root.rotation.z = cur.sway;
       p.y = k.HIP - cur.crouch + Math.abs(Math.sin(phase)) * moving * (run ? 0.07 : 0.035);
+      if (down > 0) {
+        // Flat on her back from the hip, at her body's half depth off the floor.
+        const e2 = down * down * (3 - 2 * down);
+        k.root.rotation.x = -Math.PI / 2 * e2;
+        p.y = k.HIP + (0.22 - k.HIP) * e2;
+      }
+      // The blast's soot fading off her, smoking a while.
+      if (soot > 0) {
+        soot = Math.max(0, soot - PANIC.fade * dt);
+        smudge(soot);
+        if (soot > PANIC.soot - 0.25 && (smokeAt -= dt) <= 0) {
+          smokeAt = 0.15;
+          fx.puff(p.x + (rand() - 0.5) * 0.6, p.y + 0.3, p.z + (rand() - 0.5) * 0.6, (rand() - 0.5) * 0.2, 0.7 + rand() * 0.4, (rand() - 0.5) * 0.2, 1.4);
+        }
+      }
       // Her head: glaring at whoever is near when she isn't busy looking at something, within its reach.
       let wantLook = 0;
       const viewer = glareAt || (driven ? driven.root.position : eye);
@@ -387,7 +500,7 @@
       if (shut > 0) shut -= dt;
       else if ((blinkAt -= dt) <= 0) { shut = SHUT; blinkAt = pick(BLINK[0], BLINK[1]); }
       const mouth = talk > 0 && Math.sin(clock * 18) > -0.2;
-      P.head.geometry = face === H.redOpen ? (mouth ? H.redTalk : H.redOpen) : face === H.goggles ? (mouth ? H.gogglesTalk : H.goggles) : mouth ? H.talk : shut > 0 ? H.closed : H.open;
+      P.head.geometry = face === H.closed ? H.closed : face === H.redOpen ? (mouth ? H.redTalk : H.redOpen) : face === H.goggles ? (mouth ? H.gogglesTalk : H.goggles) : mouth ? H.talk : shut > 0 ? H.closed : H.open;
       actor.x = p.x; actor.z = p.z;
     };
     // Her other faces, off the graph until she wears them, kept on the GPU.
@@ -395,7 +508,7 @@
     // For debugging: send her to a spot by name, and what she is doing.
     const debug = {
       go: (name) => { const s = spots.find((q) => q.name === name); if (s) goTo(s); return !!s; },
-      get doing() { return doing; }, get spot() { return spot && spot.name; }, get spots() { return spots.map((s) => s.name); }, get path() { return pathN; },
+      get doing() { return doing; }, get panicking() { return panicking; }, get down() { return down; }, get spot() { return spot && spot.name; }, get spots() { return spots.map((s) => s.name); }, get path() { return pathN; },
       get position() { return { x: p.x, z: p.z }; }, open: () => { let n = 0; for (let i = 0; i < N; i++) n += open[i]; return n; }
     };
     goTo(nextSpot(null));
