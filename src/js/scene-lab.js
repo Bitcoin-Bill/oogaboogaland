@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, donations, qr, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod } = BL;
+  const { math, models, contributors, donations, game: gameMod, hud: hudMod, interact: interactMod, pilot: pilotMod, fx: fxMod, crew: crewMod, pile: pileMod, crates: cratesMod } = BL;
   const { clamp, lerp, ease, fnv1a, randomInt } = math;
   const { createNode, addChild, removeChild, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { DROP_HEIGHT } = pileMod;
@@ -383,7 +383,7 @@
     hooks = {};
     input = interactMod.create({ canvas: ctx.canvas, renderer, camera, hooks });
     pilot = pilotMod.create({ renderer, canvas: ctx.canvas, camera, hud, presets: PRESETS, landing: "pile", pitch: PITCH, dist: DIST, follow: FOLLOW, fly: FLY, clampTarget, clampCamera, ceilingAt: () => 4.3, coarse: COARSE, mayPossess: (cave) => cave.contributor ? BL.net.mayDrive(cave.traits.name) : null, close: { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 4, orbitDist: 5, maxStep: 0.6, groundAt: () => 0 } });
-    const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: TICKER_AT, buildSpots: BUILD_SPOTS.slice(), walkIn: WALK_IN, clampDrag, viewYaw: PRESETS.pile.yaw, bedrolls: lab.bedrolls, pileScale: 0.45, onShown: (shown) => { lab.equipment.abacus.setValue(shown); }, walkable, reticleTarget: () => "object" };
+    const shared = { root, input, hooks, hud, game, world, renderer, camera, overlay: ctx.overlay, tickerAt: TICKER_AT, buildSpots: BUILD_SPOTS.slice(), walkIn: WALK_IN, clampDrag, viewYaw: PRESETS.pile.yaw, bedrolls: lab.bedrolls, pileScale: 0.45, weaponsEnabled: true, onShown: (shown) => { lab.equipment.abacus.setValue(shown); }, walkable, reticleTarget: () => "object" };
     shared.onWeaponImpact = (source, hit, dx, dy, dz, power) => {
       if (hit.owner.kind === "caveman") crew.damage(hit.owner.cave, power, source === crew.player);
     };
@@ -435,15 +435,6 @@
       crew.applyAllSwag();
       crew.renderLocker();
     });
-    const donationRequest = donations.createRequest(game.state);
-    qr.drawTo(hud.el.qr, donationRequest.url, { quiet: 3, dark: "#000000", light: "#f3efe4" });
-    mark("qr");
-    hud.setDonationUrl(donationRequest.url);
-    hud.setIdentity(game.state);
-    hud.onIdentityChange(({ handle, message }) => {
-      game.setIdentity({ handle: donations.sanitize(handle, donations.HANDLE_MAX), message: donations.sanitize(message, donations.MESSAGE_MAX) });
-      hud.setIdentity(game.state);
-    });
 
     Object.assign(hooks, {
       onHover: (hit, p) => {
@@ -467,9 +458,7 @@
     }
     hud.onPreset(pilot.goPreset);
     hud.onAction((action, value) => {
-      if (action === "tip") demoTip(1200);
-      else if (action === "tip-legendary") demoTip(120000);
-      else if (action === "clear-loot") clearLoot();
+      if (action === "clear-loot") clearLoot();
       else if (action === "reset") resetDemo();
       else if (action === "act") pilot.action();
       else if (action === "mode-preset") {

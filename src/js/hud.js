@@ -237,22 +237,28 @@
     renderer.render(root, camera);
     renderer.dispose();
   };
-  const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false }) => {
+  const create = ({ roster, catalog, tierColors, renderIcon, lootEnabled = false, healthEnabled = false }) => {
     const el = {
       roster: $("roster"), rosterCount: $("roster-count"),
       statDonations: $("stat-donations"),
       statSats: $("stat-sats"),
       bananaTotal: $("banana-total"), bananaSource: $("banana-source"),
       bananaLeaders: $("banana-leaders"), bananaEmpty: $("banana-empty"),
+      bananaRecent: $("banana-recent-list"), bananaRecentEmpty: $("banana-recent-empty"),
+      bananaRecentBar: $("banana-recent-bar"), bananaRecentBarLabel: $("banana-recent-bar-label"),
+      donationMessageLabel: $("donation-message-label"),
       bananaBoardUnit: $("banana-board-unit"), bananaBoardNote: $("banana-board-note"),
       bananaPanel: $("bananas-panel"), bananaRateLabel: $("banana-rate-label"),
       bananaBtcPrice: $("banana-btc-price"), bananaExchange: $("banana-exchange"),
       donorUnits: [...document.querySelectorAll("[data-donor-unit]")],
       lootTab: $("loot-tab"),
       lootCount: $("loot-count"),
-      crateHelp: $("crate-help"),
       worldLootHint: $("world-loot-hint"),
       subtitle: $("subtitle"),
+      topbar: document.querySelector(".topbar"), brand: document.querySelector(".brand"),
+      clock: $("world-clock"), block: $("world-block"),
+      equipment: $("equipment-hud"), equipmentRow: document.querySelector(".weapon-equipment-row"),
+      micNote: $("mic-note"),
       actions: [...document.querySelectorAll("[data-action]")],
       board: $("board-modal"), boardTitle: $("board-title"), boardScreen: $("board-screen"), boardCaption: $("board-caption"), boardNote: $("board-note"),
       boardDots: $("board-dots"), boardPrev: $("board-prev"), boardNext: $("board-next"), boardHelp: $("board-help"),
@@ -292,10 +298,6 @@
       magazineLowAmmo: $("magazine-ammo-low"),
       magazineRearBananas: [...$("magazine-back").querySelectorAll(".magazine-banana")],
       jetpack: $("jetpack-hud"),
-      jetpackFuel: $("jetpack-fuel"),
-      jetpackFuelFill: $("jetpack-fuel-fill"),
-      jetpackFuelValue: $("jetpack-fuel-value"),
-      jetpackCompact: document.querySelector(".jetpack-compact"),
       jetpackCompactFuel: $("jetpack-fuel-compact"),
       jetpackCompactFill: $("jetpack-fuel-compact-fill"),
       messageStack: $("message-stack"),
@@ -315,11 +317,6 @@
       presets: [...document.querySelectorAll("[data-preset]")],
       inventory: $("inventory"),
       inventoryEmpty: $("inventory-empty"),
-      handle: $("handle"),
-      message: $("message"),
-      qr: $("qr"),
-      qrUrl: $("qr-url"),
-      feed: $("feed"),
       recipe: $("recipe"),
       recipeText: $("recipe-text")
     };
@@ -342,7 +339,6 @@
     };
     favicon.src = document.querySelector('link[rel="icon"][sizes="64x64"]').href;
     el.lootTab.hidden = !lootEnabled;
-    el.crateHelp.hidden = !lootEnabled;
     el.worldLootHint.hidden = !lootEnabled;
     const savedSheet = readSheetState();
     let sheetHeight = Number.isFinite(savedSheet?.height) && savedSheet.height >= 1 && savedSheet.height <= 10000 ? savedSheet.height : null;
@@ -350,16 +346,35 @@
     else el.sheet.style.setProperty("--sheet-height", `${sheetHeight}px`);
     // Ooga Chat has a tab only where a backend answered (chat.js), which the director learns before any scene.
     const sheetTab = savedSheet && (savedSheet.tab !== "loot" || lootEnabled) && (savedSheet.tab !== "chat" || BL.net.state.backend) ? savedSheet.tab : "roster";
+    // Dock below three times the 380px panel width; show two panels when two widths fit.
+    const bottomSheet = window.matchMedia("(width < 1140px)"), pairedSheet = window.matchMedia("(min-width: 760px)");
+    const showSheetPanels = (name) => {
+      const paired = bottomSheet.matches && pairedSheet.matches && (name === "bananas" || name === "roster");
+      el.sheet.dataset.dock = bottomSheet.matches ? "bottom" : "side";
+      el.sheet.dataset.paired = String(paired);
+      let moveFocus = false;
+      for (const panel of el.panels) {
+        const hidden = panel.dataset.panel !== name && !(paired && (panel.dataset.panel === "bananas" || panel.dataset.panel === "roster"));
+        if (hidden && panel.contains(document.activeElement)) moveFocus = true;
+        panel.hidden = hidden;
+      }
+      for (const tab of el.tabs) tab.setAttribute("aria-controls", paired && (tab.dataset.tab === "bananas" || tab.dataset.tab === "roster")
+        ? "bananas-panel roster-panel" : `${tab.dataset.tab}-panel`);
+      if (moveFocus) el.tabs.find((tab) => tab.dataset.tab === name)?.focus({ preventScroll: true });
+    };
     for (const tab of el.tabs) {
       tab.setAttribute("aria-selected", String(tab.dataset.tab === sheetTab));
       tab.tabIndex = tab.dataset.tab === sheetTab ? 0 : -1;
     }
-    for (const panel of el.panels) panel.hidden = panel.dataset.panel !== sheetTab;
+    showSheetPanels(sheetTab);
     el.sheet.dataset.open = String(!!savedSheet?.open);
     el.primary.hidden = true;
     el.gorillaSmash.hidden = true;
     el.mode.hidden = true;
     el.ownOoga.hidden = true;
+    el.mode.dataset.health = el.ownOoga.dataset.health = String(healthEnabled);
+    el.modeHealth.hidden = true;
+    el.ownOogaHealth.hidden = !healthEnabled;
     el.weapon.hidden = true;
     el.magazine.hidden = true;
     el.jetpack.hidden = true;
@@ -368,6 +383,63 @@
       target.addEventListener(type, fn, opts);
       listeners.push(() => target.removeEventListener(type, fn, opts));
     };
+    // Fit the HUB controls between the title and clock when their actual visible widths allow it.
+    // Observers only schedule a pass after layout or equipment changes; ammo and animation never poll it.
+    if (document.body.dataset.activeScene === "hub") {
+      let bannerFrame = 0;
+      const bannerStyle = (node, property, value) => {
+        if (node.style.getPropertyValue(property) !== value) node.style.setProperty(property, value);
+      };
+      const fitBanner = () => {
+        bannerFrame = 0;
+        if (document.body.dataset.activeScene !== "hub") return;
+        const brand = el.brand.getBoundingClientRect(), clock = el.clock.getBoundingClientRect(), block = el.block.getBoundingClientRect();
+        const topbar = getComputedStyle(el.topbar), row = getComputedStyle(el.equipmentRow);
+        const fontSize = parseFloat(getComputedStyle(el.clock).fontSize) || 22;
+        const scale = Math.max(0.7, Math.min(0.85, 0.7 + (fontSize - 13) / 60));
+        const leftEdge = brand.right + 12, available = Math.min(clock.left, block.left) - 12 - leftEdge;
+        let compactWidth = 0, count = 0, expanded = false;
+        for (const button of el.equipmentRow.children) {
+          if (button.hidden || getComputedStyle(button).display === "none") continue;
+          compactWidth += button === el.weapon ? 78 : button.offsetWidth;
+          if (button === el.weapon) expanded = button.dataset.equipped === "true";
+          count++;
+        }
+        compactWidth += Math.max(0, count - 1) * (parseFloat(row.columnGap) || 0);
+        const banner = (compactWidth + (expanded ? 140 : 0)) * scale <= available ? "full"
+          : compactWidth * scale <= available ? "compact" : "below";
+        const paddingLeft = parseFloat(topbar.paddingLeft) || 0, paddingRight = parseFloat(topbar.paddingRight) || 0;
+        const topEdge = Math.min(brand.top, clock.top, block.top), bottomEdge = Math.max(brand.bottom, clock.bottom, block.bottom);
+        const top = banner === "below" ? bottomEdge + 12 : (topEdge + bottomEdge - 52 * scale) / 2;
+        if (el.equipment.dataset.banner !== banner) el.equipment.dataset.banner = banner;
+        bannerStyle(el.equipment, "--hub-equipment-scale", String(scale));
+        bannerStyle(el.equipment, "--hub-equipment-left", `${banner === "below" ? paddingLeft : leftEdge}px`);
+        bannerStyle(el.equipment, "--hub-equipment-top", `${top}px`);
+        bannerStyle(el.equipment, "--hub-equipment-width", `${Math.max(0, window.innerWidth - paddingLeft - paddingRight) / scale}px`);
+        const bottom = `${top + el.equipmentRow.offsetHeight * scale + 8}px`;
+        bannerStyle(el.messageStack, "--hub-equipment-bottom", bottom);
+        bannerStyle(el.micNote, "--hub-equipment-bottom", bottom);
+      };
+      const scheduleBanner = () => {
+        if (!bannerFrame) bannerFrame = window.requestAnimationFrame(fitBanner);
+      };
+      const bannerResize = new ResizeObserver(scheduleBanner), bannerEquipment = new MutationObserver(scheduleBanner);
+      for (const node of [el.brand, el.clock, el.block, el.equipmentRow]) bannerResize.observe(node);
+      for (const button of el.equipmentRow.children) bannerEquipment.observe(button, {
+        attributes: true, attributeFilter: button === el.weapon ? ["hidden", "data-equipped"] : ["hidden"]
+      });
+      on(window, "resize", scheduleBanner);
+      listeners.push(() => {
+        bannerResize.disconnect();
+        bannerEquipment.disconnect();
+        window.cancelAnimationFrame(bannerFrame);
+        delete el.equipment.dataset.banner;
+        for (const property of ["--hub-equipment-scale", "--hub-equipment-left", "--hub-equipment-top", "--hub-equipment-width"]) el.equipment.style.removeProperty(property);
+        el.messageStack.style.removeProperty("--hub-equipment-bottom");
+        el.micNote.style.removeProperty("--hub-equipment-bottom");
+      });
+      scheduleBanner();
+    }
     let hintTimer = 0, hintHideTimer = 0, copyTimer = 0;
     const rosterRows = new Map();
     let showAway = false, awayCount = 0, awayShownCount = -1, awayShownShow = null, onlineCount = 0, onlineShown = -1;
@@ -522,7 +594,7 @@
     showVoices();
     // Value the donated sats at the current price; donor rankings retain their receipt prices.
     const showBananaRate = () => {
-      if (document.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
+      if (document.hidden || el.sheet.hidden || el.bananaPanel.hidden || el.sheet.dataset.open !== "true") return;
       const rate = currentDonationRate(), total = donationValueText();
       const tone = !rate ? "wait" : rate.stale ? "stale" : rate.live ? "live" : "idle";
       const label = tone === "live" ? "LIVE BTCUSD" : tone === "stale" ? "STALE BTCUSD" : "BTCUSD";
@@ -536,7 +608,7 @@
     };
     let stopBananaRate = null, pileValueVisible = false;
     const watchBananaRate = () => {
-      const visible = !document.hidden && (pileValueVisible || !el.bananaPanel.hidden && el.sheet.dataset.open === "true");
+      const visible = !document.hidden && (pileValueVisible || !el.sheet.hidden && !el.bananaPanel.hidden && el.sheet.dataset.open === "true");
       if (visible && !stopBananaRate) stopBananaRate = BL.donationRate.watch(showBananaRate);
       else if (!visible && stopBananaRate) { stopBananaRate(); stopBananaRate = null; }
       if (visible) showBananaRate();
@@ -548,19 +620,54 @@
     };
     const bananaRateObserver = new MutationObserver(watchBananaRate);
     bananaRateObserver.observe(el.bananaPanel, { attributes: true, attributeFilter: ["hidden"] });
-    bananaRateObserver.observe(el.sheet, { attributes: true, attributeFilter: ["data-open"] });
+    bananaRateObserver.observe(el.sheet, { attributes: true, attributeFilter: ["data-open", "hidden"] });
     on(document, "visibilitychange", watchBananaRate);
     listeners.push(() => {
       bananaRateObserver.disconnect();
       if (stopBananaRate) stopBananaRate();
     });
     watchBananaRate();
-    let shownTally, shownBoard, shownReal, shownNetwork, shownOpen;
+    // A fixed pool, so the DOM never grows with donations.
+    const recentRows = Array.from({ length: BL.donations.RECENT_MAX }, () => {
+      const li = document.createElement("li"), name = document.createElement("span"), label = document.createTextNode("");
+      const badge = document.createElement("span"), amount = document.createElement("strong"), message = document.createElement("p");
+      // Every text node exists from the start, so filling a row later adds nothing to the DOM.
+      const amountText = document.createTextNode(""), messageText = document.createTextNode("");
+      name.className = "banana-recent-name";
+      badge.className = "banana-verified";
+      badge.textContent = "✓";
+      badge.title = "Signed in with GitHub using this donor name";
+      badge.setAttribute("role", "img");
+      badge.setAttribute("aria-label", "GitHub name confirmed");
+      badge.hidden = true;
+      amount.className = "banana-amount";
+      message.className = "banana-recent-message";
+      message.hidden = true;
+      name.append(label, badge);
+      amount.append(amountText);
+      message.append(messageText);
+      li.append(name, amount, message);
+      li.hidden = true;
+      el.bananaRecent.append(li);
+      return { li, name, label, badge, amountText, message, messageText };
+    });
+    // The recent list's checkbox keeps it to tips at or above the message bar, remembered in this browser.
+    const RECENT_BAR_KEY = "ooga-recent-bar";
+    let recentBarOnly = false;
+    try { recentBarOnly = localStorage.getItem(RECENT_BAR_KEY) === "1"; } catch { /* no storage: shown unfiltered */ }
+    el.bananaRecentBar.checked = recentBarOnly;
+    on(el.bananaRecentBar, "change", () => {
+      recentBarOnly = el.bananaRecentBar.checked;
+      try { localStorage.setItem(RECENT_BAR_KEY, recentBarOnly ? "1" : "0"); } catch { /* kept for this visit alone */ }
+      refreshDonors(true);
+      el.bananaRecentBar.blur();
+    });
+    let shownTally, shownBoard, shownRecent, shownReal, shownNetwork, shownOpen, shownBar;
     const refreshDonors = (force = false) => {
-      const { real, state, testNetwork } = BL.donations;
+      const { real, state, testNetwork, messageMinSats: bar } = BL.donations;
       showBananaRate();
-      if (!force && shownTally === state.tally && shownBoard === state.board && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open) return;
-      shownTally = state.tally; shownBoard = state.board; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open;
+      if (!force && shownTally === state.tally && shownBoard === state.board && shownRecent === state.recent && shownReal === real && shownNetwork === testNetwork && shownOpen === state.open && shownBar === bar) return;
+      shownTally = state.tally; shownBoard = state.board; shownRecent = state.recent; shownReal = real; shownNetwork = testNetwork; shownOpen = state.open; shownBar = bar;
       const tally = real ? state.tally : donationStats;
       // The chip says whose figures these are: this browser's demo, a test network's, the feed still loading,
       // donations closed, or the island's live feed.
@@ -591,6 +698,27 @@
       el.bananaEmpty.textContent = missingSats ? "Sat totals are not available from the donation feed yet."
         : real && !entries ? "Loading the donor leaderboard…"
         : real ? "No donations yet. Feed the first Ooga!" : "New demo donations will appear here.";
+      // The recent list: the newest first, its orange check only on the API's word that the donor's GitHub login
+      // matched the name, into the fixed rows.
+      const all = real ? state.recent || [] : donationStats?.recentDonations || [];
+      const recent = recentBarOnly ? all.filter((entry) => entry.sats >= bar) : all;
+      el.bananaRecentBarLabel.textContent = `${BANANA_COUNT.format(bar)} sats and up only`;
+      el.donationMessageLabel.textContent = `Banana message (up to 280 characters, with a tip of ${BANANA_COUNT.format(bar)} sats or more)`;
+      for (let i = 0; i < recentRows.length; i++) {
+        const row = recentRows[i], entry = recent[i];
+        row.li.hidden = !entry;
+        if (!entry) continue;
+        row.label.data = entry.handle ? `@${entry.handle}` : "Anonymous";
+        row.name.dataset.anon = String(!entry.handle);
+        row.badge.hidden = !(real && entry.verified);
+        row.amountText.data = (donorUnit === "sats" ? BANANA_COUNT : DONOR_BANANAS).format(entry[donorUnit]);
+        const message = BL.donations.carried(entry.sats, entry.message);
+        row.message.hidden = !message;
+        row.messageText.data = message;
+      }
+      el.bananaRecentEmpty.hidden = recent.length > 0;
+      el.bananaRecentEmpty.textContent = recentBarOnly && all.length ? `None of the latest tips reached ${BANANA_COUNT.format(bar)} sats.`
+        : real ? "Recent donations will appear here as they arrive." : "New demo donations will appear here.";
       el.bananaBoardNote.textContent = !real ? "Demo donations in this browser only. Earlier tips have no donor history."
         : testNetwork ? `Test donations on ${testNetwork}. Leaderboard values are recorded when paid.`
         : "Leaderboard totals use each donation's recorded value.";
@@ -664,7 +792,7 @@
       detachedNameShown = true;
       el.modeDestinationName.classList.add("show");
     };
-    let gorillaEntry = null, gorillaView = "orbit", gorillaCombat = false;
+    let gorillaEntry = null, gorillaView = "orbit", gorillaCombat = false, gorillaCombatEnabled = true;
     let modeName = "", modeGeometry = null, modeSelected = false, modeCombat = false, modeView = "detached", modeHealth = -1, modeHealthMax = 0, modeGorilla = false;
     let modeCave = null, modeVisible = true, retakePortraitActor = null, retakeGeometry = null, retakePortraitGeometry = null, retakeHealth = -1, retakeHealthMax = 0;
     const retake = { actor: null, gorilla: false };
@@ -685,12 +813,13 @@
           el.ownOoga.setAttribute("aria-label", label);
           el.ownOoga.title = label;
           el.ownOoga.dataset.gorilla = String(!!gorilla);
-          el.ownOogaHealth.setAttribute("aria-label", `${gorilla ? "Gorilla" : "Ooga"} health: ${name}`);
+          if (healthEnabled) el.ownOogaHealth.setAttribute("aria-label", `${gorilla ? "Gorilla" : "Ooga"} health: ${name}`);
         }
         retakePortraitActor = actor;
         retakeGeometry = geometry;
         retakePortraitGeometry = portraitGeometry;
       }
+      if (!healthEnabled) return;
       const source = actor.health, max = source ? source.max : BL.crew.HEALTH_MAX;
       const health = source ? Math.max(0, Math.min(max, source.value)) : max;
       if (health !== retakeHealth || max !== retakeHealthMax) {
@@ -702,17 +831,18 @@
     };
     // Legacy account updates never replace the last actor successfully controlled.
     const setOwnOoga = () => syncRetakeActor();
-    const setMode = (cave, combat = false, view = cave ? "orbit" : "detached", visible = true) => {
+    let modeCombatEnabled = true;
+    const setMode = (cave, combat = false, view = cave ? "orbit" : "detached", visible = true, combatEnabled = true) => {
       const gorilla = gorillaEntry ? gorillaEntry.gorilla : null;
       modeCave = gorilla ? null : cave;
       modeVisible = visible;
       if (gorillaEntry || cave) { retake.actor = gorillaEntry || cave; retake.gorilla = !!gorillaEntry; }
       syncRetakeActor();
-      if (gorilla) { cave = gorillaEntry.owner; combat = gorillaCombat; view = gorillaView; visible = true; }
+      if (gorilla) { cave = gorillaEntry.owner; combat = gorillaCombat; view = gorillaView; visible = true; combatEnabled = gorillaCombatEnabled; }
       const selected = !!cave, name = selected ? cave.traits.name : "", shown = selected ? cave.traits.display : "";
       if (!visible) fadeDetachedName(true);
       const identityChanged = selected !== modeSelected || selected && name !== modeName || !!gorilla !== modeGorilla;
-      const stateChanged = combat !== modeCombat || view !== modeView;
+      const stateChanged = combat !== modeCombat || view !== modeView || combatEnabled !== modeCombatEnabled;
       const showMode = visible && selected;
       if (el.mode.hidden === showMode) el.mode.hidden = !showMode;
       const showDestinations = visible && destinationNames.length > 0;
@@ -730,30 +860,34 @@
         el.mode.dataset.selected = String(selected);
       }
       if (el.modeFace.hidden === selected) el.modeFace.hidden = !selected;
-      const showHealth = selected;
+      const showHealth = healthEnabled && selected;
       if (el.modeHealth.hidden === showHealth) el.modeHealth.hidden = !showHealth;
-      const sourceHealth = gorilla ? gorillaEntry.health : cave && cave.health;
-      const healthMax = sourceHealth ? sourceHealth.max : BL.crew.HEALTH_MAX;
-      const health = sourceHealth ? Math.max(0, Math.min(healthMax, sourceHealth.value)) : healthMax;
-      if (health !== modeHealth || healthMax !== modeHealthMax) {
-        modeHealth = health;
-        modeHealthMax = healthMax;
-        el.modeHealthFill.style.transform = `scaleY(${health / healthMax})`;
-        el.modeHealth.setAttribute("aria-valuemax", String(healthMax));
-        el.modeHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
+      if (showHealth) {
+        const sourceHealth = gorilla ? gorillaEntry.health : cave && cave.health;
+        const healthMax = sourceHealth ? sourceHealth.max : BL.crew.HEALTH_MAX;
+        const health = sourceHealth ? Math.max(0, Math.min(healthMax, sourceHealth.value)) : healthMax;
+        if (health !== modeHealth || healthMax !== modeHealthMax) {
+          modeHealth = health;
+          modeHealthMax = healthMax;
+          el.modeHealthFill.style.transform = `scaleY(${health / healthMax})`;
+          el.modeHealth.setAttribute("aria-valuemax", String(healthMax));
+          el.modeHealth.setAttribute("aria-valuenow", String(Math.ceil(health)));
+        }
       }
-      if (stateChanged) { modeCombat = combat; modeView = view; }
+      if (stateChanged) { modeCombat = combat; modeView = view; modeCombatEnabled = combatEnabled; }
       if (identityChanged || stateChanged) {
-        el.mode.dataset.shooter = String(selected && combat);
+        el.mode.dataset.shooter = String(selected && combat && combatEnabled);
         el.mode.dataset.combat = String(selected && combat);
         el.mode.dataset.view = selected ? view : "detached";
         el.mode.setAttribute("aria-pressed", String(selected && combat));
+        const look = combatEnabled || gorilla ? combat ? "combat" : "carry" : combat ? "cursor look" : "drag to look";
+        const change = combatEnabled || gorilla ? "combat or carry mode" : "cursor look or click-and-drag look";
         el.mode.setAttribute("aria-label", gorilla
-          ? `${shown}'s gorilla; ${view} view; ${combat ? "combat" : "carry"} mode. Press to switch combat or carry mode; hold to detach`
+          ? `${shown}'s gorilla; ${view} view; ${look}. Press to switch ${change}; hold to detach`
           : selected
-          ? `${shown}; ${view} view; ${combat ? "combat" : "carry"} mode. Press to switch combat or carry mode; hold to detach`
+          ? `${shown}; ${view} view; ${look}. Press to switch ${change}; hold to detach`
           : `${DETACHED_NAMES[detachedPreset]} detached view. Press to cycle destinations`);
-        el.mode.title = gorilla ? `${shown}'s gorilla · ${view} · ${combat ? "combat" : "carry"} · hold to detach` : selected ? `${shown} · ${view} · ${combat ? "combat" : "carry"} · hold to detach` : `${DETACHED_NAMES[detachedPreset]} · detached`;
+        el.mode.title = gorilla ? `${shown}'s gorilla · ${view} · ${look} · hold to detach` : selected ? `${shown} · ${view} · ${look} · hold to detach` : `${DETACHED_NAMES[detachedPreset]} · detached`;
       }
     };
     setDetachedView(detachedPreset);
@@ -960,24 +1094,21 @@
       const level = fuel < 0.2 ? "low" : "ok";
       if (level !== jetpackLevel) {
         jetpackLevel = level;
-        el.jetpackFuel.dataset.level = level;
         el.jetpackCompactFuel.dataset.level = level;
       }
       if (percent === jetpackPercent) return;
       jetpackPercent = percent;
-      el.jetpackFuelFill.style.transform = `scaleX(${percent / 100})`;
       el.jetpackCompactFill.style.transform = `scaleY(${percent / 100})`;
-      el.jetpackFuel.setAttribute("aria-valuenow", String(percent));
       el.jetpackCompactFuel.setAttribute("aria-valuenow", String(percent));
-      el.jetpackFuelValue.firstChild.data = `${percent}%`;
     };
-    const setGorilla = (entry, view = "orbit", combat = false) => {
-      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat) { syncRetakeActor(); return; }
+    const setGorilla = (entry, view = "orbit", combat = false, combatEnabled = true) => {
+      if (entry === gorillaEntry && view === gorillaView && combat === gorillaCombat && combatEnabled === gorillaCombatEnabled) { syncRetakeActor(); return; }
       if (entry !== gorillaEntry) finishPrimary(true);
       gorillaEntry = entry;
       gorillaView = view;
       gorillaCombat = combat;
-      el.gorillaSmash.hidden = !entry;
+      gorillaCombatEnabled = combatEnabled;
+      el.gorillaSmash.hidden = !entry || !combatEnabled;
       el.primary.hidden = !primaryShown || !!entry;
       el.weapon.hidden = !weaponShown || !!entry;
       el.jetpack.hidden = !jetpackShown || !!entry;
@@ -1001,21 +1132,17 @@
     const onAction = (fn) => {
       actionHandler = fn;
     };
-    // Real payments use the same invoice flow as the Factory without leaving the current scene.
+    // The Worker build marks its pages so a failed account lookup cannot turn a real tip into a demo.
+    const workerPage = document.documentElement.dataset.workerPage === "1";
     const openFeed = () => {
-      if (BL.donations.real) return BL.donationPopup.open();
-      if (el.feed.open) return;
-      el.feed.showModal();
+      if (!BL.donations.real && (workerPage || BL.net.state.backend)) {
+        toast("Donations are unavailable right now. Try again shortly.");
+        return;
+      }
+      BL.donationPopup.open(!BL.donations.real);
     };
-    const closeFeed = () => {
-      if (el.feed.open) el.feed.close();
-    };
-    on(el.feed, "keydown", (e) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      closeFeed();
-    });
     const floatingBoards = [];
+    let panelsHidden = false;
     const stackBoards = () => {
       for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].setLayer(20 + i);
     };
@@ -1317,7 +1444,7 @@
       on(el.board, "lostpointercapture", endBoardPointer);
       on(window, "blur", finishBoardPointer);
       on(window, "resize", () => {
-        if (board?.floating) { layoutBoard(); placeBoard(); scheduleBoardSave(); }
+        if (board?.floating && !panelsHidden) { layoutBoard(); placeBoard(); scheduleBoardSave(); }
       });
       on(el.boardResize, "keydown", (e) => {
         let step;
@@ -1531,6 +1658,19 @@
       });
       const controller = {
         open: openBoard, close: closeBoard, update: updateBoard,
+        setHidden(on) {
+          if (el.board.hidden === on) return;
+          finishBoardPointer();
+          if (on && el.board.contains(document.activeElement)) document.activeElement.blur();
+          el.board.hidden = on;
+          if (!on && board) {
+            // Resume this screen's rotation from now, without changing its pause setting.
+            board.go(board.index);
+            updateBoard();
+            layoutBoard();
+            placeBoard();
+          }
+        },
         escape() { if (!el.boardFilterMenu.hidden) showFilters(false); else closeBoard(); },
         bounds: boardBounds,
         setLayer(layer) { el.board.style.zIndex = String(layer); },
@@ -1554,6 +1694,7 @@
       el.board.parentElement.append(node);
       floatingBoards.push(popup);
       popup.open(next.createReader(saved));
+      if (panelsHidden) popup.setHidden(true);
       stackBoards();
       return popup;
     };
@@ -1571,6 +1712,7 @@
     };
     const openBoard = (next) => {
       if (!next.floating) { mainBoard.open(next); return; }
+      if (panelsHidden) return;
       restoreBoards(next);
       lastBoard = openFloatingBoard(next);
       scheduleBoardSave();
@@ -1585,7 +1727,17 @@
     };
     const updateBoard = (elapsed) => {
       mainBoard.update(elapsed);
-      for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].update(elapsed);
+      if (!panelsHidden) for (let i = 0; i < floatingBoards.length; i++) floatingBoards[i].update(elapsed);
+    };
+    // A hunt borrows the play area without changing the visitor's saved panel choices.
+    const setPanelsHidden = (on) => {
+      on = !!on;
+      if (on === panelsHidden) return;
+      finishSheetResize();
+      if (on && el.sheet.contains(document.activeElement)) document.activeElement.blur();
+      panelsHidden = on;
+      el.sheet.hidden = on;
+      for (const popup of floatingBoards) popup.setHidden(on);
     };
     const openRecipe = () => {
       if (!el.recipe.open) el.recipe.showModal();
@@ -1614,9 +1766,9 @@
         entry.close();
       }
     }, true);
-    dismissOutside(el.feed, closeFeed);
     dismissOutside(el.recipe, closeRecipe);
     dismissOutside(el.board, () => mainBoard.close());
+    dismissOutside($("donation-popup"), () => BL.donationPopup.closeOutside());
     // The prompt is written to be pasted, so it leaves in one click.
     const copyRecipe = (button) => {
       const text = el.recipeText.textContent;
@@ -1717,7 +1869,6 @@
       if (b === el.mode && e.detail !== 0) return;
       b.blur();
       if (b.dataset.action === "feed") openFeed();
-      else if (b.dataset.action === "feed-close") closeFeed();
       else if (b.dataset.action === "recipe-close") closeRecipe();
       else if (b.dataset.action === "recipe-copy") copyRecipe(b);
       else if (b.dataset.action === "intro-go") b.closest("[data-intro]").hidden = true;
@@ -1726,6 +1877,7 @@
       else if (b.dataset.action === "account-logout") BL.net.logout();
       else if (b.dataset.action === "account-rejoin") BL.net.rejoin();
       else if (b.dataset.action === "account-voice") BL.voice.toggle();
+      else if (b.dataset.action === "account-voice-leave") BL.voice.stop();
       else actionHandler && actionHandler(b.dataset.action);
     });
     // A game's side panels fold away and come back from a tab on the screen's edge: a `data-fold`
@@ -1735,114 +1887,129 @@
       const panel = document.getElementById(b.dataset.fold);
       panel.dataset.folded = String(panel.dataset.folded !== "true");
     });
-    let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
-    let tipVisibility = null, tipSpeechTop = Infinity;
-    const tipScreen = { x: 0, y: 0, depth: 0 };
-    // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
-    // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
-    // before never needs the offset reads' forced layout again. A 0x0 read is a drag-hid tooltip
-    // (body.orbit-dragging / mine-dragging): never cached, so the first real hover measures again.
-    const tipSizeCache = new Map();
-    const placeTooltip = (left, top) => {
-      left = Math.round(left); top = Math.round(top);
-      if (left === tipLeft && top === tipTop) return;
-      tipLeft = left; tipTop = top;
-      el.tooltip.style.transform = `translate(${left}px, ${top}px)`;
-    };
-    const tooltip = {
-      show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
-        if (cave !== tipCave) tipSpeechTop = Infinity;
-        tipCave = cave;
-        const name = !!cave;
-        const changed = text !== tipText || name !== tipName || el.tooltip.classList.contains("tooltip--no-status-dot") !== noStatusDot;
-        el.tooltip.classList.toggle("tooltip--no-status-dot", noStatusDot);
-        if (name !== tipName) {
-          tipName = name;
-          el.tooltip.classList.toggle("tooltip--name", name);
-          el.tooltipHealth.hidden = !name;
-          if (!name) {
-            tipState = "";
-            tipHealth = tipHealthMax = -1;
-            delete el.tooltip.dataset.state;
-            el.tooltip.removeAttribute("aria-label");
+    // Hover owns one bounded nameplate.
+    const createTooltip = (element, textElement, healthElement, healthFillElement, showHealth = healthEnabled) => {
+      let tipText = "", tipState = "", tipHealth = -1, tipHealthMax = -1, tipW = 0, tipH = 0, tipCave = null, tipName = false, tipLeft = NaN, tipTop = NaN;
+      let tipVisibility = null, tipSpeechBottom = -Infinity, tipNoStatusDot = false, tipViewport = 0;
+      const tipScreen = { x: 0, y: 0, depth: 0 };
+      // A tooltip's box depends only on its text, its name/no-status-dot classes (the health bar rides
+      // on the name class) and the viewport width (the name class's max-width), so a tooltip measured
+      // before never needs the offset reads' forced layout again. A 0x0 read is a drag-hid tooltip
+      // (body.orbit-dragging / mine-dragging): never cached, so the first real hover measures again.
+      const tipSizeCache = new Map();
+      const measureTooltip = () => {
+        tipViewport = window.innerWidth;
+        const key = `${tipName}\0${tipNoStatusDot}\0${tipViewport}\0${tipText}`, size = tipSizeCache.get(key);
+        if (size) {
+          tipW = size.w; tipH = size.h;
+        } else {
+          tipW = element.offsetWidth; tipH = element.offsetHeight;
+          if (tipW || tipH) {
+            if (tipSizeCache.size >= 64) tipSizeCache.clear();
+            tipSizeCache.set(key, { w: tipW, h: tipH });
           }
         }
-        el.tooltip.hidden = false;
-        if (changed) {
-          tipText = text;
-          tipState = "";
-          el.tooltipText.textContent = text;
-          const size = tipSizeCache.get(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`);
-          if (size) {
-            tipW = size.w;
-            tipH = size.h;
-          } else {
-            tipW = el.tooltip.offsetWidth;
-            tipH = el.tooltip.offsetHeight;
-            if (tipW || tipH) {
-              if (tipSizeCache.size >= 64) tipSizeCache.clear();
-              tipSizeCache.set(`${tipName}\0${noStatusDot}\0${window.innerWidth}\0${text}`, { w: tipW, h: tipH });
+      };
+      const placeTooltip = (left, top) => {
+        left = Math.round(left); top = Math.round(top);
+        if (left === tipLeft && top === tipTop) return;
+        tipLeft = left; tipTop = top;
+        element.style.transform = `translate(${left}px, ${top}px)`;
+      };
+      const tooltip = {
+        show: (text, x, y, cave = null, noStatusDot = false, above = false) => {
+          if (cave !== tipCave) tipSpeechBottom = -Infinity;
+          tipCave = cave;
+          const name = !!cave;
+          const changed = text !== tipText || name !== tipName || element.classList.contains("tooltip--no-status-dot") !== noStatusDot;
+          element.classList.toggle("tooltip--no-status-dot", noStatusDot);
+          if (name !== tipName) {
+            tipName = name;
+            element.classList.toggle("tooltip--name", name);
+            healthElement.hidden = !showHealth || !name;
+            if (!name) {
+              tipState = "";
+              tipHealth = tipHealthMax = -1;
+              delete element.dataset.state;
+              element.removeAttribute("aria-label");
             }
           }
+          element.hidden = false;
+          if (changed) {
+            tipText = text;
+            tipState = "";
+            textElement.textContent = text;
+            tipNoStatusDot = noStatusDot;
+            measureTooltip();
+          }
+          if (cave) {
+            tooltip.update();
+            return;
+          }
+          const w = tipW, h = tipH;
+          const left = above ? Math.max(8, Math.min(window.innerWidth - w - 8, x - w / 2)) : Math.min(window.innerWidth - w - 8, x + 14);
+          const top = above ? Math.max(8, y - h - 10) : y + 18 + h > window.innerHeight ? y - h - 10 : y + 18;
+          placeTooltip(left, top);
+        },
+        setVisibility: (visibility) => {
+          tipVisibility = visibility;
+          if (!visibility) tooltip.hide();
+        },
+        beginFrame: () => {
+          tipSpeechBottom = -Infinity;
+          tooltip.update(false);
+        },
+        update: (place = true) => {
+          if (!tipCave) return;
+          const state = statusFor(tipCave);
+          let healthChanged = false;
+          if (showHealth) {
+            const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
+            const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
+            healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
+            if (healthChanged) {
+              tipHealth = health; tipHealthMax = healthMax;
+              healthFillElement.style.transform = `scaleX(${health / healthMax})`;
+              healthElement.setAttribute("aria-valuemax", String(healthMax));
+              healthElement.setAttribute("aria-valuenow", String(Math.ceil(health)));
+            }
+          }
+          if (state !== tipState || healthChanged) {
+            tipState = state;
+            element.dataset.state = state;
+            element.setAttribute("aria-label", showHealth
+              ? `${tipText}, ${STATE_LABELS[state]}, ${Math.ceil(tipHealth)} of ${tipHealthMax} health`
+              : `${tipText}, ${STATE_LABELS[state]}`);
+          }
+          element.hidden = !tipVisibility || !tipVisibility.anchor(tipCave, tipScreen);
+          if (element.hidden) return;
+          if (tipViewport !== window.innerWidth) measureTooltip();
+          if (!place) return;
+          // Speech can push the name down at the top edge, where the bubble has no room to rise.
+          const top = Math.max(8, tipScreen.y - 2 - tipH, tipSpeechBottom + 6);
+          placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), top);
+        },
+        // Speech sits above the name, which stays anchored to the head.
+        speechSpace: (cave) => cave && cave === tipCave && !element.hidden ? tipH + 6 : 0,
+        belowSpeech: (cave, bottom) => {
+          if (cave && cave === tipCave && bottom > tipSpeechBottom) tipSpeechBottom = bottom;
+        },
+        hide: () => {
+          tipCave = null;
+          tipSpeechBottom = -Infinity;
+          element.hidden = true;
+          element.classList.remove("tooltip--name");
+          healthElement.hidden = true;
+          delete element.dataset.state;
+          element.removeAttribute("aria-label");
+          tipName = false;
+          tipText = tipState = "";
+          tipHealth = tipHealthMax = -1;
         }
-        if (cave) {
-          tooltip.update();
-          return;
-        }
-        const w = tipW, h = tipH;
-        const left = above ? Math.max(8, Math.min(window.innerWidth - w - 8, x - w / 2)) : Math.min(window.innerWidth - w - 8, x + 14);
-        const top = above ? Math.max(8, y - h - 10) : y + 18 + h > window.innerHeight ? y - h - 10 : y + 18;
-        placeTooltip(left, top);
-      },
-      setVisibility: (visibility) => {
-        tipVisibility = visibility;
-        if (!visibility) tooltip.hide();
-      },
-      beginFrame: () => {
-        tipSpeechTop = Infinity;
-        tooltip.update(false);
-      },
-      update: (place = true) => {
-        if (!tipCave) return;
-        const state = statusFor(tipCave);
-        const healthMax = tipCave.health && tipCave.health.max || BL.crew.HEALTH_MAX;
-        const health = tipCave.health ? Math.max(0, Math.min(healthMax, tipCave.health.value)) : healthMax;
-        const shownHealth = Math.ceil(health);
-        const healthChanged = health !== tipHealth || healthMax !== tipHealthMax;
-        if (healthChanged) {
-          tipHealth = health; tipHealthMax = healthMax;
-          el.tooltipHealthFill.style.transform = `scaleX(${health / healthMax})`;
-          el.tooltipHealth.setAttribute("aria-valuemax", String(healthMax));
-          el.tooltipHealth.setAttribute("aria-valuenow", String(shownHealth));
-        }
-        if (state !== tipState || healthChanged) {
-          tipState = state;
-          el.tooltip.dataset.state = state;
-          el.tooltip.setAttribute("aria-label", `${tipText}, ${STATE_LABELS[state]}, ${shownHealth} of ${healthMax} health`);
-        }
-        el.tooltip.hidden = !tipVisibility.anchor(tipCave, tipScreen);
-        if (el.tooltip.hidden || !place) return;
-        const top = Math.min(tipScreen.y - 8, tipSpeechTop - 6) - tipH;
-        placeTooltip(Math.max(8, Math.min(window.innerWidth - tipW - 8, tipScreen.x - tipW / 2)), Math.max(8, top));
-      },
-      // The name sits above speech; reserve room for both near the top edge.
-      speechSpace: (cave) => cave && cave === tipCave && !el.tooltip.hidden ? tipH + 6 : 0,
-      aboveSpeech: (cave, top) => {
-        if (cave && cave === tipCave) tipSpeechTop = Math.min(tipSpeechTop, top);
-      },
-      hide: () => {
-        tipCave = null;
-        tipSpeechTop = Infinity;
-        el.tooltip.hidden = true;
-        el.tooltip.classList.remove("tooltip--name");
-        el.tooltipHealth.hidden = true;
-        delete el.tooltip.dataset.state;
-        el.tooltip.removeAttribute("aria-label");
-        tipName = false;
-        tipText = tipState = "";
-        tipHealth = tipHealthMax = -1;
-      }
+      };
+      return tooltip;
     };
+    const tooltip = createTooltip(el.tooltip, el.tooltipText, el.tooltipHealth, el.tooltipHealthFill);
     const hint = (text, ms = 4200) => {
       window.clearTimeout(hintTimer);
       window.clearTimeout(hintHideTimer);
@@ -1881,7 +2048,7 @@
       if (e.target.id === "chat-input" || e.target.id === "chat-display") return;
       if (document.querySelector("dialog:modal") || e.target.closest && e.target.closest("dialog[open]")) return;
       let closed = false;
-      if (floatingBoards.length) {
+      if (!panelsHidden && floatingBoards.length) {
         floatingBoards[floatingBoards.length - 1].escape();
         closed = true;
       } else {
@@ -1905,7 +2072,7 @@
         t.setAttribute("aria-selected", String(t.dataset.tab === name));
         t.tabIndex = t.dataset.tab === name ? 0 : -1;
       }
-      for (const p of el.panels) p.hidden = p.dataset.panel !== name;
+      showSheetPanels(name);
       setSheetOpen(true);
     };
     // A pull tab opens its own panel, and folds the sheet when that panel is already showing.
@@ -1926,7 +2093,6 @@
       selectTab(tabs[next].dataset.tab);
       tabs[next].focus({ preventScroll: true });
     });
-    const bottomSheet = window.matchMedia("(max-width: 720px), (max-height: 500px) and (orientation: landscape)");
     let sheetPointer = -1, sheetStartY = 0, sheetStartHeight = 0, sheetDirection = 1;
     const sheetLimits = () => {
       const safe = getComputedStyle(document.documentElement);
@@ -1979,6 +2145,13 @@
     on(el.sheetResize, "pointercancel", endSheetResize);
     on(el.sheetResize, "lostpointercapture", endSheetResize);
     on(window, "blur", finishSheetResize);
+    const layoutSheet = () => {
+      finishSheetResize();
+      showSheetPanels(selectedSheetTab());
+      showSheetHeight();
+    };
+    on(bottomSheet, "change", layoutSheet);
+    on(pairedSheet, "change", layoutSheet);
     on(window, "resize", () => { finishSheetResize(); showSheetHeight(); });
     on(el.sheetResize, "keydown", (e) => {
       if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
@@ -2006,20 +2179,6 @@
     });
     const onPreset = (fn) => {
       presetHandler = fn;
-    };
-    let identityHandler = null;
-    const onIdentityChange = (fn) => {
-      identityHandler = fn;
-    };
-    const emitIdentity = () => identityHandler && identityHandler({ handle: el.handle.value, message: el.message.value });
-    on(el.handle, "change", emitIdentity);
-    on(el.message, "change", emitIdentity);
-    const setIdentity = ({ handle, message }) => {
-      el.handle.value = handle || "";
-      el.message.value = message || "";
-    };
-    const setDonationUrl = (url) => {
-      el.qrUrl.textContent = url;
     };
     let assignHandler = null, unassignHandler = null;
     const onAssign = (fn) => {
@@ -2133,6 +2292,7 @@
     // dispose removes only the rows and timers this instance added.
     const dispose = () => {
       finishSheetResize();
+      el.sheet.hidden = false;
       finishPrimary(true);
       window.clearTimeout(toastTimer);
       window.clearTimeout(toastHideTimer);
@@ -2144,6 +2304,7 @@
       if (liveDonors === refreshDonors) liveDonors = null;
       el.roster.replaceChildren();
       el.bananaLeaders.replaceChildren();
+      el.bananaRecent.replaceChildren();
       el.inventory.replaceChildren();
       el.toast.classList.remove("show");
       el.toast.hidden = true;
@@ -2164,7 +2325,6 @@
       setWeapon(false, false, 0);
       setMagazine(0, 0, 0, false);
       setJetpack(false, false, 0);
-      closeFeed();
       closeRecipe();
       closeBoard(true);
       destinationNames = [];
@@ -2173,7 +2333,7 @@
       el.board.classList.remove("board-floating");
       el.board.removeAttribute("style");
     };
-    return { el, openFeed, closeFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, onIdentityChange, setIdentity, setDonationUrl, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
+    return { el, openFeed, openRecipe, closeRecipe, dismissOutside, openBoard, closeBoard, updateBoard, restoreBoards, setPanelsHidden, setRosterRow, setStats, setAct, setMode, setDestinations, setOwnOoga, get retakeActor() { return retake.actor ? retake : null; }, setGorilla, setGorillaSmashPower, setDetachedView, fadeDetachedName, setAreaLabel, setPrimary, setWeapon, setMagazine, setJetpack, setSubtitle, onAction, toast, tooltip, hint, hideHint, letterSign, selectTab, onPreset, setPileValueVisible, onAssign, onUnassign, renderInventory, dispose };
   };
   // The account line in the sheet's foot is page-level: shown only when a backend answered, and
   // the director hands every change of `BL.net.state` here, whichever scene is active.
@@ -2181,7 +2341,7 @@
   // Net and voice emits re-run this several times a second with the same outcome; last-written
   // records keep an unchanged textContent from re-invalidating the line.
   let accountBackend = null, accountMe = null, accountName = null, accountWords = null, accountWordsHidden = null;
-  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null;
+  let accountLive = null, accountRejoinHidden = null, accountVoiceHidden = null, accountVoiceWords = null, accountVoicePressed = null, accountLeaveHidden = null;
   const showAccount = ({ backend, me, room, online }) => {
     const hasMe = !!me;
     if (!!backend !== accountBackend) { accountBackend = !!backend; $("account").hidden = !backend; }
@@ -2202,7 +2362,8 @@
     if (wordsHidden !== accountWordsHidden) { accountWordsHidden = wordsHidden; $("account-room").hidden = wordsHidden; }
     const rejoinHidden = !me || !ROOM_WORDS[room];
     if (rejoinHidden !== accountRejoinHidden) { accountRejoinHidden = rejoinHidden; $("account-rejoin").hidden = rejoinHidden; }
-    // Voice: join, then mute and unmute; a failure says why on the button until the next try.
+    // Voice: join, then mute and unmute beside Leave voice, which hangs up and releases the microphone without
+    // signing out; a failure says why on the button until the next try. Leave waits out a join in progress.
     const voice = BL.voice.stats, voiceButton = $("account-voice");
     const voiceHidden = room !== "live";
     if (voiceHidden !== accountVoiceHidden) { accountVoiceHidden = voiceHidden; voiceButton.hidden = voiceHidden; }
@@ -2210,6 +2371,8 @@
     if (voiceWords !== accountVoiceWords) { accountVoiceWords = voiceWords; voiceButton.textContent = voiceWords; }
     const pressed = String(voice.enabled && !voice.muted);
     if (pressed !== accountVoicePressed) { accountVoicePressed = pressed; voiceButton.setAttribute("aria-pressed", pressed); }
+    const leaveHidden = voiceHidden || !voice.enabled;
+    if (leaveHidden !== accountLeaveHidden) { accountLeaveHidden = leaveHidden; $("account-voice-leave").hidden = leaveHidden; }
   };
   // The microphone's note (#181), page-level as the account line is: muted in voice, it stays until unmuted;
   // alone in voice (nobody here to hear, so the microphone is held off), it says so until someone comes;
@@ -2307,5 +2470,24 @@
       liveOnline(row);
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, donationValueText, toast, STATE_LABELS, statusFor };
+  // A game's Ooga list (`rows`, name to button, each button in its own <li>) held to one Ooga, a signed-in
+  // visitor's own: its row stands alone, moved last so it keeps no divider. `null` brings every row back in order.
+  const holdRow = (list, rows, name) => {
+    for (const [key, b] of rows) {
+      b.parentElement.hidden = !!name && key !== name;
+      list.append(b.parentElement);
+    }
+    if (name) list.append(rows.get(name).parentElement);
+  };
+  // A game's exits say where they go: back to the arcade when one of its cabinets started it, else the island. A
+  // header button names the place in its span (a phone shows only "Back"); a card's button says it all.
+  const leaveTo = (scene, home) => {
+    const place = home === "arcade" ? "arcade" : "the island";
+    for (const b of document.querySelectorAll(`[data-scene="${scene}"] [data-action="leave"]`)) {
+      const span = b.querySelector("span");
+      if (span) span.textContent = ` to ${place}`;
+      else b.textContent = `Back to ${place}`;
+    }
+  };
+  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, donationValueText, toast, holdRow, leaveTo, STATE_LABELS, statusFor };
 })();

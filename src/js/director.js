@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const { scene, models, donations, glRenderer, canvasRenderer, game: gameMod, pile: pileMod, router: routerMod, scenes } = window.BL;
+  const { scene, models, donations, glRenderer, canvasRenderer, game: gameMod, pile: pileMod, router: routerMod, scenes, gamepad } = window.BL;
   // The optional build-time Oogatron snapshot loads before the director.
   // Activity uses each contributor's timestamp, never the snapshot build time.
   if (window.BL.jumbotronData) window.BL.contributors.applySnapshot(window.BL.jumbotronData);
@@ -70,7 +70,12 @@
   };
   showQuality();
   const game = gameMod.create({ catalog: models.SWAG });
-  window.BL.donationPopup = window.BL.donationPopup.create(game);
+  window.BL.donationPopup = window.BL.donationPopup.create(game, (donation) => {
+    if (donations.real) return;
+    if (active) active.onDonation(donation);
+    else game.recordDonation(donation);
+    window.BL.hud.setDonationStats(game.state);
+  });
   window.BL.hud.setDonationStats(game.state);
   // world survives scene swaps: banana level, equipment ownership, and the Ooga handed from hub to scene.
   const world = { level: START_BANANAS, pilot: null, mirrorBroken: false };
@@ -178,7 +183,9 @@
   };
   // A scene may `prepare(place, ctx)` before it is built (the Timechain Sphere's rooms: their code, deferred on a
   // hosted page, and whose visit it is). It answers null to go ahead, `{ scene, place }` to arrive there instead, or a
-  // promise of either; the screen holds dark until it settles, and a rejection fades back in where the visitor was.
+  // promise of either; the screen holds dark until it settles, and a rejection fades back in where the visitor was. The
+  // scene there is told (`stay`) once the fade is done and a new transition can start, so it can put back what it set
+  // up to leave; until then its departure still holds, and a press during the fade is refused rather than lost.
   const settle = (t, answer) => {
     if (answer && typeof answer.then === "function") {
       t.ready = false;
@@ -198,6 +205,7 @@
     return true;
   };
   const router = routerMod.create(scenes, window.BL.routes, go);
+  window.BL.donationPopup.onClose(() => router.dismissPlace("hub", "donate"));
   // The logo is the site's home link: from any scene it goes back to the island, as a website's logo goes home.
   document.querySelector(".home-link").addEventListener("click", (e) => {
     e.preventDefault();
@@ -273,7 +281,9 @@
     if (DEBUG && tweenCount()) throw new Error(`${tweenCount()} tweens survived clearTweens`);
     enter(next, place);
     // The builder caches only the scene just left used go too; the island's stay, since every route passes through it.
-    if (leaving.id !== "hub") window.BL.models.release(leaving.id, ["hub", next.id]);
+    // A scene may keep others' builders warm while it runs (`keeps`): the island keeps the Lightning Factory's, which it
+    // walks straight into.
+    if (leaving.id !== "hub") window.BL.models.release(leaving.id, ["hub", next.id, ...(next.keeps || [])]);
     renderer.releaseUnused(liveGeometry());
     if (DEBUG && renderer.stats.records > live.size) throw new Error(`${next.id}: ${renderer.stats.records} GPU records for ${live.size} live geometries`);
   };
@@ -283,12 +293,17 @@
     window.BL.hud.toast("That place could not be opened · try again");
     router.abandon();
   };
+  const settled = () => {
+    const failed = transition.failed;
+    transition = null;
+    if (failed && active && active.stay) active.stay();
+  };
   const stepTransition = (dt) => {
     if (transition.instant) {
       if (!transition.ready) return;
       if (transition.failed) abandon();
       else { const { next, place } = landing(transition); swap(next, place); }
-      transition = null;
+      settled();
       fade = 0;
       return;
     }
@@ -303,7 +318,7 @@
       return;
     }
     fade = 1 - Math.min(1, transition.t / FADE);
-    if (fade === 0) transition = null;
+    if (fade === 0) settled();
   };
   // Fills in CSS pixels (clientWidth/clientHeight, cached above), not backing-store pixels.
   const drawFade = () => {
@@ -376,6 +391,7 @@
   let raf = 0;
   // Shared by the display loop and the debug `advance`, so a stepped frame is exactly a displayed one.
   const step = (dt, now) => {
+    gamepad.poll();
     elapsed += dt;
     if (transition) stepTransition(dt);
     sceneTime += dt;
@@ -562,6 +578,7 @@
     if (destroyed) return;
     if (net.state.donations) donations.useOrigin();
     unsubscribeDonations = donations.subscribe((donation, bananas) => {
+      if (donations.receivedOwnInvoice(donation.id)) game.rememberHandle(donation.handle);
       window.BL.donationPopup.receive(donation, bananas);
       if (active) active.onDonation(donation, bananas);
       else game.recordDonation(donation, bananas && bananas.exact);
@@ -712,7 +729,7 @@
         return world.level;
       }
     };
-    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "totems", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "cloudFloorAt", "footsteps", "timechain"]) {
+    for (const key of ["slots", "drops", "core", "shell", "delivery", "spillEffect", "cavemen", "crates", "lab", "headquarters", "hud", "applyAllSwag", "renderLocker", "demoTip", "setPileLevel", "refreshStates", "trimPool", "shown", "island", "mouths", "labels", "camera", "cameraCave", "crew", "fx", "controls", "props", "altar", "path", "scenery", "jetpack", "magazine", "mirrorCave", "matrixCave", "matrixGate", "pilot", "renderOpts", "lamps", "lighting", "fireSeats", "critters", "storm", "daylight", "setHour", "track", "racers", "items", "race", "audio", "weather", "drop", "diver", "plane", "course", "jumbotron", "totems", "fireworks", "fireworksPending", "orbit", "flight", "site", "agent", "poolIsland", "mine", "dsb", "clankers", "clankerPlay", "factory", "bifrost", "arcade", "carnival", "npcSync", "footsteps", "timechain", "halloween" /* HALLOWEEN */]) {
       Object.defineProperty(ooga, key, { get: () => active.debug && active.debug[key], enumerable: true });
     }
     window.__ooga = ooga;

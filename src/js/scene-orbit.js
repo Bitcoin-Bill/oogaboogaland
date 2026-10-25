@@ -23,7 +23,7 @@
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
-  const { math, models, contributors, donations, qr, terrain, hubModels, dropModels, rocketModels, rocketParts, rocket: rocketMod, rocketHud, rocketAudio, daylight, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, controls: controlsMod, fx: fxMod } = BL;
+  const { math, models, contributors, donations, terrain, hubModels, dropModels, rocketModels, rocketParts, rocket: rocketMod, rocketHud, rocketAudio, daylight, pile: pileMod, game: gameMod, hud: hudMod, interact: interactMod, controls: controlsMod, fx: fxMod } = BL;
   const { clamp, lerp, damp, quat, mulberry32, fnv1a } = math;
   const { createNode, addChild, removeChild, createCamera, addTween, stepTweens, tweenCount, traverseVisible } = BL.scene;
   const { CONFETTI } = fxMod;
@@ -384,6 +384,8 @@
     refreshBuilder();
     if (preset) hud.toast(`${preset.name} on the pad`);
   };
+  // A signed-in visitor with an Ooga flies it, as they drive only it on the island; the pilot button is for the rest.
+  const ownPilot = () => BL.net.ownAmong(contributors.roster);
   const cyclePilot = () => {
     const roster = contributors.roster, i = roster.findIndex((c) => c.name === selection.pilot);
     selection.pilot = roster[(i + 1) % roster.length].name;
@@ -523,6 +525,7 @@
 
   const toBuild = () => {
     phase = "build";
+    rhud.lockPilot(!!ownPilot());
     flight = null;
     release = null;
     igniteIn = 0;
@@ -1881,6 +1884,7 @@
   const enter = (ctx) => {
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
     home = ctx.from === "arcade" ? "arcade" : "hub";
+    hudMod.leaveTo("orbit", home);
     camera = createCamera({ fov: 50, near: 0.3, far: 1600 });
     root = createNode();
     clock = daylight.createClock({ hour: hourParam, daylen: daylenParam, day: dayParam, time: timeParam, now: new Date() });
@@ -1931,6 +1935,8 @@
       selection.pilot = world.pilot;
       world.pilot = null;
     }
+    const own = ownPilot();
+    if (own) selection.pilot = own;
     rockNode = place(createNode({ geometry: rocketModels.spaceRock(), visible: false }));
     tetherNode = place(createNode({ geometry: rocketModels.tether(), quaternion: quat.create(), visible: false }));
     buildPassenger();
@@ -1952,14 +1958,6 @@
     rhud.el.mute.setAttribute("aria-pressed", String(audio.muted));
     window.addEventListener("pointerdown", onGesture);
     window.addEventListener("keydown", onGesture);
-    const donationRequest = donations.createRequest(game.state);
-    qr.drawTo(hud.el.qr, donationRequest.url, { quiet: 3, dark: "#000000", light: "#f3efe4" });
-    hud.setDonationUrl(donationRequest.url);
-    hud.setIdentity(game.state);
-    hud.onIdentityChange(({ handle, message }) => {
-      game.setIdentity({ handle: donations.sanitize(handle, donations.HANDLE_MAX), message: donations.sanitize(message, donations.MESSAGE_MAX) });
-      hud.setIdentity(game.state);
-    });
     hud.onAssign((entryId, name) => {
       if (game.assign(entryId, name)) renderLocker();
     });
@@ -2004,8 +2002,6 @@
       else if (action === "leave") go(home);
       else if (action === "act") act();
       else if (action === "mute") toggleMute();
-      else if (action === "tip") demoTip(1200);
-      else if (action === "tip-legendary") demoTip(120000);
       else if (action === "clear-loot") {
         game.clearLoot();
         onLootCleared();

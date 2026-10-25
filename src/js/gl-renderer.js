@@ -1104,11 +1104,14 @@ layout(location=3) in vec4 aM0;
 layout(location=4) in vec4 aM1;
 layout(location=5) in vec4 aM2;
 layout(location=6) in vec4 aM3;
+layout(location=7) in vec4 aParams;
 uniform mat4 uViewProj;
 uniform vec4 uRect;
 out vec2 vUv;
 out vec3 vWorld;
+flat out float vOpacity;
 void main() {
+  vOpacity = aParams.z < 0.0 ? -aParams.z - 1.0 : 1.0;
   vUv = (aPos.xy - uRect.xy) / uRect.zw;
   vUv.y = 1.0 - vUv.y;
   vec4 world = mat4(aM0, aM1, aM2, aM3) * vec4(aPos, 1.0);
@@ -1119,17 +1122,36 @@ void main() {
 precision highp float;
 in vec2 vUv;
 in vec3 vWorld;
+flat in float vOpacity;
 uniform sampler2D uImage;
 uniform bool uReady;
+uniform bool uCutout;
+uniform bool uSoft;
+uniform bool uBlend;
+uniform float uBright;
 uniform float uClipMaxY;
 ${CUTAWAY_GLSL}
 layout(location=0) out vec4 oColor;
 layout(location=1) out vec4 oBright;
 void main() {
-  if (cutaway(vWorld)) discard;
   bool inside = all(greaterThanEqual(vUv, vec2(0.0))) && all(lessThanEqual(vUv, vec2(1.0)));
-  oColor = vec4(uReady && inside ? texture(uImage, vUv).rgb : vec3(0.0), 1.0);
-  oBright = vec4(0.0);
+  // A cut-out picture (a sprite) has a hard edge where its alpha crosses a half, or when soft covers by its alpha;
+  // either way times the node's opacity, in the same ordered coverage a see-through node uses. An ordinary picture is
+  // an opaque screen.
+  if (uCutout && (!uReady || !inside)) discard;
+  vec4 texel = uReady && inside ? texture(uImage, vUv) : vec4(0.0, 0.0, 0.0, 1.0);
+  // A blended picture (drawn after everything opaque, depth read but not written) is truly see-through.
+  if (uBlend) {
+    if (cutaway(vWorld)) discard;
+    float alpha = texel.a * vOpacity;
+    oColor = vec4(texel.rgb, alpha);
+    oBright = vec4(texel.rgb * uBright, alpha);
+    return;
+  }
+  if (uCutout && !uSoft && texel.a < 0.5) discard;
+  if (cutaway(vWorld, uCutout ? (uSoft ? texel.a : 1.0) * vOpacity : 1.0)) discard;
+  oColor = vec4(texel.rgb, 1.0);
+  oBright = vec4(texel.rgb * uBright, 1.0);
 }`;
   const MIRROR_VS = `#version 300 es
 precision highp float;
@@ -1540,6 +1562,18 @@ void main() {
   col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   oColor = vec4(col, 1.0);
 }`;
+  // Apple's tile-based GPUs remove hidden surfaces in hardware, so the depth prepass only adds a second submission
+  // of every opaque draw: on an M1 Pro, skipping it raised every tier 10-20% (low 64 to 77 fps, medium 55 to 62, high
+  // 45 to 51 at the landing view). Only a named Apple silicon GPU counts: Chrome's "ANGLE (Apple, ANGLE Metal Renderer:
+  // Apple M1 Pro, ...)", Firefox's "Apple M1, or similar". Safari answers "Apple GPU" whatever the hardware, and
+  // Chrome's Metal backend on an Intel or AMD Mac also says "ANGLE (Apple, ...)", so those keep the prepass.
+  const APPLE_SILICON = /\bApple M\d+\b/;
+  const tileBasedGpu = (renderer, unmasked) => {
+    const named = String(renderer);
+    if (named !== "WebKit WebGL") return APPLE_SILICON.test(named);
+    const real = unmasked();
+    return real != null && APPLE_SILICON.test(String(real));
+  };
   const isSupported = () => {
     try {
       const probe = document.createElement("canvas");
@@ -1557,6 +1591,12 @@ void main() {
     const DRAW_BOTH = [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1];
     let settings = QUALITY[quality] || QUALITY.high;
     let qualityName = QUALITY[quality] ? quality : "high";
+    // Firefox names the GPU in RENDERER (and warns about the debug extension); Chrome and Safari mask it there and
+    // answer through the extension.
+    const tileBased = tileBasedGpu(gl.getParameter(gl.RENDERER), () => {
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
+    });
     let width = 0, height = 0, dpr = 1, pw = 0, ph = 0;
     let lost = false;
     const size = { width: 0, height: 0 };
@@ -1641,6 +1681,9 @@ void main() {
     // the depth alone, back faces first so a tube shows its far wall through its near one. `glassPass` is set while it
     // draws; every other pass leaves glass out.
     let glassPass = false;
+    // A picture with `blend` ("add" for light, "alpha" for a soft-edged one) draws only in its own pass after glass:
+    // blended, the depth read and left alone.
+    let blendPass = false;
     const mirrorDebug = {
       active: false, faux: false, portal: false, reveal: 0, surfaceDrawn: false, captureValid: false, width: 0, height: 0, textureWidth: 0, textureHeight: 0, samples: 0, allocationCount: 0, reflectionPassCount: 0, skippedPassCount: 0, resources: 0, captureExcluded: false, reflectionOnlyCount: 0, planeDistance: 0, ripples: 0, bodyContacts: 0, bodyWaves: 0,
       cameraPosition: new Float32Array(3), cameraTarget: new Float32Array(3), planeCenter: new Float32Array(3), planeNormal: new Float32Array(3), capturedViewProj: mirrorCapturedViewProj, shardsDrawn: 0, environmentPassCount: 0, environmentFaces: 0, environmentSize: 0, environmentResources: 0, skipReason: "none"
@@ -1714,7 +1757,7 @@ void main() {
       const matrixSampling = gl.getExtension("OES_shader_multisample_interpolation");
       const meshFragment = matrixSampling ? ORDINARY_MESH_FS.replace("#version 300 es", "#version 300 es\n#extension GL_OES_shader_multisample_interpolation : require\n#define MATRIX_SAMPLE_INTERPOLATION") : ORDINARY_MESH_FS;
       res.programs = {
-        image: compile(IMAGE_VS, IMAGE_FS, ["uViewProj", "uRect", "uImage", "uReady", "uClipMaxY"]),
+        image: compile(IMAGE_VS, IMAGE_FS, ["uViewProj", "uRect", "uImage", "uReady", "uCutout", "uSoft", "uBlend", "uBright", "uClipMaxY"]),
         mesh: compile(ORDINARY_MESH_VS, meshFragment, MESH_UNIFORMS),
         depth: compile(ORDINARY_MESH_VS, DEPTH_MESH_FS, MESH_UNIFORMS),
         plain: compile(ORDINARY_MESH_VS, meshFragment.replace("#version 300 es", "#version 300 es\n#define PLAIN"), MESH_UNIFORMS),
@@ -2503,6 +2546,27 @@ void main() {
     };
     // Matrix modes 2 and 3: an instance the wave can take wherever it stands, so its record needs the full shader.
     const isLiving = (mode) => mode > 1.5 && mode < 3.5;
+    // With no Matrix wave running, the full shader adds to living instances only the standing (permanent) Matrix, and
+    // only where one stands inside a cave's footprint (the shader's box from each mouth: 7 m deep, 3.35 m either side,
+    // 4.15 m up). A living record whose instances' cull spheres all clear every footprint shades through the plain
+    // variant like any other mesh: the island's cliff trees, which are living for the wave, no longer pay for the full
+    // shader in every ordinary frame.
+    const livingClear = (rec, matrix) => {
+      if (!matrix || !(matrix.permanentCave > 0)) return true;
+      if (rec.batch || !matrix.caves || !matrix.caveBounds) return false;
+      const caves = matrix.caves, bounds = matrix.caveBounds, s = rec.spheres;
+      for (let n = 0; n < rec.count; n++) {
+        const x = s[n * 4], y = s[n * 4 + 1], z = s[n * 4 + 2], r = s[n * 4 + 3];
+        for (let i = 0; i < caves.length / 4; i++) {
+          const sr = caves[i * 4], cr = caves[i * 4 + 1], o = i * 4;
+          if (!sr && !cr) continue;
+          const depth = caves[o + 2] - (x * sr + z * cr), across = (x - bounds[o]) * cr - (z - bounds[o + 2]) * sr, height = y - bounds[o + 1];
+          if (depth - r <= bounds[o + 3] && (i + 1 === matrix.permanentCave || depth + r >= 0)
+            && Math.abs(across) - r <= 3.35 && height + r >= 0 && height - r <= 4.15) return false;
+        }
+      }
+      return true;
+    };
     const uploadInstances = (rec) => {
       const need = rec.count * INSTANCE_FLOATS;
       if (rec.batch) {
@@ -2850,12 +2914,33 @@ void main() {
       gl.uniform4fv(p.u.uRect, surface.rect);
       gl.uniform1i(p.u.uImage, 6);
       gl.uniform1i(p.u.uReady, rec.imageTexture ? 1 : 0);
+      gl.uniform1i(p.u.uCutout, surface.cutout ? 1 : 0);
+      gl.uniform1i(p.u.uSoft, surface.soft ? 1 : 0);
+      gl.uniform1i(p.u.uBlend, blendPass ? 1 : 0);
+      if (blendPass) gl.blendFunc(gl.SRC_ALPHA, surface.blend === "add" ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniform1f(p.u.uBright, surface.bright || 0);
       applyCutaway(p, rec.geometry);
       gl.uniform1f(p.u.uClipMaxY, Math.min(rec.geometry.cutawayPreserve ? 1e6 : cutawayMaxY, rec.geometry.clipMaxY ?? 1e6));
       gl.bindVertexArray(rec.mesh.vao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, rec.mesh.count, count);
       gl.activeTexture(gl.TEXTURE0);
       gl.useProgram(resume.prog);
+    };
+    const drawBlended = (cull) => {
+      let any = false;
+      for (let i = 0; i < activeRecords.length; i++) {
+        const g = activeRecords[i].geometry;
+        if (g.imageSurface && g.imageSurface.blend && activeRecords[i].count) { any = true; break; }
+      }
+      if (!any) return;
+      gl.useProgram(programs.mesh.prog);
+      gl.enable(gl.BLEND);
+      gl.depthMask(false);
+      blendPass = true;
+      drawParts("mesh", "mesh", true, cull);
+      blendPass = false;
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
     };
     const drawGlass = (cull) => {
       let any = false;
@@ -2892,7 +2977,7 @@ void main() {
         if (!part || !n) continue;
         let first = 0, count = part.count;
         if (plainFilter) {
-          const plain = rec.living || g.matrixCave || g.portalSurface || g.lakeBody || g.imageSurface ? 0 : part.plainCount;
+          const plain = rec.living && !rec.livingClear || g.matrixCave || g.portalSurface || g.lakeBody || g.imageSurface ? 0 : part.plainCount;
           if (plainFilter > 0) count = plain;
           else {
             first = plain;
@@ -2906,6 +2991,7 @@ void main() {
         if (excludeMirror && (rec === mirror.record || g.mirrorSource)) continue;
         if (g.reflector && (reflectorPass === null || rec === reflectorPass)) continue;
         if (meshPass && !g.glass !== !glassPass) continue;
+        if (meshPass && !(g.imageSurface && g.imageSurface.blend) !== !blendPass) continue;
         // A record drawn by another stage's pass drops out before any per-record uniform moves.
         const stage = kind === "mesh" && meshPass ? g.matrixRevealBacking ? 1 : g.matrixGlyph ? 2 : g.glassOpacity ? 3 : 0 : 0;
         if (stage !== matrixStage) continue;
@@ -3158,6 +3244,7 @@ void main() {
       drawParts("mesh", "mesh", true);
       if (skyOn) drawSky(mirrorInvViewProj, mirrorEye.y);
       drawGlass(false);
+      drawBlended(false);
       gl.useProgram(pg.mesh.prog);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -3500,7 +3587,8 @@ void main() {
       if(opts.dsbWater && !dsbGPU)dsbGPU=BL.dsbWater.gpu(gl,opts.dsbWater);
       if(dsbGPU)dsbGPU.bind(programs.mesh);
       const fogColor = fog || NO_FOG, fogA = fog ? fogNear : FOG_OFF, fogB = fog ? fogFar : FOG_OFF + 1;
-      const windTime = performance.now() * 0.001 % 3600;
+      // `windTime` holds the sway where it stands (seconds; a scene's GAME MODE); otherwise the wind runs on the clock.
+      const windTime = Number.isFinite(opts.windTime) ? opts.windTime : performance.now() * 0.001 % 3600;
       gl.useProgram(programs.plain.prog);
       gl.uniform1f(programs.plain.u.uWindTime, windTime);
       gl.useProgram(programs.mesh.prog);
@@ -3586,6 +3674,7 @@ void main() {
         if (rec.offscreen) culled += rec.drawCount; else drawn += rec.drawCount;
         if (rec.geometry.mirrorSource && !rec.offscreen) mirror.shards += rec.drawCount;
         uploadForRender(rec);
+        rec.livingClear = rec.living && livingClear(rec, matrix);
       }
       // A matrix that moved since last frame (a following shadow centre) draws everything as before; a steady one
       // bakes the static casters once, then each frame copies them in and draws only the moving ones.
@@ -3773,7 +3862,7 @@ void main() {
       // Depth first, then the opaque pass shades under EQUAL with depth writes off: the same vertex shader, invariant,
       // so the depths match, and with no write a shader that may discard keeps the early depth test (written, the
       // driver tests late and shades every hidden fragment). Each pixel is shaded once. Rigs keep their own programs.
-      const prepass = settings.prepass && !rigMode;
+      const prepass = settings.prepass && !rigMode && !tileBased;
       if (prepass) {
         const dp = pg.depth;
         gl.useProgram(dp.prog);
@@ -3803,6 +3892,7 @@ void main() {
       drawReflectors(camera);
       if (skyOn) drawSky(invViewProj, camera.position.y);
       drawGlass(true);
+      drawBlended(true);
       // Ordinary surfaces first, then the effect-only black liner and native voxel glyphs; alpha follows the backing
       // shader's wave, depth still rejects hidden faces.
       gl.useProgram(pg.mesh.prog);
@@ -3969,6 +4059,7 @@ void main() {
     init();
     return {
       kind: "webgl2",
+      tileBased,
       render,
       resize,
       project,
@@ -4003,5 +4094,5 @@ void main() {
       }
     };
   };
-  BL.glRenderer = { createRenderer, createRig, isSupported, QUALITY, POINT_LIGHT_CAPACITY };
+  BL.glRenderer = { createRenderer, createRig, isSupported, tileBasedGpu, QUALITY, POINT_LIGHT_CAPACITY };
 })();
