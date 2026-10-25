@@ -19,8 +19,10 @@
 // Kortik's Sis has a voice of her own (`voice`): a buzz and a breath through three formants, a syllable for each run
 // of vowels in her line with the formants of its vowel, pauses at its punctuation, a stressed last syllable before a
 // "!" or a "?", and the censor's bleep over each grawlix; muttered, yelled, screamed or whispered, each line at its own
-// pitch and pace. It is placed where she stands while she talks, her yells heard across the hall. Her boots thud
-// where she walks (`boot`), a poke boinks (`poke`), and her hammer clangs on the Jet (`clang`).
+// pitch and pace. It is placed where she stands while she talks, her yells heard across the hall. Her brother's shouts
+// through the hangar's door from next door come on the same voice, lower and muffled (`kortik`). Her boots thud
+// where she walks (`boot`), a poke boinks (`poke`), a warning light beeps (`beep`), and her hammer clangs on the Jet
+// (`clang`).
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -38,13 +40,15 @@
   const MUFFLED = 320, CLEAR = 20000;
   // Kortik's Sis's ways of saying a line: her pitch, Hz; a syllable's length and the gap after it, s; how loud; how far
   // a stressed last syllable bends her pitch; how much of her is buzz and how much breath; her voice's shake, Hz either
-  // way; and the least she is heard at anywhere in the hall. Her voice falls to half at SIS_REF metres, her boots at
-  // BOOT_REF.
+  // way; the least she is heard at anywhere in the hall; and, for Kortik shouting through the door from next door on
+  // the same voice, his formants a man's and the wall muffling him (`formant`, `tone`, Hz). Her voice falls to half at
+  // SIS_REF metres, her boots at BOOT_REF.
   const SIS_STYLE = {
-    mutter: { f0: 185, len: 0.085, gap: 0.03, level: 0.16, end: 0.85, buzz: 1, breath: 0.12, shake: 0, least: 0 },
-    yell: { f0: 300, len: 0.115, gap: 0.03, level: 0.34, end: 1.18, buzz: 1, breath: 0.22, shake: 0, least: 0.1 },
-    scream: { f0: 430, len: 0.14, gap: 0.025, level: 0.4, end: 1.3, buzz: 1, breath: 0.3, shake: 16, least: 0.14 },
-    soft: { f0: 215, len: 0.13, gap: 0.05, level: 0.16, end: 0.9, buzz: 0.1, breath: 1, shake: 0, least: 0 }
+    mutter: { f0: 185, len: 0.085, gap: 0.03, level: 0.16, end: 0.85, buzz: 1, breath: 0.12, shake: 0, least: 0, formant: 1, tone: 20000 },
+    yell: { f0: 300, len: 0.115, gap: 0.03, level: 0.34, end: 1.18, buzz: 1, breath: 0.22, shake: 0, least: 0.1, formant: 1, tone: 20000 },
+    scream: { f0: 430, len: 0.14, gap: 0.025, level: 0.4, end: 1.3, buzz: 1, breath: 0.3, shake: 16, least: 0.14, formant: 1, tone: 20000 },
+    soft: { f0: 215, len: 0.13, gap: 0.05, level: 0.16, end: 0.9, buzz: 0.1, breath: 1, shake: 0, least: 0, formant: 1, tone: 20000 },
+    kortik: { f0: 120, len: 0.12, gap: 0.035, level: 0.5, end: 1.12, buzz: 1, breath: 0.1, shake: 0, least: 0.12, formant: 0.82, tone: 700 }
   };
   const SIS_REF = 9, BOOT_REF = 5, BLEEP = 0.3;
   // Her vowels' first two formants, Hz, by the letter that starts a syllable (a woman's, after Peterson and Barney),
@@ -229,7 +233,8 @@
       // them, the bleep beside it, and her level and side where she stands; her boots' thud and knock.
       sis.pan = panner();
       sis.level = gain(0, sis.pan);
-      sis.env = gain(0, sis.level);
+      sis.tone = filter("lowpass", 20000, 0.7, sis.level);
+      sis.env = gain(0, sis.tone);
       sis.f1 = filter("bandpass", 850, 7, sis.env);
       sis.f2 = filter("bandpass", 1220, 9, gain(0.7, sis.env));
       sis.f3 = filter("bandpass", F3, 10, gain(0.3, sis.env));
@@ -467,6 +472,8 @@
         sis.buzzGain.gain.setValueAtTime(S.buzz, now);
         sis.breathGain.gain.setValueAtTime(S.breath, now);
         sis.shake.gain.setValueAtTime(S.shake, now);
+        sis.tone.frequency.setValueAtTime(S.tone, now);
+        sis.f3.frequency.setValueAtTime(F3 * S.formant, now);
         sisVoice.pos = pos; sisVoice.least = S.least;
         placeSis(now, true);
       }
@@ -505,8 +512,8 @@
               const at = now + t, peak = last && stress ? level : level * 0.82;
               sis.buzz.frequency.setValueAtTime(f, at);
               sis.buzz.frequency.linearRampToValueAtTime(f * bend, at + l);
-              sis.f1.frequency.setValueAtTime(v[0], at);
-              sis.f2.frequency.setValueAtTime(v[1], at);
+              sis.f1.frequency.setValueAtTime(v[0] * S.formant, at);
+              sis.f2.frequency.setValueAtTime(v[1] * S.formant, at);
               sis.env.gain.setValueAtTime(0.0001, at);
               sis.env.gain.exponentialRampToValueAtTime(peak, at + 0.018);
               sis.env.gain.setValueAtTime(peak, at + l * 0.7);
@@ -555,6 +562,19 @@
       sis.boinkGain.gain.exponentialRampToValueAtTime(k, now + 0.012);
       sis.boinkGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
     };
+    // A warning light's beep on the Jet at (x, y, z).
+    const beep = (x, y, z) => {
+      if (!ready || muted) return;
+      place(x, y, z, BOOT_REF);
+      const now = ctx.currentTime, k = 0.22 * AT.level;
+      sis.bootPan.pan.setValueAtTime(AT.pan, now);
+      sis.boink.frequency.cancelScheduledValues(now);
+      sis.boink.frequency.setValueAtTime(1900, now);
+      sis.boinkGain.gain.cancelScheduledValues(now);
+      sis.boinkGain.gain.setValueAtTime(k, now);
+      sis.boinkGain.gain.setValueAtTime(k, now + 0.09);
+      sis.boinkGain.gain.linearRampToValueAtTime(0, now + 0.1);
+    };
     const setVolume = (value) => {
       volume = clamp(value, 0, 1);
       try {
@@ -580,7 +600,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },

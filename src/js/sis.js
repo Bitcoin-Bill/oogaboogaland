@@ -21,6 +21,12 @@
 // her running for another spot, so the visitor has to chase her. Left alone, she keeps at it until she calls it fixed.
 // After a meltdown she won't go off again for a while.
 //
+// Now and then her brother's shout comes through the hangar's door from the Lightning Factory next door, muffled
+// (`kortik.RIVALRY`, his line and her answer), and she turns to the door, cups her hands and shouts back. And rarely,
+// at a spot where she would hammer, she lays the hammer down instead and looks the Jet over gently, whispering "Huh...
+// maybe this thing might actually work."; a warning light blinks on it, she screams "OH, FOR #@$%'S SAKE!", hunts all
+// round herself for the hammer, finds it at her feet and whacks the light until it goes out.
+//
 // When someone presses the static fire's red button she freaks out: "WHO PRESSED THAT?!", and she runs from the
 // engines with her arms flailing (or, already far off, cowers where she is), cowers with her arms over her head as
 // they roar, cries "THAT ENGINE ISN'T—" as they falter, and the blast knocks her flat on her back, sooted and smoking.
@@ -75,6 +81,7 @@
     caught: ["DO YOU KNOW HOW HEAVY THIS #@$%ING THING IS?!", "YOU WANT TO HELP? FIND ME BIGGER ENGINES!", "STOP STANDING AROUND AND HAND ME A WRENCH!", "THIS #@$% WILL NEVER FLY! NEVER!"],
     mutter: ["This thing will never fly...", "Too heavy. Way too heavy...", "Bigger engines. We need bigger engines...", "I just rebalanced that thing...", "Stupid #@$% engines..."],
     hope: ["Huh... maybe this thing might actually work."],
+    hush: ["OH, FOR #@$%'S SAKE!"],
     rare: ["IF THIS THING FLIES, I'LL EAT MY HARD HAT!", "WHO KEEPS OPENING CHANNELS TO MY TOASTER?!", "FORCE-CLOSED?! WHO FORCE-CLOSED MY CHANNEL?!"],
     poke: ["WHAT?!", "STOP POKING ME!", "DO I LOOK LIKE A #@$%ING BUTTON?!", "I'M GONNA REBALANCE YOUR FACE!"],
     rampage: ["THAT'S IT! I'M FIXING THIS THING THE HARD WAY!", "AH, #@$% IT! WHERE'S MY HAMMER?!"],
@@ -90,7 +97,7 @@
   // How she says each (a style of `hangarAudio.voice`); how often a line about the Jet or Lightning comes out a rare
   // one instead, and a yell a scream.
   const STYLE = { jet: "yell", lightning: "yell", hammer: "yell", rage: "scream", charge: "scream", caught: "yell", mutter: "mutter", hope: "soft", rare: "yell", panic: "scream", blame: "yell",
-    poke: "yell", rampage: "scream", smash: "yell", shove: "yell", chase: "scream", meltdown: "scream", sulk: "yell", fixed: "mutter" };
+    poke: "yell", rampage: "scream", smash: "yell", shove: "yell", chase: "scream", meltdown: "scream", sulk: "yell", fixed: "mutter", hush: "scream", quarrel: "scream" };
   const RARE = 0.08, SCREAM = 0.2;
   // The static fire: where she runs to, the nearer of them (beside the booth and by the far wall's crates, both where
   // the test's show view keeps her in frame lying down); how far off she may stay put and cower; how near the blast
@@ -109,8 +116,20 @@
   const RAMPAGE = { stop: 4, drain: 2.2, hits: [3, 5], swing: 0.62, flee: 2, max: 50 };
   // The Jet's damage, all mended in time: how many smoking dents it carries at once and how long each smokes, s.
   const MARKS = 8, MARK_LIFE = 25;
+  // Her quarrel with Kortik next door: when his first shout comes through the hangar's door, and between shouts after,
+  // s; how long after his line she answers, and how long she shouts back. The rare quiet moment: how likely at a spot
+  // where she would hammer, the least time between two, s, and its beats, s from its start: the hammer laid down, the
+  // whisper, the warning light, the scream, the hunt for the hammer, the hammer picked up; and how many blows put the
+  // light out. The light's blink, s each way.
+  const QUARREL = { first: [35, 60], every: [80, 150], answer: 0.4, shout: 2.6 };
+  const HUSH = { chance: 0.15, every: 150, down: 0.7, whisper: 1.3, light: 4.4, scream: 5, hunt: 6.9, grab: 7.5, blows: 3, blink: 0.18 };
   // The tally at her feet while she smashes: its font, its pips' size and gap, px.
   const TALLY_FONT = "bold 10px ui-monospace, monospace", PIP = 9, PIP_GAP = 4;
+  // The warning light her quiet moment ends on: a red lamp on a dark mount.
+  const BEACON = BL.models.cached(() => BL.models.merge(
+    BL.models.box({ w: 0.22, h: 0.06, d: 0.22, color: "#2b2d31", offset: { y: -0.1 } }),
+    BL.models.box({ w: 0.16, h: 0.16, d: 0.16, color: "#ff2a1a", emissive: 1 })
+  ));
 
   // `fx` for her lines and sparks, `audio` for her voice, her boots and her hammer's clang, `fire` the static fire test
   // she freaks out at, `jet` the Jet's node, which her rampage rocks, and `toast` for what the visitor should know.
@@ -118,6 +137,11 @@
     const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), B = HM.blast(), SPARK = B.spark, IRON = B.iron;
     // The Jet's paint flying off it: its white and its livery's blue.
     const CHIPS = [BL.models.particleGeometry("#eeeae2", 0.1, 0), BL.models.particleGeometry("#2a4fb8", 0.1, 0)];
+    // What she leaves about the hall in her quiet moment, for the scene to stand in it (`props`): the hammer laid on the
+    // floor and the warning light on the Jet, each hidden until then.
+    const props = createNode({}), floorHammer = createNode({ geometry: P.hammer.geometry }), beacon = createNode({ geometry: BEACON() });
+    floorHammer.visible = beacon.visible = false;
+    addChild(props, floorHammer, beacon);
     const node = createNode({ position: { x: S.x, y: k.HIP, z: S.z }, rotation: { x: 0, y: S.turn, z: 0 } });
     addChild(node, k.root);
     for (const [key, [x, y, z]] of Object.entries(POSE)) { P[key].rotation.x = x; P[key].rotation.y = y; P[key].rotation.z = z; }
@@ -288,6 +312,7 @@
     let panicking = false, warned = false, down = 0, slideX = 0, slideZ = 0, soot = 0, smokeAt = 0;
     const startPanic = () => {
       panicking = true; warned = false; down = 0; t = 0;
+      if (doing === "hush") endHush();
       rampage = storming = false; anger = 0; fitT = 0;
       say(LINES.panic[0], STYLE.panic, 2.4);
       const b = fire.blast, here = Math.hypot(p.x - b.x, p.z - b.z);
@@ -340,6 +365,7 @@
     // Off to a spot: running at the visitor, screaming at them as she sets off; or walking, or now and then running, to
     // one of hers, swearing at the Jet now and then as she goes to hammer it.
     const goTo = (s) => {
+      if (doing === "hush") endHush();
       spot = s;
       blocked = 0;
       if (!plan(p.x, p.z, s.cell)) { arrive(); return; }
@@ -352,15 +378,15 @@
     const arrive = () => {
       last = spot;
       doing = rampage && spot.kind === "fix" ? "smash" : spot.kind;
+      if (doing === "fix" && !storming && (forceHush || clock >= hushNext && rand() < HUSH.chance)) { doing = "hush"; hushNext = clock + HUSH.every; forceHush = false; hushBlows = 0; hushed = 0; }
       t = 0;
-      spot.dur = storming && doing === "glare" ? POKE.sulk : pick(TIMES[doing][0], TIMES[doing][1]);
+      spot.dur = storming && doing === "glare" ? POKE.sulk : doing === "hush" ? 60 : pick(TIMES[doing][0], TIMES[doing][1]);
       furious = false;
       swingT = 0; swings = 0;
       if (doing === "pace") { paceA = 0; paceDir = 1; paceX = p.x; paceZ = p.z; }
       if (doing === "smash") { blows = RAMPAGE.hits[0] + Math.floor(rand() * (RAMPAGE.hits[1] - RAMPAGE.hits[0] + 1)); pokesHere = 0; maybeSay("smash", 0.6); }
       else if (doing === "fix") maybeSay("hammer", 0.5);
       else if (doing === "yell") { sayFrom("caught", 3); spot.dur = Math.max(spot.dur, talk + 0.6); }
-      else if (doing === "admire" && rand() < 0.3) say(LINES.hope[0], STYLE.hope, 2.8);
     };
     // ---- poking her ----
     // Her anger (0 to POKE.rage) and how long before it cools a level; where the last poke came from and when; the fit
@@ -405,7 +431,7 @@
       sayFrom("fixed", 2.4);
       goTo(nextSpot(null));
     };
-    const startChase = () => { doing = "chase"; chaseT = POKE.chaseTime; chased = false; speed = RUN; pathN = 0; };
+    const startChase = () => { if (doing === "hush") endHush(); doing = "chase"; chaseT = POKE.chaseTime; chased = false; speed = RUN; pathN = 0; };
     // A poke from the visitor's Ooga: her fit and line, angrier each time, the boink and the pad's pulse. At the end of
     // her tether she goes for the Jet; while she smashes it each poke counts toward stopping her, and a second at a
     // spot sends her running for another; storming off or sulking, she only tells them to go away.
@@ -462,6 +488,41 @@
       return open[c] && Math.abs(feetOf[c] - feet) < RISE || open[N + c] && Math.abs(feetOf[N + c] - feet) < RISE;
     };
     const JET_RX = jet.rotation.x, JET_RZ = jet.rotation.z;
+
+    // ---- her quarrel with Kortik next door, and the rare quiet moment ----
+    // When his next shout comes, which line of the quarrel, and when she answers it; where his voice comes from, just
+    // inside the door, and his lines as the door's bubble shows them.
+    const RIVALRY = BL.kortik.RIVALRY, D = HM.LAYOUT.door, DOOR_AT = { x: D.x, y: D.y + 0.5, z: D.z - 0.6 }, HEARD = RIVALRY.map(([his]) => "KORTIK: " + his);
+    let quarrelIn = pick(QUARREL.first[0], QUARREL.first[1]), quarrel = 0, answerIn = 0;
+    // Whether she is free to hear him, or to answer: none of her fits, tempers, trips at the visitor or the static fire.
+    const free = () => !panicking && !rampage && !storming && fitT <= 0 && doing !== "chase" && doing !== "hush" && spot !== visitorSpot && talk <= 0;
+    const hearKortik = () => {
+      quarrel = Math.floor(rand() * RIVALRY.length);
+      fx.sayAt(DOOR_AT.x, D.y + 3.6, DOOR_AT.z, HEARD[quarrel], 3.2);
+      answerIn = audio.voice(RIVALRY[quarrel][0], "kortik", DOOR_AT) + QUARREL.answer;
+    };
+    // Turned to the door, her hands cupped at her mouth, shouting back.
+    const answerKortik = () => {
+      pokeX = DOOR_AT.x; pokeZ = DOOR_AT.z;
+      fit(7);
+      say(RIVALRY[quarrel][1], STYLE.quarrel, QUARREL.shout);
+      fitLen = fitT = Math.max(QUARREL.shout, talk + 0.4);
+    };
+    // The quiet moment: when the next may come, whether debugging has asked for one, the blows at the light so far,
+    // and the beats said.
+    let hushNext = HUSH.every / 2, forceHush = false, hushBlows = 0, hushed = 0;
+    const hammerDown = (on) => {
+      P.hammer.visible = !on;
+      floorHammer.visible = on;
+      if (!on) return;
+      // On the floor at her right foot, lying on its side along the way she faces.
+      floorHammer.position.x = p.x + Math.cos(yaw) * 0.45; floorHammer.position.y = feet + 0.12; floorHammer.position.z = p.z - Math.sin(yaw) * 0.45;
+      floorHammer.rotation.x = 0; floorHammer.rotation.y = yaw; floorHammer.rotation.z = Math.PI / 2;
+      // The light, on the Jet where she would have hammered, a little out toward her.
+      const dx = p.x - spot.lx, dz = p.z - spot.lz, l = Math.hypot(dx, dz) || 1;
+      beacon.position.x = spot.lx + dx / l * 0.15; beacon.position.y = spot.ly; beacon.position.z = spot.lz + dz / l * 0.15;
+    };
+    const endHush = () => { hammerDown(false); beacon.visible = false; };
     const turnTo = (wantYaw, dt) => {
       let d = wantYaw - yaw;
       d -= TAU * Math.round(d / TAU);
@@ -507,6 +568,9 @@
         if (clock - rampAt > RAMPAGE.max && fitT <= 0) giveUp();
       }
       near = !!driven && !panicking && Math.hypot(driven.root.position.x - p.x, driven.root.position.z - p.z) < POKE.reach && Math.abs(feetAt(driven) - feet) < POKE.rise;
+      // Kortik shouting through the door now and then while she is free to hear it, and her answer once his line is out.
+      if (answerIn > 0) { if ((answerIn -= dt) <= 0 && !panicking && !rampage) answerKortik(); }
+      else if ((quarrelIn -= dt) <= 0) { quarrelIn = pick(QUARREL.every[0], QUARREL.every[1]); if (free()) hearKortik(); }
       const ft = fire ? fire.t : -1;
       if (!panicking && ft >= 0 && ft < A.boom) startPanic();
       if (panicking && ft < 0 && doing !== "blame") endPanic();
@@ -589,6 +653,11 @@
           want.armLx = -2.2; want.foreLx = -0.9; want.foreLz = 0;
         } else if (fitKind === 5) {
           want.lean = -0.15; want.armLx = -1.4 + Math.sin(clock * 20) * 0.3; want.armLz = 0.5; want.foreLx = -0.4; want.foreLz = 0;
+        } else if (fitKind === 7) {
+          // Shouting back at Kortik through the door, her hands cupped at her mouth, leaning into it.
+          want.lean = 0.12; want.headX = -0.15;
+          want.armLx = -2.1; want.armLz = 0.55; want.foreLx = -1.5; want.foreLz = -0.7;
+          want.armRx = -2.1; want.armRz = -0.55; want.foreRx = -1.5; want.foreRz = 0.7;
         } else {
           want.crouch = Math.max(0, Math.sin(clock * 14)) * 0.08;
           want.armLx = -2.6 + Math.sin(clock * 17) * 0.4; want.armLz = 0.4; want.foreLx = -0.8; want.foreLz = 0;
@@ -686,6 +755,47 @@
           face = H.redOpen;
           want.armLx = -2.4 + Math.sin(clock * 15) * 0.3; want.armLz = 0.35; want.foreLx = -0.7; want.foreLz = 0;
           want.armRx = -2.2; want.foreRx = -1.2; want.lean = -0.05; want.headX = -0.1;
+        } else if (doing === "hush") {
+          // The quiet moment, beat by beat.
+          if (t < HUSH.down) {
+            // Laying the hammer down at her feet.
+            want.crouch = 0.22 * Math.sin(Math.min(1, t / HUSH.down) * Math.PI);
+            want.armRx = -0.3; want.armRz = -0.3; want.foreRx = -0.4; want.foreRz = 0; want.hamX = Math.PI / 2;
+            if (t > HUSH.down * 0.6 && P.hammer.visible) hammerDown(true);
+          } else if (t < HUSH.scream) {
+            // Looking it over gently, a hand on it, whispering; then the light coming on.
+            want.headX = -up * 0.7; want.headZ = Math.sin(clock * 0.8) * 0.1; want.lean = 0.12;
+            want.armLx = -1.3 + Math.sin(clock * 2.2) * 0.08; want.armLz = 0.15; want.foreLx = -0.3; want.foreLz = 0;
+            want.armRx = 0.05; want.armRz = -0.15; want.foreRx = -0.3; want.foreRz = 0;
+            if (hushed === 0 && t >= HUSH.whisper) { hushed = 1; say(LINES.hope[0], STYLE.hope, 3.4); }
+          } else if (t < HUSH.hunt) {
+            // A jump and her scream, then turning all round herself, arms out, looking for the hammer.
+            if (hushed === 1) { hushed = 2; say(LINES.hush[0], STYLE.hush, 2.4); }
+            face = H.redOpen;
+            if (t < HUSH.scream + 0.3) hop = Math.sin((t - HUSH.scream) / 0.3 * Math.PI) * 0.2;
+            else { yaw += dt * 5.5; wantYaw = yaw; }
+            want.headZ = Math.sin(clock * 9) * 0.3; want.lean = 0.1;
+            want.armLx = -1.3; want.armLz = 0.9; want.foreLx = -0.3; want.foreLz = 0; want.armRx = -1.3; want.armRz = -0.9; want.foreRx = -0.3; want.foreRz = 0;
+          } else if (t < HUSH.grab) {
+            // There it is, at her feet: crouched to snatch it up.
+            face = H.redOpen;
+            want.crouch = 0.25; want.headX = 0.4; want.armRx = -0.3; want.armRz = -0.3; want.foreRx = -0.3; want.foreRz = 0;
+            if (t > HUSH.grab - 0.15 && floorHammer.visible) hammerDown(false);
+          } else {
+            // Whacking the light until it goes out.
+            face = H.redOpen;
+            swingLen = SWING * 0.75;
+            swingT += dt;
+            if (swingT > swingLen + 0.08) swingT = 0;
+            swingNow = Math.min(1, swingT / swingLen);
+            const height = Math.max(0, Math.min(1, (spot.ly - feet - 0.6) / 2.4));
+            want.lean = 0.22 - height * 0.25; want.armLx = -0.5; want.armLz = 0.55; want.foreLx = -0.3; want.foreLz = 0;
+            want.headX = -up * 0.6;
+          }
+          // The warning light blinking from its beat until she puts it out, a beep each time it comes on.
+          const on = t >= HUSH.light && Math.floor((t - HUSH.light) / HUSH.blink) % 2 === 0;
+          if (on && !beacon.visible) audio.beep(beacon.position.x, beacon.position.y, beacon.position.z);
+          beacon.visible = on;
         } else if (doing === "glare" && storming) {
           // Sulking by the door, red, her arms folded.
           face = H.redOpen;
@@ -738,6 +848,8 @@
           else {
             for (let i = 0; i < 9; i++) fx.spawnParticle(SPARK, hx, hy, hz, (rand() - 0.5) * 5, 1 + rand() * 3.5, (rand() - 0.5) * 5, 0.4 + rand() * 0.4, 10, 7);
             audio.clang(hx, hy, hz);
+            // The quiet moment's light, put out by the last blow.
+            if (doing === "hush" && ++hushBlows >= HUSH.blows) goTo(nextSpot(seen));
           }
         }
       } else {
@@ -844,13 +956,16 @@
       go: (name) => { const s = spots.find((q) => q.name === name); if (s) goTo(s); return !!s; },
       charge: () => { const s = !panicking && seen && visit(seen); if (s) goTo(s); return !!s; },
       poke: () => poke(), rampage: () => { if (!panicking) startRampage(); return rampage; },
+      hush: (name = "wingtip") => { const s = spots.find((q) => q.name === name && q.kind === "fix"); if (s) { forceHush = true; goTo(s); } return !!s; },
+      get fit() { return fitT > 0 ? fitKind : 0; },
+      quarrel: () => { if (free()) hearKortik(); return answerIn > 0; },
       get anger() { return anger; }, get rampaging() { return rampage; }, get pips() { return pips; }, get storming() { return storming; }, get near() { return near; },
       get doing() { return doing; }, get panicking() { return panicking; }, get down() { return down; }, get spot() { return spot && spot.name; }, get spots() { return spots.map((s) => s.name); }, get path() { return pathN; },
       get position() { return { x: p.x, y: feet, z: p.z }; }, open: () => { let n = 0; for (let i = 0; i < M; i++) n += open[i]; return n; }
     };
     goTo(nextSpot(null));
 
-    return { node, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; } };
+    return { node, props, body: P.torso, actor, update, liveGeometry, poke, useNear, actLabel, overlay, debug, get near() { return near; } };
   };
 
   BL.sis = { create };

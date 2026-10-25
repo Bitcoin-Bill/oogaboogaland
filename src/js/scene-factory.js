@@ -187,6 +187,13 @@
     shaftIn: [FM.SHAFTS[0][0], 0.5, FM.SHAFTS[0][1]], shaftOut: [FM.SHAFTS[1][0], 0.5, FM.SHAFTS[1][1]], gallery: [0, LEVEL.top + 4.5, HALL.back + 4.9]
   };
   const hearAt = (name, p, loud = 1, n = 0) => audio.cue(name, p[0], p[1], p[2], loud, n);
+  // Kortik's Sis answering her brother from behind the Lightning Jet Hangar's door, her line over it and her voice
+  // through it, a syllable for every few letters; and where that is.
+  const SIS_AT = [FM.LAYOUT.hangar.x + 0.6, FM.LAYOUT.hangar.y + 2, FM.LAYOUT.hangar.z], SIS_LINES = BL.kortik.RIVALRY.map(([, hers]) => "KORTIK'S SIS: " + hers);
+  const sisAnswers = (i) => {
+    fx.sayAt(SIS_AT[0], SIS_AT[1] + 3.2, SIS_AT[2], SIS_LINES[i], 3.4);
+    hearAt("sis", SIS_AT, 1, Math.min(12, Math.max(2, Math.round(BL.kortik.RIVALRY[i][1].length / 4))));
+  };
   const hearNode = (name, node, up, loud = 1, n = 0) => audio.cue(name, node.position.x, node.position.y + up, node.position.z, loud, n);
   // An event's sound at its line's bay or gallery stand, or at the forge for a line the hall does not show.
   const hearPlace = (name, place) => { if (place) hearNode(name, place.node, 2, place.bay ? 1 : 0.6); else hearAt(name, SPOTS.forge, 0.6); };
@@ -1804,9 +1811,10 @@
       visitor: () => people && people.player === avatar ? avatar : null,
       demoRunning: () => feed.reading.contract === "obl.factory.demo.v1" || feed.reading.contract === null && !!shared.mock, coarse: COARSE, camera, quality: () => renderer.quality,
       onKortik: () => kortik && kortik.tourHere() });
-    // When Kortik shouts for Tess, she answers back if she is at work.
+    // When Kortik shouts for Tess, she answers back if she is at work; where the hall has the Lightning Jet Hangar's
+    // door, he shouts at his sister through it now and then, and she answers from behind it.
     // His board's sounds come from where he sits.
-    kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort(), onSound: (name, n) => hearAt(name, SPOTS.board, 1, n) });
+    kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort(), onSound: (name, n) => hearAt(name, SPOTS.board, 1, n), onSis: FM.hangarEntry() ? sisAnswers : null });
     addChild(root, kortik.node);
     // Kortik himself takes pokes; his board frames itself and says what it is, as the stations do.
     // He outranks the board he sits in, but not an Ooga or the guide nearer the view.

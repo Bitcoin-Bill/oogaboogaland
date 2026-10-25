@@ -520,7 +520,7 @@
     soundPanel = openSoundPanel();
     // Kortik's Sis, the hangar's chief engineer (`sis.js`).
     scene.sis = BL.sis.create({ fx, audio, fire: scene.fire, jet: scene.jet, toast: hud.toast });
-    addChild(root, scene.sis.node);
+    addChild(root, scene.sis.node, scene.sis.props);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);
     // The repository's reading: read from GitHub on the first visit a page life, unless the cache holds a fresh one.
