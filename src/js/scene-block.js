@@ -86,7 +86,10 @@
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
   // `face` is where the visitor's Ooga faces and aims; `yaw` is the camera's, which follows it round.
-  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false };
+  // `lift` is how far the chase camera has risen over something behind the Ooga, `dist` how far back it sits, `close`
+  // when it is so near that the Ooga would fill the view.
+  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false };
+  const EYE = { x: 0, y: 0, z: 0 };
   const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0, face: 0 };
   let jumpWas = false;
   const el = {};
@@ -301,6 +304,7 @@
     cam.yaw = cam.face = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
+    cam.lift = 0; cam.close = false; cam.dist = CAM.dist;
     controls.reset();
     tool = "paint";
     updateTools();
@@ -498,7 +502,7 @@
     const l = Math.hypot(fx, fy, fz) || 1;
     fx /= l; fy /= l; fz /= l;
     // Start past the Ooga so the ray never stops on the Ooga's own spot.
-    let d = cam.first ? 0.5 : CAM.dist * 0.9;
+    let d = cam.first ? 0.5 : cam.dist + 0.4;
     for (; d < 30; d += 0.4) if (SIM.solidAt(p.x + fx * d, p.y + fy * d, p.z + fz * d)) break;
     AIM.x = p.x + fx * d; AIM.y = p.y + fy * d; AIM.z = p.z + fz * d;
     return AIM;
@@ -696,7 +700,7 @@
     for (let i = 0; i < 4; i++) {
       const s = sim.actors[i], a = actors[i];
       setVec(a.body.position, s.x, s.y, s.z);
-      a.body.visible = !(i === 0 && cam.first && phase === "play");
+      a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play");
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
       a.ring.visible = s.grounded;
@@ -879,6 +883,7 @@
     if (cam.first && me) {
       // The eye at the Ooga's eyes (lower when crouched), looking along the aim.
       const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
+      cam.close = false;
       setVec(camera.position, x + Math.sin(cam.yaw) * 0.25, eye, z + Math.cos(cam.yaw) * 0.25);
       setVec(camera.target, x + Math.sin(cam.yaw) * c * 10, eye + Math.sin(up) * 10, z + Math.cos(cam.yaw) * c * 10);
       // The sniper's scope narrows the view; the gun in hand sits low and right of the eye.
@@ -898,11 +903,24 @@
     }
     camera.fov = damp(camera.fov, 58 * Math.PI / 180, 10, dt);
     if (fpGun) fpGun.visible = false;
-    // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view.
-    const c = Math.cos(cam.pitch), hx = -Math.sin(cam.yaw) * c, hz = -Math.cos(cam.yaw) * c, hy = Math.sin(cam.pitch), by = y + CAM.height;
-    let dist = CAM.dist;
-    for (let d = 0.5; d <= CAM.dist; d += 0.25) if (SIM.solidAt(x + hx * d, by + hy * d, z + hz * d)) { dist = Math.max(0.6, d - 0.4); break; }
-    const ex = x + hx * dist, ez = z + hz * dist, ey = by + hy * dist;
+    // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view. Backed up
+    // against something, the camera rises over it to look down from above, and eases back once the way is clear.
+    const by = y + CAM.height;
+    let dist = clearBehind(x, by, z, cam.pitch), lift = 0;
+    if (dist < CAM.dist * 0.6) {
+      // Up over it first; under a floor overhead, down beneath it instead.
+      for (let k = 1; k <= 8; k++) {
+        const p = k <= 6 ? Math.min(1.3, cam.pitch + k * 0.17) : Math.max(-0.25, cam.pitch - (k - 6) * 0.2), d = clearBehind(x, by, z, p);
+        if (d > dist + 0.5) { dist = d; lift = p - cam.pitch; }
+        if (d >= CAM.dist * 0.8) break;
+      }
+    }
+    cam.lift = damp(cam.lift, lift, lift > cam.lift ? 10 : 3, dt);
+    dist = clearBehind(x, by, z, cam.pitch + cam.lift);
+    cam.dist = dist;
+    // So close that the Ooga would fill the view: it steps out of the way (shown as the crosshair alone).
+    cam.close = dist < 1.1;
+    const ex = x + EYE.x * dist, ez = z + EYE.z * dist, ey = by + EYE.y * dist;
     if (!cam.warm) {
       setVec(camera.position, ex, ey, ez);
       cam.warm = true;
@@ -913,6 +931,14 @@
     }
     setVec(camera.target, x + Math.sin(cam.yaw) * 2, y + 1.9, z + Math.cos(cam.yaw) * 2);
     setVec(RENDER_OPTS.shadowCenter, x, 0, z);
+  };
+  // How far back along `pitch` (and the camera's yaw) the eye can sit from (x, y, z) before a wall: the direction goes
+  // in EYE.
+  const clearBehind = (x, y, z, pitch) => {
+    const c = Math.cos(pitch);
+    EYE.x = -Math.sin(cam.yaw) * c; EYE.z = -Math.cos(cam.yaw) * c; EYE.y = Math.sin(pitch);
+    for (let d = 0.5; d <= CAM.dist; d += 0.25) if (SIM.solidAt(x + EYE.x * d, y + EYE.y * d, z + EYE.z * d)) return Math.max(0.6, d - 0.4);
+    return CAM.dist;
   };
   // The board shows the whole fort from above its gate, slowly turning.
   const boardView = (elapsed) => {
