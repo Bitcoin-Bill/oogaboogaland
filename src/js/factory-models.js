@@ -131,13 +131,15 @@
     // core's walkway, the main level to the high lines up the lines' inner sides, the high
     // lines to the landing in front of the first gallery, one flight from each, the pit up to the platform by the
     // cooker and up to Kortik's deck, and a level flight from his deck to the Routing Console's. An end on a deck's
-    // edge stands on that edge's rail line and crosses it square, so its rails meet the ends of the deck's.
+    // edge stands on that edge's rail line and crosses it square, so its rails meet the ends of the deck's. The level
+    // flight stands midway between his deck's east rail and the console deck's west one, wide enough to cut both decks'
+    // rails to their corners, so the widest Ooga crosses clear of the rails either side.
     stairs: [
       [-4.8, 0, 7.5, -4.8, LEVEL.main, 1.3, 1.6], [4.8, 0, 7.5, 4.8, LEVEL.main, 1.3, 1.6],
       [-9.2, LEVEL.main, -4.4, -9.2, LEVEL.high, -9.6, 1.6], [9.2, LEVEL.main, -4.4, 9.2, LEVEL.high, -9.6, 1.6],
       [-6.4, LEVEL.high, -14.05, -0.8, LEVEL.top, -14.05, 1.6], [6.4, LEVEL.high, -14.05, 0.8, LEVEL.top, -14.05, 1.6],
       [5.6, 0, 20.4, 9.5, LEVEL.low, 20.4, 1.6],
-      [-9.5, 0, 13.4, -13.4, LEVEL.low, 13.4, 1.6], [-13.9, LEVEL.low, 9.3, -13.9, LEVEL.low, 8.4, 1.2]
+      [-9.5, 0, 13.4, -13.4, LEVEL.low, 13.4, 1.6], [-14.4, LEVEL.low, 9.3, -14.4, LEVEL.low, 8.4, 1.8]
     ],
     // The landing the flights from A and B meet at, against the first gallery's front, and the bridges along the top:
     // the watchtower to the first gallery and the first gallery to the second, [x0, z0, x1, z1, width] edge to edge.
@@ -861,7 +863,7 @@
       const b = -CONSOLE.arc + (i + 0.5) / 5 * CONSOLE.arc * 2;
       block(sw.x + CONSOLE.x + Math.sin(b) * CONSOLE.desk, sw.z + CONSOLE.z - Math.cos(b) * CONSOLE.desk, 0.65, sw.y - 0.5, sw.y + 3);
     }
-    block(sw.x - 3, sw.z + 1.4, 0.75, sw.y - 0.5, sw.y + 2);
+    block(sw.x - 3, sw.z - 1.4, 0.75, sw.y - 0.5, sw.y + 2);
     // The low drum is a step, not a four-metre invisible wall. Its column and glass tubes have their own shells.
     discs.push(rb.x, rb.z + REB.cz, 1.85, rb.y + 0.56);
     block(rb.x, rb.z + REB.cz, 0.36, rb.y + 0.54, rb.y + REB.top + 0.36);
@@ -1593,7 +1595,7 @@
       const foot = y > 2 ? 0 : C.top, stem = y - h / 2 - foot + 0.05, back = y > 2 ? reach + 0.12 : reach;
       geos.push(consoleAt(box({ w: 0.12, h: stem, d: 0.12, color: IRON, offset: { y: -stem / 2 - h / 2, z: -0.06 } }), bearing, back, y, 0));
     }
-    geos.push(moved(merge(BL.mineModels.hubCart()), -3, 0, 1.4));
+    geos.push(moved(merge(BL.mineModels.hubCart()), -3, 0, -1.4));
     return merge(...geos);
   });
   // The monitors' faces, dim and busy: a forward routed through the board lights them. The board draws the routes,
@@ -1901,7 +1903,7 @@
       // apart, so they mesh.
       gears: [[-1.2, 0.96, 0.5, 0.34, 13], [-1.2, 0.54, 0.956, 0.18, 7]],
       stack: [1.55, -0.85], stackTop: 3.7, hatch, lip, intakeY: HALL.h - c.y - 1.35, dir: [dx / l, dz / l],
-      post: 2.5, postZ: -2.3, postH: 6.2, sign: [0, 5.65, -1.97], board: [-1.3, 2.55, -2.05], lamps: [[-2.5, 5.84, -1.8], [2.5, 5.84, -1.8]],
+      post: 2, postZ: -2.3, postH: 6.2, sign: [0, 5.65, -1.97], board: [-0.8, 2.55, -2.05], lamps: [[-2, 5.84, -1.8], [2, 5.84, -1.8]],
       operator: [1.95, 0.75]
     };
   })();
