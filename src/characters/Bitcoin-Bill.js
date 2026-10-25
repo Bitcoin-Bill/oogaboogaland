@@ -27,7 +27,7 @@
     v.set(-1, 7, 4, black); v.set(1, 7, 4, black);
     v.set(0, 6, 5, cream); v.set(0, 7, 5, cream); v.set(0, 7, 6, black);
     for (const x of [-1, 1]) { v.set(x, 9, 3, coat); v.set(x, 10, 3, coat); v.set(x, 9, 4, pink); }
-    v.set(0, 6, -3, fur); v.set(0, 7, -3, fur); v.set(0, 8, -2, teal);
+    v.set(0, 6, -3, coat); v.set(0, 7, -3, coatDk); v.set(0, 8, -2, teal);
     return v;
   };
   // The straw hat in the head's voxel grid: a domed crown with a dark band, and a wide brim that droops at its rim and
