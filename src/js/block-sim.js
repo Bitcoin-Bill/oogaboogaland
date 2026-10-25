@@ -644,7 +644,10 @@
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
+        // A press is used once: the first substep that sees it takes it, so one press is one jump, and the second
+        // press in the air is the double jump.
         jump = !!input.jump;
+        input.jump = 0;
       }
       // A jump from the ground, and one more in the air; carrying the block weighs both down a little, a net stops both.
       if (jump && free && a.netted <= 0) {

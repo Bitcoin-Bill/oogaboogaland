@@ -8,7 +8,8 @@
 // their stands, at a carrier's back or lying where they fell, pooled crates, throws and splats, the weather (a wind
 // sign, rain and lightning in a storm), and a chase camera behind the visitor's Ooga that the mouse drag, Q E or the
 // look stick turns. W A S D run toward where the camera looks, Shift sprints, Space jumps and jumps again in the air,
-// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net), R drops a crate, G drops the
+// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; a right click or the wheel steps
+// through them), R drops a crate, G drops the
 // block, C crouches while held, V switches between the chase camera and first person (a click there locks the mouse
 // for aiming; Escape lets it go). On touch the act button jumps, `#block-paint` throws and the tool bar picks. A round
 // opens with the sim's fortifying time. The intro card, the board (side and Ooga), the tool bar, the quiz card and the
@@ -111,16 +112,27 @@
       addChild(body, ring, blob, bubble, netted);
       place(body);
       if (cave) input.add(cave.parts.torso, { kind: "ooga", index: i, priority: 1 });
-      return { body, cave, ring, blob, bubble, netted, phase: 0, name };
+      // A companion a character file hangs on its Ooga (`parts.dog`) is let off the lead here: it is lifted off the
+      // body into the arena and trots after its Ooga each frame (`poseCompanions`).
+      let pet = null;
+      if (cave && cave.parts.dog) {
+        const node = cave.parts.dog;
+        removeChild(cave.root, node);
+        place(node);
+        pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
+      }
+      return { body, cave, ring, blob, bubble, netted, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
     if (!actors) return;
     for (const a of actors) {
       if (a.cave) input.remove(a.cave.parts.torso);
-      removeChild(root, a.body);
-      const i = placed.indexOf(a.body);
-      if (i >= 0) placed.splice(i, 1);
+      for (const node of a.pet ? [a.body, a.pet.node] : [a.body]) {
+        removeChild(root, node);
+        const i = placed.indexOf(node);
+        if (i >= 0) placed.splice(i, 1);
+      }
     }
     actors = null;
   };
@@ -419,6 +431,24 @@
     tool = k;
     updateTools();
   };
+  // The next tool along (or back), skipping any that are empty; a right click or the wheel steps through them.
+  const ORDER = ["paint", "grenade", "rocket", "net"];
+  const cycleTool = (dir = 1) => {
+    const a = sim.actors[0];
+    let i = ORDER.indexOf(tool);
+    for (let n = 0; n < ORDER.length; n++) {
+      i = (i + dir + ORDER.length) % ORDER.length;
+      if (ORDER[i] === "paint" || a[ORDER[i]] > 0) break;
+    }
+    chooseTool(ORDER[i]);
+    notice(`${ORDER[i][0].toUpperCase()}${ORDER[i].slice(1)}${ORDER[i] === "paint" ? "" : ` · ${a[ORDER[i]]} left`}`, 900);
+  };
+  const onRightDown = (e) => {
+    if (e.button !== 2 || phase !== "play") return;
+    e.preventDefault();
+    cycleTool(1);
+  };
+  const noMenu = (e) => { if (phase === "play") e.preventDefault(); };
   const buildCrate = () => {
     if (phase !== "play") return false;
     if (SIM.build(sim, 0, cam.yaw)) return true;
@@ -444,7 +474,7 @@
     if (!first && document.pointerLockElement === el.canvas) document.exitPointerLock();
     notice(first ? (COARSE ? "First person · drag to aim" : "First person · click to lock the mouse and aim · V goes back") : "Chase camera", 1800);
   };
-  // With the mouse locked in first person, it aims directly and a left press paints.
+  // With the mouse locked in first person, it aims directly and a left press throws.
   const onLockedMove = (e) => {
     if (document.pointerLockElement !== el.canvas || phase !== "play") return;
     cam.yaw = wrap(cam.yaw - e.movementX * 2.6e-3);
@@ -479,8 +509,35 @@
     move.sprint = a.sprint;
     if (quiz.open) move.crouch = 0;
     const up = a.up > 0;
-    move.jump = up && !jumpWas ? 1 : 0;
+    // A new press waits for the sim to use it (it clears `jump`), however many substeps this frame runs, even none.
+    if (up && !jumpWas) move.jump = 1;
     jumpWas = up;
+  };
+  // Each pet heads for a spot a little behind and beside its Ooga, trots there at up to sprint pace with a hop in its
+  // step, sits when it arrives, and jumps straight to its Ooga if it falls far behind (a roof, a double jump).
+  const PET_BACK = 1.1, PET_SIDE = 0.6, PET_SPEED = 9.5;
+  const poseCompanions = (dt, elapsed) => {
+    for (let i = 0; i < 4; i++) {
+      const a = actors[i], p = a.pet;
+      if (!p) continue;
+      const s = sim.actors[i], h = a.body.rotation.y;
+      const tx = s.x - Math.sin(h) * PET_BACK + Math.cos(h) * PET_SIDE, tz = s.z - Math.cos(h) * PET_BACK - Math.sin(h) * PET_SIDE;
+      const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+      if (!p.warm || d > 7) { p.x = tx; p.z = tz; p.warm = true; }
+      else if (d > 0.15) {
+        const step = Math.min(d, PET_SPEED * dt * Math.min(1, d / 1.2 + 0.25));
+        p.x += dx / d * step; p.z += dz / d * step;
+        p.heading = Math.atan2(dx, dz);
+        p.step += step * 9;
+      } else p.heading = h;
+      const ground = SIM.groundAt(p.x, p.z, s.y + 0.1, 0.15);
+      p.y = damp(p.y, ground, 18, dt);
+      const moving = d > 0.15;
+      setVec(p.node.position, p.x, p.y + (moving ? Math.abs(Math.sin(p.step)) * 0.08 : 0), p.z);
+      p.node.rotation.y = p.heading;
+      p.node.rotation.z = moving ? Math.sin(p.step) * 0.08 : 0;
+      p.node.visible = a.body.visible || i === 0;
+    }
   };
   const poseActors = (dt, elapsed) => {
     for (let i = 0; i < 4; i++) {
@@ -663,6 +720,7 @@
     poseActors(dt, elapsed);
     poseBlocks(elapsed);
     poseCrates();
+    poseCompanions(dt, elapsed);
     posePads(elapsed);
     poseShots();
     if (phase === "board") boardView(elapsed);
@@ -737,6 +795,8 @@
     el.canvas = ctx.canvas;
     document.addEventListener("mousemove", onLockedMove);
     el.canvas.addEventListener("mousedown", onLockedDown);
+    el.canvas.addEventListener("mousedown", onRightDown);
+    el.canvas.addEventListener("contextmenu", noMenu);
     window.addEventListener("keydown", onCrouchKey);
     window.addEventListener("keyup", onCrouchKey);
     el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
@@ -804,7 +864,8 @@
         cam.yaw = wrap(cam.yaw - dx * 5e-3);
         cam.pitch = clamp(cam.pitch + dy * 3.5e-3, CAM.pitch[0], CAM.pitch[1]);
       },
-      onZoom: () => { }
+      // The wheel steps through the tools.
+      onZoom: (k) => { if (phase === "play" && k !== 1) cycleTool(k > 1 ? -1 : 1); }
     });
     hud.onAction((action) => {
       if (action === "block-start" || action === "block-again") start();
@@ -817,7 +878,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W A S D run · drag or Q E turn · Space jumps, twice to climb · click or Enter throws · 1-4 tools · R crate · C crouch · V first person · G drop";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W A S D run · drag or Q E turn · Space jumps, again in the air to climb · click or Enter throws · right click, wheel or 1-4 tools · R crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -861,6 +922,8 @@
     for (const b of el.tools) b.removeEventListener("click", el.onTool);
     document.removeEventListener("mousemove", onLockedMove);
     el.canvas.removeEventListener("mousedown", onLockedDown);
+    el.canvas.removeEventListener("mousedown", onRightDown);
+    el.canvas.removeEventListener("contextmenu", noMenu);
     window.removeEventListener("keydown", onCrouchKey);
     window.removeEventListener("keyup", onCrouchKey);
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
