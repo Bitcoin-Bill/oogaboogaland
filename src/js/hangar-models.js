@@ -79,8 +79,8 @@
       stats: { x: HALL.x0 + 3.2, y: 4.3, z: 16, w: 9, h: 4, turn: Math.PI / 2, scale: 1.15 },
       timeline: { x: HALL.x0 + 3.2, y: 4.3, z: -2, w: 11, h: 4, turn: Math.PI / 2, scale: 1.15 }
     },
-    // The signs: the hangar's over the runway from the last gantry, and the plaque by the runway at the Jet's tail.
-    signs: { hangar: [0, 11.6, -26], soon: [7.6, 1.9, 8.4] },
+    // The hangar's sign over the runway, from the last gantry.
+    signs: { hangar: [0, 11.6, -26] },
     // The crew, gorillas in hard hats, each pacing its post: [x, y, z, radius, heading], heading 0 facing +z. At the
     // workstations, at the stats board, on the Jet's gangway, at its stair and its engine, and on both catwalks.
     crew: [[-9.5, 0, 18, 0.35, Math.PI], [-9.2, 0, 10.4, 0.35, Math.PI + 0.3], [-9.5, 0, -12.1, 0.35, Math.PI], [-13.5, 0, -11, 0.35, -Math.PI / 2],

@@ -279,17 +279,13 @@
     s.statsStars = createNode({ geometry: faces.stats.stars, sightHidden: true });
     s.statsFlag = createNode({ geometry: faces.stats.flag, sightHidden: true, visible: false });
     addChild(s.boards.stats, s.statsStars, s.statsFlag);
-    // The signs: the hangar's over the runway between two lit bolts, hung from the last gantry on two rods, and the
-    // plaque by the runway at the Jet's tail, on its post.
+    // The hangar's sign over the runway between two lit bolts, hung from the last gantry on two rods.
     const [hx, hy, hz] = L.signs.hangar, hangarSign = FM.label("LIGHTNING JET\nHANGAR", "", { height: 1.7 });
     s.sign = sign(root, hangarSign, hx, hy, hz);
     for (const side of [-1, 1]) {
       addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 + 0.6), y: hy, z: hz + 0.05 }, geometry: FM.smoothBolt(1.2, 0.1, "#ffd23a", 1), sightHidden: true }));
       addChild(root, createNode({ position: { x: hx + side * (hangarSign.width / 2 - 0.3), y: (hy + L.gantryY) / 2 + 0.4, z: hz - 0.05 }, geometry: models.box({ w: 0.06, h: L.gantryY - hy - 1.2, d: 0.06, color: "#2c2e33" }) }));
     }
-    const [px, py, pz] = L.signs.soon;
-    sign(root, FM.label("JET V2", "COMING SOON", { height: 0.9, style: "jet" }), px, py, pz);
-    addChild(root, createNode({ position: { x: px, y: (py - 0.6) / 2, z: pz - 0.1 }, geometry: models.box({ w: 0.14, h: py - 0.6, d: 0.14, color: "#5c3a1e" }) }));
     // The door, the Factory's own turned to face in, with the hall's warm dark through it and its sign the way back.
     const door = FM.hangarDoor(), D = FM.HANGAR_DOOR;
     s.door = createNode({ position: { x: DOOR.x, y: DOOR.y, z: DOOR.z }, rotation: { x: 0, y: DOOR.turn, z: 0 } });
