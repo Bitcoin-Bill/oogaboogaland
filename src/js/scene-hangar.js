@@ -67,6 +67,13 @@
   // by `TWINKLE_DIP` of their glow; a shooting star streaks for `METEOR_LIFE` seconds, one every `METEOR_GAP`.
   const SPACE = { tip: -Math.PI / 2, turn: -0.3, planets: [[-22, 18, -300, 0.55], [28, -2, -270, 0.8]] };
   const TWINKLE_DIP = 1.08, METEOR_LIFE = 0.8, METEOR_GAP = [3, 9];
+  // The boards' Jets coming alive now and then (`boardJets`): the first wait and the waits after, s; each beat's length,
+  // s: waking (its engines lighting), leaving, away, and coming back; how many specks of trail each board keeps, how
+  // often one is let go and how long it lasts; and each board's way of going: the stats board's dashes off its right
+  // edge in an orange streak and warps back, the timeline's lifts nose-up, rolls, rockets off its top in cyan and drops
+  // back in.
+  const JET_FLY = { first: [8, 14], every: [25, 45], wake: 1.1, go: 1.6, away: 5, back: 0.8, trail: 14, puff: 0.04, life: 0.6 };
+  const JET_STYLE = { stats: { spot: 0, kind: "dash", ink: "#ffb02e" }, timeline: { spot: 0, kind: "loop", ink: "#5fe3ff" } };
   // The tunnel's neon burns past full (`NEON_GLOW`), each frame's strip shimmering at its own pace, and every
   // `NEON_STUTTER` seconds one stutters, dipping twice as a tired tube does; the light at the tunnel's mouth follows
   // its first strip (`MOUTH_LIGHT`).
@@ -169,9 +176,28 @@
   // round its fuselage's axis.
   const miniJet = ([x, y, z, scale, climb, yaw, roll]) => {
     const flight = createNode({ position: { x, y, z }, rotation: { x: 0, y: 0, z: climb } }), turn = createNode({ rotation: { x: 0, y: -Math.PI / 2 + yaw, z: 0 } }), axis = JM.AXIS * scale;
-    addChild(turn, jetNode({ position: { x: axis * Math.sin(roll), y: -axis * Math.cos(roll), z: 0 }, rotation: { x: 0, y: 0, z: roll }, scale: { x: scale, y: scale, z: scale } }));
+    const jet = jetNode({ position: { x: axis * Math.sin(roll), y: -axis * Math.cos(roll), z: 0 }, rotation: { x: 0, y: 0, z: roll }, scale: { x: scale, y: scale, z: scale } });
+    addChild(turn, jet);
     addChild(flight, turn);
+    flight.jet = jet;
     return flight;
+  };
+  // A board's Jet, ready to come alive: its plumes on its nozzles (the static fire's, in the Jet's own frame, hidden till
+  // its engines light) and a pool of trail specks on the board, in the board's frame.
+  const flyer = (board, flight, spot, style) => {
+    const E = HM.exhaust(), flames = [];
+    for (const e of JM.EXHAUST) for (const geometry of [E.envelope, E.core]) {
+      const f = createNode({ position: { x: e.x, y: e.y, z: e.z }, geometry, visible: false, sightHidden: true });
+      addChild(flight.jet, f);
+      flames.push(f);
+    }
+    const speck = models.particleGeometry(style.ink, 0.07, 1), trail = [];
+    for (let i = 0; i < JET_FLY.trail; i++) {
+      const node = createNode({ geometry: speck, visible: false, sightHidden: true });
+      addChild(board, node);
+      trail.push({ node, life: 0 });
+    }
+    return { flight, spot, style, flames, trail, at: 0, phase: "rest", t: 0, wait: JET_FLY.first[0] + Math.random() * (JET_FLY.first[1] - JET_FLY.first[0]), puff: 0 };
   };
 
   // Space past the launch shield (`SPACE`), lighter on Canvas 2D: the dome tipped and turned with its stars, twinkling
@@ -232,6 +258,84 @@
     }
     const f = s.neon[0].glow / NEON_GLOW, o = 6 * 8, Lt = RENDER_OPTS.lights;
     Lt[o + 4] = MOUTH_LIGHT[0] * f; Lt[o + 5] = MOUTH_LIGHT[1] * f; Lt[o + 6] = MOUTH_LIGHT[2] * f;
+  };
+  // The boards' Jets: resting at their spots, then now and then waking (engines lit, a shudder), leaving their board each
+  // in its own way with a trail of specks, away a while, and back. Everything is set from where each beat has got to.
+  const boardJets = (s, dt) => {
+    for (let n = 0; n < s.flyers.length; n++) {
+      const F = s.flyers[n], node = F.flight, [x, y, z, scale, climb, , roll] = F.spot, jet = node.jet, axis = JM.AXIS * scale;
+      F.t += dt;
+      if (F.phase === "rest" && F.t >= F.wait) { F.phase = "wake"; F.t = 0; }
+      else if (F.phase === "wake" && F.t >= JET_FLY.wake) { F.phase = "go"; F.t = 0; }
+      else if (F.phase === "go" && F.t >= JET_FLY.go) { F.phase = "away"; F.t = 0; node.visible = false; }
+      else if (F.phase === "away" && F.t >= JET_FLY.away) { F.phase = "back"; F.t = 0; node.visible = true; }
+      else if (F.phase === "back" && F.t >= JET_FLY.back) { F.phase = "rest"; F.t = 0; F.wait = JET_FLY.every[0] + Math.random() * (JET_FLY.every[1] - JET_FLY.every[0]); }
+      const loop = F.style.kind === "loop", u = F.t;
+      let px = x, py = y, pitch = climb, bank = roll, size = 1, fire = 0;
+      if (F.phase === "wake") {
+        const k = Math.min(1, u / JET_FLY.wake);
+        fire = k;
+        if (loop) { py += 0.18 * k * k * (3 - 2 * k); pitch = climb + 1.2 * k * k * (3 - 2 * k); }
+        else { px += (Math.random() - 0.5) * 0.024 * k; py += (Math.random() - 0.5) * 0.024 * k; pitch = climb + 0.1 * k; }
+      } else if (F.phase === "go") {
+        fire = 1;
+        if (loop) {
+          // A barrel roll round its fuselage, then straight up and off the top.
+          const roll1 = Math.min(1, u / 0.8), up = Math.max(0, u - 0.6);
+          bank = roll + Math.PI * 2 * roll1 * roll1 * (3 - 2 * roll1);
+          pitch = climb + 1.2;
+          py += 0.18 + 4 * up * up;
+        } else {
+          const d = 3 * u * u, a = climb + 0.1;
+          px += Math.cos(a) * d; py += Math.sin(a) * d; pitch = a;
+        }
+        size = u > JET_FLY.go - 0.4 ? (JET_FLY.go - u) / 0.4 : 1;
+      } else if (F.phase === "back") {
+        const k = Math.min(1, u / JET_FLY.back);
+        if (loop) { py += 2.6 * (1 - k) * (1 - k) - 0.06 * Math.sin(Math.PI * k); fire = 1 - k; }
+        else size = k < 0.7 ? k / 0.7 * 1.15 : 1.15 - 0.15 * (k - 0.7) / 0.3;
+      }
+      node.position.x = px; node.position.y = py; node.position.z = z;
+      node.rotation.z = pitch;
+      node.scale.x = node.scale.y = node.scale.z = Math.max(0.001, size);
+      jet.position.x = axis * Math.sin(bank); jet.position.y = -axis * Math.cos(bank); jet.rotation.z = bank;
+      // The engines: the plumes lit and flickering while it flies.
+      for (let i = 0; i < F.flames.length; i++) {
+        const f = F.flames[i];
+        f.visible = fire > 0.02;
+        f.scale.x = f.scale.y = fire * (0.8 + Math.random() * 0.25);
+        f.scale.z = fire * (0.6 + Math.random() * 0.5);
+      }
+      // The trail: a speck let go behind it every so often while it goes, each fading and shrinking; and a ring of them
+      // as the stats board's Jet warps back.
+      if (F.phase === "go" && (F.puff -= dt) <= 0) {
+        F.puff = JET_FLY.puff;
+        const tailX = px - Math.cos(pitch) * 13 * scale * size, tailY = py - Math.sin(pitch) * 13 * scale * size;
+        const p = F.trail[F.at];
+        F.at = (F.at + 1) % F.trail.length;
+        p.life = JET_FLY.life;
+        p.node.position.x = tailX + (Math.random() - 0.5) * 0.05; p.node.position.y = tailY + (Math.random() - 0.5) * 0.05; p.node.position.z = z;
+        p.node.visible = true;
+      }
+      if (F.phase === "back" && !loop && u < dt) {
+        for (let i = 0; i < 8; i++) {
+          const p = F.trail[F.at], a = i / 8 * Math.PI * 2;
+          F.at = (F.at + 1) % F.trail.length;
+          p.life = JET_FLY.life;
+          p.node.position.x = x + Math.cos(a) * 0.45; p.node.position.y = y + Math.sin(a) * 0.3; p.node.position.z = z;
+          p.node.visible = true;
+        }
+      }
+      for (let i = 0; i < F.trail.length; i++) {
+        const p = F.trail[i];
+        if (p.life <= 0) continue;
+        p.life -= dt;
+        const k = Math.max(0, p.life / JET_FLY.life);
+        p.node.visible = k > 0;
+        p.node.scale.x = p.node.scale.y = p.node.scale.z = 0.4 + k;
+        p.node.glow = 0.5 + k;
+      }
+    }
   };
   // The lamps' life: the floor lamps breathing and one now and then stuttering; the runway's rabbit.
   const lampLife = (s, dt, elapsed) => {
@@ -323,13 +427,18 @@
     // a flag while the repository has a milestone open. Each has its picture for the board dialog too, with a link out
     // to the repository.
     s.boards = {};
+    s.flyers = [];
     s.boardText = {};
     s.boardViews = {};
     const faces = { stats: HM.statsFace(), timeline: HM.timelineFace() };
     for (const [key, b] of Object.entries(L.boards)) {
       const n = createNode({ position: { x: b.x, y: b.y, z: b.z }, rotation: { x: 0, y: b.turn, z: 0 }, scale: { x: b.scale, y: b.scale, z: b.scale }, geometry: frames[key].flat });
       addChild(n, createNode({ geometry: frames[key].glow, sightHidden: true }), createNode({ geometry: faces[key].flat }), createNode({ geometry: faces[key].glow, sightHidden: true }));
-      for (const spot of HM.JETS[key]) addChild(n, miniJet(spot));
+      HM.JETS[key].forEach((spot, i) => {
+        const flight = miniJet(spot);
+        addChild(n, flight);
+        if (JET_STYLE[key] && JET_STYLE[key].spot === i) s.flyers.push(flyer(n, flight, spot, JET_STYLE[key]));
+      });
       addChild(root, n);
       s.boards[key] = n;
       s.boardViews[key] = { title: key === "stats" ? "Lightning Jet on GitHub" : "Lightning Jet Timeline", help: "", canvas: document.createElement("canvas"), count: 1, index: 0, version: 0,
@@ -743,6 +852,7 @@
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
     lampLife(s, dt, elapsed);
+    boardJets(s, dt);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
     if (boardsDirty) {
