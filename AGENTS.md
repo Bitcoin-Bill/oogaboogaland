@@ -160,11 +160,14 @@ The scene contract, as `scene-lab.js` and `scene-hub.js` implement it:
 | `renderOpts` | any of `clear`, `sky`, `ground`, `sun`, `light`, `shadowCenter`, `shadowExtent`, `bloomStrength`; with `horizon` and `zenith` the sky pass draws (plus `moon`, `stars`, `time`); `clouds` (0 to 1); `windTime` (seconds; holds the WebGL2 wind sway where it stands, the Canvas 2D renderer has no sway); `lights`, a `Float32Array` of up to `POINT_LIGHT_CAPACITY` `x, y, z, radius, r, g, b, 0` entries in priority order with `lightCount`, clamped to the tier; `fog` (rgb) with `fogNear` and `fogFar`, off when absent |
 | `leave(destroy)` | tear the visit down; returns `{ targets }`, the input target count read before `input.dispose`. The hub under the keep policy suspends instead (its graph, guides and solids stay) unless `destroy` is true |
 | `retained` | the hub under the keep policy: `enter` resumes the kept visit instead of building one |
+| `retainedRoot` | the hub's suspended graph, or `null`; read-only diagnostics can traverse it without invoking cache readers |
 | `stats()` | `visibleNodes`, `allNodes`, `tweens`, `targets` plus the stats of fx, crates, crew, the pile and, in the hub, the critter counts |
 | `liveGeometry(set)` | add geometry kept off the graph but wanted on the GPU (the cavemen's swapped heads) |
 | `root`, `camera`, `input`, `debug` | set in `enter`; `input` and `debug` nulled in `leave` |
 | `agent`, `agentView`, `agentControls`, `agentHandoff` | the Agent hooks the director reads; the hub and lab set all four, the rally, drop and orbit only `agent` and `agentControls` |
 | `inMotion` | getter, true while the pile or fx animate; the governor keeps full rate for it even unfocused |
+
+The WebGL renderer exposes `geometryRecords()` as an on-demand, read-only iterator of resident geometry keys. Diagnostic traversal reports graph visibility, not frustum or draw visibility; it must not invoke tracked cache readers or change ownership.
 
 `ctx` is one object for the page life: `{ renderer, canvas, overlay, game, world, go, lootEnabled, testBananas, agentPlay, hubPolicy, from, place, signal }`. `signal` aborts when the visit ends, for listeners and fetches; `hubPolicy` is `keep` or `release` (`?hubcache=`). `go(id, place)` starts a transition and returns true (throws on an unknown id; ignored, returning false, while one runs); `from` is the scene being left, `null` on boot; `place` is the routed place to arrive at, or `null`. The hub ignores `from` and starts on its landing view, or on the `navigate` view `place` names.
 
