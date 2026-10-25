@@ -4748,9 +4748,21 @@ const gameRulesChecks = async () => {
     const threw = S.pass(sim, 0, 0) && sim.flags.red.state === "flying";
     for (let t = 0; t < 2 && sim.flags.red.state === "flying"; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const caught = threw && mate.carrying === "red";
-    record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side carries it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes, a pass is caught",
-      picked && dropped && held && regrab && noScoreAway && scored && splatted && stays && rescued && returned && trapped && frozen && shielded && freed && netted && pushed && caught,
-      JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, stays, rescued, returned, trapped, frozen, shielded, freed, netted, pushed, caught }));
+    // Crates: lift one, stack it on another, then throw it at a rival, who is stunned.
+    for (let t = 0; t < 1; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    mate.carrying = null; sim.flags.red.state = "dropped";
+    me.x = -16.5; me.z = 14; me.y = 0; S.tick(sim, S.CONFIG.STEP, still);
+    S.build(sim, 0, 0); S.build(sim, 0, Math.PI / 2);
+    const lifted = S.grab(sim, 0, Math.PI / 2) && me.holding;
+    const stacked = S.grab(sim, 0, 0) && sim.crates.some((k) => k.live && k.y > 1);
+    S.grab(sim, 0, 0);
+    rival.x = -16.5; rival.z = 21; rival.guard = 0; rival.splat = 0; me.cooldown = 0;
+    S.fire(sim, 0, 0, 0.05, "crate");
+    for (let t = 0; t < 1.2 && rival.splat <= 0; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const bonked = lifted && stacked && rival.splat > 0 && rival.bonked;
+    record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side carries it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes, a pass is caught, a crate stacks and a thrown one stuns",
+      picked && dropped && held && regrab && noScoreAway && scored && splatted && stays && rescued && returned && trapped && frozen && shielded && freed && netted && pushed && caught && bonked,
+      JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, stays, rescued, returned, trapped, frozen, shielded, freed, netted, pushed, caught, lifted, stacked, bonked }));
     const round = (seed) => { const r = S.create({ team: "red", seed }); r.actors[0].bot = "auto"; for (let t = 0; t < 900 && !r.over; t += 1 / 30) S.step(r, 1 / 30, still), r.eventCount = 0; return JSON.stringify({ over: r.over, winner: r.winner, score: r.score, time: Math.round(r.time) }); };
     const a = round(3), b = round(3);
     record("block frenzy rounds: a seeded round replays exactly and reaches three captures", a === b && JSON.parse(a).over && Math.max(...Object.values(JSON.parse(a).score)) === S.CONFIG.CAPTURES, JSON.stringify({ a, b }));
