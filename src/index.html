@@ -308,6 +308,7 @@
       </nav>
       <nav class="presets" aria-label="Block Frenzy" data-scene="block" hidden>
         <button type="button" data-action="block-board" id="block-board-btn">Sides</button>
+        <button type="button" data-action="block-view" id="block-view-btn" aria-pressed="false">View</button>
         <button type="button" data-action="block-drop" id="block-drop" disabled>Drop<span> block</span></button>
         <button type="button" class="leave" data-action="leave">Back<span> to the island</span></button>
       </nav>
@@ -860,6 +861,8 @@
               <button type="button" class="block-side" data-team="blue" aria-pressed="true">Blue fort</button>
               <button type="button" class="block-side" data-team="red" aria-pressed="false">Red fort</button>
             </div>
+            <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
+            <select class="block-ooga" id="block-ooga"></select>
           </div>
           <div class="garage-col">
             <h3 class="section-head">Record</h3>
@@ -870,7 +873,7 @@
           </div>
         </div>
         <div class="garage-foot">
-          <p class="help" id="block-help">W A S D run · drag or Q E turn · Shift sprints · Space jumps · click or F paints · G drops the block</p>
+          <p class="help" id="block-help">W A S D run · drag or Q E turn · Shift sprints · Space jumps, twice to climb · click or Enter paints · C crouches · V first person · G drops</p>
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
@@ -886,6 +889,8 @@
         </div>
       </div>
       <div class="race-center" id="block-center" hidden>GO!</div>
+      <button type="button" class="act block-paint" id="block-paint" hidden>Paint!</button>
+      <div class="block-cross" id="block-cross" hidden aria-hidden="true"></div>
       <div class="race-notice" id="block-notice" hidden>&nbsp;</div>
       <section class="race-results block-quiz" id="block-quiz" hidden aria-label="Quiz trap" aria-live="polite">
         <p class="game-intro-kicker">Quiz trap · answer to break out</p>
@@ -909,8 +914,8 @@
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#b8650a" d="M1 1h7v7H1z" /><path fill="#f7931a" d="M2 2h5v5H2z" /><path fill="#fff3d6" d="M4 3h1v3H4z" /></svg><b>Grab their block</b><small>Touch the orange block in their fort.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3dff7a" d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" /><path fill="#b8ffcf" d="M3 2h3v1H3zM6 3h1v1H6zM5 4h1v1H5zM4 5h1v1H4zM4 7h1v1H4z" /></svg><b>Quiz traps</b><small>Green pads trap you. Answer a Bitcoin question to break out.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3a8dff" d="M4 0h1v1H4zM3 1h3v1H3zM2 2h5v1H2zM1 3h7v1H1z" /><path fill="#8a8178" d="M2 4h5v5H2z" /><path fill="#f7931a" d="M4 6h1v3H4z" /></svg><b>Yours must be home</b><small>You only score while your own block sits on its stand.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or F throws. A splatted carrier drops the block.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Dropped blocks go home</b><small>Left alone for twenty seconds.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or Enter throws. A splatted carrier drops the block.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Double jump</b><small data-coarse="Jump twice to reach rooftops, huts and the fort walls.">Space twice reaches rooftops, huts and the fort walls.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Nobody gets hurt</b><small>Paint wears off. Back up and run.</small></li>
         </ul>
         <div class="actions">

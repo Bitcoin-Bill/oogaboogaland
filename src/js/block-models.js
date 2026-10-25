@@ -47,17 +47,30 @@
       parts.push(bevelBox({ w: A.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (A.L + 0.3), y: 0.4 } }));
     }
     for (const b of A.BLOCKS) {
-      const w = b[1] - b[0], d = b[3] - b[2], h = b[4], x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2;
-      const fort = Math.abs(z) > 22, tower = h > 3, team = z > 0 ? "blue" : "red";
-      if (tower) {
-        parts.push(bevelBox({ w, h, d, color: "#4a4440", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w + 0.06, h: 0.3, d: d + 0.06, color: ORANGE, emissive: 0.8, offset: { x, y: h - 0.6, z } }));
+      const w = b[1] - b[0], d = b[3] - b[2], bottom = b[5] || 0, h = b[4] - bottom, x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2, y = bottom + h / 2;
+      const fort = Math.abs(z) > 22 && Math.abs(z) < 34, team = z > 0 ? "blue" : "red";
+      const post = w < 1 && d < 1, roof = bottom > 4, floor = bottom > 1.5 && h < 0.5 && !roof, hutWall = bottom > 1.5 && !floor && !roof;
+      if (roof) {
+        // Thatch: a straw slab with a darker fringe.
+        parts.push(bevelBox({ w, h, d, color: "#b8924a", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.1, h: 0.08, d: d + 0.1, color: "#8a6a32", offset: { x, y: bottom + 0.02, z } }));
+      } else if (floor) {
+        parts.push(bevelBox({ w, h, d, color: "#7a5232", offset: { x, y, z } }));
+        for (let k = 1; k < Math.floor(w / 0.8); k++) parts.push(box({ w: 0.04, h: 0.02, d, color: "#5a3a22", offset: { x: b[0] + k * 0.8, y: b[4] + 0.005, z } }));
+      } else if (hutWall) {
+        parts.push(bevelBox({ w, h, d, color: "#9a7448", offset: { x, y, z } }));
+      } else if (post) {
+        parts.push(bevelBox({ w, h, d, color: "#5a3a22", offset: { x, y, z } }));
       } else if (fort) {
-        parts.push(bevelBox({ w, h, d, color: "#8a8178", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w + 0.04, h: 0.18, d: d + 0.04, color: TEAM[team].paint, emissive: 0.15, offset: { x, y: h + 0.09, z } }));
+        parts.push(bevelBox({ w, h, d, color: "#8a8178", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.04, h: 0.18, d: d + 0.04, color: TEAM[team].paint, emissive: 0.15, offset: { x, y: b[4] + 0.09, z } }));
+      } else if (h > 3) {
+        // The tall walls that break the sight line, banded in orange.
+        parts.push(bevelBox({ w, h, d, color: "#4a4440", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.06, h: 0.3, d: d + 0.06, color: ORANGE, emissive: 0.8, offset: { x, y: b[4] - 0.6, z } }));
       } else {
-        parts.push(bevelBox({ w, h, d, color: h > 1.5 ? "#7a6a58" : "#8a5a32", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w * 0.7, h: 0.05, d: d + 0.02, color: "#5a3a22", offset: { x, y: h * 0.55, z } }));
+        parts.push(bevelBox({ w, h, d, color: h > 1.5 ? "#7a6a58" : "#8a5a32", offset: { x, y, z } }));
+        parts.push(box({ w: w * 0.7, h: 0.05, d: d + 0.02, color: "#5a3a22", offset: { x, y: bottom + h * 0.55, z } }));
       }
     }
     return merge(...parts);

@@ -25,6 +25,7 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const CONFIG = {
+    JUMP: 6.5, JUMP2: 6.5, FALL: 16, CARRY_JUMP: 0.85, CROUCH_H: 1.05, CROUCH_SPEED: 0.55,
     CAPTURES: 3, RETURN_S: 20, SPLAT_S: 2, GUARD_S: 2.5, PICK_R: 1.3, STAND_R: 1.7, BODY_R: 0.45, HEIGHT: 1.7,
     SPEED: 6.2, SPRINT: 1.45, CARRY: 0.88, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_SPEED: 24, SHOT_LIFT: 2.2, GRAVITY: 9, SHOT_LIFE: 1.1, SHOT_Y: 1.3, SHOT_R: 0.5, COOLDOWN: 0.32, BOT_COOLDOWN: 1.4,
@@ -32,18 +33,46 @@
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8]
   };
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
-  // [x0, x1, z0, z1, height]; the forts have a back wall, two side walls and a front wall split by a gate, and
-  // the field between them has cover, a centre tower and side bunkers. Mirrored so neither side is favoured.
-  const W = 22, L = 34;
+  // [x0, x1, z0, z1, top, bottom], bottom 0 unless it floats: a floor, a roof or a wall's upper half. Anything whose
+  // top an Ooga can reach is somewhere to stand, so the map has a second storey: a double jump (`JUMP` then `JUMP2`)
+  // clears the forts' 2.4 m walls, reaches the stilt huts' floors and the centre deck, and gets into a fort from the
+  // alley behind it. Mirrored so neither side is favoured.
+  const W = 22, L = 37;
+  // A box from its centre and size, for the posts and the crates.
+  const at = (x, z, w, d, top, bottom = 0) => [x - w / 2, x + w / 2, z - d / 2, z + d / 2, top, bottom];
   const half = [
-    // A fort: back, sides, the front either side of its gate, and a low step at the gate.
-    [-8, 8, 32, 33, 2.4], [-8, -7, 23, 32, 2.4], [7, 8, 23, 32, 2.4], [-8, -2.6, 23, 24, 2.4], [2.6, 8, 23, 24, 2.4],
-    // Cover in its half of the field: crates before the gate, side bunkers, and long low walls.
-    [-1.2, 1.2, 18.5, 19.5, 1.1], [-15.5, -12.5, 14, 18, 1.8], [12.5, 15.5, 14, 18, 1.8],
-    [-11, -5, 8.5, 9.5, 1.1], [5, 11, 8.5, 9.5, 1.1], [-20, -18, 4, 7, 1.6], [18, 20, 4, 7, 1.6]
+    // A fort: back, sides, the front either side of its gate; a crate in the alley behind to climb from.
+    [-8, 8, 32, 33, 2.4, 0], [-8, -7, 23, 32, 2.4, 0], [7, 8, 23, 32, 2.4, 0], [-8, -2.6, 23, 24, 2.4, 0], [2.6, 8, 23, 24, 2.4, 0],
+    at(0, 34.6, 2, 1.2, 1.1),
+    // Crates before the gate, and two tall walls either side of the approach to break the long sight line.
+    at(0, 19, 2.4, 1, 1.1), [-6.5, -3, 13, 14, 3.2, 0], [3, 6.5, 13, 14, 3.2, 0],
+    // Low cover across the field and the side rocks.
+    [-11, -5, 8.5, 9.5, 1.1, 0], [5, 11, 8.5, 9.5, 1.1, 0], [-20, -18, 4, 7, 1.6, 0], [18, 20, 4, 7, 1.6, 0]
   ];
-  const BLOCKS = [[-1.6, 1.6, -1.6, 1.6, 3.6]];
-  for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4]]);
+  // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, a roof,
+  // and its open side facing the field's edge. `s` is the side, -1 or 1.
+  for (const s of [-1, 1]) {
+    const x0 = s > 0 ? 8 : -14, x1 = s > 0 ? 14 : -8, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
+    for (const [px, pz] of [[x0 + 0.3, 11.3], [x1 - 0.3, 11.3], [x0 + 0.3, 15.7], [x1 - 0.3, 15.7]]) half.push(at(px, pz, 0.6, 0.6, 2));
+    half.push([x0, x1, 11, 16, 2.3, 2]);
+    // The wall facing the middle and the wall toward the fort: a lower band, a window, then an upper band.
+    for (const [z0, z1] of [[11, 11.4], [15.6, 16]]) half.push([x0, x1, z0, z1, 3.2, 2.3], [x0, x1, z0, z1, 4.2, 3.85]);
+    half.push([Math.min(inner, inner + 0.4 * s), Math.max(inner, inner + 0.4 * s), 11, 16, 4.2, 2.3]);
+    // The open side keeps a short rail.
+    half.push([Math.min(outer, outer - 0.4 * s), Math.max(outer, outer - 0.4 * s), 11, 12.5, 3.1, 2.3]);
+    half.push([x0 - 0.3, x1 + 0.3, 10.7, 16.3, 4.5, 4.2]);
+  }
+  // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, a roof, and a crate by
+  // each gap to jump from. It is symmetric itself, so it goes in once.
+  const BLOCKS = [];
+  for (const [px, pz] of [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]]) BLOCKS.push(at(px, pz, 0.8, 0.8, 2.2));
+  BLOCKS.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2], [-3.4, 3.4, -3.4, 3.4, 4.9, 4.6]);
+  for (const s of [-1, 1]) {
+    BLOCKS.push([2.8 * (s > 0 ? 1 : -1) - (s > 0 ? 0 : 0.4), 2.8 * (s > 0 ? 1 : -1) + (s > 0 ? 0.4 : 0), -3.2, 3.2, 3.4, 2.5]);
+    for (const [x0, x1] of [[-3.2, -1], [1, 3.2]]) BLOCKS.push([x0, x1, s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, 3.4, 2.5]);
+  }
+  for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4], b[5]]);
+  BLOCKS.push(at(0, 4.6, 1.6, 1, 1), at(0, -4.6, 1.6, 1, 1));
   const TEAMS = ["blue", "red"];
   const ARENA = {
     W, L, BLOCKS,
@@ -63,10 +92,13 @@
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 
-  // Push a body of radius r out of every block and the arena's edge, sliding along what it hits.
+  // Push a body of radius r out of every block it overlaps in height, and the arena's edge, sliding along what it
+  // hits. A body standing on a block's top, or passing under a floating one, is clear of it.
   const resolve = (p, r) => {
+    const feet = p.y || 0, head = feet + heightOf(p);
     for (let i = 0; i < BLOCKS.length; i++) {
       const b = BLOCKS[i];
+      if (feet >= b[4] - 0.05 || head <= b[5]) continue;
       const cx = p.x < b[0] ? b[0] : p.x > b[1] ? b[1] : p.x, cz = p.z < b[2] ? b[2] : p.z > b[3] ? b[3] : p.z;
       const dx = p.x - cx, dz = p.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r) continue;
@@ -83,18 +115,42 @@
     if (p.x < -W + r) p.x = -W + r; else if (p.x > W - r) p.x = W - r;
     if (p.z < -L + r) p.z = -L + r; else if (p.z > L - r) p.z = L - r;
   };
+  // A crouching Ooga is shorter: low cover hides it and a ball thrown at chest height sails over.
+  const heightOf = (a) => a.crouch ? CONFIG.CROUCH_H : CONFIG.HEIGHT;
+  // The highest top under a body of radius r that its feet at y are on or above: where it stands.
+  const groundAt = (x, z, y, r = CONFIG.BODY_R * 0.7) => {
+    let g = 0;
+    for (let i = 0; i < BLOCKS.length; i++) {
+      const b = BLOCKS[i];
+      if (b[4] > y + 0.05 || b[4] <= g || x < b[0] - r || x > b[1] + r || z < b[2] - r || z > b[3] + r) continue;
+      g = b[4];
+    }
+    return g;
+  };
+  // The lowest bottom of a floating block over a body, above its feet: what its head would hit.
+  const ceilingAt = (x, z, y, r = CONFIG.BODY_R * 0.7) => {
+    let c = Infinity;
+    for (let i = 0; i < BLOCKS.length; i++) {
+      const b = BLOCKS[i];
+      if (b[5] <= y + 0.05 || b[5] >= c || x < b[0] - r || x > b[1] + r || z < b[2] - r || z > b[3] + r) continue;
+      c = b[5];
+    }
+    return c;
+  };
   // True when a point at height y is inside a block (or below the ground).
   const solidAt = (x, y, z) => {
     if (y <= 0) return true;
     for (let i = 0; i < BLOCKS.length; i++) {
       const b = BLOCKS[i];
-      if (x > b[0] && x < b[1] && z > b[2] && z < b[3] && y < b[4]) return true;
+      if (x > b[0] && x < b[1] && z > b[2] && z < b[3] && y < b[4] && y > b[5]) return true;
     }
     return x < -W || x > W || z < -L || z > L;
   };
-  // True when a body of radius r can walk the straight line from (ax, az) to (bx, bz) without touching a block.
+  // True when a body of radius r can walk the straight line from (ax, az) to (bx, bz) on the ground without touching
+  // a block. Floors and roofs overhead don't count.
   const clearLine = (ax, az, bx, bz, r) => {
     for (let i = 0; i < BLOCKS.length; i++) {
+      if (BLOCKS[i][5] > 1.4) continue;
       const b = BLOCKS[i], x0 = b[0] - r, x1 = b[1] + r, z0 = b[2] - r, z1 = b[3] + r;
       let t0 = 0, t1 = 1;
       const dx = bx - ax, dz = bz - az;
@@ -122,10 +178,10 @@
     const actors = [0, 1, 2, 3].map((i) => ({
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
-      blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
+      blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false, detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
-    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, z: ARENA.stands[t].z, carrier: null, returnAt: 0 };
+    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, returnAt: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
@@ -146,7 +202,7 @@
       const k = a.id % 2, at = ARENA.starts[a.team][k];
       a.x = a.lastX = at[0]; a.z = a.lastZ = at[1]; a.y = a.vx = a.vz = a.vy = 0;
       a.heading = a.team === "blue" ? Math.PI : 0;
-      a.moving = 0; a.carrying = a.blocked = null; a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = 0;
+      a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = false; a.carrying = a.blocked = null; a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = 0;
       a.captures = a.splats = 0;
     }
     for (const t of TEAMS) homeFlag(sim.flags[t]);
@@ -164,6 +220,7 @@
     f.state = "home";
     f.x = ARENA.stands[f.team].x;
     f.z = ARENA.stands[f.team].z;
+    f.y = 0;
     f.carrier = null;
     f.returnAt = 0;
   };
@@ -173,6 +230,7 @@
     if (!f) return false;
     f.state = "dropped";
     f.x = a.x;
+    f.y = a.y;
     f.z = a.z;
     f.carrier = null;
     f.returnAt = sim.time + CONFIG.RETURN_S;
@@ -213,7 +271,7 @@
     if (!s) return false;
     const c = Math.cos(pitch), sx = Math.sin(yaw) * c, sz = Math.cos(yaw) * c;
     s.live = true; s.team = a.team; s.owner = id; s.t = 0;
-    s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + CONFIG.SHOT_Y;
+    s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.25 : CONFIG.SHOT_Y);
     s.vx = sx * CONFIG.SHOT_SPEED; s.vz = sz * CONFIG.SHOT_SPEED; s.vy = CONFIG.SHOT_LIFT + Math.sin(pitch) * CONFIG.SHOT_SPEED;
     a.cooldown = a.bot ? CONFIG.BOT_COOLDOWN : CONFIG.COOLDOWN;
     a.heading = yaw;
@@ -318,7 +376,7 @@
   // Flags: pickups, returns and captures for one actor.
   const touchFlags = (sim, a) => {
     if (a.splat > 0 || a.trapped > 0) return;
-    if (a.guard <= 0) {
+    if (a.guard <= 0 && a.y < 0.3) {
       for (const t of sim.traps) {
         if (t.dark <= 0 && (a.x - t.x) ** 2 + (a.z - t.z) ** 2 < CONFIG.TRAP_R * CONFIG.TRAP_R) { spring(sim, a, t); return; }
       }
@@ -329,11 +387,11 @@
       if (f.state !== "dropped" || (a.x - f.x) ** 2 + (a.z - f.z) ** 2 > r2) a.blocked = null;
     }
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
-    if (own.state === "dropped" && (a.x - own.x) ** 2 + (a.z - own.z) ** 2 < r2) {
+    if (own.state === "dropped" && Math.abs(a.y - own.y) < 1.4 && (a.x - own.x) ** 2 + (a.z - own.z) ** 2 < r2) {
       homeFlag(own);
       emit(sim, "return", own.team, a.id, own.x, 0, own.z);
     }
-    if (!a.carrying && theirs.state !== "carried" && a.blocked !== theirs.team && (a.x - theirs.x) ** 2 + (a.z - theirs.z) ** 2 < r2) {
+    if (!a.carrying && theirs.state !== "carried" && a.blocked !== theirs.team && a.y < 1.4 + (theirs.state === "dropped" ? theirs.y : 0) && a.y > (theirs.state === "dropped" ? theirs.y : 0) - 0.5 && (a.x - theirs.x) ** 2 + (a.z - theirs.z) ** 2 < r2) {
       theirs.state = "carried";
       theirs.carrier = a.id;
       a.carrying = theirs.team;
@@ -341,7 +399,7 @@
     }
     if (a.carrying) {
       const stand = ARENA.stands[a.team];
-      if ((a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R && own.state === "home") {
+      if (a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R && own.state === "home") {
         const f = sim.flags[a.carrying];
         a.carrying = null;
         homeFlag(f);
@@ -381,21 +439,33 @@
       a.painted = Math.max(0, a.painted - dt * 0.05);
       if (a.bot) thinkBot(sim, a, dt);
       else if (a.splat <= 0 && a.trapped <= 0) {
-        const speed = CONFIG.SPEED * (a.carrying ? CONFIG.CARRY : input.sprint ? CONFIG.SPRINT : 1);
+        a.crouch = !!input.crouch && a.grounded;
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : a.carrying ? CONFIG.CARRY : input.sprint ? CONFIG.SPRINT : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
-        if (input.jump && a.y <= 0) a.vy = 5.2;
-      }
-      // Jumps carry anyone already in the air; splatted Oogas fall where they are.
-      if (a.y > 0 || a.vy > 0) {
-        a.vy -= 16 * dt;
-        a.y += a.vy * dt;
-        if (a.y <= 0) { a.y = 0; a.vy = 0; }
+        // A jump from the ground, and one more in the air; carrying the block weighs both down a little.
+        if (input.jump) {
+          const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
+          if (a.grounded) { a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1; emit(sim, "jump", a.team, a.id, a.x, a.y, a.z); }
+          else if (a.jumps > 0) { a.vy = CONFIG.JUMP2 * k; a.jumps = 0; emit(sim, "jump2", a.team, a.id, a.x, a.y, a.z); }
+        }
       }
       a.x += a.vx * dt;
       a.z += a.vz * dt;
       resolve(a, CONFIG.BODY_R);
+      // Height: fall onto whatever is underneath, and stop at a floor overhead.
+      const ground = groundAt(a.x, a.z, a.y);
+      if (a.vy !== 0 || a.y > ground) {
+        a.vy -= CONFIG.FALL * dt;
+        a.y += a.vy * dt;
+        const ceiling = ceilingAt(a.x, a.z, a.y - a.vy * dt);
+        if (a.vy > 0 && a.y + heightOf(a) > ceiling) { a.y = ceiling - heightOf(a); a.vy = 0; }
+        if (a.y <= ground) {
+          if (!a.grounded && a.vy < -1) emit(sim, "land", a.team, a.id, a.x, ground, a.z);
+          a.y = ground; a.vy = 0; a.grounded = true; a.jumps = 0;
+        } else a.grounded = false;
+      } else a.grounded = true;
       const sp = Math.hypot(a.vx, a.vz);
       a.moving = sp;
       if (sp > 0.5 && a.cooldown <= (a.bot ? CONFIG.BOT_COOLDOWN : CONFIG.COOLDOWN) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
@@ -420,7 +490,7 @@
       for (const a of sim.actors) {
         if (a.team === s.team || a.splat > 0 || a.guard > 0 || a.trapped > 0) continue;
         const dy = s.y - a.y;
-        if (dy > -0.1 && dy < CONFIG.HEIGHT + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < CONFIG.SHOT_R * CONFIG.SHOT_R) {
+        if (dy > -0.1 && dy < heightOf(a) + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < CONFIG.SHOT_R * CONFIG.SHOT_R) {
           splat(sim, a, s.owner);
           hit = true;
           break;
@@ -442,5 +512,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, escape, clearLine, solidAt, resolve };
+  BL.blockSim = { CONFIG, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, escape, clearLine, solidAt, resolve, groundAt };
 })();

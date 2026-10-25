@@ -9237,3 +9237,47 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
     grid-template-columns: 1fr;
   }
 }
+
+/* Block Frenzy's Ooga picker on the board, and the touch paint button above the jump. */
+.block-ooga {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: #2a1d12;
+  color: #f3e6cc;
+  font: inherit;
+}
+
+.block-paint {
+  bottom: calc(118px + var(--safe-bottom));
+  background: linear-gradient(#ff7a6a, #d63a2a);
+}
+
+/* First person's crosshair: a small cross with a dot, centred on the view. */
+.block-cross {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+  background:
+    linear-gradient(#fff3d6, #fff3d6) center / 2px 22px no-repeat,
+    linear-gradient(#fff3d6, #fff3d6) center / 22px 2px no-repeat;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.block-cross::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f7931a;
+}

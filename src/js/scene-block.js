@@ -7,8 +7,10 @@
 // draws them: the arena and stands built once a visit, the four Oogas posed from the sim each frame, the two blocks on
 // their stands, at a carrier's back or lying with a countdown ring, pooled paint balls and splats, and a chase camera
 // behind the visitor's Ooga that the mouse drag, Q E or the look stick turns. W A S D run toward where the camera
-// looks, Shift sprints, Space jumps, a click or F paints, G drops the block. The intro card, the board and the results
-// are in `src/index.html` under `#block`.
+// looks, Shift sprints, Space jumps and jumps again in the air, a left click or Enter paints one ball a press, G drops
+// the block, C crouches while held, V switches between the chase camera and first person (a click there locks the
+// mouse for aiming; Escape lets it go). On touch the act button jumps and `#block-paint` paints. The intro card, the board (side and Ooga), the
+// quiz card and the results are in `src/index.html` under `#block`.
 //
 // Quiz traps: stepping on a green pad closes a Matrix bubble round the Ooga (`block-sim.js`). For the visitor the
 // scene opens `#block-quiz`, a Bitcoin question from `block-trivia.js` with its four answers shuffled; a right answer
@@ -55,7 +57,7 @@
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const pick = (list, i) => list[i % list.length];
   // Kept for the page's life: the side last chosen.
-  const selection = { team: "blue" };
+  const selection = { team: "blue", ooga: null };
 
   let home = "hub";
   let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
@@ -64,8 +66,8 @@
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
-  const cam = { yaw: Math.PI, pitch: 0.28, warm: false };
-  const move = { x: 0, z: 0, sprint: 0, jump: 0 };
+  const cam = { yaw: Math.PI, pitch: 0.28, warm: false, first: false };
+  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0 };
   let jumpWas = false;
   const el = {};
   const blockScene = {
@@ -79,8 +81,10 @@
   // others from the roster, in its order.
   const castNames = () => {
     const names = roster(), own = BL.net.ownAmong(contributors.activeRoster);
-    let first = own || (world.pilot && names.includes(world.pilot) ? world.pilot : null) || names[0] || null;
+    if (world.pilot && names.includes(world.pilot)) selection.ooga = world.pilot;
     world.pilot = null;
+    if (!names.includes(selection.ooga)) selection.ooga = null;
+    const first = own || selection.ooga || names[0] || null;
     const rest = names.filter((n) => n !== first);
     return [first, rest[0] || first, rest[1] || first, rest[2] || first];
   };
@@ -100,8 +104,22 @@
   };
   const disposeActors = () => {
     if (!actors) return;
-    for (const a of actors) if (a.cave) input.remove(a.cave.parts.torso);
+    for (const a of actors) {
+      if (a.cave) input.remove(a.cave.parts.torso);
+      removeChild(root, a.body);
+      const i = placed.indexOf(a.body);
+      if (i >= 0) placed.splice(i, 1);
+    }
     actors = null;
+  };
+  // A new Ooga picked on the board: the four are cast again round it.
+  const chooseOoga = (name) => {
+    if (BL.net.ownAmong(contributors.activeRoster)) return;
+    selection.ooga = name;
+    disposeActors();
+    buildActors(castNames());
+    for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
+    paintTeams();
   };
   // Team colours go on once a side is chosen.
   const paintTeams = () => {
@@ -172,13 +190,13 @@
     nextQuestion();
     el.quizNote.textContent = COARSE ? "Tap the right answer to break the bubble." : "Click or press 1 to 4. Right answer breaks the bubble.";
     el.quiz.hidden = false;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = true;
   };
   const closeQuiz = () => {
     quiz.open = quiz.locked = false;
     window.clearTimeout(quiz.lockTimer);
     if (el.quiz) el.quiz.hidden = true;
-    if (phase === "play" && hud) hud.el.act.hidden = !COARSE;
+    if (phase === "play" && hud) hud.el.act.hidden = el.paintBtn.hidden = !COARSE;
   };
   const answer = (k) => {
     if (!quiz.open || quiz.locked || phase !== "play") return;
@@ -210,7 +228,8 @@
     phase = "board";
     el.board.hidden = false;
     el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = true;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === selection.team));
     el.best.textContent = game.state.block.best ? fmt(game.state.block.best) : "none yet";
     el.record.textContent = `${game.state.block.wins} won of ${game.state.block.games}`;
@@ -234,13 +253,15 @@
     el.strip.hidden = false;
     el.notice.hidden = false;
     hud.el.act.hidden = !COARSE;
-    hud.setAct("Paint!");
+    hud.setAct("Jump");
+    el.paintBtn.hidden = !COARSE;
+    el.cross.hidden = !cam.first;
     cam.yaw = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
     controls.reset();
     center("GO!", 900);
-    notice(COARSE ? "Steal the orange block · bring it home" : "Steal the orange block · bring it home · click or F paints", 4000);
+    notice(COARSE ? "Steal the orange block · bring it home · Jump twice to climb" : "Steal the orange block · bring it home · click or Enter paints · Space twice climbs", 4500);
     updateStrip();
   };
   const finish = () => {
@@ -251,7 +272,8 @@
     result = { won, ms, best };
     el.strip.hidden = true;
     el.center.hidden = el.notice.hidden = true;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.resultTitle.textContent = won ? "Blocks mined!" : "Rivals mined it";
     el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)}${best ? " · fastest win yet!" : ""}`;
     const me = sim.actors[0];
@@ -338,14 +360,38 @@
     sim.eventCount = 0;
   };
 
+  // Space and the act button start a round from the board or the results; in play they fall through to the jump.
   const act = () => {
-    if (phase === "board") { start(); return true; }
-    if (phase === "results") { start(); return true; }
-    if (phase === "play") return paint();
+    if (phase === "board" || phase === "results") { start(); return true; }
     return false;
   };
   // Paint along the camera's look, lobbed a little higher when the camera looks up.
-  const paint = () => SIM.fire(sim, 0, cam.yaw, clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2));
+  // In first person the ball goes where the eye looks, less the lob the throw adds.
+  const lookUp = () => clamp(-(cam.pitch - 0.28) * 1.6, -0.9, 0.9);
+  const paint = () => SIM.fire(sim, 0, cam.yaw, cam.first ? lookUp() - 0.09 : clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2));
+  const setView = (first) => {
+    cam.first = first;
+    cam.warm = false;
+    el.cross.hidden = !first || phase !== "play";
+    el.viewBtn.setAttribute("aria-pressed", String(first));
+    if (!first && document.pointerLockElement === el.canvas) document.exitPointerLock();
+    notice(first ? (COARSE ? "First person · drag to aim" : "First person · click to lock the mouse and aim · V goes back") : "Chase camera", 1800);
+  };
+  // With the mouse locked in first person, it aims directly and a left press paints.
+  const onLockedMove = (e) => {
+    if (document.pointerLockElement !== el.canvas || phase !== "play") return;
+    cam.yaw = wrap(cam.yaw - e.movementX * 2.6e-3);
+    cam.pitch = clamp(cam.pitch + e.movementY * 2.2e-3, -0.3, 0.86);
+  };
+  const onLockedDown = (e) => {
+    if (phase !== "play" || !cam.first || e.button !== 0) return;
+    if (document.pointerLockElement === el.canvas) paint();
+    else if (!COARSE && el.canvas.requestPointerLock) {
+      const lock = el.canvas.requestPointerLock();
+      if (lock && lock.catch) lock.catch(() => { });
+    }
+  };
+  const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   const dropBlock = () => {
     if (phase !== "play") return false;
     if (SIM.drop(sim, 0)) return true;
@@ -364,6 +410,7 @@
     move.x = x;
     move.z = z;
     move.sprint = a.sprint;
+    if (quiz.open) move.crouch = 0;
     const up = a.up > 0;
     move.jump = up && !jumpWas ? 1 : 0;
     jumpWas = up;
@@ -372,8 +419,10 @@
     for (let i = 0; i < 4; i++) {
       const s = sim.actors[i], a = actors[i];
       setVec(a.body.position, s.x, s.y, s.z);
+      a.body.visible = !(i === 0 && cam.first && phase === "play");
+      a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
-      a.ring.visible = s.y < 0.05;
+      a.ring.visible = s.grounded;
       a.blob.visible = s.splat > 0;
       a.bubble.visible = s.trapped > 0;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
@@ -392,6 +441,12 @@
         p.armR.rotation.x = -2 + Math.sin(elapsed * 2 + i) * 0.1;
         p.armL.rotation.x = -0.3;
         p.legL.rotation.x = p.legR.rotation.x = 0;
+        continue;
+      }
+      if (!s.grounded) {
+        // In the air: knees up, arms out for balance.
+        p.legR.rotation.x = -0.7; p.legL.rotation.x = 0.3;
+        p.armL.rotation.x = p.armR.rotation.x = s.carrying ? -2.9 : -1.2;
         continue;
       }
       const sp = s.moving;
@@ -417,14 +472,14 @@
       if (f.state === "carried") {
         const s = sim.actors[f.carrier];
         y = s.y + 2.45 + Math.sin(elapsed * 6) * 0.04;
-      } else if (f.state === "dropped") y = 0.5 + Math.sin(elapsed * 3) * 0.06;
+      } else if (f.state === "dropped") y = f.y + 0.5 + Math.sin(elapsed * 3) * 0.06;
       setVec(b.node.position, f.x, y, f.z);
       b.node.rotation.y = elapsed * (f.state === "carried" ? 3 : 0.9);
       b.node.glow = f.state === "dropped" ? 0.7 + 0.3 * Math.sin(elapsed * 8) : 1;
       // The countdown ring under a dropped block, one tick for each part of its twenty seconds left.
       const left = f.state === "dropped" ? (f.returnAt - sim.time) / C.RETURN_S : 0;
       const shown = Math.ceil(left * ticks[t].length);
-      setVec(b.tickRoot.position, f.x, 0.05, f.z);
+      setVec(b.tickRoot.position, f.x, f.y + 0.05, f.z);
       for (let k = 0; k < ticks[t].length; k++) ticks[t][k].visible = k < shown;
     }
   };
@@ -446,6 +501,14 @@
   };
   const updateCamera = (dt) => {
     const me = sim ? sim.actors[0] : null, x = me ? me.x : 0, y = me ? me.y : 0, z = me ? me.z : 0;
+    if (cam.first && me) {
+      // The eye at the Ooga's eyes (lower when crouched), looking along the aim.
+      const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
+      setVec(camera.position, x + Math.sin(cam.yaw) * 0.25, eye, z + Math.cos(cam.yaw) * 0.25);
+      setVec(camera.target, x + Math.sin(cam.yaw) * c * 10, eye + Math.sin(up) * 10, z + Math.cos(cam.yaw) * c * 10);
+      setVec(RENDER_OPTS.shadowCenter, x, 0, z);
+      return;
+    }
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view.
     const c = Math.cos(cam.pitch), hx = -Math.sin(cam.yaw) * c, hz = -Math.cos(cam.yaw) * c, hy = Math.sin(cam.pitch), by = y + CAM.height;
     let dist = CAM.dist;
@@ -506,13 +569,14 @@
       return;
     }
     if (e.key === "Enter" && phase !== "play") start();
+    else if (e.key === "Enter" && !e.repeat && !quiz.open) paint();
     if (phase !== "play" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (quiz.open) {
       if (e.key >= "1" && e.key <= "4") answer(Number(e.key) - 1);
       return;
     }
-    if (e.key === "f" || e.key === "F") paint();
     if (e.key === "g" || e.key === "G") dropBlock();
+    if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
     if (e.key === "b" || e.key === "B") {
       world.level = Math.min(pileMod.MAX_BANANAS, world.level + testBananas);
@@ -539,6 +603,19 @@
       el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(`block-${id}`);
     }
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
+    el.paintBtn = document.getElementById("block-paint");
+    el.cross = document.getElementById("block-cross");
+    el.viewBtn = document.getElementById("block-view-btn");
+    el.canvas = ctx.canvas;
+    document.addEventListener("mousemove", onLockedMove);
+    el.canvas.addEventListener("mousedown", onLockedDown);
+    window.addEventListener("keydown", onCrouchKey);
+    window.addEventListener("keyup", onCrouchKey);
+    el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
+    el.paintBtn.addEventListener("pointerdown", el.onPaint);
+    el.oogaPick = document.getElementById("block-ooga");
+    el.onOoga = () => { chooseOoga(el.oogaPick.value); el.oogaPick.blur(); };
+    el.oogaPick.addEventListener("change", el.onOoga);
     el.answers = [...document.querySelectorAll("#block-quiz [data-answer]")];
     for (const b of el.answers) b.addEventListener("click", onAnswer);
     quiz.asked = quiz.solved = 0;
@@ -571,6 +648,16 @@
     buildActors(castNames());
     for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    // The board's Ooga picker: the roster by display name, held to their own Ooga for a signed-in visitor.
+    el.oogaPick.textContent = "";
+    for (const c of contributors.activeRoster) {
+      const o = document.createElement("option");
+      o.value = c.name;
+      o.textContent = contributors.traitsFor(c.name).display || c.name;
+      el.oogaPick.append(o);
+    }
+    el.oogaPick.value = actors[0].name || "";
+    el.oogaPick.disabled = !!BL.net.ownAmong(contributors.activeRoster);
     controls = controlsMod.create({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, onAction: act, pressActions: true });
     blockScene.agentControls = controls;
     Object.assign(hooks, {
@@ -579,7 +666,7 @@
         else hud.tooltip.hide();
       },
       onHoverMove: (hit, p) => { if (hit && hit.owner.kind === "ooga") hud.tooltip.show(actors[hit.owner.index].cave.traits.display, p.x, p.y, actors[hit.owner.index].cave); },
-      onTap: () => { if (phase === "play") paint(); },
+      onTap: () => { if (phase === "play" && !(cam.first && !COARSE)) paint(); },
       onOrbit: (dx, dy) => {
         if (phase !== "play") return;
         cam.yaw = wrap(cam.yaw - dx * 5e-3);
@@ -591,13 +678,14 @@
       if (action === "block-start" || action === "block-again") start();
       else if (action === "block-board") showBoard();
       else if (action === "block-drop") dropBlock();
+      else if (action === "block-view") setView(!cam.first);
       else if (action === "leave") go(home);
       else if (action === "act") act();
     });
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Paint! throws · tap the strip's Drop to let go" : "W A S D run · drag or Q E turn · Shift sprints · Space jumps · click or F paints · G drops the block";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws · View for first person" : "W A S D run · drag or Q E turn · Shift sprints · Space jumps, twice to climb · click or Enter paints · C crouches · V first person · G drops";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -611,7 +699,7 @@
           get result() { return result; },
           get cam() { return cam; },
           get quiz() { return { open: quiz.open, right: quiz.right, locked: quiz.locked, asked: quiz.asked, solved: quiz.solved }; },
-          selection, start, showBoard, paint, drop: dropBlock, chooseTeam, answer,
+          selection, start, showBoard, paint, drop: dropBlock, chooseTeam, chooseOoga, answer,
           // Runs the round forward without frames, the visitor's Ooga on the sim's autopilot when `auto` is set.
           simulate: (seconds, auto = false) => {
             if (phase !== "play") return;
@@ -635,6 +723,17 @@
     window.clearTimeout(centerTimer);
     window.clearTimeout(noticeTimer);
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
+    el.paintBtn.removeEventListener("pointerdown", el.onPaint);
+    document.removeEventListener("mousemove", onLockedMove);
+    el.canvas.removeEventListener("mousedown", onLockedDown);
+    window.removeEventListener("keydown", onCrouchKey);
+    window.removeEventListener("keyup", onCrouchKey);
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
+    el.cross.hidden = true;
+    cam.first = false;
+    move.crouch = 0;
+    el.oogaPick.removeEventListener("change", el.onOoga);
+    el.paintBtn.hidden = true;
     for (const b of el.answers) b.removeEventListener("click", onAnswer);
     closeQuiz();
     disposeActors();

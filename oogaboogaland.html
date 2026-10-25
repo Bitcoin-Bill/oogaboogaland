@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'sha256-G2QkiwR3qHsEvSdJgYbdPsSWKTyXxSdTjRzpb3KEAQk=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-ug9gvcA63R0RYxYNkqHKtcSZT14ZBAClNkp75KScaSY='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    content="default-src 'none'; script-src 'sha256-TNdmnFpTJdzdG3lr4Bisn7ISnXdgMcX6DKNZyLjHDNE=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-QDwQp9cYhB6Ddmef3lcIx57cKu7uem2nuMW8/cbrzn0='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a0b">
@@ -9252,6 +9252,50 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
     grid-template-columns: 1fr;
   }
 }
+
+/* Block Frenzy's Ooga picker on the board, and the touch paint button above the jump. */
+.block-ooga {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: #2a1d12;
+  color: #f3e6cc;
+  font: inherit;
+}
+
+.block-paint {
+  bottom: calc(118px + var(--safe-bottom));
+  background: linear-gradient(#ff7a6a, #d63a2a);
+}
+
+/* First person's crosshair: a small cross with a dot, centred on the view. */
+.block-cross {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+  background:
+    linear-gradient(#fff3d6, #fff3d6) center / 2px 22px no-repeat,
+    linear-gradient(#fff3d6, #fff3d6) center / 22px 2px no-repeat;
+  filter: drop-shadow(0 0 2px #000);
+}
+
+.block-cross::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f7931a;
+}
 </style>
 </head>
 
@@ -9562,6 +9606,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
       </nav>
       <nav class="presets" aria-label="Block Frenzy" data-scene="block" hidden>
         <button type="button" data-action="block-board" id="block-board-btn">Sides</button>
+        <button type="button" data-action="block-view" id="block-view-btn" aria-pressed="false">View</button>
         <button type="button" data-action="block-drop" id="block-drop" disabled>Drop<span> block</span></button>
         <button type="button" class="leave" data-action="leave">Back<span> to the island</span></button>
       </nav>
@@ -10114,6 +10159,8 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
               <button type="button" class="block-side" data-team="blue" aria-pressed="true">Blue fort</button>
               <button type="button" class="block-side" data-team="red" aria-pressed="false">Red fort</button>
             </div>
+            <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
+            <select class="block-ooga" id="block-ooga"></select>
           </div>
           <div class="garage-col">
             <h3 class="section-head">Record</h3>
@@ -10124,7 +10171,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           </div>
         </div>
         <div class="garage-foot">
-          <p class="help" id="block-help">W A S D run · drag or Q E turn · Shift sprints · Space jumps · click or F paints · G drops the block</p>
+          <p class="help" id="block-help">W A S D run · drag or Q E turn · Shift sprints · Space jumps, twice to climb · click or Enter paints · C crouches · V first person · G drops</p>
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
@@ -10140,6 +10187,8 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
         </div>
       </div>
       <div class="race-center" id="block-center" hidden>GO!</div>
+      <button type="button" class="act block-paint" id="block-paint" hidden>Paint!</button>
+      <div class="block-cross" id="block-cross" hidden aria-hidden="true"></div>
       <div class="race-notice" id="block-notice" hidden>&nbsp;</div>
       <section class="race-results block-quiz" id="block-quiz" hidden aria-label="Quiz trap" aria-live="polite">
         <p class="game-intro-kicker">Quiz trap · answer to break out</p>
@@ -10163,8 +10212,8 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#b8650a" d="M1 1h7v7H1z" /><path fill="#f7931a" d="M2 2h5v5H2z" /><path fill="#fff3d6" d="M4 3h1v3H4z" /></svg><b>Grab their block</b><small>Touch the orange block in their fort.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3dff7a" d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" /><path fill="#b8ffcf" d="M3 2h3v1H3zM6 3h1v1H6zM5 4h1v1H5zM4 5h1v1H4zM4 7h1v1H4z" /></svg><b>Quiz traps</b><small>Green pads trap you. Answer a Bitcoin question to break out.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3a8dff" d="M4 0h1v1H4zM3 1h3v1H3zM2 2h5v1H2zM1 3h7v1H1z" /><path fill="#8a8178" d="M2 4h5v5H2z" /><path fill="#f7931a" d="M4 6h1v3H4z" /></svg><b>Yours must be home</b><small>You only score while your own block sits on its stand.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or F throws. A splatted carrier drops the block.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Dropped blocks go home</b><small>Left alone for twenty seconds.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or Enter throws. A splatted carrier drops the block.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Double jump</b><small data-coarse="Jump twice to reach rooftops, huts and the fort walls.">Space twice reaches rooftops, huts and the fort walls.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Nobody gets hurt</b><small>Paint wears off. Back up and run.</small></li>
         </ul>
         <div class="actions">
@@ -128184,6 +128233,7 @@ void main() {
   "use strict";
   const BL = window.BL = window.BL || {};
   const CONFIG = {
+    JUMP: 6.5, JUMP2: 6.5, FALL: 16, CARRY_JUMP: 0.85, CROUCH_H: 1.05, CROUCH_SPEED: 0.55,
     CAPTURES: 3, RETURN_S: 20, SPLAT_S: 2, GUARD_S: 2.5, PICK_R: 1.3, STAND_R: 1.7, BODY_R: 0.45, HEIGHT: 1.7,
     SPEED: 6.2, SPRINT: 1.45, CARRY: 0.88, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_SPEED: 24, SHOT_LIFT: 2.2, GRAVITY: 9, SHOT_LIFE: 1.1, SHOT_Y: 1.3, SHOT_R: 0.5, COOLDOWN: 0.32, BOT_COOLDOWN: 1.4,
@@ -128191,18 +128241,46 @@ void main() {
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8]
   };
   // Fort Chaos: x across, z along, the ground at y 0. Blue's fort is at +z, red's at -z. Each block is
-  // [x0, x1, z0, z1, height]; the forts have a back wall, two side walls and a front wall split by a gate, and
-  // the field between them has cover, a centre tower and side bunkers. Mirrored so neither side is favoured.
-  const W = 22, L = 34;
+  // [x0, x1, z0, z1, top, bottom], bottom 0 unless it floats: a floor, a roof or a wall's upper half. Anything whose
+  // top an Ooga can reach is somewhere to stand, so the map has a second storey: a double jump (`JUMP` then `JUMP2`)
+  // clears the forts' 2.4 m walls, reaches the stilt huts' floors and the centre deck, and gets into a fort from the
+  // alley behind it. Mirrored so neither side is favoured.
+  const W = 22, L = 37;
+  // A box from its centre and size, for the posts and the crates.
+  const at = (x, z, w, d, top, bottom = 0) => [x - w / 2, x + w / 2, z - d / 2, z + d / 2, top, bottom];
   const half = [
-    // A fort: back, sides, the front either side of its gate, and a low step at the gate.
-    [-8, 8, 32, 33, 2.4], [-8, -7, 23, 32, 2.4], [7, 8, 23, 32, 2.4], [-8, -2.6, 23, 24, 2.4], [2.6, 8, 23, 24, 2.4],
-    // Cover in its half of the field: crates before the gate, side bunkers, and long low walls.
-    [-1.2, 1.2, 18.5, 19.5, 1.1], [-15.5, -12.5, 14, 18, 1.8], [12.5, 15.5, 14, 18, 1.8],
-    [-11, -5, 8.5, 9.5, 1.1], [5, 11, 8.5, 9.5, 1.1], [-20, -18, 4, 7, 1.6], [18, 20, 4, 7, 1.6]
+    // A fort: back, sides, the front either side of its gate; a crate in the alley behind to climb from.
+    [-8, 8, 32, 33, 2.4, 0], [-8, -7, 23, 32, 2.4, 0], [7, 8, 23, 32, 2.4, 0], [-8, -2.6, 23, 24, 2.4, 0], [2.6, 8, 23, 24, 2.4, 0],
+    at(0, 34.6, 2, 1.2, 1.1),
+    // Crates before the gate, and two tall walls either side of the approach to break the long sight line.
+    at(0, 19, 2.4, 1, 1.1), [-6.5, -3, 13, 14, 3.2, 0], [3, 6.5, 13, 14, 3.2, 0],
+    // Low cover across the field and the side rocks.
+    [-11, -5, 8.5, 9.5, 1.1, 0], [5, 11, 8.5, 9.5, 1.1, 0], [-20, -18, 4, 7, 1.6, 0], [18, 20, 4, 7, 1.6, 0]
   ];
-  const BLOCKS = [[-1.6, 1.6, -1.6, 1.6, 3.6]];
-  for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4]]);
+  // A stilt hut on each side of each half: four posts, a floor at 2 m, walls with a window band at eye height, a roof,
+  // and its open side facing the field's edge. `s` is the side, -1 or 1.
+  for (const s of [-1, 1]) {
+    const x0 = s > 0 ? 8 : -14, x1 = s > 0 ? 14 : -8, outer = s > 0 ? x1 : x0, inner = s > 0 ? x0 : x1;
+    for (const [px, pz] of [[x0 + 0.3, 11.3], [x1 - 0.3, 11.3], [x0 + 0.3, 15.7], [x1 - 0.3, 15.7]]) half.push(at(px, pz, 0.6, 0.6, 2));
+    half.push([x0, x1, 11, 16, 2.3, 2]);
+    // The wall facing the middle and the wall toward the fort: a lower band, a window, then an upper band.
+    for (const [z0, z1] of [[11, 11.4], [15.6, 16]]) half.push([x0, x1, z0, z1, 3.2, 2.3], [x0, x1, z0, z1, 4.2, 3.85]);
+    half.push([Math.min(inner, inner + 0.4 * s), Math.max(inner, inner + 0.4 * s), 11, 16, 4.2, 2.3]);
+    // The open side keeps a short rail.
+    half.push([Math.min(outer, outer - 0.4 * s), Math.max(outer, outer - 0.4 * s), 11, 12.5, 3.1, 2.3]);
+    half.push([x0 - 0.3, x1 + 0.3, 10.7, 16.3, 4.5, 4.2]);
+  }
+  // The centre deck: four posts, a floor at 2.2 m with gaps in its north and south parapets, a roof, and a crate by
+  // each gap to jump from. It is symmetric itself, so it goes in once.
+  const BLOCKS = [];
+  for (const [px, pz] of [[-2.8, -2.8], [2.8, -2.8], [-2.8, 2.8], [2.8, 2.8]]) BLOCKS.push(at(px, pz, 0.8, 0.8, 2.2));
+  BLOCKS.push([-3.2, 3.2, -3.2, 3.2, 2.5, 2.2], [-3.4, 3.4, -3.4, 3.4, 4.9, 4.6]);
+  for (const s of [-1, 1]) {
+    BLOCKS.push([2.8 * (s > 0 ? 1 : -1) - (s > 0 ? 0 : 0.4), 2.8 * (s > 0 ? 1 : -1) + (s > 0 ? 0.4 : 0), -3.2, 3.2, 3.4, 2.5]);
+    for (const [x0, x1] of [[-3.2, -1], [1, 3.2]]) BLOCKS.push([x0, x1, s > 0 ? 2.8 : -3.2, s > 0 ? 3.2 : -2.8, 3.4, 2.5]);
+  }
+  for (const b of half) BLOCKS.push(b, [b[0], b[1], -b[3], -b[2], b[4], b[5]]);
+  BLOCKS.push(at(0, 4.6, 1.6, 1, 1), at(0, -4.6, 1.6, 1, 1));
   const TEAMS = ["blue", "red"];
   const ARENA = {
     W, L, BLOCKS,
@@ -128222,10 +128300,13 @@ void main() {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 
-  // Push a body of radius r out of every block and the arena's edge, sliding along what it hits.
+  // Push a body of radius r out of every block it overlaps in height, and the arena's edge, sliding along what it
+  // hits. A body standing on a block's top, or passing under a floating one, is clear of it.
   const resolve = (p, r) => {
+    const feet = p.y || 0, head = feet + heightOf(p);
     for (let i = 0; i < BLOCKS.length; i++) {
       const b = BLOCKS[i];
+      if (feet >= b[4] - 0.05 || head <= b[5]) continue;
       const cx = p.x < b[0] ? b[0] : p.x > b[1] ? b[1] : p.x, cz = p.z < b[2] ? b[2] : p.z > b[3] ? b[3] : p.z;
       const dx = p.x - cx, dz = p.z - cz, d2 = dx * dx + dz * dz;
       if (d2 >= r * r) continue;
@@ -128242,18 +128323,42 @@ void main() {
     if (p.x < -W + r) p.x = -W + r; else if (p.x > W - r) p.x = W - r;
     if (p.z < -L + r) p.z = -L + r; else if (p.z > L - r) p.z = L - r;
   };
+  // A crouching Ooga is shorter: low cover hides it and a ball thrown at chest height sails over.
+  const heightOf = (a) => a.crouch ? CONFIG.CROUCH_H : CONFIG.HEIGHT;
+  // The highest top under a body of radius r that its feet at y are on or above: where it stands.
+  const groundAt = (x, z, y, r = CONFIG.BODY_R * 0.7) => {
+    let g = 0;
+    for (let i = 0; i < BLOCKS.length; i++) {
+      const b = BLOCKS[i];
+      if (b[4] > y + 0.05 || b[4] <= g || x < b[0] - r || x > b[1] + r || z < b[2] - r || z > b[3] + r) continue;
+      g = b[4];
+    }
+    return g;
+  };
+  // The lowest bottom of a floating block over a body, above its feet: what its head would hit.
+  const ceilingAt = (x, z, y, r = CONFIG.BODY_R * 0.7) => {
+    let c = Infinity;
+    for (let i = 0; i < BLOCKS.length; i++) {
+      const b = BLOCKS[i];
+      if (b[5] <= y + 0.05 || b[5] >= c || x < b[0] - r || x > b[1] + r || z < b[2] - r || z > b[3] + r) continue;
+      c = b[5];
+    }
+    return c;
+  };
   // True when a point at height y is inside a block (or below the ground).
   const solidAt = (x, y, z) => {
     if (y <= 0) return true;
     for (let i = 0; i < BLOCKS.length; i++) {
       const b = BLOCKS[i];
-      if (x > b[0] && x < b[1] && z > b[2] && z < b[3] && y < b[4]) return true;
+      if (x > b[0] && x < b[1] && z > b[2] && z < b[3] && y < b[4] && y > b[5]) return true;
     }
     return x < -W || x > W || z < -L || z > L;
   };
-  // True when a body of radius r can walk the straight line from (ax, az) to (bx, bz) without touching a block.
+  // True when a body of radius r can walk the straight line from (ax, az) to (bx, bz) on the ground without touching
+  // a block. Floors and roofs overhead don't count.
   const clearLine = (ax, az, bx, bz, r) => {
     for (let i = 0; i < BLOCKS.length; i++) {
+      if (BLOCKS[i][5] > 1.4) continue;
       const b = BLOCKS[i], x0 = b[0] - r, x1 = b[1] + r, z0 = b[2] - r, z1 = b[3] + r;
       let t0 = 0, t1 = 1;
       const dx = bx - ax, dz = bz - az;
@@ -128281,10 +128386,10 @@ void main() {
     const actors = [0, 1, 2, 3].map((i) => ({
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
-      blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
+      blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false, detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
-    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, z: ARENA.stands[t].z, carrier: null, returnAt: 0 };
+    for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, returnAt: 0 };
     const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, team: null, owner: -1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
@@ -128305,7 +128410,7 @@ void main() {
       const k = a.id % 2, at = ARENA.starts[a.team][k];
       a.x = a.lastX = at[0]; a.z = a.lastZ = at[1]; a.y = a.vx = a.vz = a.vy = 0;
       a.heading = a.team === "blue" ? Math.PI : 0;
-      a.moving = 0; a.carrying = a.blocked = null; a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = 0;
+      a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = false; a.carrying = a.blocked = null; a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = 0;
       a.captures = a.splats = 0;
     }
     for (const t of TEAMS) homeFlag(sim.flags[t]);
@@ -128323,6 +128428,7 @@ void main() {
     f.state = "home";
     f.x = ARENA.stands[f.team].x;
     f.z = ARENA.stands[f.team].z;
+    f.y = 0;
     f.carrier = null;
     f.returnAt = 0;
   };
@@ -128332,6 +128438,7 @@ void main() {
     if (!f) return false;
     f.state = "dropped";
     f.x = a.x;
+    f.y = a.y;
     f.z = a.z;
     f.carrier = null;
     f.returnAt = sim.time + CONFIG.RETURN_S;
@@ -128372,7 +128479,7 @@ void main() {
     if (!s) return false;
     const c = Math.cos(pitch), sx = Math.sin(yaw) * c, sz = Math.cos(yaw) * c;
     s.live = true; s.team = a.team; s.owner = id; s.t = 0;
-    s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + CONFIG.SHOT_Y;
+    s.x = a.x + sx * 0.5; s.z = a.z + sz * 0.5; s.y = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.25 : CONFIG.SHOT_Y);
     s.vx = sx * CONFIG.SHOT_SPEED; s.vz = sz * CONFIG.SHOT_SPEED; s.vy = CONFIG.SHOT_LIFT + Math.sin(pitch) * CONFIG.SHOT_SPEED;
     a.cooldown = a.bot ? CONFIG.BOT_COOLDOWN : CONFIG.COOLDOWN;
     a.heading = yaw;
@@ -128477,7 +128584,7 @@ void main() {
   // Flags: pickups, returns and captures for one actor.
   const touchFlags = (sim, a) => {
     if (a.splat > 0 || a.trapped > 0) return;
-    if (a.guard <= 0) {
+    if (a.guard <= 0 && a.y < 0.3) {
       for (const t of sim.traps) {
         if (t.dark <= 0 && (a.x - t.x) ** 2 + (a.z - t.z) ** 2 < CONFIG.TRAP_R * CONFIG.TRAP_R) { spring(sim, a, t); return; }
       }
@@ -128488,11 +128595,11 @@ void main() {
       if (f.state !== "dropped" || (a.x - f.x) ** 2 + (a.z - f.z) ** 2 > r2) a.blocked = null;
     }
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
-    if (own.state === "dropped" && (a.x - own.x) ** 2 + (a.z - own.z) ** 2 < r2) {
+    if (own.state === "dropped" && Math.abs(a.y - own.y) < 1.4 && (a.x - own.x) ** 2 + (a.z - own.z) ** 2 < r2) {
       homeFlag(own);
       emit(sim, "return", own.team, a.id, own.x, 0, own.z);
     }
-    if (!a.carrying && theirs.state !== "carried" && a.blocked !== theirs.team && (a.x - theirs.x) ** 2 + (a.z - theirs.z) ** 2 < r2) {
+    if (!a.carrying && theirs.state !== "carried" && a.blocked !== theirs.team && a.y < 1.4 + (theirs.state === "dropped" ? theirs.y : 0) && a.y > (theirs.state === "dropped" ? theirs.y : 0) - 0.5 && (a.x - theirs.x) ** 2 + (a.z - theirs.z) ** 2 < r2) {
       theirs.state = "carried";
       theirs.carrier = a.id;
       a.carrying = theirs.team;
@@ -128500,7 +128607,7 @@ void main() {
     }
     if (a.carrying) {
       const stand = ARENA.stands[a.team];
-      if ((a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R && own.state === "home") {
+      if (a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R && own.state === "home") {
         const f = sim.flags[a.carrying];
         a.carrying = null;
         homeFlag(f);
@@ -128540,21 +128647,33 @@ void main() {
       a.painted = Math.max(0, a.painted - dt * 0.05);
       if (a.bot) thinkBot(sim, a, dt);
       else if (a.splat <= 0 && a.trapped <= 0) {
-        const speed = CONFIG.SPEED * (a.carrying ? CONFIG.CARRY : input.sprint ? CONFIG.SPRINT : 1);
+        a.crouch = !!input.crouch && a.grounded;
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : a.carrying ? CONFIG.CARRY : input.sprint ? CONFIG.SPRINT : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
-        if (input.jump && a.y <= 0) a.vy = 5.2;
-      }
-      // Jumps carry anyone already in the air; splatted Oogas fall where they are.
-      if (a.y > 0 || a.vy > 0) {
-        a.vy -= 16 * dt;
-        a.y += a.vy * dt;
-        if (a.y <= 0) { a.y = 0; a.vy = 0; }
+        // A jump from the ground, and one more in the air; carrying the block weighs both down a little.
+        if (input.jump) {
+          const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
+          if (a.grounded) { a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1; emit(sim, "jump", a.team, a.id, a.x, a.y, a.z); }
+          else if (a.jumps > 0) { a.vy = CONFIG.JUMP2 * k; a.jumps = 0; emit(sim, "jump2", a.team, a.id, a.x, a.y, a.z); }
+        }
       }
       a.x += a.vx * dt;
       a.z += a.vz * dt;
       resolve(a, CONFIG.BODY_R);
+      // Height: fall onto whatever is underneath, and stop at a floor overhead.
+      const ground = groundAt(a.x, a.z, a.y);
+      if (a.vy !== 0 || a.y > ground) {
+        a.vy -= CONFIG.FALL * dt;
+        a.y += a.vy * dt;
+        const ceiling = ceilingAt(a.x, a.z, a.y - a.vy * dt);
+        if (a.vy > 0 && a.y + heightOf(a) > ceiling) { a.y = ceiling - heightOf(a); a.vy = 0; }
+        if (a.y <= ground) {
+          if (!a.grounded && a.vy < -1) emit(sim, "land", a.team, a.id, a.x, ground, a.z);
+          a.y = ground; a.vy = 0; a.grounded = true; a.jumps = 0;
+        } else a.grounded = false;
+      } else a.grounded = true;
       const sp = Math.hypot(a.vx, a.vz);
       a.moving = sp;
       if (sp > 0.5 && a.cooldown <= (a.bot ? CONFIG.BOT_COOLDOWN : CONFIG.COOLDOWN) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
@@ -128579,7 +128698,7 @@ void main() {
       for (const a of sim.actors) {
         if (a.team === s.team || a.splat > 0 || a.guard > 0 || a.trapped > 0) continue;
         const dy = s.y - a.y;
-        if (dy > -0.1 && dy < CONFIG.HEIGHT + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < CONFIG.SHOT_R * CONFIG.SHOT_R) {
+        if (dy > -0.1 && dy < heightOf(a) + 0.15 && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < CONFIG.SHOT_R * CONFIG.SHOT_R) {
           splat(sim, a, s.owner);
           hit = true;
           break;
@@ -128601,7 +128720,7 @@ void main() {
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, escape, clearLine, solidAt, resolve };
+  BL.blockSim = { CONFIG, ARENA, TEAMS, other, create, reset, step, tick, fire, drop, escape, clearLine, solidAt, resolve, groundAt };
 })();
 
 // ---- js/block-trivia.js ----
@@ -128701,17 +128820,30 @@ void main() {
       parts.push(bevelBox({ w: A.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (A.L + 0.3), y: 0.4 } }));
     }
     for (const b of A.BLOCKS) {
-      const w = b[1] - b[0], d = b[3] - b[2], h = b[4], x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2;
-      const fort = Math.abs(z) > 22, tower = h > 3, team = z > 0 ? "blue" : "red";
-      if (tower) {
-        parts.push(bevelBox({ w, h, d, color: "#4a4440", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w + 0.06, h: 0.3, d: d + 0.06, color: ORANGE, emissive: 0.8, offset: { x, y: h - 0.6, z } }));
+      const w = b[1] - b[0], d = b[3] - b[2], bottom = b[5] || 0, h = b[4] - bottom, x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2, y = bottom + h / 2;
+      const fort = Math.abs(z) > 22 && Math.abs(z) < 34, team = z > 0 ? "blue" : "red";
+      const post = w < 1 && d < 1, roof = bottom > 4, floor = bottom > 1.5 && h < 0.5 && !roof, hutWall = bottom > 1.5 && !floor && !roof;
+      if (roof) {
+        // Thatch: a straw slab with a darker fringe.
+        parts.push(bevelBox({ w, h, d, color: "#b8924a", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.1, h: 0.08, d: d + 0.1, color: "#8a6a32", offset: { x, y: bottom + 0.02, z } }));
+      } else if (floor) {
+        parts.push(bevelBox({ w, h, d, color: "#7a5232", offset: { x, y, z } }));
+        for (let k = 1; k < Math.floor(w / 0.8); k++) parts.push(box({ w: 0.04, h: 0.02, d, color: "#5a3a22", offset: { x: b[0] + k * 0.8, y: b[4] + 0.005, z } }));
+      } else if (hutWall) {
+        parts.push(bevelBox({ w, h, d, color: "#9a7448", offset: { x, y, z } }));
+      } else if (post) {
+        parts.push(bevelBox({ w, h, d, color: "#5a3a22", offset: { x, y, z } }));
       } else if (fort) {
-        parts.push(bevelBox({ w, h, d, color: "#8a8178", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w + 0.04, h: 0.18, d: d + 0.04, color: TEAM[team].paint, emissive: 0.15, offset: { x, y: h + 0.09, z } }));
+        parts.push(bevelBox({ w, h, d, color: "#8a8178", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.04, h: 0.18, d: d + 0.04, color: TEAM[team].paint, emissive: 0.15, offset: { x, y: b[4] + 0.09, z } }));
+      } else if (h > 3) {
+        // The tall walls that break the sight line, banded in orange.
+        parts.push(bevelBox({ w, h, d, color: "#4a4440", offset: { x, y, z } }));
+        parts.push(box({ w: w + 0.06, h: 0.3, d: d + 0.06, color: ORANGE, emissive: 0.8, offset: { x, y: b[4] - 0.6, z } }));
       } else {
-        parts.push(bevelBox({ w, h, d, color: h > 1.5 ? "#7a6a58" : "#8a5a32", offset: { x, y: h / 2, z } }));
-        parts.push(box({ w: w * 0.7, h: 0.05, d: d + 0.02, color: "#5a3a22", offset: { x, y: h * 0.55, z } }));
+        parts.push(bevelBox({ w, h, d, color: h > 1.5 ? "#7a6a58" : "#8a5a32", offset: { x, y, z } }));
+        parts.push(box({ w: w * 0.7, h: 0.05, d: d + 0.02, color: "#5a3a22", offset: { x, y: bottom + h * 0.55, z } }));
       }
     }
     return merge(...parts);
@@ -128839,8 +128971,10 @@ void main() {
 // draws them: the arena and stands built once a visit, the four Oogas posed from the sim each frame, the two blocks on
 // their stands, at a carrier's back or lying with a countdown ring, pooled paint balls and splats, and a chase camera
 // behind the visitor's Ooga that the mouse drag, Q E or the look stick turns. W A S D run toward where the camera
-// looks, Shift sprints, Space jumps, a click or F paints, G drops the block. The intro card, the board and the results
-// are in `src/index.html` under `#block`.
+// looks, Shift sprints, Space jumps and jumps again in the air, a left click or Enter paints one ball a press, G drops
+// the block, C crouches while held, V switches between the chase camera and first person (a click there locks the
+// mouse for aiming; Escape lets it go). On touch the act button jumps and `#block-paint` paints. The intro card, the board (side and Ooga), the
+// quiz card and the results are in `src/index.html` under `#block`.
 //
 // Quiz traps: stepping on a green pad closes a Matrix bubble round the Ooga (`block-sim.js`). For the visitor the
 // scene opens `#block-quiz`, a Bitcoin question from `block-trivia.js` with its four answers shuffled; a right answer
@@ -128887,7 +129021,7 @@ void main() {
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const pick = (list, i) => list[i % list.length];
   // Kept for the page's life: the side last chosen.
-  const selection = { team: "blue" };
+  const selection = { team: "blue", ooga: null };
 
   let home = "hub";
   let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
@@ -128896,8 +129030,8 @@ void main() {
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
-  const cam = { yaw: Math.PI, pitch: 0.28, warm: false };
-  const move = { x: 0, z: 0, sprint: 0, jump: 0 };
+  const cam = { yaw: Math.PI, pitch: 0.28, warm: false, first: false };
+  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0 };
   let jumpWas = false;
   const el = {};
   const blockScene = {
@@ -128911,8 +129045,10 @@ void main() {
   // others from the roster, in its order.
   const castNames = () => {
     const names = roster(), own = BL.net.ownAmong(contributors.activeRoster);
-    let first = own || (world.pilot && names.includes(world.pilot) ? world.pilot : null) || names[0] || null;
+    if (world.pilot && names.includes(world.pilot)) selection.ooga = world.pilot;
     world.pilot = null;
+    if (!names.includes(selection.ooga)) selection.ooga = null;
+    const first = own || selection.ooga || names[0] || null;
     const rest = names.filter((n) => n !== first);
     return [first, rest[0] || first, rest[1] || first, rest[2] || first];
   };
@@ -128932,8 +129068,22 @@ void main() {
   };
   const disposeActors = () => {
     if (!actors) return;
-    for (const a of actors) if (a.cave) input.remove(a.cave.parts.torso);
+    for (const a of actors) {
+      if (a.cave) input.remove(a.cave.parts.torso);
+      removeChild(root, a.body);
+      const i = placed.indexOf(a.body);
+      if (i >= 0) placed.splice(i, 1);
+    }
     actors = null;
+  };
+  // A new Ooga picked on the board: the four are cast again round it.
+  const chooseOoga = (name) => {
+    if (BL.net.ownAmong(contributors.activeRoster)) return;
+    selection.ooga = name;
+    disposeActors();
+    buildActors(castNames());
+    for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
+    paintTeams();
   };
   // Team colours go on once a side is chosen.
   const paintTeams = () => {
@@ -129004,13 +129154,13 @@ void main() {
     nextQuestion();
     el.quizNote.textContent = COARSE ? "Tap the right answer to break the bubble." : "Click or press 1 to 4. Right answer breaks the bubble.";
     el.quiz.hidden = false;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = true;
   };
   const closeQuiz = () => {
     quiz.open = quiz.locked = false;
     window.clearTimeout(quiz.lockTimer);
     if (el.quiz) el.quiz.hidden = true;
-    if (phase === "play" && hud) hud.el.act.hidden = !COARSE;
+    if (phase === "play" && hud) hud.el.act.hidden = el.paintBtn.hidden = !COARSE;
   };
   const answer = (k) => {
     if (!quiz.open || quiz.locked || phase !== "play") return;
@@ -129042,7 +129192,8 @@ void main() {
     phase = "board";
     el.board.hidden = false;
     el.results.hidden = el.strip.hidden = el.center.hidden = el.notice.hidden = true;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === selection.team));
     el.best.textContent = game.state.block.best ? fmt(game.state.block.best) : "none yet";
     el.record.textContent = `${game.state.block.wins} won of ${game.state.block.games}`;
@@ -129066,13 +129217,15 @@ void main() {
     el.strip.hidden = false;
     el.notice.hidden = false;
     hud.el.act.hidden = !COARSE;
-    hud.setAct("Paint!");
+    hud.setAct("Jump");
+    el.paintBtn.hidden = !COARSE;
+    el.cross.hidden = !cam.first;
     cam.yaw = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
     controls.reset();
     center("GO!", 900);
-    notice(COARSE ? "Steal the orange block · bring it home" : "Steal the orange block · bring it home · click or F paints", 4000);
+    notice(COARSE ? "Steal the orange block · bring it home · Jump twice to climb" : "Steal the orange block · bring it home · click or Enter paints · Space twice climbs", 4500);
     updateStrip();
   };
   const finish = () => {
@@ -129083,7 +129236,8 @@ void main() {
     result = { won, ms, best };
     el.strip.hidden = true;
     el.center.hidden = el.notice.hidden = true;
-    hud.el.act.hidden = true;
+    hud.el.act.hidden = el.paintBtn.hidden = el.cross.hidden = true;
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.resultTitle.textContent = won ? "Blocks mined!" : "Rivals mined it";
     el.summary.textContent = `${sim.score[sim.team]} to ${sim.score[sim.rival]} in ${fmt(ms)}${best ? " · fastest win yet!" : ""}`;
     const me = sim.actors[0];
@@ -129170,14 +129324,38 @@ void main() {
     sim.eventCount = 0;
   };
 
+  // Space and the act button start a round from the board or the results; in play they fall through to the jump.
   const act = () => {
-    if (phase === "board") { start(); return true; }
-    if (phase === "results") { start(); return true; }
-    if (phase === "play") return paint();
+    if (phase === "board" || phase === "results") { start(); return true; }
     return false;
   };
   // Paint along the camera's look, lobbed a little higher when the camera looks up.
-  const paint = () => SIM.fire(sim, 0, cam.yaw, clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2));
+  // In first person the ball goes where the eye looks, less the lob the throw adds.
+  const lookUp = () => clamp(-(cam.pitch - 0.28) * 1.6, -0.9, 0.9);
+  const paint = () => SIM.fire(sim, 0, cam.yaw, cam.first ? lookUp() - 0.09 : clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2));
+  const setView = (first) => {
+    cam.first = first;
+    cam.warm = false;
+    el.cross.hidden = !first || phase !== "play";
+    el.viewBtn.setAttribute("aria-pressed", String(first));
+    if (!first && document.pointerLockElement === el.canvas) document.exitPointerLock();
+    notice(first ? (COARSE ? "First person · drag to aim" : "First person · click to lock the mouse and aim · V goes back") : "Chase camera", 1800);
+  };
+  // With the mouse locked in first person, it aims directly and a left press paints.
+  const onLockedMove = (e) => {
+    if (document.pointerLockElement !== el.canvas || phase !== "play") return;
+    cam.yaw = wrap(cam.yaw - e.movementX * 2.6e-3);
+    cam.pitch = clamp(cam.pitch + e.movementY * 2.2e-3, -0.3, 0.86);
+  };
+  const onLockedDown = (e) => {
+    if (phase !== "play" || !cam.first || e.button !== 0) return;
+    if (document.pointerLockElement === el.canvas) paint();
+    else if (!COARSE && el.canvas.requestPointerLock) {
+      const lock = el.canvas.requestPointerLock();
+      if (lock && lock.catch) lock.catch(() => { });
+    }
+  };
+  const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   const dropBlock = () => {
     if (phase !== "play") return false;
     if (SIM.drop(sim, 0)) return true;
@@ -129196,6 +129374,7 @@ void main() {
     move.x = x;
     move.z = z;
     move.sprint = a.sprint;
+    if (quiz.open) move.crouch = 0;
     const up = a.up > 0;
     move.jump = up && !jumpWas ? 1 : 0;
     jumpWas = up;
@@ -129204,8 +129383,10 @@ void main() {
     for (let i = 0; i < 4; i++) {
       const s = sim.actors[i], a = actors[i];
       setVec(a.body.position, s.x, s.y, s.z);
+      a.body.visible = !(i === 0 && cam.first && phase === "play");
+      a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
-      a.ring.visible = s.y < 0.05;
+      a.ring.visible = s.grounded;
       a.blob.visible = s.splat > 0;
       a.bubble.visible = s.trapped > 0;
       if (s.trapped > 0) a.bubble.rotation.y = elapsed * 0.8;
@@ -129224,6 +129405,12 @@ void main() {
         p.armR.rotation.x = -2 + Math.sin(elapsed * 2 + i) * 0.1;
         p.armL.rotation.x = -0.3;
         p.legL.rotation.x = p.legR.rotation.x = 0;
+        continue;
+      }
+      if (!s.grounded) {
+        // In the air: knees up, arms out for balance.
+        p.legR.rotation.x = -0.7; p.legL.rotation.x = 0.3;
+        p.armL.rotation.x = p.armR.rotation.x = s.carrying ? -2.9 : -1.2;
         continue;
       }
       const sp = s.moving;
@@ -129249,14 +129436,14 @@ void main() {
       if (f.state === "carried") {
         const s = sim.actors[f.carrier];
         y = s.y + 2.45 + Math.sin(elapsed * 6) * 0.04;
-      } else if (f.state === "dropped") y = 0.5 + Math.sin(elapsed * 3) * 0.06;
+      } else if (f.state === "dropped") y = f.y + 0.5 + Math.sin(elapsed * 3) * 0.06;
       setVec(b.node.position, f.x, y, f.z);
       b.node.rotation.y = elapsed * (f.state === "carried" ? 3 : 0.9);
       b.node.glow = f.state === "dropped" ? 0.7 + 0.3 * Math.sin(elapsed * 8) : 1;
       // The countdown ring under a dropped block, one tick for each part of its twenty seconds left.
       const left = f.state === "dropped" ? (f.returnAt - sim.time) / C.RETURN_S : 0;
       const shown = Math.ceil(left * ticks[t].length);
-      setVec(b.tickRoot.position, f.x, 0.05, f.z);
+      setVec(b.tickRoot.position, f.x, f.y + 0.05, f.z);
       for (let k = 0; k < ticks[t].length; k++) ticks[t][k].visible = k < shown;
     }
   };
@@ -129278,6 +129465,14 @@ void main() {
   };
   const updateCamera = (dt) => {
     const me = sim ? sim.actors[0] : null, x = me ? me.x : 0, y = me ? me.y : 0, z = me ? me.z : 0;
+    if (cam.first && me) {
+      // The eye at the Ooga's eyes (lower when crouched), looking along the aim.
+      const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
+      setVec(camera.position, x + Math.sin(cam.yaw) * 0.25, eye, z + Math.cos(cam.yaw) * 0.25);
+      setVec(camera.target, x + Math.sin(cam.yaw) * c * 10, eye + Math.sin(up) * 10, z + Math.cos(cam.yaw) * c * 10);
+      setVec(RENDER_OPTS.shadowCenter, x, 0, z);
+      return;
+    }
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view.
     const c = Math.cos(cam.pitch), hx = -Math.sin(cam.yaw) * c, hz = -Math.cos(cam.yaw) * c, hy = Math.sin(cam.pitch), by = y + CAM.height;
     let dist = CAM.dist;
@@ -129338,13 +129533,14 @@ void main() {
       return;
     }
     if (e.key === "Enter" && phase !== "play") start();
+    else if (e.key === "Enter" && !e.repeat && !quiz.open) paint();
     if (phase !== "play" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     if (quiz.open) {
       if (e.key >= "1" && e.key <= "4") answer(Number(e.key) - 1);
       return;
     }
-    if (e.key === "f" || e.key === "F") paint();
     if (e.key === "g" || e.key === "G") dropBlock();
+    if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
     if (e.key === "b" || e.key === "B") {
       world.level = Math.min(pileMod.MAX_BANANAS, world.level + testBananas);
@@ -129371,6 +129567,19 @@ void main() {
       el[id.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = document.getElementById(`block-${id}`);
     }
     el.teams = [...document.querySelectorAll("#block-board [data-team]")];
+    el.paintBtn = document.getElementById("block-paint");
+    el.cross = document.getElementById("block-cross");
+    el.viewBtn = document.getElementById("block-view-btn");
+    el.canvas = ctx.canvas;
+    document.addEventListener("mousemove", onLockedMove);
+    el.canvas.addEventListener("mousedown", onLockedDown);
+    window.addEventListener("keydown", onCrouchKey);
+    window.addEventListener("keyup", onCrouchKey);
+    el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
+    el.paintBtn.addEventListener("pointerdown", el.onPaint);
+    el.oogaPick = document.getElementById("block-ooga");
+    el.onOoga = () => { chooseOoga(el.oogaPick.value); el.oogaPick.blur(); };
+    el.oogaPick.addEventListener("change", el.onOoga);
     el.answers = [...document.querySelectorAll("#block-quiz [data-answer]")];
     for (const b of el.answers) b.addEventListener("click", onAnswer);
     quiz.asked = quiz.solved = 0;
@@ -129403,6 +129612,16 @@ void main() {
     buildActors(castNames());
     for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    // The board's Ooga picker: the roster by display name, held to their own Ooga for a signed-in visitor.
+    el.oogaPick.textContent = "";
+    for (const c of contributors.activeRoster) {
+      const o = document.createElement("option");
+      o.value = c.name;
+      o.textContent = contributors.traitsFor(c.name).display || c.name;
+      el.oogaPick.append(o);
+    }
+    el.oogaPick.value = actors[0].name || "";
+    el.oogaPick.disabled = !!BL.net.ownAmong(contributors.activeRoster);
     controls = controlsMod.create({ move: document.getElementById("joy-move"), look: document.getElementById("joy-look"), boost: hud.el.act, onAction: act, pressActions: true });
     blockScene.agentControls = controls;
     Object.assign(hooks, {
@@ -129411,7 +129630,7 @@ void main() {
         else hud.tooltip.hide();
       },
       onHoverMove: (hit, p) => { if (hit && hit.owner.kind === "ooga") hud.tooltip.show(actors[hit.owner.index].cave.traits.display, p.x, p.y, actors[hit.owner.index].cave); },
-      onTap: () => { if (phase === "play") paint(); },
+      onTap: () => { if (phase === "play" && !(cam.first && !COARSE)) paint(); },
       onOrbit: (dx, dy) => {
         if (phase !== "play") return;
         cam.yaw = wrap(cam.yaw - dx * 5e-3);
@@ -129423,13 +129642,14 @@ void main() {
       if (action === "block-start" || action === "block-again") start();
       else if (action === "block-board") showBoard();
       else if (action === "block-drop") dropBlock();
+      else if (action === "block-view") setView(!cam.first);
       else if (action === "leave") go(home);
       else if (action === "act") act();
     });
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Paint! throws · tap the strip's Drop to let go" : "W A S D run · drag or Q E turn · Shift sprints · Space jumps · click or F paints · G drops the block";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws · View for first person" : "W A S D run · drag or Q E turn · Shift sprints · Space jumps, twice to climb · click or Enter paints · C crouches · V first person · G drops";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -129443,7 +129663,7 @@ void main() {
           get result() { return result; },
           get cam() { return cam; },
           get quiz() { return { open: quiz.open, right: quiz.right, locked: quiz.locked, asked: quiz.asked, solved: quiz.solved }; },
-          selection, start, showBoard, paint, drop: dropBlock, chooseTeam, answer,
+          selection, start, showBoard, paint, drop: dropBlock, chooseTeam, chooseOoga, answer,
           // Runs the round forward without frames, the visitor's Ooga on the sim's autopilot when `auto` is set.
           simulate: (seconds, auto = false) => {
             if (phase !== "play") return;
@@ -129467,6 +129687,17 @@ void main() {
     window.clearTimeout(centerTimer);
     window.clearTimeout(noticeTimer);
     for (const b of el.teams) b.removeEventListener("click", el.onTeam);
+    el.paintBtn.removeEventListener("pointerdown", el.onPaint);
+    document.removeEventListener("mousemove", onLockedMove);
+    el.canvas.removeEventListener("mousedown", onLockedDown);
+    window.removeEventListener("keydown", onCrouchKey);
+    window.removeEventListener("keyup", onCrouchKey);
+    if (document.pointerLockElement === el.canvas) document.exitPointerLock();
+    el.cross.hidden = true;
+    cam.first = false;
+    move.crouch = 0;
+    el.oogaPick.removeEventListener("change", el.onOoga);
+    el.paintBtn.hidden = true;
     for (const b of el.answers) b.removeEventListener("click", onAnswer);
     closeQuiz();
     disposeActors();
