@@ -7295,7 +7295,16 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
         offerBeforeSwitch, switched, declinedBusy, retaken: P.player === a && !play.active };
     } finally { BL.net.state.me = account; BL.net.state.backend = backend; }
     const returned = !s.holding, after = at();
-    key("keydown", "w", "KeyW"); B.advance(0.4, 1 / 60); key("keyup", "w", "KeyW");
+    // While its gorilla is driven, the Ooga resumes work by the pile. Aim W outwards so the altar's
+    // solid rim cannot masquerade as lost input. Keep the actual returned actor and controller state.
+    const clear = yaw => B.headquarters.solids.walkable(after.x, after.z, after.x - Math.sin(yaw), after.z - Math.cos(yaw),
+      a.root.position.y - a.baseY, a.bodyHeight, a);
+    const movement = { before: { ...a.root.position }, originalClear: clear(P.orbit.yaw) };
+    P.orbit.yaw = P.orbit.tYaw = Math.atan2(-after.x, -after.z);
+    movement.clear = clear(P.orbit.yaw);
+    key("keydown", "w", "KeyW"); movement.input = B.controls.read().y;
+    B.advance(0.4, 1 / 60); key("keyup", "w", "KeyW");
+    movement.after = { ...a.root.position };
     const again = from(after);
     // A second tour, by a tap: Space held to climb on the jetpack as Enter starts it, then let go.
     for (let t = 0; t < 12 && s.phase !== "work"; t += 1 / 30) B.advance(1 / 30, 1 / 30);
@@ -7311,12 +7320,12 @@ const hubGuide = { name: "hub guide", why: "regression: Tess's offer showed only
     const rose = a.root.position.y - y, burned = fuel - a.jetFuel, thrusting = !!a.jet && a.jet.thrust;
     document.querySelector(".greeter-menu .greeter-row button:last-child").click();
     for (let t = 0; t < 8 && s.holding; t += 1 / 30) B.advance(1 / 30, 1 / 30);
-    return { offered, bubbles, reached, shotTess, pokeTess, walked, touring, drift, returned, again, driving: P.player === a, pair,
+    return { offered, bubbles, reached, shotTess, pokeTess, walked, touring, drift, returned, again, movement, driving: P.player === a, pair,
       reoffered, climbing, rose: +rose.toFixed(3), burned: +burned.toFixed(4), thrusting, released: !s.holding };
   })()`);
   record("hub guide: Tess's offer to an Ooga standing on landing says every speech bubble of its line", guide.offered && guide.bubbles > 0 && guide.reached === guide.bubbles - 1, JSON.stringify(guide));
   record("hub guide: a shot aimed straight at Tess passes her, while a tap there still reaches her", !guide.shotTess && guide.pokeTess, JSON.stringify(guide));
-  record("hub guide: an Ooga walking as the tour starts stands through it once W is let go, and walks again when the tour ends", guide.walked > 0.3 && guide.touring && guide.drift < 0.05 && guide.returned && guide.again > 0.3 && guide.driving, JSON.stringify(guide));
+  record("hub guide: an Ooga walking as the tour starts stands through it once W is let go, and walks again when the tour ends", guide.walked > 0.3 && guide.touring && guide.drift < 0.05 && guide.returned && guide.movement.clear && guide.movement.input === 1 && guide.again > 0.3 && guide.driving, JSON.stringify(guide));
   record("hub guide: during a tour T switches no actor for a signed-in owner, Escape ends the tour, and afterwards T switches to the gorilla and back", !!guide.pair && guide.pair.gorillaReady && guide.pair.kept && guide.pair.ended && guide.pair.toGorilla && guide.pair.back, JSON.stringify(guide.pair));
   record("hub guide: switching to a gorilla before accepting an offer leaves it in control, closes the offer, and allows switching back", !!guide.pair && guide.pair.offerBeforeSwitch && guide.pair.switched && guide.pair.declinedBusy && guide.pair.retaken, JSON.stringify(guide.pair));
   record("hub guide: a jetpack climbing as a tour starts lets go once Space is released, rising no more and spending no fuel through the tour", guide.reoffered && guide.climbing && !guide.thrusting && guide.rose <= 0 && guide.burned <= 0 && guide.released, JSON.stringify(guide));
