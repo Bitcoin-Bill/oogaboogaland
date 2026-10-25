@@ -49,6 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5,
+    POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
@@ -151,8 +152,13 @@
     caches: [[12.5, 2.3, 13.5], [-12.5, 2.3, 13.5], [12.5, 2.3, -13.5], [-12.5, 2.3, -13.5], [0, 2.5, 0]],
     // Trampolines flush with the ground, two a half, turned half round: landing on one (or walking onto it) sends an
     // Ooga flying, carrying or not, with the double jump still to come.
-    tramps: [[-15, 19], [15, -19], [12, 4], [-12, -4]]
+    tramps: [[-15, 19], [15, -19], [12, 4], [-12, -4]],
+    // Power-up spots, two a half turned half round, each holding one of `POWERS` until someone runs through it.
+    powers: [[-6, 18], [6, -18], [16, 11], [-16, -11], [0, 9.5], [0, -9.5]]
   };
+  // The power-ups: lightning boots (a burst of speed), the halving (your side's splats last half as long), cold
+  // storage (your block can't be lifted off its stand) and laser eyes (rapid paint).
+  const POWERS = ["boots", "halving", "cold", "laser"];
   for (const t of TEAMS) { const z = ARENA.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   const other = (team) => team === "blue" ? "red" : "blue";
   // The bots' skill: easy bots aim wider, wait longer before throwing, throw less often, run slower and see less far;
@@ -279,7 +285,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint",
+      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
@@ -288,9 +294,10 @@
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = ARENA.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const caches = ARENA.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
+    const powers = ARENA.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -343,7 +350,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -359,6 +366,10 @@
     for (const s of sim.shots) s.live = false;
     for (const t of sim.traps) t.dark = 0;
     for (const c of sim.caches) c.dark = 0;
+    // Each pair of spots starts with the same power (boots, laser eyes, then the halving or cold storage by the seed);
+    // after that each draws from the seed, so a seed replays the round's power-ups too.
+    for (let i = 0; i < sim.powers.length; i++) { const p = sim.powers[i]; p.dark = 0; p.kind = [0, 3, seed & 1 ? 2 : 1][(i >> 1) % 3]; }
+    for (const t of TEAMS) sim.halving[t] = sim.cold[t] = 0;
     const w = sim.weather;
     w.kind = "clear"; w.left = CONFIG.WEATHER_S[0]; w.angle = sim.rng() * Math.PI * 2; w.strength = 0; w.target = CONFIG.WIND.clear; w.x = w.z = 0;
     sim.score.blue = sim.score.red = 0;
@@ -580,14 +591,14 @@
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
     if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
-    a.cooldown = a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
+    a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
   const splat = (sim, a, bonk = false) => {
-    a.splat = CONFIG.SPLAT_S;
+    a.splat = CONFIG.SPLAT_S * (sim.halving[a.team] > 0 ? 0.5 : 1);
     a.bonked = bonk;
     a.guard = a.netted = 0;
     a.vx = a.vz = 0;
@@ -694,7 +705,7 @@
     } else botGoal(sim, a);
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
-    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
+    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1);
     if (d > 0.4) {
       const h = steer(sim, a, goal.x, goal.z);
       a.vx = Math.sin(h) * speed; a.vz = Math.cos(h) * speed;
@@ -760,6 +771,18 @@
       if (refill(a)) { c.dark = CONFIG.CACHE_S; emit(sim, "cache", a.team, a.id, c.x, c.y, c.z); }
     }
     if (sim.prep > 0) return;
+    // Running through a power-up takes it; the spot draws its next one and rests.
+    for (const p of sim.powers) {
+      if (p.dark > 0 || a.y > 1.2 || (a.x - p.x) ** 2 + (a.z - p.z) ** 2 > CONFIG.POWER_R * CONFIG.POWER_R) continue;
+      const kind = POWERS[p.kind];
+      if (kind === "boots") a.boots = CONFIG.BOOTS_S;
+      else if (kind === "laser") a.laser = CONFIG.LASER_S;
+      else if (kind === "halving") sim.halving[a.team] = CONFIG.HALVING_S;
+      else sim.cold[a.team] = CONFIG.COLD_S;
+      p.dark = CONFIG.POWER_RESPAWN;
+      p.kind = Math.floor(sim.rng() * POWERS.length);
+      emit(sim, "power", a.team, a.id, p.x, POWERS.indexOf(kind), p.z);
+    }
     const r2 = CONFIG.PICK_R * CONFIG.PICK_R;
     if (a.blocked) {
       const f = sim.flags[a.blocked];
@@ -769,6 +792,8 @@
     // Picking up: the rivals' flag from its stand or the ground, or your own team's flag where it was dropped.
     for (const f of [theirs, own]) {
       if (a.carrying || a.holding || f.state === "carried" || (f === own && f.state === "home")) continue;
+      // Cold storage: a block on its own stand can't be lifted while its side's freeze lasts.
+      if (f.state === "home" && sim.cold[f.team] > 0) continue;
       if (f.state === "flying") {
         // A catch: the block within reach of the body's middle, its thrower kept off it for a moment.
         if (f.thrower === a.id && f.t < CONFIG.PASS_SAFE) continue;
@@ -884,6 +909,8 @@
     for (let n = 0; n < N; n++) {
       const a = sim.actors[sim.flip ? N - 1 - n : n];
       if (a.cooldown > 0) a.cooldown -= dt;
+      if (a.boots > 0) a.boots = Math.max(0, a.boots - dt);
+      if (a.laser > 0) a.laser = Math.max(0, a.laser - dt);
       if (a.netted > 0) { a.netted -= dt; if (a.netted <= 0) { a.netted = 0; emit(sim, "unnet", a.team, a.id, a.x, a.y, a.z); } }
       if (a.splat > 0) {
         a.splat -= dt;
@@ -917,7 +944,7 @@
           a.stamina = Math.min(CONFIG.SPRINT_S, a.stamina + dt * CONFIG.SPRINT_S / CONFIG.SPRINT_REFILL);
           if (a.tired && a.stamina >= CONFIG.SPRINT_S * CONFIG.SPRINT_MIN) a.tired = false;
         }
-        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
@@ -996,6 +1023,11 @@
     for (let n = 0; n < N; n++) touchFlags(sim, sim.actors[sim.flip ? N - 1 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
+    for (const p of sim.powers) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
+    for (const t of TEAMS) {
+      if (sim.halving[t] > 0) sim.halving[t] = Math.max(0, sim.halving[t] - dt);
+      if (sim.cold[t] > 0) sim.cold[t] = Math.max(0, sim.cold[t] - dt);
+    }
     for (const t of TEAMS) if (sim.flags[t].state === "flying") flyFlag(sim, sim.flags[t], dt);
     settleCrates(sim, dt);
     // Throws in flight: gravity and the wind, then a rival in the way or anything solid.
@@ -1035,5 +1067,5 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, ARENA, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENA, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
 })();

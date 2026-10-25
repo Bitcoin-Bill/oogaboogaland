@@ -91,7 +91,8 @@
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
-  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false;
+  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
+  const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
   // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
   // block found resets the pads and caches. `FEE_WEATHER` is sat/vB: below the first clear, below the second breezy.
@@ -389,7 +390,7 @@
   let stripKey = "";
   const updateStrip = () => {
     const own = sim.flags[sim.team], theirs = sim.flags[sim.rival], me = sim.actors[0];
-    const key = `${sim.score.blue}${sim.score.red}${own.state}${theirs.state}${me.carrying}${me.splat > 0}${Math.ceil(sim.time)}`;
+    const key = `${sim.score.blue}${sim.score.red}${own.state}${theirs.state}${me.carrying}${me.holding}${me.splat > 0}${Math.ceil(sim.time)}`;
     if (key === stripKey) return;
     stripKey = key;
     el.scoreBlue.textContent = String(sim.score.blue);
@@ -400,7 +401,15 @@
     el.theirs.dataset.state = me.carrying ? "carried" : theirs.state;
     el.time.textContent = fmt(sim.time * 1000);
     el.drop.disabled = !me.carrying;
-    if (el.passBtn) el.passBtn.disabled = !me.carrying;
+    if (el.passBtn) el.passBtn.disabled = !me.carrying && !me.holding;
+    // The power-ups in force for the visitor's side, each with its seconds left.
+    const powers = [];
+    if (me.boots > 0) powers.push(`Boots ${Math.ceil(me.boots)}`);
+    if (me.laser > 0) powers.push(`Lasers ${Math.ceil(me.laser)}`);
+    if (sim.halving[sim.team] > 0) powers.push(`Halving ${Math.ceil(sim.halving[sim.team])}`);
+    if (sim.cold[sim.team] > 0) powers.push(`Cold ${Math.ceil(sim.cold[sim.team])}`);
+    el.power.hidden = !powers.length;
+    el.powerWord.textContent = powers.join(" · ");
   };
 
   // The sim's events since the last frame: splats, sayings, notices.
@@ -530,6 +539,19 @@
       else if (e.type === "weather") {
         const w = sim.weather.kind, fee = sim.live ? ` · mempool fees ${Math.round(live.fee)} sat/vB` : "";
         notice((w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears") + fee, 2800);
+      } else if (e.type === "power") {
+        const kind = SIM.POWERS[e.y], who = me ? "You" : mine ? "Teammate" : "They";
+        fx.burst(e.x, 1.1, e.z, 16, kind === "laser" ? PAINT_BITS.red : kind === "cold" ? PAINT_BITS.blue : ORANGE_BITS, 2.6);
+        if (me || mine) audio.cues.power();
+        const words = {
+          boots: me ? "LIGHTNING BOOTS! Run!" : `${who} grabbed lightning boots`,
+          halving: mine ? "THE HALVING! Our splats last half as long" : "They halved their splats for a while",
+          cold: mine ? "COLD STORAGE! Our block is frozen on its stand" : "Their block is in cold storage · it can't be taken for a bit",
+          laser: me ? "LASER EYES! Rapid paint for five seconds" : `${who} got laser eyes`
+        };
+        if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : "HALVING!", 900);
+        notice(words[kind], 2600);
+        updateStrip();
       } else if (e.type === "mined") {
         center(e.x ? `BLOCK ${e.x}!` : "BLOCK FOUND!", 1500);
         notice("A real Bitcoin block was just mined: every quiz pad and ammo cache is ready again", 3200);
@@ -767,6 +789,8 @@
     for (let i = 0; i < actors.length; i++) {
       const s = sim.actors[i], a = actors[i];
       setVec(a.body.position, s.x, s.y, s.z);
+      // Lightning boots leave a trail of sparks.
+      if (s.boots > 0 && s.moving > 1 && Math.random() < dt * 14) fx.burst(s.x, s.y + 0.2, s.z, 2, ORANGE_BITS, 0.8);
       a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play");
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
@@ -918,6 +942,19 @@
       pads[i].glow = t.dark > 0 ? 0.12 : 0.75 + 0.25 * Math.sin(elapsed * 3 + i);
     }
     if (quiz.open) el.quizFill.style.width = `${Math.max(0, sim.actors[0].trapped / C.TRAP_MAX_S * 100).toFixed(1)}%`;
+    // Power-ups spin and bob while they wait; a frozen block wears its ice.
+    for (let i = 0; i < powerNodes.length; i++) {
+      const p = sim.powers[i], n = powerNodes[i];
+      n.visible = p.dark <= 0;
+      n.geometry = BM.power(p.kind);
+      n.rotation.y = elapsed * 2 + i;
+      n.position.y = Math.sin(elapsed * 2.5 + i) * 0.12;
+    }
+    for (const t of SIM.TEAMS) {
+      const f = sim.flags[t], n = iceNodes[t];
+      n.visible = sim.cold[t] > 0 && f.state === "home";
+      if (n.visible) setVec(n.position, f.x, 1.3, f.z);
+    }
     // An ammo cache glows while it's ready and goes grey while it rests.
     for (let i = 0; i < caches.length; i++) caches[i].geometry = BM.cache(sim.caches[i].dark > 0 ? 1 : 0);
     // The zipline button wakes as the visitor reaches the cable, with a word the first time.
@@ -1162,6 +1199,8 @@
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
+    el.power = document.getElementById("block-power");
+    el.powerWord = document.getElementById("block-power-word");
     el.staminaK = -1;
     el.windWord = document.getElementById("block-wind-word");
     el.windArrow = document.getElementById("block-wind-arrow");
@@ -1213,6 +1252,8 @@
       place(createNode({ geometry: BM.rack(i), position: { x: l.dx < 0 ? x0 + 0.7 : x1 - 0.7, y: C.TOWER_TOP, z: (z0 + z1) / 2 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }));
       place(createNode({ geometry: BM.zipline(i) }));
     }
+    powerNodes = SIM.ARENA.powers.map(([x, z]) => place(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
+    for (const t of SIM.TEAMS) iceNodes[t] = place(createNode({ geometry: BM.ice(), visible: false }));
     trampNodes = SIM.ARENA.tramps.map(([x, z]) => place(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
     caches = SIM.ARENA.caches.map(([x, y, z]) => place(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
     // The gun in view in first person.
@@ -1359,7 +1400,8 @@
     input.dispose();
     hud.dispose();
     phase = "board";
-    sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = result = null;
+    sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
+    for (const t of SIM.TEAMS) iceNodes[t] = null;
     zipNear = false;
     hud = hooks = input = fx = controls = clock = null;
     blockScene.input = blockScene.debug = blockScene.agentControls = null;

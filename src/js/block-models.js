@@ -346,5 +346,29 @@
     }
     return merge(...parts);
   });
-  BL.blockModels = { tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // The power-ups, each a floating glowing token over a little plinth: a lightning bolt (boots), a coin cut in half
+  // (the halving), an ice cube (cold storage) and a visor with two red eyes (laser eyes); and the ice over a frozen
+  // block.
+  const power = variants((i) => {
+    const parts = [box({ w: 0.7, h: 0.12, d: 0.7, color: "#3a3430", offset: { y: 0.06 } })], y = 1.1;
+    if (i === 0) {
+      for (const [x, yy, w, h] of [[0.08, 0.22, 0.14, 0.3], [-0.02, 0.02, 0.26, 0.1], [-0.1, -0.2, 0.14, 0.3]]) parts.push(box({ w, h, d: 0.1, color: "#ffe14a", emissive: 1, offset: { x, y: y + yy } }));
+    } else if (i === 1) {
+      parts.push(box({ w: 0.24, h: 0.56, d: 0.1, color: ORANGE, emissive: 0.9, offset: { x: -0.16, y } }));
+      parts.push(box({ w: 0.24, h: 0.56, d: 0.1, color: "#c9ced6", emissive: 0.5, offset: { x: 0.16, y: y - 0.12 } }));
+    } else if (i === 2) {
+      parts.push(bevelBox({ w: 0.5, h: 0.5, d: 0.5, color: "#bfe8ff", emissive: 0.7, offset: { y } }));
+      parts.push(box({ w: 0.3, h: 0.06, d: 0.52, color: "#ffffff", emissive: 1, offset: { y: y + 0.1 } }));
+    } else {
+      parts.push(box({ w: 0.6, h: 0.18, d: 0.14, color: "#24242a", offset: { y } }));
+      for (const x of [-0.15, 0.15]) parts.push(box({ w: 0.14, h: 0.1, d: 0.16, color: "#ff2a1a", emissive: 1, offset: { x, y } }));
+    }
+    return merge(...parts);
+  });
+  const ice = cached(() => {
+    const geo = merge(bevelBox({ w: 1.25, h: 1.25, d: 1.25, color: "#bfe8ff", emissive: 0.35 }), box({ w: 1.27, h: 0.08, d: 1.27, color: "#ffffff", emissive: 0.8, offset: { y: 0.3 } }));
+    geo.castShadow = false;
+    return geo;
+  });
+  BL.blockModels = { power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();
