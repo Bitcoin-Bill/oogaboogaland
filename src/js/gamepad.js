@@ -6,14 +6,14 @@
   // edges, and `frame` counts the reads that changed anything, so a reader acts on an edge once however often it
   // looks. Sticks are -1..1 with y positive pushed up, past a radial dead zone; the right stick's travel is squared
   // for fine aim. `connected` is whether the last read found a pad, for words that name its buttons.
-  // `navigator.getGamepads` returns a new array on every call, so it is read only while a pad is plugged in and a
-  // page without one pays nothing.
+  // `navigator.getGamepads` returns a new array on every call, so it is read only while a standard pad is plugged in
+  // and a page without one (or with only a wheel or flight stick) pays nothing.
   const BUTTON = { a: 1, b: 2, x: 4, y: 8, lb: 16, rb: 32, lt: 64, rt: 128, view: 256, menu: 512, ls: 1024, rs: 2048 };
   const COUNT = 12, LT = 6, RT = 7, DEAD = 0.18, TRIGGER_ON = 0.5, TRIGGER_OFF = 0.3;
   const state = { connected: false, frame: 0, lx: 0, ly: 0, rx: 0, ry: 0, held: 0, pressed: 0, released: 0 };
   let plugged = 0;
-  window.addEventListener("gamepadconnected", () => { plugged++; });
-  window.addEventListener("gamepaddisconnected", () => { plugged = Math.max(0, plugged - 1); });
+  window.addEventListener("gamepadconnected", (e) => { if (e.gamepad.mapping === "standard") plugged++; });
+  window.addEventListener("gamepaddisconnected", (e) => { if (e.gamepad.mapping === "standard") plugged = Math.max(0, plugged - 1); });
   const first = () => {
     const pads = navigator.getGamepads();
     for (let i = 0; i < pads.length; i++) {

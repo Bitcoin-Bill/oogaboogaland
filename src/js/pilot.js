@@ -366,7 +366,8 @@
     const carryPickHit = { node: null, owner: null, x: 0, y: 0, z: 0, distance: Infinity, type: "none" };
     let carryPickActor = null;
     let peekTarget = 0, peekMix = 0;
-    let aimCave = null, aimMix = 0, aimVelocity = 0, adsMix = 0, ads = false, disposed = false;
+    // `ads` is held by right-click (`mouseAds`) or a pad's LT (`padAds`); letting go of one leaves the other's.
+    let aimCave = null, aimMix = 0, aimVelocity = 0, adsMix = 0, ads = false, mouseAds = false, disposed = false;
     let aimLeftAccepted = false, aimLeftFocused = false, aimReleaseEvent = null, attackReleaseBlocked = false;
     let rightDownAt = -Infinity, rightTapAt = -Infinity, rightTravel = 0, rightExitHeld = false;
     let rightCarry = false, rightCarryPointer = -1, rightCarryX = 0, rightCarryY = 0;
@@ -1406,7 +1407,7 @@
     const interruptRightGesture = (e) => {
       if (externalControl || e.pointerType !== "mouse") return;
       if (rightCarry && (e.pointerId !== rightCarryPointer || e.type === "pointermove" && !(e.buttons & 2))) clearRightGesture();
-      if (e.type === "pointercancel") { clearRightGesture(); ads = false; }
+      if (e.type === "pointercancel") { clearRightGesture(); ads = mouseAds = false; }
       else if (e.buttons & ~2 || e.button >= 0 && e.button !== 2
         || e.target !== canvas && e.button === 2 && (e.type === "pointerdown" || e.type === "pointermove" && (e.buttons & 2))) clearRightGesture();
       if (rightCarry && (e.type === "pointermove" || e.type === "pointerup")) {
@@ -1493,7 +1494,7 @@
       }
       e.preventDefault(); e.stopImmediatePropagation();
       if (e.type === "pointercancel") {
-        ads = false;
+        ads = mouseAds = false;
         aimLeftAccepted = aimLeftFocused = false;
         const cave = player();
         crew.stopBurst(cave);
@@ -1525,7 +1526,7 @@
           }
         }
         if (e.button === 2) {
-          ads = true;
+          ads = mouseAds = true;
           if (!attackReleaseBlocked && e.buttons & 1 && !player().weapon.primaryEquipped && crew.setWeaponTrigger(true, true)) aimLeftAccepted = true;
         }
       } else if (e.type === "pointerup" || e.type === "pointermove") {
@@ -1533,7 +1534,7 @@
           releaseAimAttack(e);
           releasePrimary(player(), ads);
         }
-        if (e.button === 2) ads = false;
+        if (e.button === 2) { mouseAds = false; ads = padAds; }
       }
     };
     const aimKey = (e) => {
@@ -1591,7 +1592,8 @@
     const aimMouseUp = (e) => {
       if (externalControl) return;
       if (e.button === 2) {
-        ads = false;
+        mouseAds = false;
+        ads = padAds;
         if (e.target === canvas) releaseRightTap();
         else clearRightGesture();
       }
@@ -2568,7 +2570,8 @@
     // Call before the crew moves: reads keys and sticks for this frame.
     // A pad's triggers are the mouse's buttons: RT fires (held for auto in combat, V's shot outside it), LT aims down
     // the sights (in bird's-eye it takes the shoulder, as right-click does). X is R, Y is G, B is F and View is X.
-    // Each press is acted on once; a trigger held when the pilot lets go of input is let go of with it.
+    // Each press is acted on once; a trigger held when the pilot lets go of input is let go of with it, and LT also
+    // when combat ends. Letting go of LT leaves a right-click aim held with the mouse.
     let padFrame = -1, padFire = false, padAds = false;
     const readPad = () => {
       const live = active && !externalControl && !menuOpen;
@@ -2577,7 +2580,10 @@
         weaponAction("weapon-primary-up");
         crew.setWeaponTrigger(false);
       }
-      if (padAds && (!live || !(pad.held & PAD.lt))) padAds = ads = false;
+      if (padAds && (!live || !armed() || !(pad.held & PAD.lt))) {
+        padAds = false;
+        if (!(live && armed() && mouseAds)) ads = false;
+      }
       if (pad.frame === padFrame) return;
       padFrame = pad.frame;
       const cave = player();
