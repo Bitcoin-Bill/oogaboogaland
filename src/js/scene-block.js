@@ -461,33 +461,42 @@
   };
   const paint = () => {
     const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
-    // Holding a crate, a throw throws the crate.
+    // With Lift chosen and empty hands, a click lifts the crate in front; holding a crate, a throw throws the crate.
+    if (tool === "grab" && !a.holding) return grabCrate();
     if (a.holding) {
       const cdx = q.x - a.x, cdz = q.z - a.z, cflat = Math.hypot(cdx, cdz) || 1;
-      return SIM.fire(sim, 0, Math.atan2(cdx, cdz), clamp(Math.atan2(q.y - a.y - 1.7, cflat) - 0.05, -0.6, 0.6), "crate");
+      const thrown = SIM.fire(sim, 0, Math.atan2(cdx, cdz), clamp(Math.atan2(q.y - a.y - 1.7, cflat) - 0.05, -0.6, 0.6), "crate");
+      if (!thrown && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
+      else if (thrown && tool !== "grab") notice(`Crate thrown · ${tool} ready`, 900);
+      return thrown;
     }
     const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
     const lob = tool === "grenade" ? 0.3 : tool === "rocket" ? 0 : tool === "net" ? -0.12 : -0.09;
     const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
     const ok = SIM.fire(sim, 0, Math.atan2(dx, dz), pitch, tool);
-    if (!ok && tool !== "paint" && sim.actors[0][tool] <= 0) notice(`Out of ${tool}s · refill on your own stand`, 1400);
+    // Say why a throw didn't go, so the tools never seem locked: paint on you, a quiz bubble, or an empty tool.
+    if (!ok && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
+    else if (!ok && a.trapped > 0) notice("Answer the question to get out first", 1100);
+    else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your own stand`, 1400);
     return ok;
   };
   const chooseTool = (k) => {
     tool = k;
     updateTools();
   };
-  // The next tool along (or back), skipping any that are empty; a right click or the wheel steps through them.
-  const ORDER = ["paint", "grenade", "rocket", "net"];
+  // The next tool along (or back), skipping any that are empty, then Lift for the crates; a right click or R steps
+  // through them.
+  const ORDER = ["paint", "grenade", "rocket", "net", "grab"];
   const cycleTool = (dir = 1) => {
     const a = sim.actors[0];
     let i = ORDER.indexOf(tool);
     for (let n = 0; n < ORDER.length; n++) {
       i = (i + dir + ORDER.length) % ORDER.length;
-      if (ORDER[i] === "paint" || a[ORDER[i]] > 0) break;
+      if (ORDER[i] === "paint" || ORDER[i] === "grab" || a[ORDER[i]] > 0) break;
     }
     chooseTool(ORDER[i]);
-    notice(`${ORDER[i][0].toUpperCase()}${ORDER[i].slice(1)}${ORDER[i] === "paint" ? "" : ` · ${a[ORDER[i]]} left`}`, 900);
+    if (ORDER[i] === "grab") notice("Lift · click lifts a crate, click or Tab throws it, F sets it down", 1400);
+    else notice(`${ORDER[i][0].toUpperCase()}${ORDER[i].slice(1)}${ORDER[i] === "paint" ? "" : ` · ${a[ORDER[i]]} left`}`, 900);
   };
   const onRightDown = (e) => {
     if (e.button !== 2 || phase !== "play") return;
@@ -510,8 +519,8 @@
       b.setAttribute("aria-pressed", String(k === tool));
       const n = b.querySelector("b");
       if (n) n.textContent = k === "paint" ? "∞" : k === "crate" ? String(a.crates) : String(a[k]);
-      if (k === "pass") b.disabled = !a.carrying;
-      if (k === "grab") b.setAttribute("aria-pressed", String(a.holding));
+      if (k === "pass") b.disabled = !a.carrying && !a.holding;
+      if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
   const setView = (first) => {
@@ -562,11 +571,13 @@
     notice(a.holding ? "No room to set it there (stacks go three high)" : a.carrying ? "Hands full with the block" : "No crate in reach · face one and press F", 1200);
     return false;
   };
-  // Throw the carried block straight ahead, toward the crosshair, for a teammate to catch.
+  // Throw whatever is in hand: a held crate toward the crosshair, or the carried block straight ahead for a teammate
+  // to catch.
   const passBlock = () => {
     if (phase !== "play") return false;
+    if (sim.actors[0].holding) return paint();
     if (SIM.pass(sim, 0, cam.face)) return true;
-    notice("Nothing to throw", 900);
+    notice("Nothing to throw · pick up a block, or a crate with F", 1100);
     return false;
   };
   const dropBlock = () => {
@@ -983,7 +994,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon · Tab passes · F lifts, stacks, sets crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon and Lift · Tab throws what you hold · F lifts, stacks, sets crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
