@@ -72,12 +72,12 @@
       [7.4, 18, 0.3, 2], [8.3, 18.7, -0.4, 1], [7.6, 11.4, -0.2, 1], [6.6, -28.4, 0.3, 1], [12.9, -27.6, 0.2, 2], [19.6, 5.2, -0.2, 2], [20.5, 4.3, 0.4, 1], [24.2, -22.5, 0, 1], [16.5, -30.4, -0.3, 1]],
     floorLamps: [[-6.3, 20], [-6.3, 8], [-6.3, -4], [-6.3, -16], [-6.3, -28], [6.3, 20], [6.3, -28], [-11.8, 21.2], [-17.4, -3.2], [-11.6, -24],
       [5.9, 6.3], [5.9, -29.3], [24.9, 6.3], [24.9, -29.3], [6.3, 13.5]],
-    // The two boards on the left wall under the catwalk, both square to it: the repository's stats right after the
-    // door, and its timeline farther in; centre, the width and height their faces are laid out in, the way each
-    // faces, and how much bigger than that it hangs.
+    // The two boards on the left wall under the catwalk, both square to it and held off it on their mounts: the
+    // repository's stats right after the door, and its timeline farther in; centre, the width and height their faces
+    // are laid out in, the way each faces, and how much bigger than that it hangs.
     boards: {
-      stats: { x: HALL.x0 + 2.6, y: 4.3, z: 16, w: 9, h: 4, turn: Math.PI / 2, scale: 1.15 },
-      timeline: { x: HALL.x0 + 2.6, y: 4.3, z: -2, w: 11, h: 4, turn: Math.PI / 2, scale: 1.15 }
+      stats: { x: HALL.x0 + 3.2, y: 4.3, z: 16, w: 9, h: 4, turn: Math.PI / 2, scale: 1.15 },
+      timeline: { x: HALL.x0 + 3.2, y: 4.3, z: -2, w: 11, h: 4, turn: Math.PI / 2, scale: 1.15 }
     },
     // The signs: the hangar's over the runway from the last gantry, and the plaque by the runway at the Jet's tail.
     signs: { hangar: [0, 11.6, -26], soon: [7.6, 1.9, 8.4] },
@@ -396,15 +396,27 @@
     return { flat: merge(...flat), glow: noShadow(merge(...glow)), frame: merge(...frame), glass: noShadow(merge(...glass)), lights };
   });
 
-  // The boards' frames on the left wall: a dark screen in a blue light frame on iron brackets. The scene lays each
-  // board's face over its screen.
+  // The boards' frames: a blue light frame round the glass, on an iron back plate, held off the wall on a mount: two
+  // rails across the board's back, clamped to it, each on standoff arms that run back into the rock with a collar
+  // where they leave the wall's shadow, and a brace up each side. The scene lays each board's face over its glass.
+  const MOUNT = { rail: 0.36, arm: 0.32, reach: 2.2 };
   const boardFrame = (w, h) => {
-    const flat = [], glow = [];
+    const flat = [], glow = [], M = MOUNT;
     flat.push(bevelBox({ w: w + 0.4, h: h + 0.4, d: 0.16, color: IRON_DK, bevel: 0.04, offset: { z: -0.1 } }));
     for (const [bw, bh, x, y] of [[w + 0.24, 0.08, 0, h / 2 + 0.08], [w + 0.24, 0.08, 0, -h / 2 - 0.08], [0.08, h + 0.24, w / 2 + 0.08, 0], [0.08, h + 0.24, -w / 2 - 0.08, 0]]) {
       glow.push(box({ w: bw, h: bh, d: 0.05, color: "#5fb8ff", emissive: 1, offset: { x, y, z: 0.01 } }));
     }
-    for (const x of [-w / 3, w / 3]) flat.push(box({ w: 0.12, h: 0.12, d: 1.2, color: IRON_DK, offset: { x, y: h / 2 - 0.3, z: -0.7 } }));
+    const arms = [-w * M.arm, 0, w * M.arm], back = -0.18, rail = back - 0.16, wall = rail - M.reach;
+    for (const s of [-1, 1]) {
+      const y = s * h * M.rail;
+      flat.push(bevelBox({ w: w * 0.8, h: 0.16, d: 0.14, color: IRON, bevel: 0.03, offset: { y, z: rail } }));
+      for (const x of arms) {
+        flat.push(box({ w: 0.24, h: 0.22, d: 0.12, color: IRON_DK, offset: { x, y, z: back - 0.07 } }));
+        flat.push(box({ w: 0.13, h: 0.13, d: M.reach, color: IRON, offset: { x, y, z: rail - M.reach / 2 } }));
+        flat.push(box({ w: 0.26, h: 0.26, d: 0.06, color: IRON_DK, offset: { x, y, z: rail - M.reach * 0.45 } }));
+      }
+    }
+    for (const x of [arms[0], arms[2]]) flat.push(beam(x, -h * M.rail, rail - 0.25, x, h * M.rail - 0.12, wall + 0.5, 0.09, IRON_DK));
     return { flat: merge(...flat), glow: noShadow(merge(...glow)) };
   };
   const boardFrames = cached(() => ({ stats: boardFrame(LAYOUT.boards.stats.w, LAYOUT.boards.stats.h), timeline: boardFrame(LAYOUT.boards.timeline.w, LAYOUT.boards.timeline.h) }));
@@ -848,6 +860,8 @@
     for (const [x, z] of L.trestles) around(x, z, 1.05, 0.85, 3.2);
     const [ex, ez, et] = L.engineStand;
     block(ex - 0.8, ex + 0.8, ez - 0.7, ez + 3.6, -1, et + 0.4);
+    // The gap behind each board, where a head would meet its lower edge.
+    for (const b of Object.values(L.boards)) block(HALL.x0, b.x + 0.35, b.z - b.w * b.scale / 2, b.z + b.w * b.scale / 2, -1, 2.2);
     // The workstations, the terminals, the tool chests, the crates and the floor lamps.
     for (const [x, z, turn] of L.stations) {
       const across = Math.abs(Math.sin(turn)) > 0.7;
