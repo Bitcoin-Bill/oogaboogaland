@@ -4683,11 +4683,14 @@ const gameRulesChecks = async () => {
   const BL = context.window.BL, M = BL.mineSim, R = BL.mineRigs;
   {
     // Block Frenzy's rules, played through the sim's own calls: a pickup, a drop that can't be undone by standing still,
-    // the timed return, scoring only while your own block is home, a splat that drops the carrier's block, a quiz trap
-    // that holds and protects until answered, and three captures deciding the round. Nothing here repeats a formula.
+    // scoring only while your own block is home, a splat that drops the carrier's block, which then stays put until its
+    // own side carries it back, a quiz trap that holds and protects until answered, a net that slows and grounds, a
+    // crate pushed by walking into it, and three captures deciding the round. Nothing here repeats a formula.
     const S = BL.blockSim, A = S.ARENA, still = { x: 0, z: 0, sprint: 0, jump: 0 };
-    const sim = S.create({ team: "blue", seed: 7 });
+    const sim = S.create({ team: "blue", seed: 7, prep: 0 });
     for (const a of sim.actors) if (a.id) a.bot = false;
+    // Still air, so nothing drifts.
+    Object.assign(sim.weather, { target: 0, strength: 0, left: 1e9 });
     const me = sim.actors[0], put = (a, x, z) => { a.x = x; a.z = z; S.tick(sim, S.CONFIG.STEP, still); };
     const theirs = A.stands.red, mine = A.stands.blue;
     put(me, theirs.x, theirs.z);
@@ -4705,13 +4708,18 @@ const gameRulesChecks = async () => {
     put(me, mine.x + 0.2, mine.z);
     const scored = sim.score.blue === 1 && sim.flags.red.state === "home" && !me.carrying;
     put(me, theirs.x, theirs.z);
+    put(me, theirs.x + 4, theirs.z + 3);
     const rival = sim.actors[2];
     rival.x = me.x; rival.z = me.z - 3; rival.cooldown = 0;
     S.fire(sim, 2, 0);
     for (let t = 0; t < 1 && me.splat <= 0; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const splatted = me.splat > 0 && !me.carrying && sim.flags.red.state === "dropped";
-    for (let t = 0; t < S.CONFIG.RETURN_S + 1 && sim.flags.red.state !== "home"; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
-    const returned = sim.flags.red.state === "home";
+    for (let t = 0; t < 25; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const stays = sim.flags.red.state === "dropped";
+    put(rival, sim.flags.red.x, sim.flags.red.z);
+    const rescued = rival.carrying === "red";
+    put(rival, theirs.x, theirs.z);
+    const returned = sim.flags.red.state === "home" && !rival.carrying;
     for (let t = 0; t < 4; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const [tx, tz] = A.traps[0];
     put(me, tx, tz);
@@ -4721,9 +4729,19 @@ const gameRulesChecks = async () => {
     for (let t = 0; t < 0.6; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const shielded = me.splat <= 0 && me.trapped > 0;
     const freed = S.escape(sim, 0) && me.trapped === 0 && me.guard > 0;
-    record("block frenzy rules: pickup, a drop held until you step out, return after the countdown, scoring only with your own block home, a splat drops the carrier's block, a quiz trap holds and shields until answered",
-      picked && dropped && held && regrab && noScoreAway && scored && splatted && returned && trapped && frozen && shielded && freed,
-      JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, returned, trapped, frozen, shielded, freed }));
+    for (let t = 0; t < 3; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    rival.x = me.x; rival.z = me.z - 3; rival.cooldown = 0; me.guard = 0;
+    S.fire(sim, 2, 0, 0, "net");
+    for (let t = 0; t < 0.6 && me.netted <= 0; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const y0 = me.y; S.tick(sim, S.CONFIG.STEP, { x: 0, z: 0, jump: 1 }); S.tick(sim, S.CONFIG.STEP, still);
+    const netted = me.netted > 0 && me.splat <= 0 && me.y === y0;
+    const c = sim.crates.find((k) => k.live), cx = c.x, cz = c.z;
+    me.netted = 0; me.x = cx - 1.3; me.z = cz; me.y = 0;
+    for (let t = 0; t < 0.8; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, { x: 1, z: 0, sprint: 0, jump: 0 });
+    const pushed = c.x > cx + 0.2 && Math.abs(c.z - cz) < 1e-6;
+    record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side carries it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes",
+      picked && dropped && held && regrab && noScoreAway && scored && splatted && stays && rescued && returned && trapped && frozen && shielded && freed && netted && pushed,
+      JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, stays, rescued, returned, trapped, frozen, shielded, freed, netted, pushed }));
     const round = (seed) => { const r = S.create({ team: "red", seed }); r.actors[0].bot = "auto"; for (let t = 0; t < 900 && !r.over; t += 1 / 30) S.step(r, 1 / 30, still), r.eventCount = 0; return JSON.stringify({ over: r.over, winner: r.winner, score: r.score, time: Math.round(r.time) }); };
     const a = round(3), b = round(3);
     record("block frenzy rounds: a seeded round replays exactly and reaches three captures", a === b && JSON.parse(a).over && Math.max(...Object.values(JSON.parse(a).score)) === S.CONFIG.CAPTURES, JSON.stringify({ a, b }));
