@@ -1010,9 +1010,11 @@
     }
   };
   const poseCrates = () => {
+    // On the board the crates stand aside, so nothing hides the Ooga on show; they're back when the round starts.
+    const showing = phase === "board" && preview.wide;
     for (let i = 0; i < crates.length; i++) {
       const c = sim.crates[i], n = crates[i];
-      n.visible = c.live;
+      n.visible = c.live && !showing;
       if (!c.live) continue;
       setVec(n.position, c.x, c.y, c.z);
       n.geometry = BM.crate(TEAM_INDEX[c.team]);
