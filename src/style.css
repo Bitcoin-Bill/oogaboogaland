@@ -9344,3 +9344,24 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
     bottom: calc(176px + var(--safe-bottom));
   }
 }
+
+/* Block Frenzy's sprint gauge in the strip. */
+.block-sprint-bar {
+  width: 64px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.block-sprint-bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #7fe08a;
+}
+
+.block-sprint-bar i[data-tired="true"] {
+  background: #f7931a;
+}

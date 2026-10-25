@@ -79,7 +79,7 @@
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
   const cam = { yaw: Math.PI, pitch: 0.28, warm: false, first: false };
-  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0 };
+  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0, face: 0 };
   let jumpWas = false;
   const el = {};
   const blockScene = {
@@ -279,13 +279,14 @@
     hud.el.act.hidden = !COARSE;
     hud.setAct("Jump");
     el.paintBtn.hidden = !COARSE;
-    el.cross.hidden = !cam.first;
+    el.cross.hidden = COARSE && !cam.first;
     cam.yaw = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
     controls.reset();
     tool = "paint";
     updateTools();
+    lockMouse();
     center(`BUILD ${Math.ceil(sim.prep)}`, 0);
     notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! R drops a crate · walk into crates to push", 0);
     updateStrip();
@@ -394,6 +395,7 @@
       } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
       else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
       else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
+      else if (e.type === "winded") { if (me) notice("Out of breath! Sprint refills in a moment", 1400); }
       else if (e.type === "weather") {
         const w = sim.weather.kind;
         notice(w === "storm" ? "A storm rolls in! Hold on to something" : w === "breeze" ? "The wind picks up · throws drift" : "The sky clears", 2400);
@@ -421,9 +423,26 @@
   // In first person the ball goes where the eye looks, less the lob the throw adds.
   const lookUp = () => clamp(-(cam.pitch - 0.28) * 1.6, -0.9, 0.9);
   // Grenades lob higher; the chase camera's tilt still nudges every throw up or down.
+  // Aiming: the crosshair is the middle of the view, so a throw goes from the Ooga toward wherever the camera's
+  // centre ray meets something (or 30 m out), less the lift the throw adds itself; a grenade arcs higher.
+  const AIM = { x: 0, y: 0, z: 0 };
+  const aimPoint = () => {
+    const p = camera.position, t = camera.target;
+    let fx = t.x - p.x, fy = t.y - p.y, fz = t.z - p.z;
+    const l = Math.hypot(fx, fy, fz) || 1;
+    fx /= l; fy /= l; fz /= l;
+    // Start past the Ooga so the ray never stops on the Ooga's own spot.
+    let d = cam.first ? 0.5 : CAM.dist * 0.9;
+    for (; d < 30; d += 0.4) if (SIM.solidAt(p.x + fx * d, p.y + fy * d, p.z + fz * d)) break;
+    AIM.x = p.x + fx * d; AIM.y = p.y + fy * d; AIM.z = p.z + fz * d;
+    return AIM;
+  };
   const paint = () => {
-    const lob = tool === "grenade" ? 0.35 : tool === "rocket" ? -0.04 : 0;
-    const ok = SIM.fire(sim, 0, cam.yaw, (cam.first ? lookUp() - 0.09 : clamp((cam.pitch - 0.28) * -0.5, -0.12, 0.2)) + lob, tool);
+    const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
+    const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
+    const lob = tool === "grenade" ? 0.3 : tool === "rocket" ? 0 : tool === "net" ? -0.12 : -0.09;
+    const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
+    const ok = SIM.fire(sim, 0, Math.atan2(dx, dz), pitch, tool);
     if (!ok && tool !== "paint" && sim.actors[0][tool] <= 0) notice(`Out of ${tool}s · refill on your own stand`, 1400);
     return ok;
   };
@@ -469,24 +488,32 @@
   const setView = (first) => {
     cam.first = first;
     cam.warm = false;
-    el.cross.hidden = !first || phase !== "play";
+    el.cross.hidden = phase !== "play" || (COARSE && !first);
     el.viewBtn.setAttribute("aria-pressed", String(first));
-    if (!first && document.pointerLockElement === el.canvas) document.exitPointerLock();
-    notice(first ? (COARSE ? "First person · drag to aim" : "First person · click to lock the mouse and aim · V goes back") : "Chase camera", 1800);
+    // Switching on from a key or a click is a gesture, so the mouse can lock straight away.
+    if (first) lockMouse();
+    notice(first ? (COARSE ? "First person · drag to aim" : "First person · move the mouse to aim · V goes back") : "Chase camera · move the mouse to turn", 1800);
   };
-  // With the mouse locked in first person, it aims directly and a left press throws.
+  // Mouse look, as a shooter has it: the first click on the view locks the mouse (and throws), then moving the mouse
+  // or touchpad turns the view in either camera, the world swinging round the Ooga, which turns with it to face the
+  // aim. Unlocked, a plain move still aims in first person; in the chase camera a drag turns it (the orbit hook).
+  // Escape lets the mouse go.
+  const locked = () => document.pointerLockElement === el.canvas;
   const onLockedMove = (e) => {
-    if (document.pointerLockElement !== el.canvas || phase !== "play") return;
+    if (phase !== "play" || quiz.open) return;
+    if (!locked() && (!cam.first || e.buttons !== 0)) return;
     cam.yaw = wrap(cam.yaw - e.movementX * 2.6e-3);
-    cam.pitch = clamp(cam.pitch + e.movementY * 2.2e-3, -0.3, 0.86);
+    cam.pitch = cam.first ? clamp(cam.pitch + e.movementY * 2.2e-3, -0.3, 0.86) : clamp(cam.pitch + e.movementY * 2.2e-3, CAM.pitch[0], CAM.pitch[1]);
+  };
+  const lockMouse = () => {
+    if (COARSE || locked() || !el.canvas.requestPointerLock) return;
+    const lock = el.canvas.requestPointerLock();
+    if (lock && lock.catch) lock.catch(() => { });
   };
   const onLockedDown = (e) => {
-    if (phase !== "play" || !cam.first || e.button !== 0) return;
-    if (document.pointerLockElement === el.canvas) paint();
-    else if (!COARSE && el.canvas.requestPointerLock) {
-      const lock = el.canvas.requestPointerLock();
-      if (lock && lock.catch) lock.catch(() => { });
-    }
+    if (phase !== "play" || e.button !== 0 || quiz.open) return;
+    paint();
+    lockMouse();
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   const dropBlock = () => {
@@ -507,6 +534,7 @@
     move.x = x;
     move.z = z;
     move.sprint = a.sprint;
+    move.face = cam.yaw;
     if (quiz.open) move.crouch = 0;
     const up = a.up > 0;
     // A new press waits for the sim to use it (it clears `jump`), however many substeps this frame runs, even none.
@@ -652,6 +680,14 @@
       el.windArrow.style.opacity = String(Math.min(1, 0.25 + w.strength / C.WIND.storm));
     }
   };
+  // The sprint gauge: full, draining while Shift is held, orange while it refills after running dry.
+  const poseStamina = () => {
+    const a = sim.actors[0], k = Math.round(a.stamina / C.SPRINT_S * 100);
+    if (k === el.staminaK && a.tired === el.staminaTired) return;
+    el.staminaK = k; el.staminaTired = a.tired;
+    el.stamina.style.width = `${k}%`;
+    el.stamina.dataset.tired = String(a.tired);
+  };
   const posePads = (elapsed) => {
     for (let i = 0; i < pads.length; i++) {
       const t = sim.traps[i];
@@ -694,7 +730,7 @@
       camera.position.y = damp(camera.position.y, ey, 12, dt);
       camera.position.z = damp(camera.position.z, ez, 12, dt);
     }
-    setVec(camera.target, x + Math.sin(cam.yaw) * 2, y + 1.3, z + Math.cos(cam.yaw) * 2);
+    setVec(camera.target, x + Math.sin(cam.yaw) * 2, y + 1.9, z + Math.cos(cam.yaw) * 2);
     setVec(RENDER_OPTS.shadowCenter, x, 0, z);
   };
   // The board shows the whole fort from above its gate, slowly turning.
@@ -721,6 +757,7 @@
     poseBlocks(elapsed);
     poseCrates();
     poseCompanions(dt, elapsed);
+    poseStamina();
     posePads(elapsed);
     poseShots();
     if (phase === "board") boardView(elapsed);
@@ -741,7 +778,9 @@
   };
   const onKey = (e) => {
     if (e.key === "Escape") {
-      if (phase === "play" || phase === "results") showBoard();
+      if (phase === "play" && locked()) document.exitPointerLock();
+      else if (phase === "play" && cam.first) setView(false);
+      else if (phase === "play" || phase === "results") showBoard();
       else go(home);
       return;
     }
@@ -787,6 +826,8 @@
     el.tools = [...el.toolBar.querySelectorAll("[data-tool]")];
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
+    el.stamina = document.getElementById("block-stamina");
+    el.staminaK = -1;
     el.windWord = document.getElementById("block-wind-word");
     el.windArrow = document.getElementById("block-wind-arrow");
     el.windKey = "";
@@ -858,7 +899,8 @@
         else hud.tooltip.hide();
       },
       onHoverMove: (hit, p) => { if (hit && hit.owner.kind === "ooga") hud.tooltip.show(actors[hit.owner.index].cave.traits.display, p.x, p.y, actors[hit.owner.index].cave); },
-      onTap: () => { if (phase === "play" && !(cam.first && !COARSE)) paint(); },
+      // A mouse throws on press (`onLockedDown`); a tap on a touch screen throws here.
+      onTap: () => { if (phase === "play" && COARSE) paint(); },
       onOrbit: (dx, dy) => {
         if (phase !== "play") return;
         cam.yaw = wrap(cam.yaw - dx * 5e-3);
@@ -878,7 +920,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W A S D run · drag or Q E turn · Space jumps, again in the air to climb · click or Enter throws · right click, wheel or 1-4 tools · R crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "Mouse turns · W A S D run · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
