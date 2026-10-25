@@ -25,7 +25,10 @@
   const AT = { spool: 0.5, fire: 3, warning: 6, boom: 7.5, out: 7.6, result: 10.6, ready: 30.6 };
   // What the screen shows in each phase.
   const SCREEN = { ready: "ready", armed: "armed", spool: "spool", fire: "fire", warning: "warning", boom: "boom", out: "boom", result: "result" };
-  const SCREENS = ["ready", "armed", "spool", "fire", "warning", "boom", "result"];
+  const SCREENS = ["ready", "armed", "spool", "fire", "warning", "boom", "result", "checks", "days", "rules"];
+  // At rest the screen turns through these, each for IDLE_HOLD seconds, a blank IDLE_BLANK seconds between, as a
+  // monitor changes.
+  const IDLE = ["ready", "checks", "days", "rules"], IDLE_HOLD = 5, IDLE_BLANK = 0.12;
   // How far the guard swings open and how long it takes, the button's travel, how near the button an Ooga reaches it,
   // m, and how high its feet may stand; the strobe's flashes a second; a lamp's glow when out; and how far in front of
   // the faces they lie on the Canvas 2D sort keeps the parts on the booth's faces.
@@ -375,10 +378,11 @@
       for (let i = 0; i < leds.length; i++) leds[i].glow = panic ? (Math.sin(clock * 37 + i * 2.3) > 0.2 ? 1 : DIM) : i < lit ? 1 : DIM;
       scopes[1].visible = phase === "fire" || panic;
       scopes[0].visible = !scopes[1].visible;
-      const key = SCREEN[phase];
+      const idle = phase === "ready" ? clock / IDLE_HOLD : -1;
+      const key = idle < 0 ? SCREEN[phase] : idle % 1 * IDLE_HOLD < IDLE_BLANK ? null : IDLE[Math.floor(idle) % IDLE.length];
       if (key !== shown) {
-        screens[shown].visible = false;
-        screens[key].visible = true;
+        if (shown) screens[shown].visible = false;
+        if (key) screens[key].visible = true;
         shown = key;
       }
       const left = running && t < AT.boom ? Math.max(0, Math.floor(AT.result - t)) : -1;

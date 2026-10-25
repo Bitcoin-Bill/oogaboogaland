@@ -1109,7 +1109,11 @@
     fire: { ink: "#ff8a2e", bg: "#170802", icon: "warn", lines: ["STATIC FIRE", "FULL THRUST", "HOLD ON"] },
     warning: { ink: "#ff3b30", bg: "#1c0303", icon: "warn", lines: ["WARNING", "COMBUSTION", "UNSTABLE"] },
     boom: { ink: "#ff3b30", bg: "#0a0101", icon: "boom", lines: ["SYSTEM", "ERROR", "!!!"] },
-    result: { ink: "#ffd23a", bg: "#141004" }
+    result: { ink: "#ffd23a", bg: "#141004" },
+    // While the booth stands ready it turns through these with the ready screen (`IDLE` in `hangar-fire.js`).
+    checks: { ink: "#3dff8a", bg: "#03140a", rows: [["FUEL", "12%", "#ffb02e"], ["IGNITERS", "OK", "#3dff8a"], ["TURBINES", "OK?", "#ffb02e"], ["FLIGHT MANUAL", "MISSING", "#ff3b30"], ["CHIEF ENGINEER", "FURIOUS", "#ff3b30"]] },
+    days: { ink: "#ffb02e", bg: "#160c02" },
+    rules: { ink: "#3dff8a", bg: "#03140a", lines: ["1. DO NOT PRESS", "THE RED BUTTON.", "2. SEE RULE 1."] }
   };
   // The size of each picture that is not a screen, metres.
   const FIRE_SIZES = { title: [1.54, 0.21], plate: [0.5, 0.15], sign: [1.0, 0.52], badge: [0.21, 0.23], scope: [0.44, 0.22] };
@@ -1166,7 +1170,46 @@
     screenFrame(g, W, H, S);
     g.shadowColor = S.ink; g.shadowBlur = H * 0.018;
     g.textAlign = "center"; g.textBaseline = "middle";
-    if (key === "result") {
+    if (key === "checks") {
+      // The pre-fire checklist, each check's state in its own colour along dotted leaders.
+      g.fillStyle = S.ink;
+      fitText(g, "PRE-FIRE CHECKS", H * 0.11, W * 0.6, "bold ");
+      g.fillText("PRE-FIRE CHECKS", W / 2, H * 0.19);
+      g.textAlign = "left";
+      S.rows.forEach(([name, state, ink], i) => {
+        const y = H * (0.32 + i * 0.105);
+        g.fillStyle = S.ink; fitText(g, name, H * 0.075, W * 0.4); g.fillText(name, W * 0.09, y);
+        g.globalAlpha = 0.5;
+        for (let x = W * 0.5; x < W * 0.68; x += W * 0.025) g.fillRect(x, y + H * 0.01, W * 0.008, H * 0.012);
+        g.globalAlpha = 1;
+        g.fillStyle = ink; g.shadowColor = ink; fitText(g, state, H * 0.075, W * 0.2, "bold "); g.fillText(state, W * 0.7, y);
+        g.shadowColor = S.ink;
+      });
+    } else if (key === "days") {
+      // The days since the last explosion, which never get past nought.
+      g.fillStyle = S.ink;
+      fitText(g, "DAYS SINCE LAST", H * 0.1, W * 0.62, "bold ");
+      g.fillText("DAYS SINCE LAST", W / 2, H * 0.2);
+      fitText(g, "ENGINE EXPLOSION", H * 0.1, W * 0.62, "bold ");
+      g.fillText("ENGINE EXPLOSION", W / 2, H * 0.31);
+      g.fillStyle = "#ff3b30"; g.shadowColor = "#ff3b30"; g.shadowBlur = H * 0.04;
+      fitText(g, "0", H * 0.42, W * 0.3, "bold ");
+      g.fillText("0", W / 2, H * 0.58);
+      g.fillStyle = S.ink; g.shadowColor = S.ink; g.shadowBlur = H * 0.018;
+      fitText(g, "RECORD: 0", H * 0.065, W * 0.3);
+      g.fillText("RECORD: 0", W / 2, H * 0.79);
+    } else if (key === "rules") {
+      // The safety briefing, all of it.
+      g.fillStyle = S.ink;
+      fitText(g, "SAFETY BRIEFING", H * 0.11, W * 0.6, "bold ");
+      g.fillText("SAFETY BRIEFING", W / 2, H * 0.2);
+      triangle(g, W * 0.17, H * 0.52, H * 0.2, S.ink, null, S.ink);
+      g.textAlign = "left";
+      S.lines.forEach((line, i) => {
+        fitText(g, line, H * 0.095, W * 0.62, "bold ");
+        g.fillText(line, W * 0.3, H * (0.4 + i * 0.14));
+      });
+    } else if (key === "result") {
       g.fillStyle = S.ink;
       fitText(g, "TEST RESULT:", H * 0.13, W * 0.6);
       g.fillText("TEST RESULT:", W / 2, H * 0.24);
