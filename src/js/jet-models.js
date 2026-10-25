@@ -1,28 +1,30 @@
-// Lightning Jet v2, the jet docked in the Lightning Jet Hangar, built in voxels a quarter of a metre across so the
-// renderer's block detail gives it its concept's blocky look: a white fuselage over a royal-blue belly with a gold
+// Lightning Jet v2, the jet docked in the Lightning Jet Hangar, built in big voxels so the renderer's block detail
+// gives it its concept's blocky look: a white fuselage over a royal-blue belly with a gold
 // pinstripe between them and the bolt's roundel on each side, a dark glass canopy in its frame, swept wings edged in
 // blue, blue tailplanes and a blue fin carrying a big gold bolt, twin engine pods with gold intakes whose exhausts
 // glow, and its gear. Each part is shaped as its own set of cells (`PARTS`); a construction stage (`STAGES`) is the
 // parts fitted by then, merged into one mesh (`jet(stage)`, cached), so nothing fitted shows a face inside another.
 // `STAGE` is the stage the hangar shows, which the maintainer bumps by hand; `?debug=1&jetstage=N` previews another.
 //
-// In the jet's frame: the nose toward -z, y up, the origin on the floor under its middle. `SIZE` is its overall
-// size, `POINTS` where the hangar meets it (the cockpit's seat and eye, the canopy's hinge, the engines), `BOXES` the
-// boxes walkers keep out of, [x0, x1, z0, z1, from, to] between two heights of the feet, and `LIVERY` its colours.
+// The parts are drawn on a grid of quarter units, with the fuselage's axis `CY` units up, and built `SCALE` times
+// that, so each voxel is `U` metres across. In the jet's frame: the nose toward -z, y up, the origin on the floor under
+// its middle, in metres. `SIZE` is its overall size, `POINTS` where the hangar meets it (the cockpit's seat and eye,
+// the canopy's hinge, the engines), `BOXES` the boxes walkers keep out of, [x0, x1, z0, z1, from, to] between two
+// heights of the feet, and `LIVERY` its colours.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
   const { models } = BL;
   const { cached, makeVox, voxelGeometry } = models;
 
-  const U = 0.25, CY = 3;
-  const LIVERY = { body: "#eef1f6", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", engine: "#2f8fe8" };
+  const SCALE = 1.5, CELL = 0.25, U = CELL * SCALE, CY = 3;
+  const LIVERY = { body: "#eef1f6", blue: "#2443a8", gold: "#ffc83a", glass: "#1b2f5e", engine: "#1c2c52" };
   // The palette, by index: whites in two tones and a panel line, blues in two tones and the nose's darker one, the
   // gold, the canopy's glass and frame, the nacelles in two tones, the intakes, the exhausts, the tyres and the struts.
   const PALETTE = [null, LIVERY.body, "#e2e6ee", "#d3d8e2", LIVERY.blue, "#2b4dbb", "#1a2f7a", LIVERY.gold, LIVERY.glass, "#9aa3b0", "#c9ced6", "#b6bcc6", "#2a2d33", LIVERY.engine, "#1d1f24", "#5a6068"];
   const WHITE = 1, WHITE_B = 2, PANEL = 3, BLUE = 4, BLUE_B = 5, NOSE = 6, GOLD = 7, GLASS = 8, FRAME = 9, NACELLE = 10, NACELLE_B = 11, INTAKE = 12, EXHAUST = 13, TYRE = 14, STRUT = 15;
-  const EMISSIVE = { [GLASS]: 0.22, [EXHAUST]: 0.75 };
-  const SIZE = { length: 18.5, span: 12.4, height: 8 };
+  const EMISSIVE = { [GLASS]: 0.22, [EXHAUST]: 0.25 };
+  const SIZE = { length: 18.5 * SCALE, span: 12.4 * SCALE, height: 8 * SCALE };
 
   const smooth = (t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
   // The fuselage's radius along its length: an ogive nose, swelling to the cabin, a long even body, and a taper to the
@@ -75,7 +77,7 @@
       cell: (i, j, k, x, y, z) => {
         const cz = -5, cyTop = CY + radius(cz) * 0.8;
         if ((x / 0.85) ** 2 + ((y - cyTop) / 0.8) ** 2 + ((z - cz) / 2.2) ** 2 > 1 || inFuselage(x, y, z)) return null;
-        return Math.abs(z - cz) < 0.13 || inFuselage(x, y - U, z) ? FRAME : GLASS;
+        return Math.abs(z - cz) < 0.13 || inFuselage(x, y - CELL, z) ? FRAME : GLASS;
       }
     },
     // The wings, swept and set low with a little dihedral: white, their leading edges and tips blue.
@@ -103,7 +105,8 @@
         return inBolt((z - 7.6) / 1, (h - 2.9) / 1.5) ? GOLD : tone(i, j, k, BLUE, BLUE_B);
       }
     },
-    // The engine pods either side of the tail: gold rings round dark intakes, grey nacelles, and the exhausts glowing.
+    // The engine pods either side of the tail: gold rings round dark intakes, grey nacelles, and dark nozzles, each
+    // a deep blue glimmer inside its rim.
     engines: {
       box: [-9, 8, 7, 17, 18, 37],
       cell: (i, j, k, x, y, z) => {
@@ -112,7 +115,7 @@
         const r = z < 5 ? 0.74 : 0.78 - 0.16 * smooth((z - 5) / 4.25);
         if (d > r) return null;
         if (z < 4.85) return d > 0.5 ? GOLD : INTAKE;
-        if (z > 9) return d < 0.36 ? EXHAUST : INTAKE;
+        if (z > 9) return d < 0.55 ? EXHAUST : INTAKE;
         return tone(i, j, k, NACELLE, NACELLE_B);
       }
     },
@@ -142,7 +145,7 @@
     const P = PARTS[name], [i0, i1, j0, j1, k0, k1] = P.box;
     out = [];
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
-      const c = P.cell(i, j, k, (i + 0.5) * U, (j + 0.5) * U, (k + 0.5) * U);
+      const c = P.cell(i, j, k, (i + 0.5) * CELL, (j + 0.5) * CELL, (k + 0.5) * CELL);
       if (c) out.push(i, j, k, c);
     }
     cells.set(name, out);
@@ -161,13 +164,15 @@
   });
   const jet = (stage = STAGE) => (builds[stage] || builds[STAGE])();
 
+  // Where the hangar meets it and what walkers keep out of, drawn in the grid's units and scaled to metres.
+  const at = (p) => ({ x: p.x * SCALE, y: p.y * SCALE, z: p.z * SCALE });
   const POINTS = {
-    seat: { x: 0, y: CY + 0.35, z: -5 }, eye: { x: 0, y: CY + 1.25, z: -5.4 }, hinge: { x: 0, y: CY + 1.3, z: -2.8 },
-    engines: [{ x: -1.35, y: CY - 0.35, z: 6.9 }, { x: 1.35, y: CY - 0.35, z: 6.9 }]
+    seat: at({ x: 0, y: CY + 0.35, z: -5 }), eye: at({ x: 0, y: CY + 1.25, z: -5.4 }), hinge: at({ x: 0, y: CY + 1.3, z: -2.8 }),
+    engines: [at({ x: -1.35, y: CY - 0.35, z: 6.9 }), at({ x: 1.35, y: CY - 0.35, z: 6.9 })]
   };
   // The fuselage and its gear down to the floor, the engine pods, and the wings' roots, low enough to catch a head;
   // under the wings farther out an Ooga walks upright.
-  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.15, 2.15, 4.6, 9.3, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]];
+  const BOXES = [[-1.65, 1.65, -8.8, 9, -1, CY + 1.7], [-2.15, 2.15, 4.6, 9.3, -1, CY + 1], [-3.2, 3.2, -2.6, 2.2, -1, 1]].map((b) => b.map((v) => v * SCALE));
 
-  BL.jetModels = { SIZE, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
+  BL.jetModels = { SIZE, SCALE, LIVERY, STAGES, STAGE, POINTS, BOXES, U, jet };
 })();
