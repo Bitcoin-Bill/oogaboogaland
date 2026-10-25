@@ -26,7 +26,7 @@
   const STONE = ["#5b4a3e", "#524238", "#66544a", "#4a3d34"], STONE_DK = "#3a2f28", IRON = "#4a4d52", IRON_DK = "#2c2e33";
   const TIMBER = "#8a5a32", TIMBER_LT = "#a8703e", TIMBER_DK = "#5c3a1e", GIRDER = "#86602f", GIRDER_DK = "#5e4223";
   const RUNWAY = "#2a2e36", SEAM = "#3b404a", PAINT = "#ffd23a", INK = "#141414", MARKER = "#6fc8ff", NEON = "#4fb4ff";
-  const SCREEN = "#2f7fd8", SCREEN_INK = "#cfe8ff", FLOOR_LAMP = "#4aa8ff";
+  const SCREEN = "#2f7fd8", FLOOR_LAMP = "#4aa8ff";
 
   // The hall is wider on the right, where the Jet docks, than on the left, where the crew works.
   const HALL = { x0: -22, x1: 27, back: -34, front: 30, h: 18 };
@@ -339,23 +339,11 @@
 
   // ---- the floor's fixtures ---------------------------------------------------------------------------------------
 
-  // A monitor facing +z with its stand: a dark frame round a glowing blue screen showing a page of the crew's work, a
-  // title bar, lines of text and a little bar chart, or with `blank` the screen alone, for pictures laid on it.
-  const monitor = (flat, glow, w, h, seed, blank = false) => {
+  // A monitor facing +z: a dark frame round a glowing blue screen, its face 0.02 in front of the origin, for the
+  // pictures `hangar-terminals.js` lays on it.
+  const monitor = (flat, glow, w, h) => {
     flat.push(box({ w: w + 0.08, h: h + 0.08, d: 0.06, color: IRON_DK, offset: { y: h / 2, z: -0.03 } }));
     glow.push(box({ w, h, d: 0.02, color: SCREEN, emissive: 0.95, offset: { y: h / 2, z: 0.01 } }));
-    const ink = (x, y, bw, bh) => glow.push(box({ w: bw, h: bh, d: 0.01, color: SCREEN_INK, emissive: 1, offset: { x, y, z: 0.026 } }));
-    if (blank) return;
-    const rand = mulberry32(seed);
-    ink(0, h - 0.05, w - 0.1, 0.035);
-    for (let k = 0; k < 3; k++) {
-      const lw = (0.3 + rand() * 0.35) * w;
-      ink(-w / 2 + 0.06 + lw / 2, h * (0.72 - k * 0.15), lw, 0.025);
-    }
-    for (let k = 0; k < 4; k++) {
-      const bh = (0.12 + rand() * 0.28) * h;
-      ink(w * 0.12 + k * w * 0.1, 0.06 + bh / 2, w * 0.06, bh);
-    }
   };
   // A workstation's two monitors on its desk, [x, width, turn] each, the foot of each screen at (x, y, z) in the desk's
   // frame and `h` tall.
@@ -440,7 +428,7 @@
       g.push(box({ w: 0.05, h: 0.05, d: 0.02, color: MARKER, emissive: 1, offset: { x: 0.65, y: 0.52, z: 0.26 } }));
       for (const [dx, w, a] of DESK.monitors) {
         const mf = [], mg = [];
-        monitor(mf, mg, w, DESK.h, 73 + i * 2 + (dx > 0 ? 1 : 0));
+        monitor(mf, mg, w, DESK.h);
         for (const p of mf) f.push(moved(turnedY(p, a), dx, DESK.y, DESK.z));
         for (const p of mg) g.push(moved(turnedY(p, a), dx, DESK.y, DESK.z));
         f.push(box({ w: 0.08, h: 0.14, d: 0.08, color: IRON_DK, offset: { x: dx, y: 0.91, z: -0.26 } }), box({ w: 0.26, h: 0.02, d: 0.18, color: IRON_DK, offset: { x: dx, y: 0.85, z: -0.26 } }));
@@ -456,7 +444,7 @@
       const f = [], g = [], K = KIOSK;
       f.push(bevelBox({ w: 0.6, h: 0.08, d: 0.5, color: IRON_DK, bevel: 0.02, offset: { y: 0.04 } }), box({ w: 0.14, h: 1.02, d: 0.14, color: IRON, offset: { y: 0.59, z: -0.06 } }));
       const mf = [], mg = [];
-      monitor(mf, mg, K.w, K.h, 0, true);
+      monitor(mf, mg, K.w, K.h);
       for (const p of mf) f.push(moved(turnedX(p, K.tilt), 0, K.y, K.z));
       for (const p of mg) g.push(moved(turnedX(p, K.tilt), 0, K.y, K.z));
       placed(flat, f, x, 0, z, turn);

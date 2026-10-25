@@ -7,7 +7,9 @@
 // rebalance evening out their liquidity, the forwarding log scrolling, the chief engineer's mood (Kortik's Sis's,
 // read live) and the film archive's card saying DISPLAY; the dock's terminal shows the Jet's blueprint, its systems and
 // its launch countdown instead of the build board, the rebalance and the log. A page may have frames, played at its
-// own rate.
+// own rate. The crew's desks show pictures of their work too, slower, each desk its own and both its monitors alike:
+// channels, fees, the peer map, the engines' gauges, wiring, the static fire log, the rebalancer's runs, HTLCs, fee
+// policy, the mempool, the day's routing and the chief engineer's orders.
 //
 // Space beside a terminal (the act button reads DISPLAY), or a tap on it from there, starts the show: the screen hung
 // from a gantry far down the runway unrolls, the old projector hung from a gantry over it nearer the door strikes its lamp
@@ -265,6 +267,187 @@
     geo = plane(canvas, HM.KIOSK.w, HM.KIOSK.h, 0.45);
     pages.set(key, geo);
     return geo;
+  };
+
+  // ---- the crew's desks' pictures, on a screen of W by H pixels ----
+
+  // Each desk's two monitors (`hangarModels.DESK`) show one picture, the same on both, held DESK_HOLD seconds and
+  // swapped for the next with no blank between, each desk DESK_STEP seconds behind the one before; each desk turns
+  // through its own three (`DESKS`, in the order of `LAYOUT.stations`), a kind that comes round on another desk drawn
+  // there from that desk's own numbers and under its own title, so no two desks show the same picture, and in an order
+  // that seldom has two desks showing one kind at once. DESK_PX pixels a metre.
+  const DESK_HOLD = 20, DESK_STEP = 5, DESK_PX = 280;
+  const DESKS = [["channels", "fees", "peers"], ["engine", "wiring", "firelog"], ["htlcs", "policy", "rebalance"], ["routed", "orders", "mempool"],
+    ["engine", "rebalance", "channels"], ["fees", "firelog", "htlcs"], ["policy", "wiring", "peers"], ["routed", "mempool", "engine"], ["orders", "channels", "fees"]];
+  const ORDERS = [["DO NOT PRESS", "THE RED BUTTON.", "— CHIEF ENGINEER"], ["NO BANANAS", "NEAR THE ENGINES.", "THIS MEANS YOU."], ["IF IT GOES BOOM,", "IT WAS KORTIK.", "— SIS"]];
+  const deskHead = (g, W, H, title, dot = INK.green) => {
+    g.fillStyle = INK.bg; g.fillRect(0, 0, W, H);
+    g.fillStyle = INK.bar; g.fillRect(0, 0, W, 20);
+    write(g, title, 8, 11, 10, INK.text, "left", SANS, "bold", W - 30);
+    disc(g, W - 11, 10, 4, dot);
+    g.strokeStyle = INK.grid; g.lineWidth = 2; g.strokeRect(1, 1, W - 2, H - 2);
+  };
+  // Each kind's painter: its `v`th turn round the desks, its numbers from `rand`, which draws the same on both of a
+  // desk's monitors.
+  const DESK_PAINT = {
+    // Four channels' liquidity, local against remote.
+    channels: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["CHANNELS · NORTH", "CHANNELS · SOUTH", "CHANNELS · NEW"][v]);
+      const x0 = 64, bw = W - x0 - 10;
+      for (let i = 0; i < 4; i++) {
+        const y = 36 + i * 21, k = 0.15 + rand() * 0.7;
+        write(g, PEERS[(i + v * 2) % PEERS.length], 8, y, 9, INK.text);
+        g.fillStyle = INK.cyan; g.fillRect(x0, y - 5, bw * k, 10);
+        g.fillStyle = INK.grid; g.fillRect(x0 + bw * k, y - 5, bw * (1 - k), 10);
+      }
+      write(g, "LOCAL", x0, H - 10, 8, INK.cyan);
+      write(g, "REMOTE", W - 10, H - 10, 8, INK.dim, "right");
+    },
+    // The routing fees earned, climbing over days.
+    fees: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["FEES EARNED · 7 DAYS", "FEES EARNED · 30 DAYS", "FEES EARNED · 90 DAYS"][v]);
+      const n = [7, 15, 24][v], x0 = 10, x1 = W - 10, y0 = H - 14, y1 = 44, pts = [];
+      g.strokeStyle = INK.grid; g.lineWidth = 1;
+      for (let k = 0; k < 4; k++) { const y = y1 + (y0 - y1) * k / 3; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke(); }
+      for (let i = 0, k = 0.15; i < n; i++) { k = Math.min(1, k + rand() * 0.16 - 0.03); pts.push([x0 + (x1 - x0) * i / (n - 1), y0 - (y0 - y1) * k]); }
+      poly(g, [[x0, y0], ...pts, [x1, y0]], "rgba(95, 227, 255, 0.18)");
+      g.strokeStyle = INK.cyan; g.lineWidth = 2; g.lineJoin = "round";
+      g.beginPath();
+      pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+      write(g, `+${(Math.floor(800 + rand() * 4000) * (v + 1)).toLocaleString("en-US")} SAT`, x1, 32, 10, INK.green, "right");
+    },
+    // The Jet among its peers, a payment's way lit.
+    peers: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["PEER MAP", "PEER MAP · GOSSIP", "PEER MAP · PROBES"][v]);
+      const cx = W / 2, cy = 74, n = 6 + v, at = [];
+      for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + (i + rand() * 0.4) * TAU / n; at.push([cx + Math.cos(a) * (W / 2 - 22), cy + Math.sin(a) * 32]); }
+      for (let i = 0; i < n; i++) {
+        line(g, cx, cy, at[i][0], at[i][1], INK.grid, 2);
+        if (rand() < 0.5) line(g, at[i][0], at[i][1], at[(i + 1) % n][0], at[(i + 1) % n][1], INK.grid, 1);
+      }
+      const hot = Math.floor(rand() * n);
+      line(g, cx, cy, at[hot][0], at[hot][1], INK.amber, 3);
+      for (let i = 0; i < n; i++) disc(g, at[i][0], at[i][1], 5, INK.bar, INK.cyan);
+      disc(g, cx, cy, 11, INK.bar, INK.amber, 2);
+      bolt(g, cx, cy, 13, INK.amber);
+      write(g, `${n} PEERS · ${Math.floor(20 + rand() * 60)} CHANNELS SEEN`, cx, H - 9, 8, INK.dim, "center");
+    },
+    // Jet v2's engines on the gauges: speed, exhaust heat and fuel.
+    engine: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["ENGINE L · TELEMETRY", "ENGINE R · TELEMETRY", "APU · TELEMETRY"][v]);
+      const r = Math.min(25, W / 7), level = [0.2 + rand() * 0.75, 0.2 + rand() * 0.75, 0.2 + rand() * 0.75];
+      [["N1", "%"], ["EGT", "°C"], ["FUEL", "%"]].forEach(([label, unit], i) => {
+        const cx = W * (i + 0.5) / 3, cy = 70, k = level[i];
+        g.lineCap = "butt"; g.lineWidth = 6;
+        g.strokeStyle = INK.grid; g.beginPath(); g.arc(cx, cy, r, Math.PI * 0.8, Math.PI * 2.2); g.stroke();
+        g.strokeStyle = k > 0.85 ? INK.red : k > 0.65 ? INK.amber : INK.green;
+        g.beginPath(); g.arc(cx, cy, r, Math.PI * 0.8, Math.PI * (0.8 + 1.4 * k)); g.stroke();
+        write(g, `${Math.round(label === "EGT" ? 300 + k * 600 : k * 100)}${unit}`, cx, cy + 1, 9, INK.text, "center");
+        write(g, label, cx, cy + r + 9, 8, INK.dim, "center");
+      });
+      const hot = level[1] > 0.85, running = level[0] > 0.5;
+      write(g, hot ? "RUNNING HOT!" : running ? "SPOOLED UP" : "IDLE · COLD", W / 2, H - 10, 9, hot ? INK.red : running ? INK.amber : INK.cyan, "center");
+    },
+    // A schematic of the Jet's insides in a blueprint's white lines.
+    wiring: (g, W, H, v, rand) => {
+      g.fillStyle = "#0b2a5c"; g.fillRect(0, 0, W, H);
+      g.strokeStyle = "#16407e"; g.lineWidth = 1;
+      for (let x = 6; x < W; x += 12) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+      for (let y = 6; y < H; y += 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+      const ink = "#e6f0ff", wire = v === 2 ? INK.amber : INK.cyan, bw = 38, bh = 16;
+      write(g, ["JET V2 · WIRING", "JET V2 · AVIONICS BUS", "JET V2 · FUEL LINES"][v], 8, 11, 10, ink, "left", SANS, "bold", W - 16);
+      const names = [["BATT", "BUS", "ECU", "GEN", "NAV", "LN NODE"], ["CPU", "BUS", "RADIO", "GYRO", "HUD", "LN NODE"], ["TANK L", "PUMP", "VALVE", "TANK R", "ENG L", "ENG R"]][v];
+      const boxes = names.map((_, i) => [10 + (i % 3) * (W - 20 - bw) / 2 + (rand() - 0.5) * 8, i < 3 ? 34 : 86]);
+      g.strokeStyle = wire; g.lineWidth = 1.5;
+      for (let i = 1; i < boxes.length; i++) {
+        const [ax, ay] = boxes[i - 1], [bx, by] = boxes[i], x1 = ax + bw / 2, y1 = ay + bh / 2, x2 = bx + bw / 2, y2 = by + bh / 2, my = (y1 + y2) / 2;
+        g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1, my); g.lineTo(x2, my); g.lineTo(x2, y2); g.stroke();
+      }
+      boxes.forEach(([x, y], i) => {
+        g.fillStyle = "#0b2a5c"; g.fillRect(x, y, bw, bh);
+        g.strokeStyle = ink; g.lineWidth = 1.5; g.strokeRect(x, y, bw, bh);
+        write(g, names[i], x + bw / 2, y + bh / 2 + 1, 7, ink, "center", SANS, "bold", bw - 4);
+      });
+    },
+    // The static fire tests, most of them ending the same way.
+    firelog: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["STATIC FIRE · LOG", "TEST BOOTH · LOG", "INCIDENT LOG"][v], INK.red);
+      const first = 30 + v * 7 + Math.floor(rand() * 4);
+      for (let k = 0; k < 5; k++) {
+        const y = 33 + k * 18, boom = rand() < 0.75, result = boom ? "BOOM" : rand() < 0.5 ? "FIZZLE" : "OK?!";
+        write(g, `TEST ${first + k}`, 8, y, 9, INK.text, "left", MONO);
+        write(g, result, W - 8, y, 9, boom ? INK.red : INK.amber, "right", MONO);
+      }
+      write(g, `${Math.floor(rand() * 2)} DAYS SINCE THE LAST BOOM`, W / 2, H - 10, 8, INK.amber, "center", SANS, "bold", W - 16);
+    },
+    // The rebalancer's runs, sats moved from one channel to another.
+    rebalance: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["REBALANCE QUEUE", "REBALANCER · RUNS", "LIQUIDITY MOVES"][v], INK.amber);
+      for (let k = 0; k < 5; k++) {
+        const y = 33 + k * 19, a = Math.floor(rand() * PEERS.length), b = (a + 1 + Math.floor(rand() * (PEERS.length - 1))) % PEERS.length;
+        const amount = [100, 250, 500, 800, 1200][Math.floor(rand() * 5)], state = k === 0 ? 0 : rand() < 0.7 ? 1 : 2;
+        write(g, `${PEERS[a]} → ${PEERS[b]}`, 8, y, 8.5, INK.text);
+        write(g, amount >= 1000 ? `${(amount / 1000).toFixed(1)}M` : `${amount}K`, W - 44, y, 8.5, INK.dim, "right", MONO, "");
+        write(g, ["RUN", "DONE", "FAIL"][state], W - 8, y, 8.5, [INK.amber, INK.green, INK.red][state], "right", MONO);
+      }
+    },
+    // Payments on their way through the Jet, each with the blocks it has left.
+    htlcs: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["HTLCS IN FLIGHT", "PENDING HTLCS", "HTLC WATCH"][v]);
+      for (let k = 0; k < 4; k++) {
+        const y = 34 + k * 22, left = Math.floor(6 + rand() * 138), sats = Math.floor(1 + rand() * 400) * 1000, short = left < 24;
+        write(g, `${sats.toLocaleString("en-US")} SAT`, 8, y, 8.5, INK.text, "left", MONO, "");
+        write(g, `${left} BLOCKS`, W - 8, y, 8.5, short ? INK.red : INK.dim, "right", MONO, "");
+        g.fillStyle = INK.grid; g.fillRect(8, y + 7, W - 16, 4);
+        g.fillStyle = short ? INK.red : INK.cyan; g.fillRect(8, y + 7, (W - 16) * left / 144, 4);
+      }
+    },
+    // Each channel's fee and which way it was last moved.
+    policy: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["FEE POLICY · PPM", "FEE POLICY · BASE", "AUTO FEES"][v]);
+      write(g, "PEER", 8, 30, 8, INK.dim);
+      write(g, v === 1 ? "BASE MSAT" : "PPM", W - 8, 30, 8, INK.dim, "right");
+      for (let k = 0; k < 5; k++) {
+        const y = 45 + k * 16, up = rand() < 0.5, value = v === 1 ? Math.floor(rand() * 4) * 500 : Math.floor(10 + rand() * 900);
+        write(g, PEERS[(k + v) % PEERS.length], 8, y, 9, INK.text);
+        write(g, String(value), W - 22, y, 9, INK.text, "right", MONO, "");
+        poly(g, up ? [[W - 15, y + 3], [W - 11, y - 3], [W - 7, y + 3]] : [[W - 15, y - 3], [W - 11, y + 3], [W - 7, y - 3]], up ? INK.green : INK.red);
+      }
+    },
+    // The next blocks waiting in the mempool, for the channels the Jet opens on-chain.
+    mempool: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["MEMPOOL · NEXT BLOCKS", "MEMPOOL · FEES", "CHANNEL OPENS"][v], INK.amber);
+      const n = 3, bw = (W - 16 - (n - 1) * 8) / n;
+      for (let i = 0; i < n; i++) {
+        const x = 8 + i * (bw + 8), y = 32, rate = Math.max(1, Math.round((n - i) * (2 + rand() * 8)));
+        g.fillStyle = i === 0 ? "#6a3fd8" : "#3a2f8a"; g.fillRect(x, y, bw, 60);
+        write(g, `~${rate}`, x + bw / 2, y + 20, 13, "#ffffff", "center");
+        write(g, "SAT/VB", x + bw / 2, y + 36, 7.5, "#d8ccff", "center");
+        write(g, `${Math.floor(1500 + rand() * 3000)} TX`, x + bw / 2, y + 50, 7.5, "#d8ccff", "center");
+      }
+      write(g, v === 2 ? "OPEN WHEN FEES ARE LOW" : `NEXT BLOCK IN ~${Math.floor(1 + rand() * 9)} MIN`, W / 2, H - 14, 8.5, INK.dim, "center");
+    },
+    // How much the Jet routed, over a row of bars.
+    routed: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["ROUTED TODAY", "ROUTED THIS WEEK", "SUCCESS RATE"][v], INK.green);
+      const big = v === 2 ? `${Math.floor(80 + rand() * 18)}%` : `${(Math.floor(10 + rand() * 90) / 10 * (v ? 7 : 1)).toFixed(1)}M SAT`;
+      write(g, big, W / 2, 46, 20, INK.green, "center", SANS, "bold", W - 20);
+      const n = 12, bw = (W - 16) / n;
+      for (let i = 0; i < n; i++) {
+        const h = 6 + rand() * 34;
+        g.fillStyle = i === n - 1 ? INK.amber : INK.cyan;
+        g.fillRect(8 + i * bw + 1, H - 10 - h, bw - 2, h);
+      }
+    },
+    // A notice from the chief engineer.
+    orders: (g, W, H, v) => {
+      deskHead(g, W, H, ["CHIEF ENGINEER'S ORDERS", "SAFETY NOTICE", "SHIFT NOTES"][v], INK.red);
+      const [a, b, by] = ORDERS[v];
+      write(g, a, W / 2, 50, 14, INK.amber, "center", SANS, "bold", W - 16);
+      write(g, b, W / 2, 72, 14, INK.amber, "center", SANS, "bold", W - 16);
+      write(g, by, W / 2, 102, 9, INK.dim, "center");
+    }
   };
 
   // ---- the film, on a picture of SW by SH pixels ----
@@ -554,6 +737,36 @@
       addChild(root, node);
       return { node, x, z, turns, offset: i * HOLD };
     });
+    // The desks' monitors, each laid on its screen's face, and the pictures each desk turns through, a geometry for
+    // each of its monitors' sizes; painted each desk's first at once and the rest a desk a frame (`toPaint`), in the
+    // order they come up; and which each desk shows (-1 none yet). A kind's `v` is its turn round the desks.
+    const D = HM.DESK, seen = {};
+    const desks = L.stations.map(([x, z, turn], i) => {
+      const c = Math.cos(turn), s = Math.sin(turn), face = 0.02 + LIFT;
+      const nodes = D.monitors.map(([dx, , a]) => {
+        const lx = dx + face * Math.sin(a), lz = D.z + face * Math.cos(a);
+        const node = createNode({ position: { x: x + lx * c + lz * s, y: D.y + D.h / 2, z: z - lx * s + lz * c }, rotation: { x: 0, y: turn + a, z: 0 }, sightHidden: true, visible: false, depthBias: FRONT });
+        addChild(root, node);
+        return node;
+      });
+      const kinds = DESKS[i], v = kinds.map((kind) => (seen[kind] = (seen[kind] ?? -1) + 1));
+      return { nodes, kinds, v, pics: kinds.map(() => []), shown: -1, offset: i * DESK_STEP, seed: 977 + i * 13 };
+    });
+    const paintDesk = (d, n) => {
+      for (const [, w] of D.monitors) {
+        const canvas = sheet(Math.round(w * DESK_PX), Math.round(D.h * DESK_PX));
+        DESK_PAINT[d.kinds[n]](canvas.getContext("2d"), canvas.width, canvas.height, d.v[n], BL.math.mulberry32(d.seed + n));
+        const geo = plane(canvas, w, D.h, 0.45);
+        d.pics[n].push(geo);
+        live.push(geo);
+      }
+    };
+    const toPaint = [];
+    for (let step = 0; step < 3; step++) for (const d of desks) {
+      const n = (Math.floor(d.offset / DESK_HOLD) + step) % d.kinds.length;
+      if (step === 0) paintDesk(d, n); else toPaint.push(d, n);
+    }
+    let painting = 0;
 
     // ---- the projector, its beam and the screen ----
     const head = createNode({ position: { ...P.at }, rotation: { ...P.turn }, scale: { x: P.scale, y: P.scale, z: P.scale }, geometry: P.head });
@@ -716,6 +929,17 @@
         else { grain[shownGrain].position.x = pic.x + wx; grain[shownGrain].position.y = pic.y + wy; }
       }
       light.level = lit ? lamp * shine * (1 - flick) : 0;
+      // The desks: each its next picture once that has loaded, on both its monitors; and the next desk's painted.
+      for (let i = 0; i < desks.length; i++) {
+        const d = desks[i], n = Math.floor((clock + d.offset) / DESK_HOLD) % d.kinds.length, next = d.pics[n];
+        if (n === d.shown || next.length < d.nodes.length) continue;
+        let loaded = true;
+        for (let m = 0; m < next.length; m++) loaded = loaded && ready(next[m]);
+        if (!loaded) continue;
+        d.shown = n;
+        for (let m = 0; m < d.nodes.length; m++) { d.nodes[m].geometry = next[m]; d.nodes[m].visible = true; }
+      }
+      if (painting < toPaint.length) { paintDesk(toPaint[painting], toPaint[painting + 1]); painting += 2; }
       // The terminals: their pages in turn, or NOW SHOWING while the show runs.
       for (let i = 0; i < kiosks.length; i++) {
         const k = kiosks[i];
@@ -754,6 +978,7 @@
         press, get phase() { return phase; }, get index() { return index; }, get frame() { return film && film[index] ? film[index].key : null; }, get film() { return film ? film.map((e) => e.key) : []; },
         // Skip to frame `i` of the film, or with none the next.
         skip: (i) => { if (phase === "film") { index = Math.max(0, Math.min(film.length - 1, i === undefined ? index + 1 : i)) - 1; advance(); } return index; },
+        get desks() { return desks.map((d) => (d.shown < 0 ? null : d.kinds[d.shown])); },
         get hoist() { return hoist; }, get unroll() { return unroll; }, get lamp() { return lamp; }, get light() { return light.level; }, get clock() { return clock; }, set clock(v) { clock = v; }
       }
     };
