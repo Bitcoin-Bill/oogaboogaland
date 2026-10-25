@@ -120,12 +120,12 @@
       [HALL.x1 - 4.2, 7.5, 6, 2.2, -Math.PI / 2], [HALL.x0 + 4.2, 7.5, 0, 2.2, Math.PI / 2]]
   };
 
-  // A painted line on the floor from (ax, az) to (bx, bz), `w` wide, its top at `y`: yellow and black dashes.
-  const hazard = (out, ax, az, bx, bz, y, w = 0.3, dash = 0.6) => {
+  // A painted line on the floor from (ax, az) to (bx, bz), `w` wide and `h` thick, its top at `y`: yellow and black dashes.
+  const hazard = (out, ax, az, bx, bz, y, w = 0.3, dash = 0.6, h = 0.02) => {
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(len / dash)), a = Math.atan2(bx - ax, bz - az);
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) / n;
-      out.push(moved(turnedY(box({ w, h: 0.02, d: len / n - 0.02, color: i % 2 ? INK : PAINT }), a), ax + (bx - ax) * t, y - 0.01, az + (bz - az) * t));
+      out.push(moved(turnedY(box({ w, h, d: len / n - 0.02, color: i % 2 ? INK : PAINT }), a), ax + (bx - ax) * t, y - h / 2, az + (bz - az) * t));
     }
   };
   // A part built facing +z at the origin, turned to face `turn` and set down at (x, y, z).
