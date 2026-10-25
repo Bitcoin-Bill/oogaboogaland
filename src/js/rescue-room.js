@@ -24,10 +24,10 @@
     for(const x of [-8.82,8.82])block(root,C.trim,x,1,0,.05,.14,19.6);block(root,C.trim,0,1,-9.82,17.6,.14,.05);
     for(const z of [-7,-2,3,8])block(root,C.wood,0,4.8,z,17.8,.24,.26);
     const exitDoor=block(root,"#2f6aa0",0,1.5,9.82,2.8,3,.16);const exitLabel=label(root,"CHORA",0,3.25,9.6,.33,C.gold);exitLabel.rotation.y=Math.PI;
-    // The island's goal over the dog houses: its count is a second line the scene rewrites as Oogas get their dogs.
+    // The board over the dog houses: its second line is the visitor's own, rewritten by the scene (`setLine`).
     block(root,C.wood,0,3.55,-9.78,8.4,1.6,.1);block(root,C.trim,0,3.55,-9.72,8.1,1.36,.04);
     label(root,"EVERY OOGA NEEDS A DOG",0,3.75,-9.68,.42,C.cream);
-    const goal=label(root,"0 / 0 OOGAS HAVE A DOG",0,3.12,-9.68,.3,C.gold);
+    const line=label(root,"A PUPPY IS WAITING FOR YOU",0,3.12,-9.68,.3,C.gold);
     // Dog houses, a waiting puppy's spot before each, food (0) and water (1) bowls between them.
     KENNELS.forEach((x,i)=>{const n=prop(root,"kennel",x,0,-8.2,i);fixtures.push({node:n,floor:0,kind:"kennel"});solid(x,-8.2,1.5,1.5);});
     for(const [x,z,v] of BOWLS)fixtures.push({node:prop(root,"bowl",x,0,z,v),floor:0,kind:"bowl"});
@@ -79,8 +79,8 @@
       "rescue-wide":{position:{x:0,y:0,z:6.4},yaw:0,pitch:.22,dist:4.4}
     };
     const lighting={clear:[.06,.05,.04],sky:[.62,.58,.5],ground:[.42,.36,.28],direct:[1,.92,.78],directStrength:.42,ambientFloor:.5,sun:{x:.3,y:.9,z:.25},shadowCenter:{x:0,y:2.5,z:0},shadowExtent:15,shadowStrength:.16,bloomStrength:.2,fog:[.06,.05,.04],fogNear:40,fogFar:80,lights:new Float32Array([0,4.4,-6.5,11,1,.86,.62,0,-6,4.4,0,9,1,.84,.6,0,6,4.4,0,9,1,.84,.6,0,5.6,4.2,4.2,8,1,.8,.55,0,0,4.4,7.5,9,1,.86,.64,0]),lightCount:5};
-    const setGoal=text=>{goal.geometry=BL.dsbModels.text(text,C.gold);};
-    return {id:"puppy-rescue",root,lighting,exitDoor,screen,goal,setGoal,solids,seats:[],reviews,menuZones,fixtures,yard:YARD,counts:{kennels:KENNELS.length,bowls:BOWLS.length,lights:5,beds:4,sleepers:4},dimensions:{width:18,depth:20,height:5},groundAt:()=>0,ceiling:4.93,spawnYaw:0,followDistance:3,spawn:{x:0,y:0,z:7.6},exit:{x:0,y:0,z:9},bounds:{minX:-8.7,maxX:8.7,minZ:-9.7,maxZ:9.7},browseGoals:Object.values(reviews).map(r=>r.position)};
+    const setLine=text=>{line.geometry=BL.dsbModels.text(text,C.gold);};
+    return {id:"puppy-rescue",root,lighting,exitDoor,screen,line,setLine,solids,seats:[],reviews,menuZones,fixtures,yard:YARD,counts:{kennels:KENNELS.length,bowls:BOWLS.length,lights:5,beds:4,sleepers:4},dimensions:{width:18,depth:20,height:5},groundAt:()=>0,ceiling:4.93,spawnYaw:0,followDistance:3,spawn:{x:0,y:0,z:7.6},exit:{x:0,y:0,z:9},bounds:{minX:-8.7,maxX:8.7,minZ:-9.7,maxZ:9.7},browseGoals:Object.values(reviews).map(r=>r.position)};
   };
   // Outside: the lower Chora's lane where the strays nearest the rescue have their homes, and the Chora from above with
   // the strays all over it.
