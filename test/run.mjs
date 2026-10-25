@@ -6212,17 +6212,19 @@ const blockStart = { name: "block start", why: "rule: Space only closes the titl
   record("block start: Space closes the title card on the sides, Enter plays, Escape returns to the sides unsaved", fresh.card && fresh.phase === "board" && !closed.card && closed.phase === "board" && play.phase === "play" && back.phase === "board" && back.board && back.games === 0, JSON.stringify({ fresh, closed, play, back }));
 } };
 // W A S D measured on screen: each key moves the Ooga its way relative to where the camera looks.
-const blockWalk = { name: "block walk", why: "rule: W A S D run the visitor's Ooga their way on screen", run: async (b) => {
+// Steering measured on screen: W and S run the Ooga forward and back along where the camera looks, and A and D turn
+// it, the chase camera following round, A to the left on screen and D to the right.
+const blockWalk = { name: "block walk", why: "rule: W and S run the visitor's Ooga their way on screen, and A and D turn it and the camera their way", run: async (b) => {
   await b.key("Enter");
   const rows = {};
-  for (const k of "wasd") {
-    await b.evaluate(`(() => { const B = window.__ooga, s = B.block.sim, a = s.actors[0]; a.x = -14; a.z = 2; a.vx = a.vz = 0; for (const o of s.actors) if (o.id) { o.x = 20; o.z = o.team === s.team ? 30 : -30; } B.advance(0.3, 1 / 60); const c = B.camera, vx = c.target.x - c.position.x, vz = c.target.z - c.position.z, l = Math.hypot(vx, vz); window.__walk = { fx: vx / l, fz: vz / l, x0: a.x, z0: a.z }; })()`);
+  for (const k of "wsad") {
+    await b.evaluate(`(() => { const B = window.__ooga, s = B.block.sim, a = s.actors[0]; s.prep = 0; Object.assign(s.weather, { target: 0, strength: 0, left: 1e9 }); a.x = -14; a.z = 2; a.vx = a.vz = 0; for (const o of s.actors) if (o.id) { o.x = 20; o.z = o.team === s.team ? 30 : -30; } B.advance(0.6, 1 / 60); const c = B.camera, vx = c.target.x - c.position.x, vz = c.target.z - c.position.z, l = Math.hypot(vx, vz); window.__walk = { fx: vx / l, fz: vz / l, x0: a.x, z0: a.z }; })()`);
     await holdKey(b, k, 0.5);
-    const r = await b.evaluate(`(() => { const q = window.__walk, a = window.__ooga.block.sim.actors[0], dx = a.x - q.x0, dz = a.z - q.z0; return { right: dx * -q.fz + dz * q.fx, fwd: dx * q.fx + dz * q.fz }; })()`);
-    const [er, ef] = WALK[k], along = r.right * er + r.fwd * ef;
-    rows[k] = { ok: along > 1 && along > 0.8 * Math.hypot(r.right, r.fwd), right: +r.right.toFixed(2), fwd: +r.fwd.toFixed(2) };
+    rows[k] = await b.evaluate(`(() => { const q = window.__walk, a = window.__ooga.block.sim.actors[0], c = window.__ooga.camera, dx = a.x - q.x0, dz = a.z - q.z0, vx = c.target.x - c.position.x, vz = c.target.z - c.position.z, l = Math.hypot(vx, vz); return { fwd: +(dx * q.fx + dz * q.fz).toFixed(2), turn: +((vx / l) * -q.fz + (vz / l) * q.fx).toFixed(2) }; })()`);
   }
-  record("block walk: W A S D run the Ooga their way on screen", allWalk(rows), JSON.stringify(rows));
+  // The camera's new forward measured against the old right: negative is a turn to the left on screen.
+  const ok = rows.w.fwd > 1 && rows.s.fwd < -1 && rows.a.turn < -0.3 && rows.d.turn > 0.3;
+  record("block walk: W and S run the Ooga forward and back on screen, A turns it and the camera left and D right", ok, JSON.stringify(rows));
 } };
 const blockQuiz = { name: "block quiz", why: "rule: a quiz trap holds the visitor until a right answer, a wrong one locks the answers, and a right one frees them", run: async (b) => {
   const r = await b.evaluate(`(() => { const B = window.__ooga, D = B.block, s = D.sim, a = s.actors[0], t = s.traps[2];

@@ -78,7 +78,8 @@
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
-  const cam = { yaw: Math.PI, pitch: 0.28, warm: false, first: false };
+  // `face` is where the visitor's Ooga faces and aims; `yaw` is the camera's, which follows it round.
+  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false };
   const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0, face: 0 };
   let jumpWas = false;
   const el = {};
@@ -280,7 +281,7 @@
     hud.setAct("Jump");
     el.paintBtn.hidden = !COARSE;
     el.cross.hidden = COARSE && !cam.first;
-    cam.yaw = sim.team === "blue" ? Math.PI : 0;
+    cam.yaw = cam.face = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
     controls.reset();
@@ -470,7 +471,7 @@
   const noMenu = (e) => { if (phase === "play") e.preventDefault(); };
   const buildCrate = () => {
     if (phase !== "play") return false;
-    if (SIM.build(sim, 0, cam.yaw)) return true;
+    if (SIM.build(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
     notice(a.crates <= 0 ? "No crates left" : "Can't put a crate there · your own half, clear ground", 1200);
     return false;
@@ -502,7 +503,7 @@
   const onLockedMove = (e) => {
     if (phase !== "play" || quiz.open) return;
     if (!locked() && (!cam.first || e.buttons !== 0)) return;
-    cam.yaw = wrap(cam.yaw - e.movementX * 2.6e-3);
+    cam.face = wrap(cam.face - e.movementX * 2.6e-3);
     cam.pitch = cam.first ? clamp(cam.pitch + e.movementY * 2.2e-3, -0.3, 0.86) : clamp(cam.pitch + e.movementY * 2.2e-3, CAM.pitch[0], CAM.pitch[1]);
   };
   const lockMouse = () => {
@@ -523,18 +524,18 @@
     return false;
   };
 
+  // Steering, as Mario 64 has it: A and D (the stick's sideways push, and Q E) turn the Ooga, W and S run it forward
+  // and back along where it faces, and the chase camera swings round behind it by itself (`updateCamera`), so the
+  // world turns, not the Ooga on screen. A locked mouse turns it too.
+  const TURN = 2.7;
   const readInput = (dt) => {
     const a = controls.read();
-    cam.yaw = wrap(cam.yaw + a.yaw * CAM.yawRate * dt);
-    // Forward is where the camera looks.
-    const fx2 = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
-    let x = fx2 * a.y - fz * a.x, z = fz * a.y + fx2 * a.x;
-    const len = Math.hypot(x, z);
-    if (len > 1) { x /= len; z /= len; }
-    move.x = x;
-    move.z = z;
+    cam.face = wrap(cam.face + (a.yaw - a.x) * TURN * dt);
+    const fx2 = Math.sin(cam.face), fz = Math.cos(cam.face), f = clamp(a.y, -1, 1);
+    move.x = fx2 * f;
+    move.z = fz * f;
     move.sprint = a.sprint;
-    move.face = cam.yaw;
+    move.face = cam.face;
     if (quiz.open) move.crouch = 0;
     const up = a.up > 0;
     // A new press waits for the sim to use it (it clears `jump`), however many substeps this frame runs, even none.
@@ -709,6 +710,8 @@
   };
   const updateCamera = (dt) => {
     const me = sim ? sim.actors[0] : null, x = me ? me.x : 0, y = me ? me.y : 0, z = me ? me.z : 0;
+    // First person looks exactly where the Ooga faces; the chase camera swings round behind it within a few frames.
+    cam.yaw = cam.first || !cam.warm ? cam.face : wrap(cam.yaw + wrap(cam.face - cam.yaw) * Math.min(1, dt * 7));
     if (cam.first && me) {
       // The eye at the Ooga's eyes (lower when crouched), looking along the aim.
       const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
@@ -903,7 +906,7 @@
       onTap: () => { if (phase === "play" && COARSE) paint(); },
       onOrbit: (dx, dy) => {
         if (phase !== "play") return;
-        cam.yaw = wrap(cam.yaw - dx * 5e-3);
+        cam.face = wrap(cam.face - dx * 5e-3);
         cam.pitch = clamp(cam.pitch + dy * 3.5e-3, CAM.pitch[0], CAM.pitch[1]);
       },
       // The wheel steps through the tools.
@@ -920,7 +923,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "Mouse turns · W A S D run · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);

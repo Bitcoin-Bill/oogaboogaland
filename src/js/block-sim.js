@@ -36,7 +36,7 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const CONFIG = {
-    JUMP: 6.5, JUMP2: 6.5, FALL: 16, CARRY_JUMP: 0.85, CROUCH_H: 1.05, CROUCH_SPEED: 0.55,
+    JUMP: 6.5, JUMP2: 6.5, FALL: 16, CARRY_JUMP: 1, CROUCH_H: 1.05, CROUCH_SPEED: 0.55,
     CAPTURES: 3, SPLAT_S: 2, GUARD_S: 2.5, PICK_R: 1.3, STAND_R: 1.7, BODY_R: 0.45, HEIGHT: 1.7,
     SPEED: 6.2, SPRINT: 1.55, CARRY: 0.88, SPRINT_S: 4, SPRINT_REST: 0.8, SPRINT_REFILL: 5, SPRINT_MIN: 0.3, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_Y: 1.3, BOT_COOLDOWN: 1.4, BOT_RANGE: 12, BOT_SPREAD: 0.2, BOT_AIM: 0.6, GUARD_RANGE: 10,
@@ -663,7 +663,7 @@
         jump = !!input.jump;
         input.jump = 0;
       }
-      // A jump from the ground, and one more in the air; carrying the block weighs both down a little, a net stops both.
+      // A jump from the ground, and one more in the air, carrying or not; a net stops both.
       if (jump && free && a.netted <= 0) {
         const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
         if (a.grounded) { a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1; emit(sim, "jump", a.team, a.id, a.x, a.y, a.z); }
