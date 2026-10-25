@@ -2287,8 +2287,8 @@
     // The hall's meshes stay on the GPU while the island runs (`world.factoryKeep`, read by the island's liveGeometry),
     // so walking back in uploads nothing; taken first, while every piece is still on the graph.
     // Only the hall's own, so the island's kept meshes never ride along from one visit to the next.
-    const kept = new Set(), walk = (node) => { if (node.geometry) kept.add(node.geometry); for (const child of node.children) walk(child); };
-    walk(root);
+    const kept = new Set(), collect = (node) => { if (node.geometry) kept.add(node.geometry); for (const child of node.children) collect(child); };
+    collect(root);
     hallGeometry(kept);
     if (world.islandKeep) for (const geometry of world.islandKeep) kept.delete(geometry);
     world.factoryKeep = kept;
