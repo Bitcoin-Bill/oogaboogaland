@@ -77,7 +77,7 @@
   const flip = (list) => list.map(([x, z]) => [-x, -z]);
   const TEAMS = ["blue", "red"];
   // A sniper tower beside each end, on every map: four posts, a platform at `TOWER_TOP`, a parapet with a gap over the
-  // ladder on the side facing in, and a thatched roof. The ladder is a climb zone, not a block (`ladders`); the rifle
+  // ladder on the side facing in, and no roof, so the camera sees a sniper. The ladder is a climb zone, not a block (`ladders`); the rifle
   // rack is on the platform; the zipline leaves from the platform's gap side and runs down into the other end (`zips`).
   const TOP = CONFIG.TOWER_TOP, RAIL = TOP + 0.9;
   const TOWER = [-19, -16, 24.5, 27.5], GAP = [25.4, 26.6];
@@ -85,8 +85,7 @@
     [x0, x0 + 0.4, z0, z0 + 0.4, TOP - 0.3, 0], [x1 - 0.4, x1, z0, z0 + 0.4, TOP - 0.3, 0], [x0, x0 + 0.4, z1 - 0.4, z1, TOP - 0.3, 0], [x1 - 0.4, x1, z1 - 0.4, z1, TOP - 0.3, 0],
     [x0, x1, z0, z1, TOP, TOP - 0.3],
     [x0, x0 + 0.25, z0, z1, RAIL, TOP], [x0, x1, z0, z0 + 0.25, RAIL, TOP], [x0, x1, z1 - 0.25, z1, RAIL, TOP],
-    [x1 - 0.25, x1, z0, GAP[0], RAIL, TOP], [x1 - 0.25, x1, GAP[1], z1, RAIL, TOP],
-    [x0 - 0.2, x1 + 0.2, z0 - 0.2, z1 + 0.2, TOP + 2.8, TOP + 2.5]
+    [x1 - 0.25, x1, z0, GAP[0], RAIL, TOP], [x1 - 0.25, x1, GAP[1], z1, RAIL, TOP]
   ];
   // A map from blue's half (`half`, turned for red) and its middle (`middle`, put in once), with the towers added.
   const turnedMap = (half, middle, steps = []) => {
