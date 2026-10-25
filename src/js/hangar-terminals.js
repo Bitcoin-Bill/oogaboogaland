@@ -280,6 +280,8 @@
   const DESKS = [["channels", "fees", "peers"], ["engine", "wiring", "firelog"], ["htlcs", "policy", "rebalance"], ["routed", "orders", "mempool"],
     ["engine", "rebalance", "channels"], ["fees", "firelog", "htlcs"], ["policy", "wiring", "peers"], ["routed", "mempool", "engine"], ["orders", "channels", "fees"]];
   const ORDERS = [["DO NOT PRESS", "THE RED BUTTON.", "— CHIEF ENGINEER"], ["NO BANANAS", "NEAR THE ENGINES.", "THIS MEANS YOU."], ["IF IT GOES BOOM,", "IT WAS KORTIK.", "— SIS"]];
+  // The `i`th of the four peers a desk's channels and rebalancer show at their `v`th turn.
+  const ownPeer = (i, v) => PEERS[(i + v * 2) % PEERS.length];
   const deskHead = (g, W, H, title, dot = INK.green) => {
     g.fillStyle = INK.bg; g.fillRect(0, 0, W, H);
     g.fillStyle = INK.bar; g.fillRect(0, 0, W, 20);
@@ -290,13 +292,13 @@
   // Each kind's painter: its `v`th turn round the desks, its numbers from `rand`, which draws the same on both of a
   // desk's monitors.
   const DESK_PAINT = {
-    // Four channels' liquidity, local against remote.
+    // Four channels' liquidity, local against remote: its turn's four peers (`ownPeer`).
     channels: (g, W, H, v, rand) => {
       deskHead(g, W, H, ["CHANNELS · NORTH", "CHANNELS · SOUTH", "CHANNELS · NEW"][v]);
       const x0 = 64, bw = W - x0 - 10;
       for (let i = 0; i < 4; i++) {
         const y = 36 + i * 21, k = 0.15 + rand() * 0.7;
-        write(g, PEERS[(i + v * 2) % PEERS.length], 8, y, 9, INK.text);
+        write(g, ownPeer(i, v), 8, y, 9, INK.text);
         g.fillStyle = INK.cyan; g.fillRect(x0, y - 5, bw * k, 10);
         g.fillStyle = INK.grid; g.fillRect(x0 + bw * k, y - 5, bw * (1 - k), 10);
       }
@@ -381,13 +383,23 @@
       }
       write(g, `${Math.floor(rand() * 2)} DAYS SINCE THE LAST BOOM`, W / 2, H - 10, 8, INK.amber, "center", SANS, "bold", W - 16);
     },
-    // The rebalancer's runs, sats moved from one channel to another.
+    // The forwarding log, newest first.
+    forwards: (g, W, H, v, rand) => {
+      deskHead(g, W, H, ["FORWARDING LOG", "FORWARDS · LAST HOUR", "FORWARDS · BIGGEST"][v]);
+      for (let k = 0; k < 5; k++) {
+        const y = 33 + k * 19, ok = rand() < 0.8, sats = v === 2 ? Math.floor(5 + rand() * 20) * 100000 : Math.floor(1 + rand() * 300) * 1000;
+        write(g, `12:${String(59 - k * 4 - Math.floor(rand() * 3)).padStart(2, "0")}`, 8, y, 8.5, INK.dim, "left", MONO, "");
+        write(g, sats.toLocaleString("en-US"), W - 40, y, 8.5, INK.text, "right", MONO, "");
+        write(g, ok ? `+${Math.max(1, Math.round(sats / 1000))}` : "--", W - 8, y, 8.5, ok ? INK.green : INK.red, "right", MONO);
+      }
+    },
+    // The rebalancer's runs, sats moved from one channel to another, among the four the channels beside it show.
     rebalance: (g, W, H, v, rand) => {
       deskHead(g, W, H, ["REBALANCE QUEUE", "REBALANCER · RUNS", "LIQUIDITY MOVES"][v], INK.amber);
       for (let k = 0; k < 5; k++) {
-        const y = 33 + k * 19, a = Math.floor(rand() * PEERS.length), b = (a + 1 + Math.floor(rand() * (PEERS.length - 1))) % PEERS.length;
+        const y = 33 + k * 19, a = Math.floor(rand() * 4), b = (a + 1 + Math.floor(rand() * 3)) % 4;
         const amount = [100, 250, 500, 800, 1200][Math.floor(rand() * 5)], state = k === 0 ? 0 : rand() < 0.7 ? 1 : 2;
-        write(g, `${PEERS[a]} → ${PEERS[b]}`, 8, y, 8.5, INK.text);
+        write(g, `${ownPeer(a, v)} → ${ownPeer(b, v)}`, 8, y, 8.5, INK.text);
         write(g, amount >= 1000 ? `${(amount / 1000).toFixed(1)}M` : `${amount}K`, W - 44, y, 8.5, INK.dim, "right", MONO, "");
         write(g, ["RUN", "DONE", "FAIL"][state], W - 8, y, 8.5, [INK.amber, INK.green, INK.red][state], "right", MONO);
       }
