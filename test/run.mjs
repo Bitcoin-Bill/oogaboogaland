@@ -7098,9 +7098,13 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
   }
   record("ooga chat: both editors release movement held before focus, isolate typed movement and retain IME-safe Escape", inputTransitions.every(r => r.held === 1 && r.released === 0 && r.isolated === 0 && r.composing && r.y === 0 && r.focus === "chat-tab" && r.open === "true"), JSON.stringify(inputTransitions));
   const keyboardLayouts = [];
+  const originalViewport = await b.evaluate(`({ width: innerWidth, height: innerHeight, dock: document.getElementById("sheet").dataset.dock })`);
   try {
     for (const [width, height] of [[390, 844], [844, 390], [667, 375]]) {
       await b.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: true });
+      // CDP can acknowledge the metrics before matchMedia's change event docks the sheet.
+      // Wait for the real layout before installing the synthetic keyboard viewport.
+      const laidOut = await untilPage(b, `innerWidth === ${width} && innerHeight === ${height} && document.getElementById("sheet").dataset.dock === "bottom"`);
       for (const id of ["chat-input", "chat-display"]) {
         keyboardLayouts.push(await b.evaluate(`(() => {
           const sheet = document.getElementById("sheet"), field = document.getElementById(${JSON.stringify(id)}), viewport = visualViewport;
@@ -7118,7 +7122,7 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
             const cleared = !sheet.style.getPropertyValue("--chat-keyboard") && !sheet.style.getPropertyValue("--chat-viewport");
             viewport.dispatchEvent(new Event("resize"));
             const detached = !sheet.style.getPropertyValue("--chat-keyboard") && !sheet.style.getPropertyValue("--chat-viewport");
-            return { viewport: [innerWidth, innerHeight], id: field.id, resized, scrolled, focused, cleared, detached, visibleTop: 12, visibleBottom: innerHeight - 200 };
+            return { laidOut: ${laidOut}, viewport: [innerWidth, innerHeight], id: field.id, resized, scrolled, focused, cleared, detached, visibleTop: 12, visibleBottom: innerHeight - 200 };
           } finally {
             field.blur();
             for (const key of ["height", "offsetTop"]) { if (saved[key]) Object.defineProperty(viewport, key, saved[key]); else delete viewport[key]; }
@@ -7128,8 +7132,9 @@ const hubChat = { name: "ooga chat", why: "regression: Chat releases pre-focus m
     }
   } finally {
     await b.send("Emulation.clearDeviceMetricsOverride");
+    await untilPage(b, `innerWidth === ${originalViewport.width} && innerHeight === ${originalViewport.height} && document.getElementById("sheet").dataset.dock === ${JSON.stringify(originalViewport.dock)}`);
   }
-  record("ooga chat: portrait and both landscape editors lift above the keyboard, stay within the visual viewport and clear positioning/listeners on blur", keyboardLayouts.every(r => r.focused && r.cleared && r.detached && [r.resized, r.scrolled].every(m => m.bottom === 200 && m.top >= r.visibleTop && m.toggleTop >= r.visibleTop && m.edge <= r.visibleBottom + 1 && m.fieldTop >= m.panelTop - 1 && m.fieldBottom <= m.panelBottom + 1)), JSON.stringify(keyboardLayouts));
+  record("ooga chat: portrait and both landscape editors lift above the keyboard, stay within the visual viewport and clear positioning/listeners on blur", keyboardLayouts.every(r => r.laidOut && r.focused && r.cleared && r.detached && [r.resized, r.scrolled].every(m => m.bottom === 200 && m.top >= r.visibleTop && m.toggleTop >= r.visibleTop && m.edge <= r.visibleBottom + 1 && m.fieldTop >= m.panelTop - 1 && m.fieldBottom <= m.panelBottom + 1)), JSON.stringify(keyboardLayouts));
   const escaped = await b.evaluate(`(() => { BL.net.sendChat = window.__chatSend; const out = { blurred: document.activeElement !== document.getElementById("chat-input"), open: document.getElementById("sheet").dataset.open === "true", tab: document.querySelector("[data-tab][aria-selected='true']").dataset.tab }; BL.chat.account({ backend: false, me: null, room: "off" }); localStorage.removeItem("oogaboogaland.sheet.v1"); return out; })()`);
   record("ooga chat: hidden without a backend, signed out asks to sign in, the last 100 lines kept as text, a reader not pulled down, a rejoin to a room that forgot keeps the page's lines, Enter sends and Escape leaves the input",
     none.hidden && none.tab === "roster" && none.offline === false && r.signedOut && r.folded && r.saved === "chat" && r.focused
