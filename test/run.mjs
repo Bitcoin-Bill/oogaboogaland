@@ -4139,6 +4139,18 @@ const characterChecks = async () => {
   for (const geo of worn) mirrorGeometries.add(geo);
   const spare = BL.models.spareMagazine();
   collect(spare.node);
+  for (const name of ["factory-models", "kortik-models", "tess"])
+    runInNewContext(await readFile(join(root, `src/js/${name}.js`), "utf8"), context);
+  const kortik = BL.kortikModels.rig(), kortikHeads = ["headOpen", "headClosed", "headTalk", "redOpen", "redClosed", "redTalk"];
+  collect(kortik.root);
+  for (const key of kortikHeads) mirrorGeometries.add(kortik[key]);
+  const tess = BL.tess.create({ parent: BL.scene.createNode(), input: { add() {} }, fx: {}, coarse: false }), tessGeometries = new Set();
+  tess.liveGeometry(tessGeometries);
+  for (const geo of tessGeometries) mirrorGeometries.add(geo);
+  const characters = kortikHeads.every(key => kortik[key].characterPart === true)
+    && kortik.parts.katana.geometry.characterPart === true && kortik.parts.sword.geometry.characterPart === true
+    && tessGeometries.size === 37 && [...tessGeometries].every(geo => geo.characterPart === true)
+    && BL.factoryModels.forgeWave().gold.characterPart !== true;
   // Exercise the renderer's real reduced-capture decision on actual builder output, in both storage paths.
   const source = await readFile(join(root, "src/js/gl-renderer.js"), "utf8"), start = source.indexOf("    const captureInstanceVisible ="), end = source.indexOf("    const drawCaptureRuns =", start);
   if (start < 0 || end < 0) throw new Error("Reduced mirror capture predicate not found");
@@ -4161,7 +4173,7 @@ const characterChecks = async () => {
   check(BL.models.box({ w: 0.1, h: 0.1, d: 0.1, color: "#ffffff" }), false);
   const jetpack = worn.every(geo => geo.characterPart === true && BL.scene.boundsOf(geo).radius < 1.25);
   const magazine = spare.node.geometry.characterPart === true;
-  record("mirror character ownership: reduced captures keep both weapon skins, tint and head swaps, swag, gorilla forms/clothing and the worn jetpack and flame, while still culling small scenery and out-of-frustum parts", failures === 0 && small > 0 && jetpack && magazine, JSON.stringify({ geometries: mirrorGeometries.size, small, failures, jetpack, magazine }));
+  record("mirror character ownership: reduced captures keep Ooga, gorilla, Tess and Kortik bodies, detail and head swaps, worn gear and effects, while still culling small scenery and out-of-frustum parts", failures === 0 && small > 0 && jetpack && magazine && characters, JSON.stringify({ geometries: mirrorGeometries.size, small, failures, jetpack, magazine, characters }));
 };
 // The mempool.space feed parser in Node: message shapes as the socket sends them, no socket.
 const mempoolFeedChecks = async () => {
@@ -11995,7 +12007,7 @@ const tessCacheChecks = async BL => {
   const rebuilt = [...after].every(mesh => !before.has(mesh)); d.dispose();
   await Promise.resolve();
   BL.models.setScope(null);
-  record("Tess caches: live rigs share all tiers, a Tess entered as the last one leaves reuses them, and once a change of scene ends with none they are released and the next visit rebuilds every tier", shared && held && reused && rebuilt && before.size === 36 && swapped.size === 36 && after.size === 36 && parent.children.length === 0,
+  record("Tess caches: live rigs share all tiers, a Tess entered as the last one leaves reuses them, and once a change of scene ends with none they are released and the next visit rebuilds every tier", shared && held && reused && rebuilt && before.size === 37 && swapped.size === 37 && after.size === 37 && parent.children.length === 0,
     JSON.stringify({ shared, held, reused, rebuilt, tiers: before.size, children: parent.children.length }));
 };
 
