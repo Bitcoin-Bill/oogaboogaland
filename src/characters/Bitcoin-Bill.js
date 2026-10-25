@@ -1,7 +1,7 @@
 // Bitcoin Bill of Bitcoin Guide (bitcoinguide.app): salt-and-pepper hair swept back under a frayed beach straw hat,
 // a full beard going grey at the chin, and glowing orange laser eyes. A tie-dye tank in blue and green with
-// a cord necklace and an orange coin, and a woven hammock sling across his chest carrying his chihuahua, painted up
-// like an alebrije in violet, orange and turquoise.
+// a cord necklace and an orange coin, and his chihuahua at his heel wherever he goes, painted up like an alebrije in
+// violet, orange and turquoise.
 (() => {
   "use strict";
   const BL = window.BL;
@@ -10,7 +10,26 @@
   const ORANGE = "#ff9a1f", ORANGE_CORE = "#fff1c4";
   const STRAW = ["#d8c08a", "#c4a768", "#e8d7a8"], BAND = "#7a5a3a";
   const DYE = ["#2f8fd8", "#3fc6b5", "#7fd36a", "#1f6fb0", "#56b8e8"];
-  const WEAVE = ["#d9603b", "#2fb5a8", "#f2c14e", "#e2477f"];
+  // The chihuahua at his heel, painted as an alebrije, in its own voxel grid facing +z with its paws at y 0: legs,
+  // a red-brown body with violet, orange and turquoise flowers, a cream chest, a head with big pink-lined ears, dark
+  // eyes and nose, a collar of blue beads, and a tail curled up over its back.
+  const dogVox = (k) => {
+    const v = makeVox(), c = (hex) => k.color(hex);
+    const coat = c("#8a4a2e"), coatDk = c("#6e3a24"), violet = c("#7a3fd0"), flower = c("#ff7a2a"), teal = c("#3fd8e0");
+    const cream = c("#f0d2a8"), pink = c("#f28ab0"), black = c("#15100c"), bead = c("#5ab8ff"), fur = k.jit(coat, coatDk, 0.2);
+    for (const [x, z] of [[-1, 1], [1, 1], [-1, -3], [1, -3]]) { v.fill(x, x, 1, 2, z, z, fur); v.set(x, 0, z, cream); }
+    v.fill(-1, 1, 3, 5, -3, 2, fur);
+    v.fill(-1, 1, 3, 4, 2, 2, cream);
+    for (const [x, y, z, ink] of [[1, 5, 0, violet], [-1, 4, -1, flower], [1, 4, -2, teal], [0, 5, -2, flower], [-1, 5, 1, violet], [1, 3, 1, flower], [-1, 3, -3, teal]]) v.set(x, y, z, ink);
+    v.fill(-1, 1, 6, 8, 2, 4, fur);
+    v.fill(-1, 1, 6, 6, 2, 2, bead);
+    v.set(0, 8, 4, flower); v.set(-1, 8, 3, violet); v.set(1, 8, 3, violet);
+    v.set(-1, 7, 4, black); v.set(1, 7, 4, black);
+    v.set(0, 6, 5, cream); v.set(0, 7, 5, cream); v.set(0, 7, 6, black);
+    for (const x of [-1, 1]) { v.set(x, 9, 3, coat); v.set(x, 10, 3, coat); v.set(x, 9, 4, pink); }
+    v.set(0, 6, -3, fur); v.set(0, 7, -3, fur); v.set(0, 8, -2, teal);
+    return v;
+  };
   // The straw hat in the head's voxel grid: a domed crown with a dark band, and a wide brim that droops at its rim and
   // trails ragged strands. Built once a page for each build kit, from the kit's own random draws.
   const hatVox = (k) => {
@@ -57,12 +76,10 @@
       ]
     },
     dress: {
-      // The tie-dye tank: a spiral of blue, teal and green rings over the chest, bare shoulders and a scoop neck, a cord
-      // necklace with an orange coin, then the hammock sling from his right shoulder to his left hip with its pouch
-      // on his belly and the chihuahua's head poking out.
+      // The tie-dye tank: a spiral of blue, teal and green rings over the chest, bare shoulders and a scoop neck, and a
+      // cord necklace with an orange coin.
       torso(k, v) {
         const dye = DYE.map((c) => k.color(c)), skin = k.skinJ, cord = k.color("#2a2018"), coin = k.color("#f7931a");
-        const weave = WEAVE.map((c) => k.color(c));
         v.fill(1, 7, 3, 7, 1, 4, (x, y) => dye[(Math.round(Math.hypot(x - 4, y - 5) * 1.3) + (k.rand() < 0.15 ? 1 : 0)) % dye.length]);
         v.fill(1, 1, 7, 7, 1, 4, skin);
         v.fill(7, 7, 7, 7, 1, 4, skin);
@@ -70,35 +87,6 @@
         v.set(4, 5, 4, skin);
         v.set(3, 6, 4, cord); v.set(5, 6, 4, cord); v.set(4, 5, 4, cord);
         v.set(4, 4, 4, coin);
-        // The sling, woven in three-colour stripes, front and back.
-        for (let y = 3; y <= 7; y++) {
-          const x = 1 + Math.round((7 - y) * 0.4) + (7 - y);
-          for (const z of [1, 4]) for (const dx of [0, 1]) if (x + dx >= 1 && x + dx <= 7) v.set(x + dx, y, z, weave[y % 3]);
-        }
-        // The pouch hangs in front of his belly.
-        for (let x = 4; x <= 8; x++) for (let y = 2; y <= 4; y++) for (let z = 5; z <= 6; z++) {
-          if (y === 2 && (x === 4 || x === 8)) continue;
-          v.set(x, y, z, weave[(y + (x === 4 || x === 8 ? 3 : 0)) % weave.length]);
-        }
-        // The chihuahua as an alebrije: a red-brown head painted with violet swirls, an orange flower on the brow and
-        // turquoise dots, a cream muzzle, big brown ears with pink insides, dark eyes and nose, and a collar of blue
-        // beads at the pouch's lip.
-        const coat = k.color("#8a4a2e"), coatDk = k.color("#6e3a24"), violet = k.color("#7a3fd0"), flower = k.color("#ff7a2a");
-        const teal = k.color("#3fd8e0"), cream = k.color("#f0d2a8"), pink = k.color("#f28ab0"), black = k.color("#15100c"), bead = k.color("#5ab8ff");
-        v.fill(5, 7, 5, 7, 5, 7, k.jit(coat, coatDk, 0.2));
-        v.set(5, 7, 7, violet); v.set(7, 7, 6, violet); v.set(5, 5, 5, violet); v.set(7, 5, 5, violet);
-        v.set(6, 7, 7, flower);
-        v.set(5, 5, 7, teal); v.set(7, 5, 7, teal);
-        v.set(6, 5, 8, cream);
-        v.set(6, 5, 9, black);
-        v.set(5, 6, 7, black); v.set(7, 6, 7, black);
-        for (const x of [5, 7]) {
-          v.set(x, 8, 6, coat); v.set(x, 9, 6, coat);
-          v.set(x, 8, 7, pink);
-        }
-        for (let x = 5; x <= 7; x++) v.set(x, 4, 7, bead);
-        // A paw over the pouch's lip.
-        v.set(4, 4, 7, cream);
       },
       // Salt and pepper: grey through the sides and back of the hair.
       crown(k, v) {
@@ -132,6 +120,12 @@
       },
       headgear(k) {
         addChild(k.parts.head, createNode({ geometry: k.vg(hatVox(k), { x: -3.5 * k.u, y: 0, z: -3 * k.u }) }));
+      },
+      // The chihuahua trots along at his heel, a little behind and to his left, wherever he goes.
+      extras(k) {
+        const s = 0.55, h = k.h;
+        k.parts.dog = createNode({ position: { x: 0.55 * h, y: -5 * k.u, z: -0.25 * h }, scale: { x: s, y: s, z: s }, geometry: k.vg(dogVox(k), { x: -0.5 * k.u, y: 0, z: -0.5 * k.u }) });
+        addChild(k.root, k.parts.dog);
       }
     }
   });
