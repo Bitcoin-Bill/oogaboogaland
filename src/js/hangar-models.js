@@ -357,6 +357,9 @@
       ink(w * 0.12 + k * w * 0.1, 0.06 + bh / 2, w * 0.06, bh);
     }
   };
+  // A workstation's two monitors on its desk, [x, width, turn] each, the foot of each screen at (x, y, z) in the desk's
+  // frame and `h` tall.
+  const DESK = { y: 0.98, z: -0.22, h: 0.46, monitors: [[-0.48, 0.78, 0.18], [0.5, 0.64, -0.2]] };
 
   // A mechanic's rolling tool chest in its own frame, its front toward +z, the floor at y 0, built fresh each call (the
   // parts are placed in place): the roll cab on four casters, five drawers of every depth down its front, each a face
@@ -435,11 +438,11 @@
       // The tower under the desk, its lamp lit.
       f.push(box({ w: 0.34, h: 0.62, d: 0.6, color: IRON_DK, offset: { x: 0.65, y: 0.33, z: -0.05 } }));
       g.push(box({ w: 0.05, h: 0.05, d: 0.02, color: MARKER, emissive: 1, offset: { x: 0.65, y: 0.52, z: 0.26 } }));
-      for (const [dx, w, a] of [[-0.48, 0.78, 0.18], [0.5, 0.64, -0.2]]) {
+      for (const [dx, w, a] of DESK.monitors) {
         const mf = [], mg = [];
-        monitor(mf, mg, w, 0.46, 73 + i * 2 + (dx > 0 ? 1 : 0));
-        for (const p of mf) f.push(moved(turnedY(p, a), dx, 0.98, -0.22));
-        for (const p of mg) g.push(moved(turnedY(p, a), dx, 0.98, -0.22));
+        monitor(mf, mg, w, DESK.h, 73 + i * 2 + (dx > 0 ? 1 : 0));
+        for (const p of mf) f.push(moved(turnedY(p, a), dx, DESK.y, DESK.z));
+        for (const p of mg) g.push(moved(turnedY(p, a), dx, DESK.y, DESK.z));
         f.push(box({ w: 0.08, h: 0.14, d: 0.08, color: IRON_DK, offset: { x: dx, y: 0.91, z: -0.26 } }), box({ w: 0.26, h: 0.02, d: 0.18, color: IRON_DK, offset: { x: dx, y: 0.85, z: -0.26 } }));
       }
       f.push(box({ w: 0.56, h: 0.03, d: 0.18, color: "#1d1f24", offset: { y: 0.855, z: 0.14 } }), box({ w: 0.09, h: 0.03, d: 0.13, color: "#1d1f24", offset: { x: 0.42, y: 0.855, z: 0.16 } }));
@@ -1791,7 +1794,7 @@
 
   BL.hangarModels = {
     LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, jetStreaks, boardText, boardNote, paintBoard, dock, vest,
-    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, KIOSK, projector, filmScreen, projectorBeam,
+    fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, KIOSK, DESK, projector, filmScreen, projectorBeam,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))
