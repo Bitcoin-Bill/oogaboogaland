@@ -8,8 +8,8 @@
 // their stands, at a carrier's back or lying where they fell, pooled crates, throws and splats, the weather (a wind
 // sign, rain and lightning in a storm), and a chase camera behind the visitor's Ooga that the mouse drag, Q E or the
 // look stick turns. W A S D run toward where the camera looks, Shift sprints, Space jumps and jumps again in the air,
-// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; a right click or the wheel steps
-// through them), R drops a crate, G drops the
+// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; R, a right click or the wheel
+// step through them), B drops a crate, F lifts, stacks and sets crates, G drops the
 // block, C crouches while held, V switches between the chase camera and first person (a click there locks the mouse
 // for aiming; Escape lets it go). On touch the act button jumps, `#block-paint` throws and the tool bar picks. A round
 // opens with the sim's fortifying time. The intro card, the board (side and Ooga), the tool bar, the quiz card and the
@@ -73,7 +73,7 @@
   const selection = { team: "blue", ooga: null };
 
   let home = "hub";
-  let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
+  let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null;
   let tool = "paint", flash = 0, flashT = 0;
@@ -292,7 +292,7 @@
     updateTools();
     lockMouse();
     center(`BUILD ${Math.ceil(sim.prep)}`, 0);
-    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! R drops a crate · walk into crates to push", 0);
+    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! B drops a crate · F lifts and stacks", 0);
     updateStrip();
   };
   const finish = () => {
@@ -852,15 +852,12 @@
     }
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
-    if (e.key === "r" || e.key === "R") buildCrate();
+    if (e.key === "r" || e.key === "R") cycleTool(1);
+    if (e.key === "b" || e.key === "B") buildCrate();
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
-    if (e.key === "b" || e.key === "B") {
-      world.level = Math.min(pileMod.MAX_BANANAS, world.level + testBananas);
-      hud.toast(`+${testBananas} test bananas`);
-    }
   };
   const chooseTeam = (team) => {
     selection.team = team;
@@ -868,7 +865,7 @@
   };
 
   const enter = (ctx) => {
-    ({ renderer, game, world, go, testBananas } = ctx);
+    ({ renderer, game, world, go } = ctx);
     home = ctx.from === "arcade" ? "arcade" : "hub";
     hudMod.leaveTo("block", home);
     camera = createCamera({ fov: 58, near: 0.3, far: 400 });
@@ -986,7 +983,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · right click or wheel tools · Tab passes · F picks up, stacks, sets crates · R new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon · Tab passes · F lifts, stacks, sets crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);

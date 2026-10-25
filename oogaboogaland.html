@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'sha256-rKEEem78B75KgdlBwzlXe60RG75OFFu+6+zkqEd1Zws=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
+    content="default-src 'none'; script-src 'sha256-PAdfuIVJsY4jw/2pHHlkIrtKGKrTC/O3LE+CiogtnxY=' 'sha256-sanX5MbaJsCDbCwTY/of/YGafQiCdZL/L7L3rJ+Xr9w='; style-src 'sha256-Na/dDcIxFsBiR2/BLx//QeLhElDiLvKVIxlR2amHtKk='; img-src 'self' data:; media-src https://stream.noderunnersradio.com; connect-src 'self' https: wss:; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0a0b">
@@ -10265,7 +10265,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           </div>
         </div>
         <div class="garage-foot">
-          <p class="help" id="block-help">F lifts, stacks and sets crates (click throws one) · Tab passes the block · W S run · A D turn · Shift sprints · Space jumps, again in the air to climb · click throws · right click or wheel tools · R crate · C crouch · V view</p>
+          <p class="help" id="block-help">R or right click switches weapon · click throws · W S run · A D turn · Space jumps, twice to climb · Shift sprints · Tab passes · F lifts crates · B new crate · C crouch · V view</p>
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
@@ -10289,7 +10289,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
         <button type="button" data-tool="grenade" aria-pressed="false"><kbd>2</kbd>Grenade <b>3</b></button>
         <button type="button" data-tool="rocket" aria-pressed="false"><kbd>3</kbd>Rocket <b>1</b></button>
         <button type="button" data-tool="net" aria-pressed="false"><kbd>4</kbd>Net <b>3</b></button>
-        <button type="button" data-tool="crate" class="block-tool-crate"><kbd>R</kbd>Crate <b>3</b></button>
+        <button type="button" data-tool="crate" class="block-tool-crate"><kbd>B</kbd>Crate <b>3</b></button>
         <button type="button" data-tool="grab" class="block-tool-crate" aria-pressed="false"><kbd>F</kbd>Lift</button>
         <button type="button" data-tool="pass" class="block-tool-pass" disabled><kbd>Tab</kbd>Pass</button>
       </div>
@@ -10319,7 +10319,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#3a8dff" d="M4 0h1v1H4zM3 1h3v1H3zM2 2h5v1H2zM1 3h7v1H1z" /><path fill="#8a8178" d="M2 4h5v5H2z" /><path fill="#f7931a" d="M4 6h1v3H4z" /></svg><b>Yours must be home</b><small>You only score while your own block sits on its stand.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff4a3a" d="M3 1h3v1H3zM2 2h5v4H2zM3 6h3v1H3zM1 4h1v1H1zM7 3h1v1H7zM4 7h1v2H4z" /></svg><b>Paint stops a runner</b><small data-coarse="Paint! throws. A splatted carrier drops the block.">Click or Enter throws. A splatted carrier drops the block.</small></li>
           <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#f7931a" d="M3 0h3v3H3z" /><path fill="#f3efe4" d="M4 4h1v1H4zM4 6h1v1H4z" /><path fill="#9aa3ad" d="M2 8h5v1H2z" /></svg><b>Double jump</b><small data-coarse="Jump twice to reach rooftops, huts and the fort walls.">Space twice reaches rooftops, huts and the fort walls.</small></li>
-          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Tools and crates</b><small data-coarse="Grenades, rockets and nets refill on your stand. Crates wall your fort.">Grenades, rockets and nets refill on your stand. R drops crates to wall your fort.</small></li>
+          <li><svg class="game-rule-icon" viewBox="0 0 9 9" shape-rendering="crispEdges" aria-hidden="true"><path fill="#22c55e" d="M1 4h1v1H1zM2 5h1v1H2zM3 6h1v1H3zM4 5h1v1H4zM5 4h1v1H5zM6 3h1v1H6zM7 2h1v1H7z" /></svg><b>Tools and crates</b><small data-coarse="Grenades, rockets and nets refill on your stand. Crates wall your fort.">Grenades, rockets and nets refill on your stand. B drops crates to wall your fort.</small></li>
         </ul>
         <div class="actions">
           <button type="button" class="game-intro-go" data-action="intro-go">Play!</button>
@@ -129501,8 +129501,8 @@ void main() {
 // their stands, at a carrier's back or lying where they fell, pooled crates, throws and splats, the weather (a wind
 // sign, rain and lightning in a storm), and a chase camera behind the visitor's Ooga that the mouse drag, Q E or the
 // look stick turns. W A S D run toward where the camera looks, Shift sprints, Space jumps and jumps again in the air,
-// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; a right click or the wheel steps
-// through them), R drops a crate, G drops the
+// a left click or Enter throws the chosen tool (1 paint, 2 grenade, 3 rocket, 4 net; R, a right click or the wheel
+// step through them), B drops a crate, F lifts, stacks and sets crates, G drops the
 // block, C crouches while held, V switches between the chase camera and first person (a click there locks the mouse
 // for aiming; Escape lets it go). On touch the act button jumps, `#block-paint` throws and the tool bar picks. A round
 // opens with the sim's fortifying time. The intro card, the board (side and Ooga), the tool bar, the quiz card and the
@@ -129566,7 +129566,7 @@ void main() {
   const selection = { team: "blue", ooga: null };
 
   let home = "hub";
-  let renderer, game, world, go, testBananas, root, camera, hud, hooks, input, fx, controls, clock;
+  let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null;
   let tool = "paint", flash = 0, flashT = 0;
@@ -129785,7 +129785,7 @@ void main() {
     updateTools();
     lockMouse();
     center(`BUILD ${Math.ceil(sim.prep)}`, 0);
-    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! R drops a crate · walk into crates to push", 0);
+    notice(COARSE ? "Fortify! Crate drops one · walk into crates to push" : "Fortify! B drops a crate · F lifts and stacks", 0);
     updateStrip();
   };
   const finish = () => {
@@ -130345,15 +130345,12 @@ void main() {
     }
     if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
-    if (e.key === "r" || e.key === "R") buildCrate();
+    if (e.key === "r" || e.key === "R") cycleTool(1);
+    if (e.key === "b" || e.key === "B") buildCrate();
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "v" || e.key === "V") setView(!cam.first);
     if (e.key === "0") cam.pitch = 0.28;
-    if (e.key === "b" || e.key === "B") {
-      world.level = Math.min(pileMod.MAX_BANANAS, world.level + testBananas);
-      hud.toast(`+${testBananas} test bananas`);
-    }
   };
   const chooseTeam = (team) => {
     selection.team = team;
@@ -130361,7 +130358,7 @@ void main() {
   };
 
   const enter = (ctx) => {
-    ({ renderer, game, world, go, testBananas } = ctx);
+    ({ renderer, game, world, go } = ctx);
     home = ctx.from === "arcade" ? "arcade" : "hub";
     hudMod.leaveTo("block", home);
     camera = createCamera({ fov: 58, near: 0.3, far: 400 });
@@ -130479,7 +130476,7 @@ void main() {
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · right click or wheel tools · Tab passes · F picks up, stacks, sets crates · R new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click throws · R or right click switches weapon · Tab passes · F lifts, stacks, sets crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
