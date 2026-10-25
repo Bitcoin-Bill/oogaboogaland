@@ -38,7 +38,7 @@
   const CONFIG = {
     JUMP: 6.5, JUMP2: 6.5, FALL: 16, CARRY_JUMP: 0.85, CROUCH_H: 1.05, CROUCH_SPEED: 0.55,
     CAPTURES: 3, SPLAT_S: 2, GUARD_S: 2.5, PICK_R: 1.3, STAND_R: 1.7, BODY_R: 0.45, HEIGHT: 1.7,
-    SPEED: 6.2, SPRINT: 1.45, CARRY: 0.88, BOT_SPEED: 5.5, ACCEL: 30,
+    SPEED: 6.2, SPRINT: 1.55, CARRY: 0.88, SPRINT_S: 4, SPRINT_REST: 0.8, SPRINT_REFILL: 5, SPRINT_MIN: 0.3, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_Y: 1.3, BOT_COOLDOWN: 1.4, BOT_RANGE: 12, BOT_SPREAD: 0.2, BOT_AIM: 0.6, GUARD_RANGE: 10,
     MAX_SHOTS: 48, MAX_EVENTS: 48, STEP: 1 / 120,
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8],
@@ -226,7 +226,7 @@
       id: i, name: names[i] || null, team: i < 2 ? team : rival, bot: i > 0, role: i === 1 || i === 3 ? "defend" : "attack",
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
-      botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
+      stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, crates: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0
     }));
     const flags = {};
@@ -281,6 +281,7 @@
       a.moving = 0; a.grounded = true; a.jumps = 0; a.crouch = a.botJump = false; a.carrying = a.blocked = null;
       a.splat = a.guard = a.cooldown = a.stuck = a.detour = a.aim = a.trapped = a.think = a.painted = a.jump2At = a.tries = a.netted = a.progT = 0;
       a.lastD = Infinity;
+      a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = false; a.rest = 0;
       a.captures = a.splats = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -603,7 +604,7 @@
   };
 
   // One fixed step. `input` is the player's: `x`, `z` a world-space move direction of length up to 1, `sprint`,
-  // `jump` (a press), `crouch` (held). The scene throws, drops and builds through `fire`, `drop` and `build`.
+  // `jump` (a press), `crouch` (held), and optionally `face`, the yaw the player looks along. The scene throws, drops and builds through `fire`, `drop` and `build`.
   const tick = (sim, dt, input) => {
     CRATES = sim.crates;
     sim.time += dt;
@@ -640,7 +641,20 @@
         a.botJump = false;
       } else if (free) {
         a.crouch = !!input.crouch && a.grounded;
-        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : a.carrying ? CONFIG.CARRY : input.sprint ? CONFIG.SPRINT : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
+        // Sprint: Shift held, moving, not crouched or netted, while there's stamina. It runs out after `SPRINT_S`, then
+        // refills after a short rest; run it dry and it must refill to `SPRINT_MIN` before it works again.
+        const wants = !!input.sprint && !a.crouch && a.netted <= 0 && (input.x !== 0 || input.z !== 0);
+        a.sprinting = wants && !a.tired && a.stamina > 0;
+        if (a.sprinting) {
+          a.stamina = Math.max(0, a.stamina - dt);
+          a.rest = CONFIG.SPRINT_REST;
+          if (a.stamina === 0) { a.tired = true; emit(sim, "winded", a.team, a.id, a.x, a.y, a.z); }
+        } else if (a.rest > 0) a.rest -= dt;
+        else {
+          a.stamina = Math.min(CONFIG.SPRINT_S, a.stamina + dt * CONFIG.SPRINT_S / CONFIG.SPRINT_REFILL);
+          if (a.tired && a.stamina >= CONFIG.SPRINT_S * CONFIG.SPRINT_MIN) a.tired = false;
+        }
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
@@ -685,7 +699,10 @@
       } else a.grounded = true;
       const sp = Math.hypot(a.vx, a.vz);
       a.moving = sp;
-      if (sp > 0.5 && a.cooldown <= (a.bot ? CONFIG.BOT_COOLDOWN : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
+      // The player faces where they aim (`input.face`, the camera's yaw) when the scene gives it; everyone else faces
+      // where they run, unless they just threw.
+      if (!a.bot && free && input.face !== undefined) a.heading = input.face;
+      else if (sp > 0.5 && a.cooldown <= (a.bot ? CONFIG.BOT_COOLDOWN : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
       if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
     }
     for (let n = 0; n < 4; n++) touchFlags(sim, sim.actors[sim.flip ? 3 - n : n]);
