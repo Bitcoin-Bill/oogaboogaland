@@ -3792,7 +3792,7 @@ const orbitFlow = async (b) => {
 // perf floor; `perf` runs the perf floor alone; `unit` (or nothing) runs only the global tier.
 // Two lanes limit concurrent WebGL boot pressure; four produced long startups
 // and a GPU context loss during the full suite.
-const SCENES = ["hub", "lab", "race", "drop", "orbit", "mine", "dsb", "factory", "bifrost", "timechain", "poker", "arcade", "skee", "hoops", "shy", "claw", "hockey", "billiards", "darts", "pinball", "ride", "invaders", "snake", "pong", "stampede", "flap", "breaker", "dash", "stacker"];
+const SCENES = ["hub", "lab", "race", "drop", "block", "orbit", "mine", "dsb", "factory", "bifrost", "timechain", "poker", "arcade", "skee", "hoops", "shy", "claw", "hockey", "billiards", "darts", "pinball", "ride", "invaders", "snake", "pong", "stampede", "flap", "breaker", "dash", "stacker"];
 const LANES = Number(process.env.LANES) || 2;
 const ARGS = process.argv.slice(2);
 for (const a of ARGS) if (!SCENES.includes(a) && !["unit", "chat-unit", "integration-unit", "svrn-unit", "svrn-review", "vacancy-unit", "portal-unit", "water-baseline", "water-review", "water-unit", "stackchain-review", "stackchain-unit", "dsb-menus-unit", "maxis-unit", "exterior-unit", "rulers-unit", "ink-unit", "big-unit", "perf", "full", "poker-protocol"].includes(a)) throw new Error(`Unknown argument "${a}" (unit | perf | full | poker-protocol | ${SCENES.join(" | ")})`);
@@ -4675,12 +4675,59 @@ const npcPaths = (backend) => [`NPC paths ${backend}`, async (b) => {
 
 // The games' rules and saves in Node, under the same localStorage the page uses: the mine's seeded sim,
 // every game's stored best, the tickets a machine spends and the jackpot wheel's odds.
-const GAME_SOURCES = ["math", "donations", "rocket-parts", "mine-rigs", "mine-sim", "game"];
+const GAME_SOURCES = ["math", "donations", "rocket-parts", "mine-rigs", "mine-sim", "block-sim", "game"];
 const gameRulesChecks = async () => {
   const store = new Map();
   const context = { window: {}, URLSearchParams, location: { search: "" }, localStorage: { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) } };
   for (const name of GAME_SOURCES) runInNewContext(await readFile(new URL(`../src/js/${name}.js`, import.meta.url), "utf8"), context);
   const BL = context.window.BL, M = BL.mineSim, R = BL.mineRigs;
+  {
+    // Block Frenzy's rules, played through the sim's own calls: a pickup, a drop that can't be undone by standing still,
+    // the timed return, scoring only while your own block is home, a splat that drops the carrier's block, a quiz trap
+    // that holds and protects until answered, and three captures deciding the round. Nothing here repeats a formula.
+    const S = BL.blockSim, A = S.ARENA, still = { x: 0, z: 0, sprint: 0, jump: 0 };
+    const sim = S.create({ team: "blue", seed: 7 });
+    for (const a of sim.actors) if (a.id) a.bot = false;
+    const me = sim.actors[0], put = (a, x, z) => { a.x = x; a.z = z; S.tick(sim, S.CONFIG.STEP, still); };
+    const theirs = A.stands.red, mine = A.stands.blue;
+    put(me, theirs.x, theirs.z);
+    const picked = me.carrying === "red" && sim.flags.red.state === "carried";
+    const dropped = S.drop(sim, 0) && sim.flags.red.state === "dropped";
+    put(me, me.x, me.z);
+    const held = sim.flags.red.state === "dropped";
+    put(me, theirs.x + 4, theirs.z);
+    put(me, sim.flags.red.x, sim.flags.red.z);
+    const regrab = me.carrying === "red";
+    sim.flags.blue.state = "carried"; sim.flags.blue.carrier = 2;
+    put(me, mine.x, mine.z);
+    const noScoreAway = sim.score.blue === 0 && me.carrying === "red";
+    sim.flags.blue.state = "home"; sim.flags.blue.carrier = null;
+    put(me, mine.x + 0.2, mine.z);
+    const scored = sim.score.blue === 1 && sim.flags.red.state === "home" && !me.carrying;
+    put(me, theirs.x, theirs.z);
+    const rival = sim.actors[2];
+    rival.x = me.x; rival.z = me.z - 3; rival.cooldown = 0;
+    S.fire(sim, 2, 0);
+    for (let t = 0; t < 1 && me.splat <= 0; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const splatted = me.splat > 0 && !me.carrying && sim.flags.red.state === "dropped";
+    for (let t = 0; t < S.CONFIG.RETURN_S + 1 && sim.flags.red.state !== "home"; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const returned = sim.flags.red.state === "home";
+    for (let t = 0; t < 4; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const [tx, tz] = A.traps[0];
+    put(me, tx, tz);
+    const trapped = me.trapped > 0, frozen = (() => { const x = me.x; S.tick(sim, 0.1, { x: 1, z: 0, sprint: 0, jump: 0 }); return me.x === x; })();
+    rival.x = me.x; rival.z = me.z - 3; rival.cooldown = 0;
+    S.fire(sim, 2, 0);
+    for (let t = 0; t < 0.6; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
+    const shielded = me.splat <= 0 && me.trapped > 0;
+    const freed = S.escape(sim, 0) && me.trapped === 0 && me.guard > 0;
+    record("block frenzy rules: pickup, a drop held until you step out, return after the countdown, scoring only with your own block home, a splat drops the carrier's block, a quiz trap holds and shields until answered",
+      picked && dropped && held && regrab && noScoreAway && scored && splatted && returned && trapped && frozen && shielded && freed,
+      JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, returned, trapped, frozen, shielded, freed }));
+    const round = (seed) => { const r = S.create({ team: "red", seed }); r.actors[0].bot = "auto"; for (let t = 0; t < 900 && !r.over; t += 1 / 30) S.step(r, 1 / 30, still), r.eventCount = 0; return JSON.stringify({ over: r.over, winner: r.winner, score: r.score, time: Math.round(r.time) }); };
+    const a = round(3), b = round(3);
+    record("block frenzy rounds: a seeded round replays exactly and reaches three captures", a === b && JSON.parse(a).over && Math.max(...Object.values(JSON.parse(a).score)) === S.CONFIG.CAPTURES, JSON.stringify({ a, b }));
+  }
   {
     const run = () => { const sim = M.create({ seed: 42 }); sim.place(R.GPU); return sim; };
     const a = run(), whole = run();
@@ -6135,6 +6182,42 @@ const dropSteer = (canopy) => `(() => { const B = window.__ooga, D = B.drop; ${E
   for (const k of ["a", "d", "q", "e"]) out[k] = +(out[k] - out.none).toFixed(1);
   out.none = +out.none.toFixed(1);
   return out; })()`;
+const blockState = `({ phase: window.__ooga.block.phase, card: !document.querySelector('[data-intro="block"]').hidden, board: !document.getElementById("block-board").hidden })`;
+const blockStart = { name: "block start", why: "rule: Space only closes the title card, Enter starts the round, and Escape goes back to the sides with nothing saved", run: async (b) => {
+  const fresh = await b.evaluate(blockState);
+  await b.key(" ");
+  const closed = await b.evaluate(blockState);
+  await b.key("Enter");
+  const play = await b.evaluate(blockState);
+  await b.key("Escape");
+  const back = await b.evaluate(`({ ...${blockState}, games: window.__ooga.game.state.block.games })`);
+  record("block start: Space closes the title card on the sides, Enter plays, Escape returns to the sides unsaved", fresh.card && fresh.phase === "board" && !closed.card && closed.phase === "board" && play.phase === "play" && back.phase === "board" && back.board && back.games === 0, JSON.stringify({ fresh, closed, play, back }));
+} };
+// W A S D measured on screen: each key moves the Ooga its way relative to where the camera looks.
+const blockWalk = { name: "block walk", why: "rule: W A S D run the visitor's Ooga their way on screen", run: async (b) => {
+  await b.key("Enter");
+  const rows = {};
+  for (const k of "wasd") {
+    await b.evaluate(`(() => { const B = window.__ooga, s = B.block.sim, a = s.actors[0]; a.x = -14; a.z = 2; a.vx = a.vz = 0; for (const o of s.actors) if (o.id) { o.x = 20; o.z = o.team === s.team ? 30 : -30; } B.advance(0.3, 1 / 60); const c = B.camera, vx = c.target.x - c.position.x, vz = c.target.z - c.position.z, l = Math.hypot(vx, vz); window.__walk = { fx: vx / l, fz: vz / l, x0: a.x, z0: a.z }; })()`);
+    await holdKey(b, k, 0.5);
+    const r = await b.evaluate(`(() => { const q = window.__walk, a = window.__ooga.block.sim.actors[0], dx = a.x - q.x0, dz = a.z - q.z0; return { right: dx * -q.fz + dz * q.fx, fwd: dx * q.fx + dz * q.fz }; })()`);
+    const [er, ef] = WALK[k], along = r.right * er + r.fwd * ef;
+    rows[k] = { ok: along > 1 && along > 0.8 * Math.hypot(r.right, r.fwd), right: +r.right.toFixed(2), fwd: +r.fwd.toFixed(2) };
+  }
+  record("block walk: W A S D run the Ooga their way on screen", allWalk(rows), JSON.stringify(rows));
+} };
+const blockQuiz = { name: "block quiz", why: "rule: a quiz trap holds the visitor until a right answer, a wrong one locks the answers, and a right one frees them", run: async (b) => {
+  const r = await b.evaluate(`(() => { const B = window.__ooga, D = B.block, s = D.sim, a = s.actors[0], t = s.traps[2];
+    a.x = t.x; a.z = t.z + 0.5; B.advance(0.2, 1 / 60);
+    const open = D.quiz.open && !document.getElementById("block-quiz").hidden && a.trapped > 0;
+    D.answer((D.quiz.right + 1) % 4);
+    const locked = D.quiz.locked && a.trapped > 0;
+    return { open, locked }; })()`);
+  await b.evaluate(`new Promise((resolve) => setTimeout(resolve, 2700))`);
+  const f = await b.evaluate(`(() => { const B = window.__ooga, D = B.block, a = D.sim.actors[0]; const fresh = !D.quiz.locked && D.quiz.asked === 2; D.answer(D.quiz.right); B.advance(0.1, 1 / 60); return { fresh, free: a.trapped === 0 && !D.quiz.open && document.getElementById("block-quiz").hidden }; })()`);
+  record("block quiz: a trap opens the question, a wrong answer locks the card and brings another, a right answer breaks the bubble", r.open && r.locked && f.fresh && f.free, JSON.stringify({ ...r, ...f }));
+} };
+const blockRun = `(() => { const B = window.__ooga, D = B.block; D.start(); for (let i = 0; i < 80 && D.phase === "play"; i++) D.simulate(15, true); B.advance(0.3, 1 / 30); const save = B.game.state.block; return { ok: D.phase === "results" && !document.getElementById("block-results").hidden && save.games === 1 && save.wins === (D.result.won ? 1 : 0), phase: D.phase, result: D.result, save }; })()`;
 const dropStart = { name: "drop start", why: "regression: Space on the title card also launched the flight", run: async (b) => {
   const st = () => b.evaluate(`({ phase: window.__ooga.drop.phase, card: !document.querySelector('[data-intro="drop"]').hidden })`);
   const fresh = await st();
@@ -14895,6 +14978,7 @@ scene("race", { label:"optional rig link fallback",url:hubPage(src),steps:[{name
 }}]});
 scene("race", { query: "rain=0&draw=0", steps: [raceStart, raceOwn, raceBench, { name: "race tracks", why: "regression: the 12-slot grid spawned a free banana on Banana Bay", run: async (b) => { await b.evaluate(`window.__ooga.race.toGarage()`); await raceTracks[1](b); } }, raceRigs, raceRigContext, racePause, play("race", "a whole cup under the autopilot: one drawn field of fifteen runs every race and finishes in order, the cup medal and every track's best are saved", cupRun), raceMirror, raceAgain, trip("race")] });
 scene("drop", { steps: [dropStart, dropSteering, play("drop", "a jump lands on the target, scores its own medal and is saved as the best", dropRun), dropCrash, trip("drop"), dropOwn] });
+scene("block", { steps: [blockStart, blockWalk, blockQuiz, play("block", "a round on autopilot reaches three captures, shows its results and saves the round", blockRun), trip("block")] });
 scene("orbit", { steps: [{ name: "orbit flow", why: "regression: the spacewalk air bonus was missing from the flight log", run: orbitFlow }, orbitSteering, orbitMissed, orbitEscape, trip("orbit"), orbitOwn] });
 scene("mine", { steps: [mineResume, trip("mine"), mineControls, mineOwn] });
 scene("factory", { query: "character=portlandhodl", steps: [factoryWalking, factoryGreeter, factoryLadders, factoryRailingJump, factoryWeapons, factoryForward, factoryForge, factoryShields, factoryKortik, trip("factory")] });
