@@ -71,6 +71,12 @@
   // `NEON_STUTTER` seconds one stutters, dipping twice as a tired tube does; the light at the tunnel's mouth follows
   // its first strip (`MOUTH_LIGHT`).
   const NEON_GLOW = 1.7, NEON_STUTTER = [2.5, 7], MOUTH_LIGHT = HM.TINTS.mouth;
+  // The floor lamps breathe a little, each at its own pace, and every `LAMP_STUTTER` seconds one stutters, failing four
+  // times in half a second (`LAMP_FAILS`, from and to, s, at `LAMP_DIM` of its light); and every `RABBIT` seconds a
+  // pulse runs down the runway's marker lamps toward the launch tunnel at `RABBIT_SPEED` m/s, each brightening by up to
+  // `RABBIT_GLOW` its own as it passes, within about `RABBIT_WIDTH` metres of it.
+  const LAMP_STUTTER = [3, 9], LAMP_FAILS = [0, 0.05, 0.12, 0.2, 0.3, 0.34, 0.46, 0.5], LAMP_DIM = 0.15;
+  const RABBIT = [8, 14], RABBIT_SPEED = 28, RABBIT_GLOW = 2.2, RABBIT_WIDTH = 2.5;
   const TIPS = {
     exit: ["Lightning Factory · the way back", "Back to the hall, onto the walkway to the balcony."],
     sign: ["Lightning Jet Hangar", "Where Lightning Jet v2 is being built, and where it will launch from."],
@@ -223,6 +229,27 @@
     const f = s.neon[0].glow / NEON_GLOW, o = 6 * 8, Lt = RENDER_OPTS.lights;
     Lt[o + 4] = MOUTH_LIGHT[0] * f; Lt[o + 5] = MOUTH_LIGHT[1] * f; Lt[o + 6] = MOUTH_LIGHT[2] * f;
   };
+  // The lamps' life: the floor lamps breathing and one now and then stuttering; the runway's rabbit.
+  const lampLife = (s, dt, elapsed) => {
+    if ((s.lampWait -= dt) <= 0) {
+      s.lampWait = LAMP_STUTTER[0] + Math.random() * (LAMP_STUTTER[1] - LAMP_STUTTER[0]);
+      s.lampOut = Math.floor(Math.random() * s.lamps.length);
+      s.lampAt = elapsed;
+    }
+    const since = elapsed - s.lampAt;
+    let out = false;
+    for (let i = 0; i < LAMP_FAILS.length; i += 2) if (since >= LAMP_FAILS[i] && since < LAMP_FAILS[i + 1]) out = true;
+    for (let i = 0; i < s.lamps.length; i++) s.lamps[i].glow = out && i === s.lampOut ? LAMP_DIM : 1 + 0.04 * Math.sin(elapsed * (2.1 + i * 0.37) + i * 1.9);
+    if ((s.rabbitWait -= dt) <= 0) {
+      s.rabbitWait = RABBIT[0] + Math.random() * (RABBIT[1] - RABBIT[0]);
+      s.rabbitAt = elapsed;
+    }
+    const front = LAYOUT.runway.z0 - (elapsed - s.rabbitAt) * RABBIT_SPEED;
+    for (let i = 0; i < s.markers.length; i++) {
+      const d = (s.markers[i].position.z - front) / RABBIT_WIDTH;
+      s.markers[i].glow = 1 + RABBIT_GLOW * Math.exp(-d * d);
+    }
+  };
   // Space's life: stars twinkle a group at a time with their halos, the planets and their rings spin, moons go round
   // their planets, and now and then a shooting star streaks down its way and fades.
   const heavens = (s, dt, elapsed) => {
@@ -258,7 +285,7 @@
   const build = () => {
     const L = LAYOUT, s = { crew: [] }, shell = HM.shell(), runway = HM.runway(), tunnel = HM.tunnel(), dressed = HM.dressing(), fixtures = HM.fixtures(), frames = HM.boardFrames();
     addChild(root, createNode({ geometry: shell.rock }), createNode({ geometry: shell.vault }), createNode({ geometry: shell.backing }),
-      createNode({ geometry: HM.landing() }), createNode({ geometry: runway.flat }), createNode({ geometry: runway.glow, sightHidden: true }),
+      createNode({ geometry: HM.landing() }), createNode({ geometry: runway.flat }),
       createNode({ geometry: tunnel.stone }),
       createNode({ geometry: HM.catwalks() }), createNode({ geometry: dressed.iron }), createNode({ geometry: dressed.banners }),
       createNode({ geometry: dressed.frame }), createNode({ geometry: dressed.glass, sightHidden: true }), createNode({ geometry: fixtures.glow, sightHidden: true }),
@@ -272,6 +299,18 @@
     s.stutterWait = NEON_STUTTER[0];
     s.fixtures = createNode({ geometry: fixtures.flat });
     addChild(root, s.mouth, s.fixtures);
+    // The runway's marker lamps and the floor lamps, each a node of its own, so they come alive one at a time
+    // (`lampLife`).
+    const M = runway.markers;
+    s.markers = [];
+    for (let i = 0; i < M.length; i += 2) s.markers.push(createNode({ position: { x: M[i], y: 0, z: M[i + 1] }, geometry: HM.marker(), sightHidden: true }));
+    s.lamps = L.floorLamps.map(([x, z]) => createNode({ position: { x, y: 0, z }, geometry: HM.floorLamp(), sightHidden: true }));
+    addChild(root, ...s.markers, ...s.lamps);
+    s.lampWait = LAMP_STUTTER[0];
+    s.lampOut = -1;
+    s.lampAt = 0;
+    s.rabbitWait = RABBIT[0];
+    s.rabbitAt = -Infinity;
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
     s.jet = jetNode({ position: { x: L.jet.x, y: 0, z: L.jet.z } });
     addChild(root, s.jet);
@@ -690,6 +729,7 @@
     glowNear(elapsed, FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED));
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
+    lampLife(s, dt, elapsed);
     dust.update(elapsed, pilot.orbit.target.x, pilot.orbit.target.z);
     for (let i = 0; i < s.crew.length; i++) s.crew[i].update(dt);
     if (boardsDirty) {

@@ -173,9 +173,11 @@
   // The runway: slate panels with their seams between twin yellow centre lines and hazard-striped edges, yellow and
   // black bands across it every eight metres and at the hold-short line, chevrons before the shield, and blue marker
   // lamps along both edges, the length of the floor and on through the tunnel; and on the floor beside it, the stripes
-  // round the Jet's bay and along the crew's side. The lamps glow, so they are their own mesh.
+  // round the Jet's bay and along the crew's side. The lamps glow, so they are their own mesh (`glow`, for the Factory's
+  // window into the hangar), and where each stands (`markers`, [x, z, ...]) for the scene's own, one `marker` each so
+  // it can light them one at a time.
   const runway = cached(() => {
-    const r = LAYOUT.runway, flat = [], glow = [], len = r.z0 - r.z1, mid = (r.z0 + r.z1) / 2, top = 0.06;
+    const r = LAYOUT.runway, flat = [], glow = [], markers = [], len = r.z0 - r.z1, mid = (r.z0 + r.z1) / 2, top = 0.06;
     flat.push(box({ w: r.halfW * 2, h: 0.04, d: len, color: RUNWAY, offset: { y: 0.02, z: mid } }));
     for (let z = r.z0 - 2; z > r.z1; z -= 4) flat.push(box({ w: r.halfW * 2 - 0.7, h: 0.01, d: 0.05, color: SEAM, offset: { y: 0.045, z } }));
     for (const x of [-2.6, 2.6]) flat.push(box({ w: 0.05, h: 0.01, d: len - 0.4, color: SEAM, offset: { x, y: 0.045, z: mid } }));
@@ -193,6 +195,7 @@
     for (let z = r.z0 - 1; z > r.z1; z -= 3) for (const s of [-1, 1]) {
       flat.push(box({ w: 0.3, h: 0.08, d: 0.3, color: IRON_DK, offset: { x: s * (r.halfW + 0.45), y: 0.04, z } }));
       glow.push(box({ w: 0.18, h: 0.1, d: 0.18, color: MARKER, emissive: 1, offset: { x: s * (r.halfW + 0.45), y: 0.12, z } }));
+      markers.push(s * (r.halfW + 0.45), z);
     }
     // The Jet's bay, striped all round, and the line along the crew's side of the runway.
     const [bx0, bx1, bz0, bz1] = LAYOUT.bay;
@@ -201,8 +204,9 @@
     hazard(flat, bx1, bz1, bx0, bz1, 0.025, 0.28);
     hazard(flat, bx0, bz1, bx0, bz0, 0.025, 0.28);
     hazard(flat, -5.9, 22, -5.9, HALL.back + 3, 0.025, 0.24, 0.8);
-    return { flat: merge(...flat), glow: noShadow(merge(...glow)) };
+    return { flat: merge(...flat), glow: noShadow(merge(...glow)), markers: new Float32Array(markers) };
   });
+  const marker = cached(() => noShadow(box({ w: 0.18, h: 0.1, d: 0.18, color: MARKER, emissive: 1, offset: { y: 0.12 } })));
 
   // The launch tunnel from the back wall to the shield: a stone sleeve, floored, walled and roofed, and inside it an
   // octagonal iron frame every few metres, the mouth's heaviest, each with a neon strip round its inside, a white-hot
@@ -344,10 +348,11 @@
   };
 
   // The crew's workstations, the terminals on stands, the tool chests, the crates (some stacked, a lantern on the
-  // tallest), and the blue floor lamps. Screens and lamps glow, so they are their own mesh; the lanterns on the crates
-  // come back with their lights.
+  // tallest), and the blue floor lamps. Screens glow, so they are their own mesh, and so do the lamps (`lampGlow`, for
+  // the Factory's window into the hangar; the scene stands a `floorLamp` of its own on each base to light them one at a
+  // time); the lanterns on the crates come back with their lights.
   const fixtures = cached(() => {
-    const L = LAYOUT, flat = [], glow = [], frame = [], glass = [], lights = [];
+    const L = LAYOUT, flat = [], glow = [], lamps = [], frame = [], glass = [], lights = [];
     L.stations.forEach(([x, z, turn], i) => {
       const f = [], g = [];
       f.push(bevelBox({ w: 2.1, h: 0.08, d: 0.9, color: TIMBER_LT, bevel: 0.02, offset: { y: 0.8 } }));
@@ -404,10 +409,11 @@
     });
     for (const [x, z] of L.floorLamps) {
       flat.push(bevelBox({ w: 0.56, h: 0.1, d: 0.56, color: IRON_DK, bevel: 0.02, offset: { x, y: 0.05, z } }));
-      glow.push(bevelBox({ w: 0.44, h: 0.42, d: 0.44, color: FLOOR_LAMP, emissive: 1, bevel: 0.03, offset: { x, y: 0.31, z } }));
+      lamps.push(bevelBox({ w: 0.44, h: 0.42, d: 0.44, color: FLOOR_LAMP, emissive: 1, bevel: 0.03, offset: { x, y: 0.31, z } }));
     }
-    return { flat: merge(...flat), glow: noShadow(merge(...glow)), frame: merge(...frame), glass: noShadow(merge(...glass)), lights };
+    return { flat: merge(...flat), glow: noShadow(merge(...glow)), lampGlow: noShadow(merge(...lamps)), frame: merge(...frame), glass: noShadow(merge(...glass)), lights };
   });
+  const floorLamp = cached(() => noShadow(bevelBox({ w: 0.44, h: 0.42, d: 0.44, color: FLOOR_LAMP, emissive: 1, bevel: 0.03, offset: { y: 0.31 } })));
 
   // The boards' frames: a blue light frame round the glass, on an iron back plate, held off the wall on a mount: two
   // rails across the board's back, clamped to it, each on standoff arms that run back into the rock with a collar
@@ -1294,7 +1300,7 @@
       for (let x = X0 + 2; x <= X1 - 2; x += 4.8) parts.push(box({ w: 0.16, h: 0.7, d: 0.3, color: GIRDER_DK, offset: { x, y: L.gantryY, z } }));
     }
     const run = runway(), tun = tunnel(), dressed = dressing(), fix = fixtures();
-    parts.push(landing(), run.flat, run.glow, tun.stone, tun.iron, dressed.banners, dressed.glass, catwalks(), fix.flat, fix.glow, fix.glass, dock());
+    parts.push(landing(), run.flat, run.glow, tun.stone, tun.iron, dressed.banners, dressed.glass, catwalks(), fix.flat, fix.glow, fix.lampGlow, fix.glass, dock());
     for (const z of tun.neonZ) parts.push(moved(merge(tun.neon), 0, 0, z));
     // The boards on their mounts, their glass and tiles, as they hang.
     const frames = boardFrames(), faces = { stats: statsFace(), timeline: timelineFace() };
@@ -1503,7 +1509,7 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
+    LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
     fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
