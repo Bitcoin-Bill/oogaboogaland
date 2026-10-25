@@ -884,12 +884,15 @@
     buildActors(castNames());
     for (let i = 0; i < 4; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
-    // The board's Ooga picker: the roster by display name, held to their own Ooga for a signed-in visitor.
+    // The board's Ooga picker: the roster by the name shown, held to their own Ooga for a signed-in visitor.
     el.oogaPick.textContent = "";
-    for (const c of contributors.activeRoster) {
+    // In alphabetical order by the name shown, so anyone can find theirs in a long roster.
+    const names = contributors.activeRoster.map((c) => [c.name, contributors.traitsFor(c.name).display || c.name]);
+    names.sort((p, q) => p[1].localeCompare(q[1], undefined, { sensitivity: "base" }));
+    for (const [name, shown] of names) {
       const o = document.createElement("option");
-      o.value = c.name;
-      o.textContent = contributors.traitsFor(c.name).display || c.name;
+      o.value = name;
+      o.textContent = shown;
       el.oogaPick.append(o);
     }
     el.oogaPick.value = actors[0].name || "";
