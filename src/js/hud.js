@@ -1165,7 +1165,7 @@
     const createBoardWindow = (node, floatingId = 0, saved = null) => {
       const el = { board: node };
       const ids = {
-        boardTitle: "board-title", boardScreen: "board-screen", boardCaption: "board-caption", boardNote: "board-note", boardLink: "board-link",
+        boardTitle: "board-title", boardScreen: "board-screen", boardCaption: "board-caption", boardNote: "board-note", boardLinks: "board-links",
         boardDots: "board-dots", boardPrev: "board-prev", boardNext: "board-next", boardHelp: "board-help",
         boardHead: "board-head", boardPause: "board-pause", boardResize: "board-resize",
         boardFilter: "board-filter", boardFilterMenu: "board-filter-menu", boardFilterList: "board-filter-list", boardRollup: "board-rollup",
@@ -1472,10 +1472,21 @@
         el.boardCaption.textContent = board.caption;
         el.boardNote.textContent = board.note || "";
         el.boardNote.hidden = !!board.floating || !board.note;
-        el.boardLink.hidden = !board.link;
-        if (board.link) {
-          el.boardLink.href = board.link.href;
-          el.boardLink.textContent = board.link.label;
+        // A board's links out, one anchor each under its note, made the first time a board needs that many.
+        const links = board.links || [];
+        el.boardLinks.hidden = !links.length;
+        for (let i = el.boardLinks.children.length; i < links.length; i++) {
+          const a = document.createElement("a");
+          a.className = "board-link";
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.referrerPolicy = "no-referrer";
+          el.boardLinks.append(a);
+        }
+        for (let i = 0; i < el.boardLinks.children.length; i++) {
+          const a = el.boardLinks.children[i];
+          a.hidden = i >= links.length;
+          if (i < links.length) { a.href = links[i].href; a.textContent = links[i].label; }
         }
         if (board.floating || board.carousel) paintBoardPause();
         if (board.floating) {

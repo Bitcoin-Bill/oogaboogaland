@@ -452,7 +452,7 @@
       s.boards[key] = n;
       s.boardViews[key] = { title: key === "stats" ? "Lightning Jet on GitHub" : "Lightning Jet Timeline", help: "", canvas: document.createElement("canvas"), count: 1, index: 0, version: 0,
         caption: key === "stats" ? "Repository stats" : "Dated from the repository", note: "", wide: true, go() {},
-        link: { href: `https://github.com/${BL.jetFeed.REPO}`, label: `Open ${BL.jetFeed.REPO} on GitHub ↗` } };
+        links: [{ href: `https://github.com/${BL.jetFeed.REPO}`, label: `Open ${BL.jetFeed.REPO} on GitHub ↗` }] };
     }
     s.statsStars = createNode({ geometry: faces.stats.stars, sightHidden: true });
     s.statsFlag = createNode({ geometry: faces.stats.flag, sightHidden: true, visible: false });

@@ -4340,9 +4340,17 @@ body.tess-touring #joy-look {
   display: none;
 }
 
+.board-links {
+  margin: 10px 0 0;
+}
+
+.board-links[hidden] {
+  display: none;
+}
+
 .board-link {
   display: block;
-  margin: 10px 0 0;
+  margin: 4px 0 0;
   color: var(--accent-text);
   font-size: 12px;
   font-weight: 700;
