@@ -655,6 +655,15 @@
     });
     return { flat: merge(...flat), glow: noShadow(merge(...glow)) };
   });
+  // The streak behind each board's flying Jet (its first in `JETS`), two thin wedges back from its tail along its climb,
+  // in the Jet's own frame (x along the climb), so the scene's Jet takes it along as it leaves and brings it back.
+  const jetStreak = (key, dz, drop, long, wide) => {
+    const [, , , s, climb] = JETS[key][0], glow = [];
+    streak(glow, 0, 0, -dz, 0, 27.75 * s * 0.38, long[0], wide[0], "#bfe3ff");
+    streak(glow, -drop * Math.sin(climb), -drop * Math.cos(climb), -dz - 0.02, 0, 27.75 * s * 0.3, long[1], wide[1], "#7fb8ff");
+    return noShadow(merge(...glow));
+  };
+  const jetStreaks = cached(() => ({ stats: jetStreak("stats", 0.1, 0.14, [0.48, 0.34], [0.05, 0.018]), timeline: jetStreak("timeline", 0.12, 0.16, [1.6, 1], [0.06, 0.02]) }));
 
   // The lettering both boards carry over their geometry, painted from a reading. `full` paints the whole board flat
   // for the board dialog: the glass, the tiles and hexagons, and simple drawings of the icons, under the same words.
@@ -1784,7 +1793,7 @@
   };
 
   BL.hangarModels = {
-    LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, boardText, boardNote, paintBoard, dock, vest,
+    LAYOUT, STEP, TINTS, LANTERN_GLOW, shell, landing, runway, marker, floorLamp, tunnel, catwalks, dressing, fixtures, boardFrames, statsFace, timelineFace, JETS, jetStreaks, boardText, boardNote, paintBoard, dock, vest,
     fixedLights, doorWindow, FIRE, fireStation, fireCables, firePicture, exhaust, blast, KIOSK, projector, filmScreen, projectorBeam,
     hallGlimpse: cached(() => noShadow(merge(
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
