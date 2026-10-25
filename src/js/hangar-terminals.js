@@ -42,7 +42,7 @@
   // the motor runs down, the screen rolling up; how long a leader's frame, a card, a picture and the title hold; the
   // reels' turn at full, rad/s; the gate's weave, m, and how often it, the grain and the flicker move on, s; and the
   // light the picture throws on the floor, its reach and colour.
-  const SHOW = { hoist: 2.5, down: 3, strike: 0.9, splice: 0.09, runout: 1.8, dark: 1.4, up: 3, leader: 0.25, card: 4, picture: 4.5, title: 5, reel: 5 };
+  const SHOW = { hoist: 2.5, down: 3.6, strike: 0.9, splice: 0.09, runout: 1.8, dark: 1.4, up: 3, leader: 0.25, card: 4, picture: 4.5, title: 5, reel: 5 };
   const WEAVE = { x: 0.012, y: 0.02, jump: 0.05, every: 1 / 24, grain: 1 / 14 }, LIGHT = { reach: 15, color: [1, 0.9, 0.72], power: 1.6 };
   const STRIKE = [[0.12, 1], [0.22, 0.15], [0.36, 1], [0.44, 0.35], [0.9, 1]];
 
