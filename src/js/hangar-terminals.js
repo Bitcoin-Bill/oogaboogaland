@@ -561,13 +561,14 @@
     addChild(head, glow, ...reels);
     const cradle = createNode({ geometry: P.cradle });
     const beam = createNode({ position: { ...B.position }, rotation: { ...B.rotation }, geometry: B.geometry, sightHidden: true, visible: false });
-    const frame = createNode({ geometry: S.frame });
-    const cloth = createNode({ position: { x: L.show.screen.x, y: S.top, z: L.show.screen.z }, geometry: S.cloth, visible: false });
-    const batten = createNode({ position: { x: L.show.screen.x, y: S.top, z: L.show.screen.z }, geometry: S.batten });
+    const SC = L.show.screen, frame = createNode({ position: { x: SC.x, y: SC.y, z: SC.z }, geometry: S.frame });
+    const rods = createNode({ position: { x: SC.x, y: S.chord, z: SC.z }, scale: { x: 1, y: S.chord - SC.y - 0.15, z: 1 }, geometry: S.rods });
+    const cloth = createNode({ position: { x: SC.x, y: S.top, z: SC.z }, geometry: S.cloth, visible: false });
+    const batten = createNode({ position: { x: SC.x, y: S.top, z: SC.z }, geometry: S.batten });
     const slide = createNode({ position: { x: pic.x, y: pic.y, z: pic.z }, geometry: X.light, sightHidden: true, visible: false });
     const grain = X.grain.map((geometry) => createNode({ position: { x: pic.x, y: pic.y, z: pic.z + 0.01 }, geometry, sightHidden: true, visible: false, smokeOpacity: 0.85, depthBias: FRONT }));
     const flicker = createNode({ position: { x: pic.x, y: pic.y, z: pic.z + 0.02 }, geometry: X.black, sightHidden: true, visible: false, smokeOpacity: 0, depthBias: 2 * FRONT });
-    addChild(root, cradle, head, beam, frame, cloth, batten, slide, ...grain, flicker);
+    addChild(root, cradle, head, beam, frame, rods, cloth, batten, slide, ...grain, flicker);
     live.push(X.light, X.black, ...X.grain);
 
     // ---- the show ----
@@ -663,7 +664,7 @@
       glow.glow = 0.25 + 1.4 * lamp;
       beam.visible = lamp > 0.3 && unroll > 0.99;
       // The screen: the cloth stretched as far as it has unrolled, the batten at its foot.
-      const drop = L.show.screen.drop * unroll;
+      const drop = SC.drop * unroll;
       cloth.visible = drop > 0.02;
       cloth.scale.y = Math.max(0.001, drop);
       batten.position.y = S.top - drop;

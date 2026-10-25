@@ -1441,24 +1441,26 @@
     };
   });
 
-  // The roll-down screen over the runway, facing the door: its roller in a case hung on two rods from the gantry's
-  // bottom chord (`frame`, in the hangar's frame); its cloth a metre long hanging from the origin, matte white with black
-  // bands down its sides, which the show stands under the case and stretches as it unrolls (`cloth`, from `top`); and
-  // the weighted batten along its foot with the pull ring, which goes down with it (`batten`). `picture` is where the
-  // film's picture falls on the cloth unrolled, its middle a little in front of it, and its width and height.
+  // The roll-down screen over the runway, facing the door: its roller in a case (`frame`, about the roller's middle),
+  // which the show winds down from where it is stowed and back up, on two rods from the gantry's bottom chord (`rods`,
+  // a metre long hanging from the chord, which the show stretches to the case, `chord` its height in the hangar's
+  // frame); its cloth a metre long hanging from the origin, matte white with black bands down its sides, which the show
+  // stands `under` the case's middle and stretches as it unrolls (`cloth`, from `top` when the case is down); and the
+  // weighted batten along its foot with the pull ring, which goes down with it (`batten`). `picture` is where the film's
+  // picture falls on the cloth unrolled, its middle a little in front of it, and its width and height.
   const filmScreen = cached(() => {
-    const S = LAYOUT.show.screen, chord = LAYOUT.gantryY - 0.66, frame = [], cloth = [], batten = [], w = S.w;
-    frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.17, 0], [0.17, w + 0.5], [0, w + 0.5]], segments: 12, color: IRON_DK }), -Math.PI / 2), S.x - w / 2 - 0.25, S.y, S.z));
+    const S = LAYOUT.show.screen, chord = LAYOUT.gantryY - 0.66, frame = [], rods = [], cloth = [], batten = [], w = S.w, under = 0.17;
+    frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [under, 0], [under, w + 0.5], [0, w + 0.5]], segments: 12, color: IRON_DK }), -Math.PI / 2), -w / 2 - 0.25, 0, 0));
     for (const sx of [-1, 1]) {
-      frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.2, 0], [0.2, 0.06], [0, 0.06]], segments: 12, color: FILM.trim }), -Math.PI / 2), S.x + sx * (w / 2 + 0.28) - 0.03, S.y, S.z));
-      frame.push(box({ w: 0.05, h: chord - S.y - 0.15, d: 0.05, color: IRON_DK, offset: { x: S.x + sx * (w / 2 - 0.1), y: (chord + S.y + 0.15) / 2, z: S.z } }));
+      frame.push(moved(turnedZ(lathe({ profile: [[0, 0], [0.2, 0], [0.2, 0.06], [0, 0.06]], segments: 12, color: FILM.trim }), -Math.PI / 2), sx * (w / 2 + 0.28) - 0.03, 0, 0));
+      rods.push(box({ w: 0.05, h: 1, d: 0.05, color: IRON_DK, offset: { x: sx * (w / 2 - 0.1), y: -0.5 } }));
     }
     cloth.push(box({ w: w - 0.36, h: 1, d: 0.02, color: FILM.cloth, offset: { y: -0.5 } }));
     for (const sx of [-1, 1]) cloth.push(box({ w: 0.18, h: 1, d: 0.02, color: INK, offset: { x: sx * (w / 2 - 0.09), y: -0.5 } }));
     batten.push(box({ w: w + 0.12, h: 0.08, d: 0.08, color: IRON_DK, offset: { y: -0.04 } }));
     batten.push(box({ w: 0.012, h: 0.24, d: 0.012, color: "#c8b48a", offset: { y: -0.2, z: 0.05 } }), moved(turnedX(torus(0.045, 0.01, FILM.trim, 0, 12, 6), Math.PI / 2), 0, -0.36, 0.05));
-    const top = S.y - 0.17, ph = (w - 0.4) * 9 / 16;
-    return { frame: merge(...frame), cloth: merge(...cloth), batten: merge(...batten), top, picture: { x: S.x, y: top - S.drop / 2, z: S.z + 0.04, w: w - 0.4, h: ph } };
+    const top = S.y - under, ph = (w - 0.4) * 9 / 16;
+    return { frame: merge(...frame), rods: merge(...rods), cloth: merge(...cloth), batten: merge(...batten), chord, under, top, picture: { x: S.x, y: top - S.drop / 2, z: S.z + 0.04, w: w - 0.4, h: ph } };
   });
 
   // The projector's beam, through the hall's dust from the lens to the picture's corners: a long frustum of glass, its
