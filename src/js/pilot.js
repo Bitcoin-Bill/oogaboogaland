@@ -2362,14 +2362,15 @@
         zoomAnchorPitch = trailingPitchChosen ? orbit.tPitch : viewPitch;
         zoomAnchorDistance = fromDistance;
       }
-      // Add a small tilt relative to the chosen view over the full zoom range.
+      // Tilt down from the chosen view as it zooms out, so the far end of the
+      // range looks over the place around the actor rather than along it.
       // Below a ceiling, keep the chosen angle exactly; the horizontal boom is
       // only the one-time transition out of shooter view.
       const span = Math.log(DIST_MAX / DIST_MIN);
       const change = Math.log(orbit.tDist / zoomAnchorDistance) / span;
       const p = cave.root.position, covered = ceilingAt && ceilingAt(p.x, p.z, p.y - cave.baseY, cave) < Infinity;
       orbit.tPitch = covered ? zoomAnchorPitch
-        : clamp(zoomAnchorPitch + 0.32 * change, Math.min(0.08, zoomAnchorPitch), Math.max(0.68, zoomAnchorPitch));
+        : clamp(zoomAnchorPitch + 0.7 * change, Math.min(0.08, zoomAnchorPitch), Math.max(1.1, zoomAnchorPitch));
       trailingPitchChosen = true;
       zoomTilt = true;
     };
