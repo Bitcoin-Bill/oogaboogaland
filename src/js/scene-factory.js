@@ -176,7 +176,7 @@
 
   let renderer, game, world, go, root, camera, hud, hooks, input, pilot, fx, agentPlay = null;
   // The page's one factory node (`world.factoryNode`), and its feed and demo node.
-  let shared = null, feed = null, mock = null, unsubscribe = null, leaving = false, exitHeld = false, dust = null;
+  let shared = null, feed = null, mock = null, unsubscribe = null, leaving = false, exitHeld = false, toHangar = false, hangarHeld = false, dust = null;
   // The Ooga the visitor walked in as: one playable actor from the shared crew, and the world it carries.
   let people = null, avatar = null, playerWorld = null, unsubscribeAccount = null, remotes = null, footsteps = null;
   // The hall's sound (factory-audio.js): what its bed follows, written in place each frame, and where its machines,
@@ -1104,7 +1104,7 @@
   // one over at its mouth, nothing held or hovered here carries into the hangar.
   const enterHangar = () => {
     if (leaving || !go("hangar")) return;
-    leaving = true;
+    leaving = toHangar = true;
     pilot.controls.reset(); input.reset(); pilot.setActive(false); hud.tooltip.hide();
   };
   // Whether (p) has come through the hangar door's shield, inside its opening: an Ooga whose feet stand `baseY` under
@@ -1176,8 +1176,12 @@
     if (!leaving) { world.factoryCrossing = null; w.through = w.grab = false; }
   };
   // The island could not be built for the way out (the director's `stay`): the Ooga walks again, and the gate waits for
-  // it to step back out of the opening before it tries again.
-  const stay = () => { leaving = false; exitHeld = true; walk.phase = 0; walk.through = walk.grab = false; walk.still = walk.hold = 0; world.factoryCrossing = null; };
+  // it to step back out of the opening before it tries again. Kept from the hangar (its code could not be fetched), the
+  // Ooga is the visitor's again, and the hangar's door waits the same way.
+  const stay = () => {
+    if (toHangar) { toHangar = false; hangarHeld = true; pilot.setActive(true); }
+    leaving = false; exitHeld = true; walk.phase = 0; walk.through = walk.grab = false; walk.still = walk.hold = 0; world.factoryCrossing = null;
+  };
   const onKey = (e) => {
     if (scene.booth.mode) return boothKey(scene, e);
     if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) return pilot.resetCamera();
@@ -1888,7 +1892,7 @@
     shared.stands.forEach((p) => placeIn(scene, p));
     unsubscribe = feed.subscribe(onEvent);
     refreshBoards(scene);
-    leaving = exitHeld = false;
+    leaving = exitHeld = toHangar = hangarHeld = false;
     actPrompt = false;
     greeter = BL.factoryGreeter.create({ parent: root, input, fx, feed,
       visitor: () => people && people.player === avatar ? avatar : null,
@@ -2169,6 +2173,7 @@
       const driven = pilot.player, p = driven ? driven.root.position : camera.position, y = p.y - (driven ? driven.baseY : 0) - LAYOUT.entrance.y;
       const inOpening = p.x >= GATE_OPENING.minX && p.x <= GATE_OPENING.maxX && y >= GATE_OPENING.floorY - 0.12 && y < GATE_OPENING.ceilingY;
       if (exitHeld && !(inOpening && p.z > HALL.front - 2.2)) exitHeld = false;
+      if (hangarHeld && !throughHangar(s, p, driven ? driven.baseY : 0, driven ? 0 : 0.9)) hangarHeld = false;
       if (driven) {
         // The walk has the Ooga; on foot heading out over the balcony's last stretch, it takes it through the gate's
         // shield. Anything else in the doorway (an Ooga in the air, say) goes out as it always has.
@@ -2177,12 +2182,12 @@
           Object.assign(walk, { phase: WALK_OFF, t: 0, x: p.x, z: p.z, through: false });
           pilot.controls.reset(); input.reset(); hud.tooltip.hide();
         } else if (!exitHeld && inOpening && p.z > HALL.front - 1.3) leaveCave();
-        else if (throughHangar(s, p, driven.baseY)) enterHangar();
+        else if (!hangarHeld && throughHangar(s, p, driven.baseY)) enterHangar();
         else peerPortal(s, previousX, previousY, previousZ);
       } else if (!avatar) {
         const a = pilot.controls.read(), moving = Math.hypot(a.x, a.y) > 0.05;
         if (!exitHeld && inOpening && moving && p.z > HALL.front - 2.2) leaveCave();
-        else if (moving && throughHangar(s, p, 0, 0.9)) enterHangar();
+        else if (!hangarHeld && moving && throughHangar(s, p, 0, 0.9)) enterHangar();
       }
     }
     const node = feed.reading.node, signal = feed.signal, running = node === "ready" || node === "starting";
