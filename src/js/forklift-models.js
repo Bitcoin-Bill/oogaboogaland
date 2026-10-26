@@ -248,10 +248,13 @@
     flat.push(bevelBox({ w: 0.56, h: CUSHION, d: 0.52, color: BLACK, bevel: 0.05, offset: { x: sx, y: sy + CUSHION / 2, z: sz } }));
     flat.push(moved(turnedX(bevelBox({ w: 0.56, h: 0.6, d: 0.13, color: BLACK, bevel: 0.05, offset: { y: 0.3 } }), 0.12), sx, sy + 0.12, sz + 0.27));
     for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.06, h: 0.18, d: 0.36, color: BLACK_B, bevel: 0.02, offset: { x: sx + s * 0.31, y: sy + 0.2, z: sz + 0.08 } }));
-    // The dashboard: a dark panel along the dash's top facing the driver, and the steering column from it.
+    // The dashboard: a dark panel along the dash's top facing the driver.
     flat.push(moved(turnedX(bevelBox({ w: 0.74, h: 0.3, d: 0.06, color: BLACK_B, bevel: 0.02 }), -0.55), -0.1, 1.34, P.dash - 0.08));
-    const [wx, wy, wz] = P.steering;
-    round.push(beam(wx, 1.2, P.dash - 0.12, wx, wy - 0.02, wz + 0.01, 0.06, BLACK));
+    // The steering column's shroud along the wheel's axis, up out of the dash to its hub, and its tilt lever.
+    const [wx, wy, wz, tilt] = P.steering, ay = Math.cos(tilt), az = Math.sin(tilt), len = 0.44;
+    round.push(along(turn([[0, 0], [0.055, 0], [0.055, len - 0.12], [0.045, len - 0.08], [0.038, len - 0.03], [0.03, len]], 14, BLACK), wx, wy - ay * len, wz - az * len, 0, ay, az));
+    flat.push(beam(wx - 0.04, wy - ay * 0.2, wz - az * 0.2, wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03, 0.018, STEEL_DK));
+    round.push(moved(turn([[0, -0.02], [0.022, -0.015], [0.022, 0.015], [0, 0.02]], 10, BLACK), wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03));
     // The lever for the forks, left of the wheel.
     flat.push(beam(-0.53, 1.36, P.dash - 0.1, -0.53, 1.58, P.dash - 0.02, 0.025, STEEL_DK));
     round.push(moved(turn([[0, -0.04], [0.035, -0.03], [0.04, 0], [0.035, 0.03], [0, 0.04]], 12, BLACK), -0.53, 1.6, P.dash - 0.01));
@@ -272,15 +275,22 @@
   });
   // The beacon's amber dome in its own frame, its foot at the origin.
   const beacon = cached(() => noShadow(shaded([turn([[0, 0], [0.085, 0], [0.09, 0.05], [0.085, 0.13], [0.06, 0.18], [0, 0.19]], 18, AMBER, 1)])));
-  // The steering wheel in its hub's frame, its rim in the xz plane round the origin: the rim, three spokes and the hub
-  // with the bolt's gold on it; the column tilts it toward the driver (the node's rotation.x, `PLACES.steering`'s last).
+  // The steering wheel in its hub's frame, its rim in the xz plane round the origin facing +y (the column tilts it toward
+  // the driver, the node's rotation.x, `PLACES.steering`'s last, so +z is its foot by the driver's knees): a chunky rim of
+  // blocks round a round core, a spinner knob on it at ten o'clock, and a square hub on three thick spokes, left, right
+  // and down, a raised pad on its face with the bolt on it in gold.
   const steering = cached(() => {
-    const round = [torus(0.19, 0.025, BLACK, 0, 24, 8), turn([[0, -0.03], [0.055, -0.03], [0.06, 0.02], [0, 0.03]], 14, BLACK)];
-    const flat = [];
-    for (let q = 0; q < 3; q++) flat.push(turnedY(box({ w: 0.03, h: 0.02, d: 0.17, color: BLACK_B, offset: { z: 0.095 } }), q / 3 * TAU + Math.PI));
-    // The bolt in gold, flat on the hub's face.
-    const mark = boltSolid(0.035, 0.035, 0.008, GOLD, 0.5);
-    flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.034, 0));
+    const R = 0.21, round = [torus(R, 0.028, BLACK_B, 0, 32, 8)], flat = [];
+    for (let q = 0; q < 16; q++) flat.push(turnedY(bevelBox({ w: 0.072, h: 0.062, d: 0.064, color: BLACK, bevel: 0.014, offset: { z: R } }), (q + 0.5) / 16 * TAU));
+    const kx = -Math.sin(Math.PI / 3) * R, kz = -Math.cos(Math.PI / 3) * R;
+    round.push(moved(turn([[0, 0], [0.026, 0], [0.026, 0.012], [0.018, 0.016], [0.018, 0.05], [0.026, 0.058], [0.026, 0.09], [0.016, 0.1], [0, 0.1]], 12, BLACK_B), kx, 0.03, kz));
+    for (const s of [-1, 1]) flat.push(bevelBox({ w: R - 0.07, h: 0.032, d: 0.065, color: BLACK, bevel: 0.01, offset: { x: s * (R / 2 + 0.03), y: -0.006 } }));
+    flat.push(bevelBox({ w: 0.065, h: 0.032, d: R - 0.07, color: BLACK, bevel: 0.01, offset: { y: -0.006, z: R / 2 + 0.03 } }));
+    flat.push(bevelBox({ w: 0.13, h: 0.06, d: 0.13, color: BLACK_B, bevel: 0.02 }));
+    flat.push(bevelBox({ w: 0.1, h: 0.014, d: 0.1, color: BLACK, bevel: 0.006, offset: { y: 0.036 } }));
+    // The bolt in gold, flat on the pad, upright to the driver.
+    const mark = boltSolid(0.04, 0.04, 0.008, GOLD, 0.5);
+    flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.047, 0));
     return shaded(round, flat);
   });
   // The big red button, a mushroom on its stem, and its clear red cover in its hinge's frame (the hinge along x at the
