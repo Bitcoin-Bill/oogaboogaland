@@ -10,7 +10,8 @@
 // wheel (`steering`, about its column), the beacon's dome (`beacon`), the button's cover (`cover`, about its hinge) and
 // the back's two vented doors (`doors`, each about its outer edge). `PLACES` says where each stands. The decals are
 // pictures painted once a page (`pictures`). In the forklift's frame: the forks toward -z, x to the driver's right,
-// the origin on the floor midway between its axles, in metres; `FOOTPRINT` is the box round it a walker meets.
+// the origin on the floor midway between its axles, in units the scene builds `SCALE` metres each; `FOOTPRINT` is the
+// box round it a walker meets, in metres.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -18,7 +19,7 @@
   const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, makeVox, voxelGeometry, turn, shaded } = models;
   const TAU = Math.PI * 2;
 
-  const U = 0.125;
+  const U = 0.125, SCALE = 1.15;
   const YELLOW = "#f2b01e", YELLOW_B = "#e3a114", BLACK = "#1f2125", BLACK_B = "#2b2e34", BLUE = "#2443a8", BLUE_B = "#2b4dbb", GOLD = "#ffc83a";
   const RUBBER = "#17181b", STEEL = "#a9b1bc", STEEL_DK = "#5d6470", RED = "#e8342a", AMBER = "#ffb02e", LAMP = "#fff1b8", TAIL = "#ff3b2e";
   // The body's palette, by index.
@@ -41,8 +42,9 @@
   const P = PLACES;
   // How thick the seat's cushion is, on the deck at the seat's place: its top is where a driver sits.
   const CUSHION = 0.14;
-  // The box round it that a walker meets, from its carriage's face to its back, its forks low enough to step over.
-  const FOOTPRINT = { x: P.half + 0.1, z0: P.face - 0.1, z1: P.back + 0.02, top: P.roof + 0.1 };
+  // The box round it that a walker meets, from its carriage's face to its back, in metres; its forks lie low enough to
+  // step over.
+  const FOOTPRINT = { x: (P.half + 0.1) * SCALE, z0: (P.face - 0.1) * SCALE, z1: (P.back + 0.02) * SCALE, top: (P.roof + 0.1) * SCALE };
 
   // Two tones a colour, by cell, so a broad face reads as built of blocks.
   const tone = (i, j, k, a, b) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & 2 ? b : a;
@@ -326,5 +328,5 @@
     };
   };
 
-  BL.forkliftModels = { U, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, button, cover, doors, decals };
 })();

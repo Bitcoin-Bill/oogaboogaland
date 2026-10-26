@@ -106,9 +106,9 @@
     tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
   // How far past the forklift's side, beyond the Ooga's own body, its cab takes them in (`CAB_REACH`), along how much of
-  // its length (`CAB_SPAN`, from and to in its frame), and how far out beside it, past their body, they stand up again
-  // (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
-  const CAB_REACH = 0.6, CAB_SPAN = [-1, 0.9], CAB_OUT = [0.15, 1.2];
+  // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
+  // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
+  const CAB_REACH = 0.6, CAB_SPAN = [-1.1, 1.0], CAB_OUT = [0.15, 1.2];
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
@@ -185,16 +185,16 @@
     for (const geometry of rest) addChild(node, createNode({ geometry }));
     return node;
   };
-  // The forklift parked at (x, z), its forks pointing `turn` (`forkliftModels`): its voxel body, mast, fittings and
-  // lamps, and each part that moves a node of its own, the wheels, the carriage up its mast, the steering wheel on its
-  // column, the beacon's dome, the button and its cover on the cover's hinge, the back's two doors on theirs; its decals
-  // as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the cover so it lifts with it; and
-  // its driver's seat for the crew's `sitPlayer`, facing the forks, stood up from beside the cab (`walkAt`, set as an
-  // Ooga gets in, on its side).
+  // The forklift parked at (x, z), its forks pointing `turn` (`forkliftModels`, built `SCALE` times its units): its voxel
+  // body, mast, fittings and lamps, and each part that moves a node of its own, the wheels, the carriage resting up its
+  // mast, the steering wheel on its column, the beacon's dome, the button and its cover on the cover's hinge, the back's
+  // two doors on theirs; its decals as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the
+  // cover so it lifts with it; and its driver's seat for the crew's `sitPlayer`, in metres, facing the forks, stood up
+  // from beside the cab (`walkAt`, set as an Ooga gets in, on its side).
   const forklift = ({ x, z, turn }) => {
     const FL = BL.forkliftModels, P = FL.PLACES, W = FL.wheel(), D = FL.doors(), decals = FL.decals();
     const at = (geometry, [px, py, pz], options = {}) => createNode({ position: { x: px, y: py, z: pz }, geometry, ...options });
-    const root = createNode({ position: { x, y: 0, z }, rotation: { x: 0, y: turn, z: 0 } }), body = createNode({ geometry: FL.body() });
+    const root = createNode({ position: { x, y: 0, z }, rotation: { x: 0, y: turn, z: 0 }, scale: { x: FL.SCALE, y: FL.SCALE, z: FL.SCALE } }), body = createNode({ geometry: FL.body() });
     const wheels = [[-P.frontX, P.frontR, P.front, W.front], [P.frontX, P.frontR, P.front, W.front], [-P.rearX, P.rearR, P.rear, W.rear], [P.rearX, P.rearR, P.rear, W.rear]]
       .map(([wx, wy, wz, geometry]) => at(geometry, [wx, wy, wz]));
     const carriage = at(FL.carriage(), [0, 0, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
@@ -204,8 +204,8 @@
     addChild(cover, ...decals.cover.map(picture));
     addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), createNode({ geometry: FL.lamps(), sightHidden: true }),
       ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
-    const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat;
-    const seat = { x: x + sz * sn, y: sy + FL.CUSHION, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
+    const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
+    const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
     return { root, body, wheels, carriage, steering, beacon, button, cover, doors, seat, x, z, sn, cs };
   };
   // Where the driven Ooga stands in the forklift's frame (`CAB`, x across and z along), and whether that is beside its
@@ -547,7 +547,7 @@
     target(s.boards.stats, "stats", "boards", 4.6);
     target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
-    target(s.forklift.body, "forklift", null, 2.2);
+    target(s.forklift.body, "forklift", null, 2.6);
     return s;
   };
 
