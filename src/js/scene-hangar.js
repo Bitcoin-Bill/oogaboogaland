@@ -99,6 +99,7 @@
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
     forklift: ["Hangar forklift", COARSE ? "It moves the Jet's parts round the hangar. Walk up to its cab and tap GET IN." : "It moves the Jet's parts round the hangar. Walk up to its cab and press Space to get in."],
     forkliftButton: ["Big red button · DO NOT PRESS", "Get into the forklift to reach its button."],
+    forkliftKey: ["Ignition key", "Get into the forklift to turn its key."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -110,13 +111,20 @@
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
   // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
   const CAB_REACH = 0.6, CAB_SPAN = [-1.1, 1.0], CAB_OUT = [0.15, 1.2];
-  // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it), put back as it gets out (the
-  // pilot keeps its zoom and pitch across first person); it sits in first person meanwhile.
-  const SEAT_VIEW = { mode: null };
+  // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it) and its pitch, put back as it
+  // gets out (the pilot keeps its zoom across first person, and the pitch goes back the frame after, `back`); it sits in
+  // first person meanwhile, entered looking down over the dashboard at SEAT_PITCH.
+  const SEAT_VIEW = { mode: null, pitch: 0, back: false }, SEAT_PITCH = 0.3;
   // The forklift's button pressed, from the seat or beside the cab: its cover flips up to `open` (radians about its
   // hinge) in `swing` seconds and falls shut after `hold`, the button dipping `dip` in between, while the buzz says it
   // does nothing; a press waits for the last to finish (`again`, s).
   const BUTTON_PRESS = { open: -1.1, swing: 0.12, hold: 0.9, dip: 0.012, again: 0.6 };
+  // The forklift's power: how its lit parts glow off and on (`lit`); its beacon's dome off and running, and how bright
+  // and how narrow its beam's flash is as it passes the view (`flash`, `sharp`); how fast the beacon turns (rad/s) and
+  // the key (`turn`, rad/s); how long the key holds at START while the drive spins up (`crank`, s) and when the dash
+  // lights at the chime (`ready`, s); and the beacon's light: how far out its beam's spot falls (`reach`, m), how far it
+  // carries and its colour.
+  const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
@@ -209,12 +217,20 @@
     const beacon = at(FL.beacon(), P.beacon, { sightHidden: true }), button = at(FL.button(), P.button), cover = at(FL.cover(), P.hinge, { sightHidden: true });
     const doors = D.map((geometry, i) => at(geometry, [(i ? 1 : -1) * P.doorX, 0, P.back]));
     const picture = ([geometry, px, py, pz, rx, ry = 0]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: ry, z: 0 }, sightHidden: true, depthBias: -0.15 });
+    // Switched off: the key upright in its lock, the lit parts dim, the beacon dark and the screen blank.
+    const key = at(FL.key(), FL.KEY.at, { rotation: { x: FL.KEY.tilt, y: 0, z: 0 } }), screen = picture(decals.screen), lit = createNode({ geometry: FL.lamps(), sightHidden: true });
+    lit.glow = POWER.lit[0];
+    beacon.glow = POWER.dome[0];
+    screen.visible = false;
     addChild(cover, ...decals.cover.map(picture));
-    addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), createNode({ geometry: FL.lamps(), sightHidden: true }),
-      ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
+    addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), lit,
+      ...wheels, carriage, steering, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    return { root, body, wheels, carriage, steering, beacon, button, cover, doors, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1 };
+    const f = { root, body, wheels, carriage, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    // Space in the seat starts it; running, Space gets out (and switches it off).
+    seat.act = () => !f.on && (powerOn(f), true);
+    return f;
   };
   // Where the driven Ooga stands in the forklift's frame (`CAB`, x across and z along), and whether that is beside its
   // cab, on the floor, near enough to get in.
@@ -236,14 +252,21 @@
       w.z = f.z - lx * f.sn + lz * f.cs;
       if (!HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) continue;
       SEAT_VIEW.mode = pilot.view;
-      // The view turns down the forks from beside the cab at its own zoom and pitch, so first person enters looking
-      // where the seat faces.
-      pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: pilot.orbit.tPitch, dist: pilot.orbit.tDist });
+      SEAT_VIEW.pitch = pilot.orbit.tPitch;
+      // The view turns down the forks from beside the cab at its own zoom, so first person enters looking where the seat
+      // faces.
+      pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: SEAT_PITCH, dist: pilot.orbit.tDist });
       if (!people.sitPlayer(f.seat)) { SEAT_VIEW.mode = null; return false; }
       pilot.enterClose();
       return true;
     }
     return false;
+  };
+  // A tap on the key from the seat turns it: on when off, off when on.
+  const turnKey = (f, cave) => {
+    if (!cave || cave.camp.seat !== f.seat) { hud.toast(TIPS.forkliftKey[1]); return; }
+    if (f.on) powerOff(f);
+    else powerOn(f);
   };
   const pressButton = (f, cave) => {
     if (!cave || cave.camp.seat !== f.seat && !besideCab(f, cave)) { hud.toast(TIPS.forkliftButton[1]); return; }
@@ -251,6 +274,51 @@
     f.pressT = 0;
     const m = f.button.world;
     audio.denied(m[12], m[13], m[14]);
+  };
+  // The key turned to START, the drive spinning up (`audio.forklift`); the dash lights and the beacon turns once it is
+  // ready (`powerLife`). Off, the key goes back, the lights go dark and the beacon stops.
+  const powerOn = (f) => {
+    if (f.on) return;
+    f.on = true;
+    f.startT = 0;
+    f.keyTo = BL.forkliftModels.KEY.start;
+    audio.forklift(true);
+  };
+  const powerOff = (f) => {
+    if (!f.on) return;
+    f.on = false;
+    f.startT = -1;
+    f.keyTo = 0;
+    audio.forklift(false);
+    f.lit.glow = POWER.lit[0];
+    f.beacon.glow = POWER.dome[0];
+    f.screen.visible = false;
+  };
+  // A frame of it: the key turning toward where it is going, held at START while the drive spins up and then back to
+  // ON; and once it is ready, the beacon turning, its dome flashing as its beam passes the view.
+  const powerLife = (f, dt) => {
+    if (f.startT >= 0) {
+      f.startT += dt;
+      if (f.startT > POWER.crank) f.keyTo = BL.forkliftModels.KEY.on;
+      if (f.startT > POWER.ready) { f.startT = -1; f.lit.glow = POWER.lit[1]; f.screen.visible = true; }
+    }
+    const k = f.key.rotation.z, step = POWER.turn * dt;
+    f.key.rotation.z = k + clamp(f.keyTo - k, -step, step);
+    if (!f.on || f.startT >= 0) return;
+    f.sweep += POWER.rate * dt;
+    f.beacon.rotation.y = f.sweep;
+    const m = f.beacon.world, vx = camera.position.x - m[12], vz = camera.position.z - m[14];
+    const facing = Math.abs((m[0] * vx + m[2] * vz) / ((Math.hypot(m[0], m[2]) * Math.hypot(vx, vz)) || 1));
+    f.beacon.glow = POWER.dome[1] + POWER.flash * facing ** POWER.sharp;
+  };
+  // The beacon's light while it turns, a spot out along its beam (its reflector's axis, the node's x), into `slot`; how
+  // many it wrote.
+  const beaconLight = (f, Lt, slot) => {
+    if (!f.on || f.startT >= 0) return 0;
+    const m = f.beacon.world, o = slot * 8, C = POWER.color, r = POWER.reach / (Math.hypot(m[0], m[2]) || 1);
+    Lt[o] = m[12] + m[0] * r; Lt[o + 1] = m[13] + 0.2; Lt[o + 2] = m[14] + m[2] * r; Lt[o + 3] = POWER.radius;
+    Lt[o + 4] = C[0]; Lt[o + 5] = C[1]; Lt[o + 6] = C[2]; Lt[o + 7] = 0;
+    return 1;
   };
   // The press, a frame at a time: the cover up, the button down and back, the cover shut.
   const pressLife = (f, dt) => {
@@ -260,12 +328,14 @@
     f.button.position.y = f.buttonY - (t > B.swing && t < B.swing + 0.2 ? B.dip : 0);
     if (t > shut + 2 * B.swing) f.pressT = -1;
   };
-  // Out of the forklift's seat, however it got out (Space, or walking off), the view it got in with comes back: first
-  // person stays, the shoulder or the orbit returns.
+  // Out of the forklift's seat, however it got out (Space, or walking off), the view it got in with comes back (first
+  // person stays, the shoulder or the orbit returns) and it switches off.
   const seatViewBack = (cave) => {
+    if (SEAT_VIEW.back) { pilot.orbit.tPitch = SEAT_VIEW.pitch; SEAT_VIEW.back = false; }
     if (!SEAT_VIEW.mode || cave && cave.camp.seat === scene.forklift.seat) return;
-    if (cave && SEAT_VIEW.mode !== "first-person") pilot.exitClose(SEAT_VIEW.mode === "shoulder");
+    if (cave && SEAT_VIEW.mode !== "first-person") { pilot.exitClose(SEAT_VIEW.mode === "shoulder"); SEAT_VIEW.back = true; }
     SEAT_VIEW.mode = null;
+    powerOff(scene.forklift);
   };
   // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
   // round its fuselage's axis.
@@ -587,7 +657,8 @@
     target(s.forklift.body, "forklift", null, 2.6);
     // The button under its cover, ahead of the forklift round it.
     input.add(s.forklift.button, { kind: "forkliftButton", preset: null, priority: 1 }, { radius: 0.18 });
-    targets.push(s.forklift.button);
+    input.add(s.forklift.key, { kind: "forkliftKey", preset: null, priority: 1 }, { radius: 0.07 });
+    targets.push(s.forklift.button, s.forklift.key);
     return s;
   };
 
@@ -779,6 +850,7 @@
         if (o.kind === "sis" && scene.sis.near && scene.sis.poke()) return;
         if (o.kind === "terminal" && scene.terminals.near && scene.terminals.press()) return;
         if (o.kind === "forkliftButton") return pressButton(scene.forklift, people && people.player);
+        if (o.kind === "forkliftKey") return turnKey(scene.forklift, people && people.player);
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -802,7 +874,8 @@
     hireCrew(scene);
     const F = LAYOUT.fireTest, exits = JM.EXHAUST;
     audio = BL.hangarAudio.create({ door: { x: DOOR.x, y: DOOR.y + 2, z: DOOR.z }, launch: { x: 0, y: TUN.y, z: TUN.z1 }, tunnel: { y: TUN.y, z0: TUN.z0, z1: TUN.z1 },
-      booth: { x: F.x, y: 2, z: F.z }, engines: { x: LAYOUT.jet.x, y: exits[0].y, z: LAYOUT.jet.z + exits[0].z + 2 }, projector: HM.projector().lens, screen: HM.filmScreen().picture });
+      booth: { x: F.x, y: 2, z: F.z }, engines: { x: LAYOUT.jet.x, y: exits[0].y, z: LAYOUT.jet.z + exits[0].z + 2 }, projector: HM.projector().lens, screen: HM.filmScreen().picture,
+      forklift: { x: LAYOUT.forklift.x, y: 1.6, z: LAYOUT.forklift.z } });
     // The engine static fire test's booth beside the runway (`hangar-fire.js`), and its settings: the Sound
     // button opens the hangar's sound panel, its level and the pad's vibration.
     scene.fire = BL.hangarFire.create({ root, jet: scene.jet, nozzles: scene.jet.children[0] || null, fx, audio, hold: (on) => {
@@ -967,6 +1040,7 @@
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
     pressLife(s.forklift, dt);
+    powerLife(s.forklift, dt);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
@@ -992,9 +1066,9 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
-    // The act button's GET OUT in the forklift, DON'T PRESS beside the static fire test's button, DISPLAY (or STOP) beside
+    // The act button's START in the forklift (GET OUT while it runs), DON'T PRESS beside the static fire test's button, DISPLAY (or STOP) beside
     // a terminal, POKE beside Kortik's Sis, and GET IN beside the forklift's cab.
-    const actLabel = drivenHere && (drivenHere.camp.seat === s.forklift.seat ? "GET OUT" : s.fire.actLabel() || s.terminals.actLabel() || s.sis.actLabel()
+    const actLabel = drivenHere && (drivenHere.camp.seat === s.forklift.seat ? (s.forklift.on ? "GET OUT" : "START") : s.fire.actLabel() || s.terminals.actLabel() || s.sis.actLabel()
       || (!s.forklift.seat.sitter && besideCab(s.forklift, drivenHere) ? "GET IN" : null));
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
@@ -1019,10 +1093,11 @@
         hud.toast("Launch shield · sealed. The runway opens when Jet v2 is ready.");
       } else if (z > TUN.holdShort + SHIELD_REARM) s.launch.armed = true;
     }
-    // The fire test's lights, the film's, and Tess's own, then the lanterns'.
+    // The fire test's lights, the film's, the forklift's beacon's and Tess's own, then the lanterns'.
     const fired = FIXED + s.fire.lights(RENDER_OPTS.lights, FIXED), shown = fired + s.terminals.lights(RENDER_OPTS.lights, fired);
-    s.guide.light(RENDER_OPTS.lights, shown * 8);
-    glowNear(elapsed, shown + 1);
+    const beamed = shown + beaconLight(s.forklift, RENDER_OPTS.lights, shown);
+    s.guide.light(RENDER_OPTS.lights, beamed * 8);
+    glowNear(elapsed, beamed + 1);
     heavens(s, dt, elapsed);
     neonLife(s, dt, elapsed);
     lampLife(s, dt, elapsed);
@@ -1060,6 +1135,7 @@
 
   const leave = () => {
     SEAT_VIEW.mode = null;
+    SEAT_VIEW.back = false;
     // Left by Back or Forward rather than by its door, the hangar hands the Ooga on, so the next scene plays the same
     // one; the door and Escape have handed theirs over already.
     if (!leaving) {

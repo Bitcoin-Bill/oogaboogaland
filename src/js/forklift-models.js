@@ -233,18 +233,21 @@
 
   // The instrument panel along the dash's top, sloped toward the driver: where its middle stands, its tilt and its
   // depth. `dashAt` says where (u across, v up its face) lies, `out` proud of it, and `onDash` stands a part built facing
-  // +z there. On it, [u, v, radius] the gauges, [u, v, half width, half height] the screen, [u, v] the lamp panel, and
-  // [colour, u] the warning lights along its top. The fork stick stands right of the column on a pedestal from the floor:
-  // the pedestal's top, and the stick's grip.
+  // +z there. On it, [u, v, radius] the gauges, [u, v, half width, half height] the screen, [u, v] the lamp panel and
+  // the ignition's lock, and [colour, u] the warning lights along its top. The fork stick stands right of the column on
+  // a pedestal from the floor: the pedestal's top, and the stick's grip.
   const DASH = { x: -0.1, y: 1.34, z: P.dash - 0.08, tilt: -0.55, d: 0.06 };
   const dashAt = (u, v, out = 0) => {
     const c = Math.cos(DASH.tilt), s = Math.sin(DASH.tilt), w = DASH.d / 2 + out;
     return [DASH.x + u, DASH.y + v * c - w * s, DASH.z + v * s + w * c];
   };
   const onDash = (geo, u, v, out = 0) => moved(turnedX(geo, DASH.tilt), ...dashAt(u, v, out));
-  const GAUGES = [[-0.05, -0.02, 0.07], [-0.22, -0.035, 0.05]], SCREEN = [0.24, -0.01, 0.075, 0.045], LAMP_PANEL = [-0.33, -0.01];
+  const GAUGES = [[-0.05, -0.02, 0.07], [-0.22, -0.035, 0.05]], SCREEN = [0.24, -0.01, 0.075, 0.045], LAMP_PANEL = [-0.33, -0.01], IGNITION = [0.1, -0.08];
   const LIGHTS = [["#3dff7a", 0.17], [AMBER, 0.205], ["#ff3b2e", 0.24], ["#3aa8ff", 0.275], [AMBER, 0.31]];
   const STICK = { x: 0.19, y: 1.12, z: -0.62, grip: [0.19, 1.34, -0.57] };
+  // The key in the ignition, for the scene: where it stands proud of the lock, the panel's tilt, and how far it turns
+  // (radians about the lock, clockwise to the driver below 0) to ON and to START, where the lock's marks stand.
+  const KEY = { at: dashAt(IGNITION[0], IGNITION[1], 0.012), tilt: DASH.tilt, on: -1, start: -1.45 };
 
   // The overhead guard: a post at each corner from the hull up to its roof, the roof's frame and its slats, the work
   // lights' black housings at its front corners and the beacon's base; the bolt in gold on each side's blue panel; the
@@ -276,6 +279,11 @@
       flat.push(onDash(box({ w, h, d: 0.012, color: BLACK }), su + du, sv + dv, 0.006));
     }
     flat.push(onDash(bevelBox({ w: 0.08, h: 0.08, d: 0.02, color: BLACK, bevel: 0.008 }), ...LAMP_PANEL, 0.01));
+    // The ignition: its lock's face in a chrome bezel, and a mark at OFF, ON and START round it.
+    const [iu, iv] = IGNITION;
+    round.push(onDash(turnedX(turn([[0, 0], [0.024, 0], [0.024, 0.008], [0.018, 0.012], [0, 0.012]], 16, BLACK_B), Math.PI / 2), iu, iv));
+    round.push(onDash(turnedX(torus(0.027, 0.006, CHROME, 0, 20, 6), Math.PI / 2), iu, iv, 0.006));
+    for (const a of [0, KEY.on, KEY.start]) flat.push(onDash(turnedZ(box({ w: 0.005, h: 0.012, d: 0.004, color: a ? "#3dff7a" : STEEL }), a), iu - Math.sin(a) * 0.045, iv + Math.cos(a) * 0.045, 0.002));
     // The steering column's shroud along the wheel's axis, up out of the dash to its hub, and its tilt lever.
     const [wx, wy, wz, tilt] = P.steering, ay = Math.cos(tilt), az = Math.sin(tilt), len = 0.44;
     round.push(along(turn([[0, 0], [0.055, 0], [0.055, len - 0.12], [0.045, len - 0.08], [0.038, len - 0.03], [0.03, len]], 14, BLACK), wx, wy - ay * len, wz - az * len, 0, ay, az));
@@ -322,8 +330,10 @@
     for (const s of [-1, 1]) out.push(bevelBox({ w: 0.05, h: 0.05, d: 0.02, color: AMBER, emissive: 1, bevel: 0.01, offset: { x: bx + s * 0.19, y: by + 0.02, z: bz + 0.1 } }));
     return noShadow(merge(...out));
   });
-  // The beacon's amber dome in its own frame, its foot at the origin.
-  const beacon = cached(() => noShadow(shaded([turn([[0, 0], [0.085, 0], [0.09, 0.05], [0.085, 0.13], [0.06, 0.18], [0, 0.19]], 18, AMBER, 1)])));
+  // The beacon's amber dome in its own frame, its foot at the origin, and the bright windows of its reflector either side
+  // along x, so it is seen to turn (the scene turns it about y).
+  const beacon = cached(() => noShadow(shaded([turn([[0, 0], [0.085, 0], [0.09, 0.05], [0.085, 0.13], [0.06, 0.18], [0, 0.19]], 18, AMBER, 1)],
+    [-1, 1].map((s) => bevelBox({ w: 0.012, h: 0.1, d: 0.07, color: LAMP, emissive: 1, bevel: 0.004, offset: { x: s * 0.086, y: 0.085 } })))));
   // The steering wheel in its hub's frame, its rim in the xz plane round the origin facing +y (the column tilts it toward
   // the driver, the node's rotation.x, `PLACES.steering`'s last, so +z is its foot by the driver's knees): a chunky rim of
   // blocks round a round core, a spinner knob on it at ten o'clock, and a square hub on three thick spokes, left, right
@@ -340,6 +350,19 @@
     // The bolt in gold, flat on the pad, upright to the driver.
     const mark = boltSolid(0.04, 0.04, 0.008, GOLD, 0.5);
     flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.047, 0));
+    return shaded(round, flat);
+  });
+  // The key in its own frame, the lock's axis along +z out of the panel: its collar in the lock, the shank, the black
+  // head with the bolt in gold on both faces, standing upright at OFF, and a keyring through its foot with a yellow tag
+  // on it, the bolt on that too.
+  const key = cached(() => {
+    const round = [turnedX(turn([[0, 0], [0.012, 0], [0.012, 0.008], [0, 0.008]], 12, STEEL), Math.PI / 2)], flat = [];
+    flat.push(box({ w: 0.008, h: 0.014, d: 0.02, color: STEEL, offset: { z: 0.016 } }));
+    flat.push(bevelBox({ w: 0.014, h: 0.05, d: 0.042, color: BLACK, bevel: 0.006, offset: { z: 0.046 } }));
+    for (const s of [-1, 1]) flat.push(moved(turnedY(boltSolid(0.011, 0.016, 0.003, GOLD, 0.4), s * Math.PI / 2), s * 0.0075, 0.004, 0.046));
+    round.push(moved(turnedZ(torus(0.011, 0.0025, CHROME, 0, 14, 5), Math.PI / 2), 0, -0.033, 0.05));
+    flat.push(bevelBox({ w: 0.007, h: 0.036, d: 0.026, color: YELLOW, bevel: 0.004, offset: { y: -0.06, z: 0.05 } }));
+    for (const s of [-1, 1]) flat.push(moved(turnedY(boltSolid(0.008, 0.012, 0.002, BLACK), s * Math.PI / 2), s * 0.004, -0.06, 0.05));
     return shaded(round, flat);
   });
   // The big red button, a mushroom on its stem, and its clear red cover in its hinge's frame (the hinge along x at the
@@ -479,7 +502,7 @@
     return geo;
   };
   // Every decal and where it goes, [geometry, x, y, z, rotation.x, rotation.y], in the forklift's frame, or for DO NOT
-  // PRESS on the cover's front in the cover's hinge frame (`cover`, so it lifts with it).
+  // PRESS on the cover's front in the cover's hinge frame (`cover`, so it lifts with it), and the screen (`screen`).
   const decals = () => {
     const [bx, by, bz] = P.button;
     return {
@@ -489,12 +512,13 @@
         [picture("thruster", 0.28, 0.07), bx, by - 0.14, bz + 0.132, 0],
         [picture("stripes", 0.28, 0.24), bx, by + 0.002, bz, -Math.PI / 2],
         ...GAUGES.map(([u, v, r], i) => [picture(i ? "charge" : "gauge", 2 * r, 2 * r, 0.15, true), ...dashAt(u, v, 0.002), DASH.tilt]),
-        [picture("screen", 2 * SCREEN[2], 2 * SCREEN[3], 0.5), ...dashAt(SCREEN[0], SCREEN[1], 0.002), DASH.tilt],
         ...[-1, 1].map((s) => [picture("hazard", 0.66, 0.13), s * (P.half + 0.004), 0.52, 0.02, 0, s * Math.PI / 2])
       ],
-      cover: [[picture("donot", 0.24, 0.055, 0.3), 0, 0.065, 0.227, 0]]
+      cover: [[picture("donot", 0.24, 0.055, 0.3), 0, 0.065, 0.227, 0]],
+      // The dashboard's screen on its own, lit while the forklift runs.
+      screen: [picture("screen", 2 * SCREEN[2], 2 * SCREEN[3], 0.5), ...dashAt(SCREEN[0], SCREEN[1], 0.002), DASH.tilt]
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, button, cover, doors, decals };
 })();
