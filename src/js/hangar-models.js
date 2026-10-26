@@ -137,6 +137,8 @@
   };
   // A part built facing +z at the origin, turned to face `turn` and set down at (x, y, z).
   const placed = (out, parts, x, y, z, turn = 0) => { for (const g of parts) out.push(moved(turnedY(g, turn), x, y, z)); };
+  // A crate's top, and a stacked pair's (the smaller crate on top), where things stand on them.
+  const CRATE_TOPS = [0.8, 1.44];
 
   // ---- the hall -------------------------------------------------------------------------------------------------
 
@@ -465,8 +467,8 @@
     };
     L.crates.forEach(([x, z, a, stacked], i) => {
       crate(x, 0, z, a, 1);
-      if (stacked > 1) crate(x + 0.05, 0.8, z - 0.04, a + 0.3, 0.8);
-      const top = stacked > 1 ? 1.44 : 0.8;
+      if (stacked > 1) crate(x + 0.05, CRATE_TOPS[0], z - 0.04, a + 0.3, 0.8);
+      const top = CRATE_TOPS[stacked > 1 ? 1 : 0];
       if (i % 3 === 0) {
         lanternParts(0.75, x, top, z, frame, glass);
         lights.push(x, top + 0.35, z, 6);
@@ -1571,14 +1573,15 @@
   // ---- the floor an Ooga walks ----------------------------------------------------------------------------------
 
   // Every surface with its height, as the Factory keeps its own: the floor, the landing, the catwalks and the dock's
-  // decks as rects, the steps and the stairs as their treads, a rect each at its top (`flight`), and the top of
-  // the Jet column by column (`jetModels.columns`); and what stands in the way as boxes [x0, x1, z0, z1, from, to]
-  // between two heights of the feet, and the Jet's own cells. `supportAt(x, z, feet)` is the
-  // highest surface within a step of the feet, so a walker on a catwalk stands on it and one on the floor walks under
-  // it.
+  // decks as rects, the steps and the stairs as their treads, a rect each at its top (`flight`), the tops of the crates
+  // (`solid`), and the top of the Jet column by column (`jetModels.columns`); and what stands in the way
+  // as boxes [x0, x1, z0, z1, from, to, top] between two heights of the feet (`top` 1 for a solid's), and the Jet's own
+  // cells. `supportAt(x, z,
+  // feet)` is the highest surface within a step of the feet, so a walker on a catwalk stands on it and one on the floor
+  // walks under it.
   const STEP = 0.6;
   const FLOOR = cached(() => {
-    const L = LAYOUT, rects = [], boxes = [];
+    const L = LAYOUT, rects = [], boxes = [], solids = [];
     const rect = (x0, x1, z0, z1, y) => rects.push(x0, x1, z0, z1, y);
     const deck = (d) => rect(d.x - d.w / 2 + 0.15, d.x + d.w / 2 - 0.15, d.z - d.d / 2 + 0.15, d.z + d.d / 2 - 0.15, d.y);
     deck(L.landing);
@@ -1604,8 +1607,16 @@
     flight(...L.steps.slice(0, 6), L.steps[6] - 0.3);
     for (const st of L.catwalkStairs) flight(...st.slice(0, 6), st[6] - 0.2);
     flight(...L.jetStairs.slice(0, 6), L.jetStairs[6] - 0.2);
-    const block = (x0, x1, z0, z1, from, to) => boxes.push(x0, x1, z0, z1, from, to);
+    const block = (x0, x1, z0, z1, from, to, top = 0) => boxes.push(x0, x1, z0, z1, from, to, top);
     const around = (x, z, hx, hz, to) => block(x - hx, x + hx, z - hz, z + hz, -1, to);
+    // A box with a top to stand on, as high as the box, so whatever comes down on it lands on top rather than in it: its
+    // top a surface under the middle of whoever stands on it, and also under any body it reaches into (`supportAt`'s
+    // radius).
+    const solid = (x, z, hx, hz, from, to) => {
+      block(x - hx, x + hx, z - hz, z + hz, from, to, 1);
+      rect(x - hx, x + hx, z - hz, z + hz, to);
+      solids.push(x - hx, x + hx, z - hz, z + hz, to);
+    };
     // A stair's handrails, both sides (as `stairParts` puts them), from the inner face of its posts outward, so a body
     // stops at the rail rather than in it (the flights are wide enough for the widest Ooga between them). Each in two
     // lengths: from its foot to where it rises over a walker's head, in the way of everyone there, on the stair or on
@@ -1699,14 +1710,19 @@
     }
     for (const [x, z] of L.kiosks) around(x, z, 0.4, 0.4, 1.4);
     for (const [x, z] of L.toolChests) around(x, z, 0.6, 0.6, 1.4);
+    // A crate's top to stand on, and a stacked pair's: the smaller crate on top standing in the way from the floor up,
+    // since the lower one's rim round it is too narrow to stand on.
     for (const [x, z, a, stacked] of L.crates) {
       const [hx, hz] = turned(0.55, 0.55, a);
-      around(x, z, hx, hz, stacked > 1 ? 1.5 : 0.85);
+      solid(x, z, hx, hz, -1, CRATE_TOPS[0]);
+      if (stacked < 2) continue;
+      const [ux, uz] = turned(0.45, 0.45, a + 0.3);
+      solid(x + 0.05, z - 0.04, ux, uz, -1, CRATE_TOPS[1]);
     }
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
-    return { rects: new Float32Array(rects), boxes: new Float32Array(boxes), jet: JM.columns() };
+    return { rects: new Float32Array(rects), boxes: new Float32Array(boxes), solids: new Float32Array(solids), jet: JM.columns() };
   });
   // How many of the Jet's columns a walker of `radius` at (x, z) with its feet at `feet` stands among: those reaching
   // within it whose cells rise more than a step above its feet and come down below its head (JET_HEAD up), so it walks
@@ -1728,13 +1744,24 @@
     }
     return n;
   };
-  const supportAt = (x, z, feet) => {
+  // With a body's `radius`, a solid's top (`solid`) holds it up wherever the body reaches a foot's breadth over it
+  // (SOLID_FOOT), so a body that comes down overlapping a crate stands on its edge rather than sinking into it,
+  // and one that only grazes it drops beside it.
+  const SOLID_FOOT = 0.25;
+  const supportAt = (x, z, feet, radius = 0) => {
     const F = FLOOR(), reach = feet + STEP;
     let best = 0;
     const R = F.rects;
     for (let i = 0; i < R.length; i += 5) {
       const y = R[i + 4];
       if (y > best && y <= reach && x >= R[i] && x <= R[i + 1] && z >= R[i + 2] && z <= R[i + 3]) best = y;
+    }
+    if (radius > SOLID_FOOT) {
+      const S = F.solids, holds = radius - SOLID_FOOT;
+      for (let i = 0; i < S.length; i += 5) {
+        const y = S[i + 4];
+        if (y > best && y <= reach && Math.hypot(Math.max(S[i] - x, 0, x - S[i + 1]), Math.max(S[i + 2] - z, 0, z - S[i + 3])) < holds) best = y;
+      }
     }
     // The Jet's top: the highest of its columns within a foot's breadth (JET_FOOT) of where it stands, so the edge of
     // a walker's body comes to rest on the fuselage's narrow terraces as it lands or steps down them.
@@ -1750,7 +1777,8 @@
   // Inside the hall, a step clear of its leaning walls; down the launch tunnel to the hold-short line; and through the
   // door's passage out to a little past its shield, so a walker crosses it on its feet. A movement may leave a box it
   // already overlaps, so long as it does not go in deeper, and the same among the Jet's columns: never among more of
-  // them than it was, so a walker that ends up in the Jet (a jump, a fall) can always walk out.
+  // them than it was, so a walker that ends up in the Jet (a jump, a fall) can always walk out. A box stands in the way
+  // of feet from its foot up to below its top, so one standing on it walks across it.
   const inside = (x, z, feet) => {
     const d = LAYOUT.door, t = LAYOUT.tunnel;
     if (Math.abs(x - d.x) < d.half - 0.3 && z > HALL.front - 2.4 && z < HALL.front + 1 && Math.abs(feet - d.y) < 0.8) return true;
@@ -1764,8 +1792,8 @@
   const clearAt = (x, z, feet, radius, fromX = x, fromZ = z) => {
     if (!inside(x, z, feet)) return false;
     const B = FLOOR().boxes;
-    for (let i = 0; i < B.length; i += 6) {
-      if (feet < B[i + 4] || feet > B[i + 5]) continue;
+    for (let i = 0; i < B.length; i += 7) {
+      if (feet < B[i + 4] || feet >= B[i + 5]) continue;
       const now = depthIn(B, i, x, z, radius);
       if (now <= 0) continue;
       if (depthIn(B, i, fromX, fromZ, radius) <= 0 || now > depthIn(B, i, fromX, fromZ, radius) + 1e-9) return false;
@@ -1782,7 +1810,7 @@
   const walkable = (ax, az, bx, bz, feet, radius = 0.35) => {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2));
     for (let i = 1; i <= steps; i++) {
-      const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps, floor = supportAt(x, z, feet);
+      const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps, floor = supportAt(x, z, feet, radius);
       const px = ax + (bx - ax) * (i - 1) / steps, pz = az + (bz - az) * (i - 1) / steps;
       if (!clearAt(x, z, Math.max(feet, floor), radius, px, pz) || floor < feet - STEP) return false;
     }

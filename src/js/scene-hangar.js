@@ -936,10 +936,11 @@
     const lx = (dx * f.cs - dz * f.sn) / S, lz = (dx * f.sn + dz * f.cs) / S - FL.PLACES.face;
     return Math.abs(lx) <= D.x && lz >= D.tip && lz <= D.heel ? (FL.PLACES.lift + f.lift + D.top) * S : -Infinity;
   };
-  // The ground: the hall's, or the forks' within a step of the feet; and on foot, level with the forks, along them as far
-  // as the hall is clear (off a raised fork's edge the hall's own drop holds, as a deck's).
-  const groundFor = (x, z, feet) => {
-    const ground = HM.supportAt(x, z, feet), top = forkTop(x, z);
+  // The ground: the hall's (a crate's top under whatever part of the body reaches over it), or the forks'
+  // within a step of the feet; and on foot, level with the forks, along them as far as the hall is clear (off a raised
+  // fork's edge the hall's own drop holds, as a deck's).
+  const groundFor = (x, z, feet, high, actor) => {
+    const ground = HM.supportAt(x, z, feet, actor ? actor.bodyRadius || 0.35 : 0), top = forkTop(x, z);
     return top > ground && top <= feet + HM.STEP ? top : ground;
   };
   const walkableFor = (ax, az, bx, bz, y, height, actor) => {
