@@ -929,14 +929,25 @@
 
   const groundFor = (x, z, feet) => HM.supportAt(x, z, feet);
   const walkableFor = (ax, az, bx, bz, y, height, actor) => HM.walkable(ax, az, bx, bz, y, actor.bodyRadius || 0.35);
+  // Whether a step from (ax, az) to (bx, bz) with the feet at y keeps a body `radius` round out of the forklift's body (its
+  // circles, below their top), or takes it no deeper in.
+  const forkliftClear = (ax, az, bx, bz, y, radius) => {
+    const blocks = scene ? scene.forklift.blocks : NO_ACTORS;
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i], r = radius + b.radius, dn = Math.hypot(bx - b.x, bz - b.z);
+      if (y < b.y + b.height && dn < r && dn < Math.hypot(ax - b.x, az - b.z)) return false;
+    }
+    return true;
+  };
   // In the air, the same clearance without the floor within a step, as the Factory keeps it, so a jump carries an Ooga
-  // over a deck's rail and it drops to whatever is below; on foot the edges still hold.
+  // over a deck's rail and it drops to whatever is below; on foot the edges still hold. The forklift's body holds in the
+  // air too (on foot the crew keeps its walkers out of it).
   const flyableFor = (ax, az, bx, bz, y, height, actor) => {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2)), radius = actor.bodyRadius || 0.35;
     for (let i = 1; i <= steps; i++) {
       if (!HM.clearAt(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, y, radius, ax + (bx - ax) * (i - 1) / steps, az + (bz - az) * (i - 1) / steps)) return false;
     }
-    return true;
+    return forkliftClear(ax, az, bx, bz, y, radius);
   };
   // There is no banana pile in here. Space must jump even when the rifle needs ammunition.
   const reloadPolicy = { near: () => false, available: () => false };
