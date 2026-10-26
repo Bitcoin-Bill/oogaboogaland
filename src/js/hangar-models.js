@@ -1807,6 +1807,22 @@
     }
     return true;
   };
+  // A body of `radius` at `p` with its feet at `feet` pushed out sideways of any solid it has come to rest in (one not a
+  // step up for it, which it may lean a foot's breadth into), the nearest way, where that is clear; whether it moved.
+  // A foot's breadth over a step, or a body come down beside a crate's edge, never stays inside it.
+  const pushOut = (p, feet, radius) => {
+    const B = FLOOR().boxes;
+    let moved = false;
+    for (let i = 0; i < B.length; i += 7) {
+      if (!B[i + 6] || feet < B[i + 4] || feet >= B[i + 5] || B[i + 5] <= feet + STEP) continue;
+      const cx = Math.min(Math.max(p.x, B[i]), B[i + 1]), cz = Math.min(Math.max(p.z, B[i + 2]), B[i + 3]), d = Math.hypot(p.x - cx, p.z - cz);
+      if (d <= 1e-6 || d >= radius) continue;
+      const k = (radius - d + 1e-4) / d, nx = p.x + (p.x - cx) * k, nz = p.z + (p.z - cz) * k;
+      if (!clearAt(nx, nz, feet, radius, p.x, p.z)) continue;
+      p.x = nx; p.z = nz; moved = true;
+    }
+    return moved;
+  };
   // Whether a walker of `radius` whose feet are at `feet` can step from (ax, az) to (bx, bz): clear all the way, and
   // never dropping more than a step, so the landing's and the catwalks' edges hold as their rails do.
   const walkable = (ax, az, bx, bz, feet, radius = 0.35) => {
@@ -1826,6 +1842,6 @@
       box({ w: 4.4, h: 4.6, d: 0.1, color: "#2a1a10", emissive: 0.55, offset: { y: 2.3, z: -3.25 } }),
       ...[-1.3, -0.4, 0.5, 1.4].map((x, i) => box({ w: 0.14, h: 0.18, d: 0.05, color: "#ffc86a", emissive: 1, offset: { x, y: 2.6 + (i % 2) * 0.7, z: -3.18 } }))
     ))),
-    supportAt, clearAt, walkable
+    supportAt, clearAt, walkable, pushOut
   };
 })();

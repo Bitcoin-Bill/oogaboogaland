@@ -1234,6 +1234,8 @@
     s.fire.unshake(camera);
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
+    // The Ooga driven here never rests inside a crate (`hangarModels.pushOut`).
+    if (drivenHere && !drivenHere.camp.seat) HM.pushOut(drivenHere.root.position, drivenHere.root.position.y - drivenHere.baseY, drivenHere.bodyRadius || 0.35);
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
     pressLife(s.forklift, dt);
