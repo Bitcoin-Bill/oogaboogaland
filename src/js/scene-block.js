@@ -787,7 +787,11 @@
   const noMenu = (e) => { if (phase === "play") e.preventDefault(); };
   const buildCrate = () => {
     if (phase !== "play") return false;
-    if (SIM.build(sim, 0, cam.face)) return true;
+    if (SIM.build(sim, 0, cam.face)) {
+      const n = sim.actors[0].crates;
+      notice(`Crate down! ${n ? `${n} left` : "That was your last · your stand or a cache gives you more"}`, 1200);
+      return true;
+    }
     const a = sim.actors[0];
     const ownHalf = (a.team === "blue" ? a.z : -a.z) >= 2;
     notice(a.crates <= 0 ? "No crates left · your stand or an ammo cache gives you 3 more" : !a.grounded ? "Land first, then drop a crate" : !ownHalf ? "Crates only go down on your own half" : "No room there · face open ground and try again", 1600);
@@ -850,9 +854,16 @@
     if (!e.repeat) passBlock();
   };
   // B places a crate. The page keeps B for itself outside debug (test bananas), so it is heard here directly.
+  // Caught first, as Tab is: a menu control left focused (the Ooga picker, a button) would otherwise take the key, and
+  // only a text field keeps it.
   const onBuildKey = (e) => {
-    if ((e.key !== "b" && e.key !== "B") || e.repeat || phase !== "play" || quiz.open || e.metaKey || e.ctrlKey || e.altKey || BL.controls.uiKey(e)) return;
-    buildCrate();
+    if ((e.key !== "b" && e.key !== "B" && e.code !== "KeyB") || phase !== "play" || quiz.open || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || (t.closest && t.closest("input, textarea")))) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    if (!e.repeat) buildCrate();
   };
   // A number key picks its tool; one you don't have says where to get it instead.
   const keyTool = (k) => {
@@ -1529,7 +1540,7 @@
     el.canvas.addEventListener("mousedown", onRightDown);
     el.canvas.addEventListener("contextmenu", noMenu);
     window.addEventListener("keydown", onCrouchKey);
-    window.addEventListener("keydown", onBuildKey);
+    window.addEventListener("keydown", onBuildKey, true);
     window.addEventListener("keydown", onTabKey, true);
     window.addEventListener("keyup", onCrouchKey);
     el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
@@ -1695,7 +1706,7 @@
     el.canvas.removeEventListener("mousedown", onRightDown);
     el.canvas.removeEventListener("contextmenu", noMenu);
     window.removeEventListener("keydown", onCrouchKey);
-    window.removeEventListener("keydown", onBuildKey);
+    window.removeEventListener("keydown", onBuildKey, true);
     window.removeEventListener("keydown", onTabKey, true);
     window.removeEventListener("keyup", onCrouchKey);
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
