@@ -313,14 +313,12 @@
     round.push(along(turn([[0, 0], [0.055, 0], [0.055, len - 0.12], [0.045, len - 0.08], [0.038, len - 0.03], [0.03, len]], 14, BLACK), wx, wy - ay * len, wz - az * len, 0, ay, az));
     flat.push(beam(wx - 0.04, wy - ay * 0.2, wz - az * 0.2, wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03, 0.018, STEEL_DK));
     round.push(moved(turn([[0, -0.02], [0.022, -0.015], [0.022, 0.015], [0, 0.02]], 10, BLACK), wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03));
-    // The fork stick, right of the column: its pedestal up from the floor against the dash, a plate on its top, the
-    // rubber boot, the shaft and the red grip.
-    const { x: kx, y: ky, z: kz, grip } = STICK, dx = grip[0] - kx, dy = grip[1] - ky, dz = grip[2] - kz;
+    // The fork stick's pedestal, right of the column, up from the floor against the dash, a plate on its top and the
+    // rubber boot the stick (`stick`) stands in.
+    const { x: kx, y: ky, z: kz } = STICK;
     flat.push(bevelBox({ w: 0.13, h: ky - P.floor, d: 0.14, color: BLACK, bevel: 0.02, offset: { x: kx, y: (ky + P.floor) / 2, z: kz } }));
     flat.push(box({ w: 0.1, h: 0.004, d: 0.1, color: STEEL_DK, offset: { x: kx, y: ky + 0.002, z: kz } }));
     round.push(moved(turn([[0.05, 0], [0.044, 0.014], [0.05, 0.028], [0.042, 0.042], [0.046, 0.056], [0.034, 0.07], [0.02, 0.078], [0, 0.078]], 14, BLACK_B), kx, ky, kz));
-    round.push(along(turn([[0.014, 0], [0.014, Math.hypot(dx, dy, dz)], [0, Math.hypot(dx, dy, dz)]], 10, STEEL), kx, ky, kz, dx, dy, dz));
-    round.push(along(turn([[0, 0], [0.02, 0], [0.032, 0.015], [0.036, 0.05], [0.03, 0.075], [0.016, 0.085], [0, 0.088]], 14, GRIP), ...grip, dx, dy, dz));
     // The cab's floor: a rubber mat ribbed across, and the brake's wide pedal and the throttle's on their arms.
     const mz = (P.dash + P.cab) / 2;
     flat.push(bevelBox({ w: 0.84, h: 0.014, d: P.cab - P.dash - 0.06, color: BLACK_B, bevel: 0.006, offset: { y: P.floor + 0.007, z: mz } }));
@@ -375,6 +373,13 @@
     const mark = boltSolid(0.04, 0.04, 0.008, GOLD, 0.5);
     flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.047, 0));
     return shaded(round, flat);
+  });
+  // The fork stick in its own frame, its pivot in the boot at the origin (`STICK`'s foot): the shaft and the red grip,
+  // which the scene leans back as the forks rise and forward as they fall.
+  const stick = cached(() => {
+    const { x, y, z, grip } = STICK, dx = grip[0] - x, dy = grip[1] - y, dz = grip[2] - z, length = Math.hypot(dx, dy, dz);
+    return shaded([along(turn([[0.014, 0], [0.014, length], [0, length]], 10, STEEL), 0, 0, 0, dx, dy, dz),
+      along(turn([[0, 0], [0.02, 0], [0.032, 0.015], [0.036, 0.05], [0.03, 0.075], [0.016, 0.085], [0, 0.088]], 14, GRIP), dx, dy, dz, dx, dy, dz)]);
   });
   // The key in its own frame, the lock's axis along +z out of the panel: its collar in the lock, the shank, the black
   // head with the bolt in gold on both faces, standing upright at OFF, and a keyring through its foot with a yellow tag
@@ -544,5 +549,5 @@
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, innerMast, CHAIN, chainLink, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, button, cover, doors, decals };
 })();

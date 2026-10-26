@@ -100,6 +100,7 @@
     forklift: ["Hangar forklift", COARSE ? "It moves the Jet's parts round the hangar. Walk up to its cab and tap GET IN." : "It moves the Jet's parts round the hangar. Walk up to its cab and press Space to get in."],
     forkliftButton: ["Big red button · DO NOT PRESS", "Get into the forklift to reach its button."],
     forkliftKey: ["Ignition key", "Get into the forklift to turn its key."],
+    forkliftStick: ["Fork stick", "Get in and start the forklift to work its forks."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -124,8 +125,9 @@
   // the key (`turn`, rad/s); how long the key holds at START while the drive spins up (`crank`, s) and when the dash
   // lights at the chime (`ready`, s); and the beacon's light: how far out its beam's spot falls (`reach`, m), how far it
   // carries and its colour.
-  // How high the forks lift over their rest (the forklift's units) and how fast (units a second).
-  const FORKS = { max: 2, rate: 0.5 };
+  // How high the forks lift over their rest (the forklift's units) and how fast (units a second), and how far the fork
+  // stick leans as they move (radians, back as they rise) and how fast it follows (a second).
+  const FORKS = { max: 2, rate: 0.5, lean: 0.3, ease: 10 };
   const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -221,6 +223,7 @@
     const picture = ([geometry, px, py, pz, rx, ry = 0]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: ry, z: 0 }, sightHidden: true, depthBias: -0.15 });
     // Switched off: the key upright in its lock, the lit parts dim, the beacon dark and the screen blank.
     const key = at(FL.key(), FL.KEY.at, { rotation: { x: FL.KEY.tilt, y: 0, z: 0 } }), screen = picture(decals.screen), lit = createNode({ geometry: FL.lamps(), sightHidden: true });
+    const stick = at(FL.stick(), [FL.STICK.x, FL.STICK.y, FL.STICK.z]);
     lit.glow = POWER.lit[0];
     beacon.glow = POWER.dome[0];
     screen.visible = false;
@@ -230,10 +233,10 @@
     const C = FL.CHAIN, ring = FL.chainLink(), count = Math.floor((C.sheave - C.anchor + Math.PI * C.r + C.sheave - C.carriage) / C.pitch), links = [];
     for (const side of [-1, 1]) for (let i = 0; i < count; i++) links.push(createNode({ geometry: i % 2 ? ring.b : ring.a, position: { x: side * C.x, y: 0, z: 0 }, sightHidden: true }));
     addChild(root, body, createNode({ geometry: FL.mast() }), inner, createNode({ geometry: FL.fittings() }), lit,
-      ...wheels, carriage, ...links, steering, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
+      ...wheels, carriage, ...links, steering, stick, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, inner, carriage, links, lift: 0, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off).
     seat.act = () => !f.on && (powerOn(f), true);
     layChains(f);
@@ -280,6 +283,11 @@
       return true;
     }
     return false;
+  };
+  // A tap on the fork stick from the seat, running, sends the forks all the way up, or down from above halfway.
+  const workStick = (f, cave) => {
+    if (!cave || cave.camp.seat !== f.seat || !f.on || f.startT >= 0) { hud.toast(TIPS.forkliftStick[1]); return; }
+    f.liftTo = f.lift < FORKS.max / 2 ? FORKS.max : 0;
   };
   // A tap on the key from the seat turns it: on when off, off when on.
   const turnKey = (f, cave) => {
@@ -330,14 +338,19 @@
     const facing = Math.abs((m[0] * vx + m[2] * vz) / ((Math.hypot(m[0], m[2]) * Math.hypot(vx, vz)) || 1));
     f.beacon.glow = POWER.dome[1] + POWER.flash * facing ** POWER.sharp;
   };
-  // Running, R raises the forks and F lowers them (borrowed from the view's pitch while it runs): the carriage up its mast,
-  // the inner mast half as far, the chains running over their sheaves.
+  // Running, R raises the forks and F lowers them (borrowed from the view's pitch while it runs), or a tap on the stick
+  // sends them all the way up, or down from above halfway (`liftTo`): the stick leaning, the carriage up its mast, the
+  // inner mast half as far, the chains running over their sheaves.
   const forkLife = (f, dt) => {
     const running = f.on && f.startT < 0 && people && people.player && people.player.camp.seat === f.seat;
     pilot.controls.borrowPitch(running);
-    const dir = running ? pilot.controls.axes.keyPitch : 0;
+    const keys = running ? pilot.controls.axes.keyPitch : 0;
+    if (keys || !running) f.liftTo = -1;
+    const dir = keys || (f.liftTo >= 0 ? Math.sign(f.liftTo - f.lift) : 0);
+    f.stick.rotation.x += (dir * FORKS.lean - f.stick.rotation.x) * Math.min(1, dt * FORKS.ease);
     if (!dir) return;
-    const lift = clamp(f.lift + dir * FORKS.rate * dt, 0, FORKS.max);
+    const lift = f.liftTo >= 0 && !keys ? f.lift + clamp(f.liftTo - f.lift, -FORKS.rate * dt, FORKS.rate * dt) : clamp(f.lift + dir * FORKS.rate * dt, 0, FORKS.max);
+    if (lift === f.liftTo) f.liftTo = -1;
     if (lift === f.lift) return;
     f.lift = lift;
     f.carriage.position.y = BL.forkliftModels.PLACES.lift + lift;
@@ -691,7 +704,8 @@
     // The button under its cover, ahead of the forklift round it.
     input.add(s.forklift.button, { kind: "forkliftButton", preset: null, priority: 1 }, { radius: 0.18 });
     input.add(s.forklift.key, { kind: "forkliftKey", preset: null, priority: 1 }, { radius: 0.07 });
-    targets.push(s.forklift.button, s.forklift.key);
+    input.add(s.forklift.stick, { kind: "forkliftStick", preset: null, priority: 1 }, { radius: 0.12 });
+    targets.push(s.forklift.button, s.forklift.key, s.forklift.stick);
     return s;
   };
 
@@ -884,6 +898,7 @@
         if (o.kind === "terminal" && scene.terminals.near && scene.terminals.press()) return;
         if (o.kind === "forkliftButton") return pressButton(scene.forklift, people && people.player);
         if (o.kind === "forkliftKey") return turnKey(scene.forklift, people && people.player);
+        if (o.kind === "forkliftStick") return workStick(scene.forklift, people && people.player);
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
