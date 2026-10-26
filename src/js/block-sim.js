@@ -1080,8 +1080,9 @@
       }
       a.x += a.vx * dt;
       a.z += a.vz * dt;
-      // The wind shoves anyone not stuck fast: hard in the air, a little underfoot.
-      if (free) {
+      // The wind shoves anyone in the air; underfoot only a storm does, so an Ooga standing still in a breeze stays put.
+      const storm = wind.strength > CONFIG.WIND.breeze * 1.2;
+      if (free && (!a.grounded || storm)) {
         const k = (a.grounded ? CONFIG.GROUND_WIND : CONFIG.AIR_WIND) * dt;
         a.x += wind.x * k;
         a.z += wind.z * k;
