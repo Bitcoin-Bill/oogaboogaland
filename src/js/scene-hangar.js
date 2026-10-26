@@ -248,7 +248,7 @@
       ...wheels, carriage, ...links, steering, stick, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, helm, steer: 0, speed: 0, side: 1, getInZ: 0, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, lifting: false, stick, steering, helm, steer: 0, speed: 0, side: 1, getInZ: 0, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off) beside the cab wherever it stands.
     seat.act = () => {
       if (!f.on) { powerOn(f); return true; }
@@ -384,10 +384,12 @@
     if (keys || !running) f.liftTo = -1;
     const dir = keys || (f.liftTo >= 0 ? Math.sign(f.liftTo - f.lift) : 0);
     f.stick.rotation.x += (dir * FORKS.lean - f.stick.rotation.x) * Math.min(1, dt * FORKS.ease);
+    f.lifting = false;
     if (!dir) return;
     const lift = f.liftTo >= 0 && !keys ? f.lift + clamp(f.liftTo - f.lift, -FORKS.rate * dt, FORKS.rate * dt) : clamp(f.lift + dir * FORKS.rate * dt, 0, FORKS.max);
     if (lift === f.liftTo) f.liftTo = -1;
     if (lift === f.lift) return;
+    f.lifting = true;
     f.lift = lift;
     f.carriage.position.y = BL.forkliftModels.PLACES.lift + lift;
     f.inner.position.y = lift / 2;
@@ -1199,6 +1201,7 @@
     forkLife(s.forklift, dt);
     steerLife(s.forklift, dt);
     driveLife(s.forklift, dt);
+    audio.forkliftWork(Math.abs(s.forklift.speed) / DRIVE.forward, s.forklift.lifting ? 1 : 0);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
