@@ -131,13 +131,18 @@
     // from the line and the tunnel (`porchOf`).
     walk: [[2.5, 17.6, 23.7, 26.3], [17.6, 20.2, 0, 26.3]],
     // Level 2 on the left, while the Lightning Jet Hangar is open (`hangarEntry`): the walkway from the balcony's left
-    // side straight along the front wall, over the lowered outcrop, to the hangar's door at its end; decks
+    // side straight along the front wall, over the lowered outcrop, to the landing before the hangar's door; decks
     // [x0, x1, z0, z1], as `walk`.
-    walkLeft: [[-20.2, -2.5, 23.7, 26.3]],
+    walkLeft: [[-17, -2.5, 23.7, 26.3]],
     // The Lightning Jet Hangar's door: in the left wall at the walkway's end, at the balcony's level over the front of
     // the pit, forward of Kortik's station, facing back along the walkway as line C's tunnel faces into the hall. The
     // front wall is set back over the walkway (`HANGAR_SET_BACK`) so the arch and its banners stand clear of the rock.
     hangar: { x: -20.8, y: LEVEL.main, z: 25, turn: Math.PI / 2 },
+    // The landing before the hangar's door, at the walkway's end: a deck as wide as the door's frame and its header,
+    // so the walkway, narrower than the door, comes out onto deck either side of it, seen from the hall or through the
+    // door from the hangar. Railed but where the walkway arrives and along the door, with a lantern post at each outer
+    // corner (`hangarLamps`).
+    hangarLanding: { x: -18.6, y: LEVEL.main, z: 25, w: 3.2, d: 8.6 },
     // Every other flight of stairs, [x, y, z] at the bottom and at the top and its width, read by the scaffold that
     // builds them (cutting the rail wherever one lands) and by the floor an Ooga walks: pit to the
     // core's walkway, the main level to the high lines up the lines' inner sides, the high
@@ -394,8 +399,8 @@
     const [gx, , , , gy1, , gw] = L.stairway;
     landings.push([gx, gy1, e.z - e.d / 2 + 0.1, gw / 2 + 0.1], [e.x + e.w / 2 - 0.1, e.y, (a0 + a1) / 2, (a1 - a0) / 2 - 0.1]);
     if (hangarEntry()) {
-      const [[, , b0, b1]] = L.walkLeft;
-      landings.push([e.x - e.w / 2 + 0.1, e.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1]);
+      const [[, , b0, b1]] = L.walkLeft, hl = L.hangarLanding;
+      landings.push([e.x - e.w / 2 + 0.1, e.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1], [hl.x + hl.w / 2 - 0.1, hl.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1]);
     }
     const cutsFor = (d) => landings.filter(([x, y, z]) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 1 && Math.abs(z - d.z) < d.d / 2 + 1).map(([x, , z, ...rest]) => [x - d.x, z - d.z, ...rest]);
     return { ringBridges, topBridges, cutsFor };
@@ -403,22 +408,25 @@
   // Every deck and the edges it is railed along (`deckParts`' `rails`), with how far its posts reach down where that is
   // not to whatever stands under it: railed all round, open only where something lands on it (`railPlan`'s cuts); the
   // galleries' backs are the wall, and they hang from it on brackets rather than stand on posts, which would land in
-  // the porches below them; Kortik's switchboard stands along his deck's west edge, where a rail would be.
+  // the porches below them; Kortik's switchboard stands along his deck's west edge, where a rail would be; and the
+  // hangar's landing is open along its door, its posts standing on the lowered outcrop where they come down on it.
   const deckRailing = cached(() => {
     const L = LAYOUT;
     return [...L.bays.map((b) => [b, "nsew"]), [L.switchboard, "nsew"], [L.platform, "nsew"], [L.kortik, "nse"], [L.lookout, "nsew"],
-      [L.lookoutDeck, "nsew", 0], [L.lookoutApproach, "ew", 0], [L.landing, "s"], ...L.galleries.map((g) => [g, "swe", 0]), [L.entrance, "nwe"]];
+      [L.lookoutDeck, "nsew", 0], [L.lookoutApproach, "ew", 0], [L.landing, "s"], ...L.galleries.map((g) => [g, "swe", 0]), [L.entrance, "nwe"],
+      ...hangarEntry() ? [[L.hangarLanding, "nse", (x, z) => L.hangarLanding.y - outcropTop(L.hangarLanding.x + x, L.hangarLanding.z + z)]] : []];
   });
   // The rails along level 2's walkway round the right wall, from the balcony's rail to the Harbor porch's, every corner
-  // one shared post; along both sides of the hangar's walkway on the left while it is open; and along each line's porch
+  // one shared post; along both sides of the hangar's walkway on the left while it is open, to the landing's rail; and
+  // along each line's porch
   // out to its peer tunnel from its deck's rail: [x0, z0, x1, z1, y, ends], as `railParts` takes them.
   const walkRails = cached(() => {
     const L = LAYOUT, e = L.entrance, [[, , a0, a1], [s1x0, s1x1, s1z0]] = L.walk, out = [];
     const ex = e.x + e.w / 2 - 0.1, wx = s1x0 + 0.1;
     out.push([ex, a0 + 0.1, wx, a0 + 0.1, e.y, [false, true]], [ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, e.y, [false, true]], [wx, a0 + 0.1, wx, s1z0 - 0.1, e.y, [false, true]]);
     if (hangarEntry()) {
-      const [[x0, , z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1;
-      for (const z of [z0 + 0.1, z1 - 0.1]) out.push([lx, z, x0 + 0.1, z, e.y, [false, true]]);
+      const [[, , z0, z1]] = L.walkLeft, hl = L.hangarLanding, lx = e.x - e.w / 2 + 0.1;
+      for (const z of [z0 + 0.1, z1 - 0.1]) out.push([lx, z, hl.x + hl.w / 2 - 0.1, z, e.y, [false, false]]);
     }
     for (const t of L.tunnels) {
       const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
@@ -452,10 +460,11 @@
     const [[ax0, ax1, az0, az1], [bx0, bx1, bz0, bz1]] = L.walk, y2 = L.entrance.y;
     rects.push(ax0 - 0.3, ax1 + 0.3, az0 + 0.15, az1 - 0.15, y2, bx0 + 0.15, bx1 - 0.15, bz0 - 0.3, bz1 - 0.15, y2);
     if (hangarEntry()) {
-      const [[cx0, cx1, cz0, cz1]] = L.walkLeft, h = L.hangar;
-      rects.push(cx0 + 0.15, cx1 + 0.3, cz0 + 0.15, cz1 - 0.15, y2);
+      const [[cx0, cx1, cz0, cz1]] = L.walkLeft, h = L.hangar, hl = L.hangarLanding;
+      rects.push(cx0 - 0.3, cx1 + 0.3, cz0 + 0.15, cz1 - 0.15, y2);
+      rect(hl);
       // The hangar door's threshold runs on in under its shield, so a walker keeps its footing until it crosses.
-      rects.push(h.x - 0.6, cx0 + 0.3, h.z - HANGAR_DOOR.half + 0.1, h.z + HANGAR_DOOR.half - 0.1, h.y);
+      rects.push(h.x - 0.6, hl.x - hl.w / 2 + 0.3, h.z - HANGAR_DOOR.half + 0.1, h.z + HANGAR_DOOR.half - 0.1, h.y);
     }
     for (const t of L.tunnels) {
       const [x0, x1, z0, z1] = porchOf(t);
@@ -556,6 +565,13 @@
     // Kortik's switchboard, desk, stool, side table and crates.
     const k = L.kortik, kx = k.x - k.w / 2 + KORTIK.face;
     for (const [along, out, r] of KORTIK.blocks) block(kx + out, k.z - along, r, k.y - 0.5, k.y + 3);
+    // On the hangar's landing, what its width brings within reach: the door's frame posts and the legs of its arch
+    // either side of the opening, and the lantern posts.
+    if (hangarEntry()) {
+      const h = L.hangar, c = Math.cos(h.turn), sn = Math.sin(h.turn), at = (lx, lz) => [h.x + lx * c + lz * sn, h.z - lx * sn + lz * c];
+      for (const s of [-1, 1]) for (const [lx, lz, r] of [[HANGAR_DOOR.post, 0.35, 0.35], [2.85, 0.1, 0.65]]) block(...at(s * lx, lz), r, h.y - 0.5, h.y + 4);
+      for (const [kind, x, , z] of hangarLamps()) if (kind === "post") block(x, z, 0.2, h.y - 0.5, h.y + 3);
+    }
     // The rails along the decks' edges (`deckRailing`, cut by `railPlan`) and the walkways (`walkRails`), as boxes
     // [x0, x1, z0, z1, from, to] round each rail from just past its outer face to its inner one, in the way of walkers
     // on foot on that deck (`railClear`), so a body stops at a rail rather than in it; walkers below pass under and a
@@ -1085,15 +1101,17 @@
       ["post", d.x + 1.9, d.y, d.z - d.d / 2 + 0.25, Math.PI], ["post", d.x + d.w / 2 - 0.25, d.y, d.z + d.d / 2 - 0.25, 0]];
   };
   const kortikLights = () => KORTIK.lanterns.map(([along, foot, out, scale]) => kortikAt(along, foot + 0.4 * scale, out));
-  // While the hangar is open: the lamps from its door's header and those on its walkway's hall-side rail, which take
-  // the place of the balcony's left rail lamp where the walkway opens it. `lighting()` in `scene-factory.js` and the
+  // While the hangar is open: the lamps from its door's header, those on its walkway's hall-side rail, which take the
+  // place of the balcony's left rail lamp where the walkway opens it, standing on that rail's posts, and a lantern post
+  // at each of the landing's outer corners, its arm out over the landing. `lighting()` in `scene-factory.js` and the
   // hall's window hang the same.
   const hangarLamps = () => {
     if (!hangarEntry()) return [];
-    const h = LAYOUT.hangar, c = Math.cos(h.turn), sn = Math.sin(h.turn), [[x0, x1, z0]] = LAYOUT.walkLeft, y = LAYOUT.entrance.y, out = [];
+    const L = LAYOUT, h = L.hangar, hl = L.hangarLanding, e = L.entrance, c = Math.cos(h.turn), sn = Math.sin(h.turn), [[, , z0]] = L.walkLeft, out = [];
     for (const [lx, ly, lz] of HANGAR_DOOR.lamps) out.push(["hang", h.x + lx * c + lz * sn, h.y + ly, h.z - lx * sn + lz * c]);
-    const n = Math.max(2, Math.round((x1 - x0) / 1.4) + 1);
-    for (const f of [0.2, 0.5, 0.8]) { const k = Math.round(f * (n - 1)) / (n - 1); out.push(["rail", x1 + (x0 - x1) * k, y, z0 + 0.1]); }
+    const rx0 = e.x - e.w / 2 + 0.1, rx1 = hl.x + hl.w / 2 - 0.1, n = Math.max(1, Math.round(Math.abs(rx1 - rx0) / 1.5));
+    for (const f of [0.2, 0.5, 0.8]) out.push(["rail", rx0 + (rx1 - rx0) * Math.round(f * n) / n, e.y, z0 + 0.1]);
+    for (const s of [-1, 1]) out.push(["post", hl.x + hl.w / 2 - 0.45, hl.y, hl.z + s * (hl.d / 2 - 0.45), s * Math.PI / 2]);
     return out;
   };
   // Where the lanterns hang, by the rules `lighting()` in `scene-factory.js` hangs them: [kind, x, y, z, turn] each,
@@ -1240,9 +1258,12 @@
       parts.push(...railLite(ex, a0 + 0.1, wx, a0 + 0.1, e.y, { ends: [false, true] }), ...railLite(ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, e.y, { ends: [false, true] }), ...railLite(wx, a0 + 0.1, wx, s1z0 - 0.1, e.y, { ends: [false, true] }));
       // And the hangar's walkway on the left, its mirror, while the hangar is open.
       if (hangarEntry()) {
-        const [[x0, x1, z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1;
+        const [[x0, x1, z0, z1]] = L.walkLeft, hl = L.hangarLanding, lx = e.x - e.w / 2 + 0.1, rx = hl.x + hl.w / 2 - 0.1;
         parts.push(span(x0, x1, e.y - 0.2, e.y, z0, z1, TIMBER));
-        for (const z of [z0 + 0.1, z1 - 0.1]) parts.push(...railLite(lx, z, x0 + 0.1, z, e.y, { ends: [false, true] }));
+        for (const z of [z0 + 0.1, z1 - 0.1]) parts.push(...railLite(lx, z, rx, z, e.y, { ends: [false, false] }));
+        // And the landing before the door, and its rails.
+        parts.push(span(hl.x - hl.w / 2, hl.x + hl.w / 2, hl.y - 0.2, hl.y, hl.z - hl.d / 2, hl.z + hl.d / 2, TIMBER));
+        for (const [ax, az, bx, bz, from, to] of models.deckRailSpans(hl.w, hl.d, "nse", railPlan().cutsFor(hl))) parts.push(...railLite(hl.x + ax, hl.z + az, hl.x + bx, hl.z + bz, hl.y, { ends: [from, to] }));
       }
       for (const [ax, ay, az, bx, by, bz, w] of L.stairs) parts.push(board(ax, ay, az, bx, by, bz, w - 0.1, TIMBER));
       for (const [bx0, bz0, bx1, bz1] of RING_BRIDGES) parts.push(board(bx0, M, bz0, bx1, M, bz1, 2, TIMBER));
