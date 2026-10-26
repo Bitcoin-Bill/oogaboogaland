@@ -49,7 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
-    GOLD_GUNS: 2, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
+    GOLD_GUNS: 2, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -157,7 +157,9 @@
       // Power-up spots, each holding one of `POWERS` until someone runs through it.
       powers: [[-6, 18], [6, -18], [16, 11], [-16, -11], [0, 9.5], [0, -9.5]],
       // The campfire the potato Oogas dance round, out on the halfway line by the field's edge.
-      fire: [-20, 0]
+      fire: [-20, 0],
+      // Each side's catapult, inside its own fort beside the stand.
+      catapults: both([[-5, 29.5]])
     };
   };
 
@@ -196,13 +198,14 @@
       id: "town", name: "Ooga Town", BLOCKS, steps: stepSet,
       guard: { blue: { x: 0, z: 21.5 }, red: { x: 0, z: -21.5 } },
       traps: [[-12.5, 4], [12.5, -4], [7, 21], [-7, -21], [-19, 8], [19, -8], [0, 6.5], [0, -6.5]],
-      crates: both([[-4.6, 22], [4.6, 22], [-4.5, 27.5], [4.5, 27.5]]),
+      crates: both([[-4.6, 22], [4.6, 22], [-3.2, 27.5], [4.5, 27.5]]),
       plug: both([[0, 24.5], [-1.3, 25.8], [1.3, 25.8]]),
       alley: both([[-3, 36], [3, 36], [0, 33.4]]),
       caches: [[12.5, 3, 13.5], [-12.5, 3, 13.5], [12.5, 3, -13.5], [-12.5, 3, -13.5], [0, 3, 32.5], [0, 3, -32.5]],
       tramps: [[-15, 19], [15, -19], [-5, 4], [5, -4]],
       powers: [[-6.5, 17], [6.5, -17], [19, 12], [-19, -12], [0, 4], [0, -4]],
-      fire: [-19.5, 0]
+      fire: [-19.5, 0],
+      catapults: both([[-6, 29]])
     };
   };
   const ARENAS = { fort: fortChaos(), town: oogaTown() };
@@ -212,6 +215,8 @@
   for (const A of Object.values(ARENAS)) {
     A.W = W; A.L = L;
     A.peels = PEELS.map(([dx, dz]) => [A.fire[0] + dx, A.fire[1] + dz]);
+    // Where a catapult flings its Ooga: over the middle of the other end, a little in front of its stand.
+    A.drops = { blue: [0, -25], red: [0, 25] };
     A.stands = { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } };
     // Each tower's footprint [x0, x1, z0, z1] and the ladder up its inward side: a zone [x0, x1, z0, z1] to climb in,
     // and the way into the tower (dx, dz) a climber pushes toward.
@@ -363,7 +368,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false,
+      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -430,7 +435,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -648,6 +653,28 @@
   const trampAt = (a) => {
     for (const [x, z] of ARENA.tramps) if ((a.x - x) ** 2 + (a.z - z) ** 2 < CONFIG.TRAMP_R * CONFIG.TRAMP_R) return true;
     return false;
+  };
+  // A catapult: standing on your own side's, after fortifying and with no crate in your arms, it flings you high over
+  // the field; at the top of the throw a parachute opens (`flight` 1 is the throw, 2 the parachute) and you drift down
+  // into the other end, steering as you go.
+  const nearCatapult = (sim, a) => {
+    if (sim.prep > 0 || a.holding || a.flight || a.riding || !a.grounded || a.y > 0.2) return false;
+    const [x, z] = ARENA.catapults[a.team][0];
+    return (a.x - x) ** 2 + (a.z - z) ** 2 < CONFIG.CATAPULT_R * CONFIG.CATAPULT_R;
+  };
+  const launch = (sim, id = 0) => {
+    use(sim);
+    const a = sim.actors[id];
+    if (sim.over || a.splat > 0 || a.trapped > 0 || a.burnt > 0 || a.slip > 0 || !nearCatapult(sim, a)) return false;
+    const [tx, tz] = ARENA.drops[a.team], dx = tx - a.x, dz = tz - a.z, d = Math.hypot(dx, dz);
+    // Straight up to `LAUNCH_H` and over the drop spot at the top of the arc.
+    a.vy = Math.sqrt(2 * CONFIG.FALL * CONFIG.LAUNCH_H);
+    const t = a.vy / CONFIG.FALL;
+    a.vx = dx / d * (d / t); a.vz = dz / d * (d / t);
+    a.flight = 1; a.grounded = false; a.jumps = 0; a.crouch = false;
+    a.heading = Math.atan2(dx, dz);
+    emit(sim, "launch", a.team, id, a.x, a.y, a.z);
+    return true;
   };
   // True when actor `a` stands on either sniper tower's platform.
   const onTower = (a) => {
@@ -1040,8 +1067,8 @@
       }
       const free = a.splat <= 0 && a.trapped <= 0;
       let jump = false;
-      if (a.slip > 0) {
-        // No steering, no jumping: the slide carries on.
+      if (a.slip > 0 || a.flight === 1) {
+        // No steering, no jumping: the slide (or the catapult's throw) carries on.
         if (!a.bot) input.jump = 0;
         a.botJump = false;
       } else if (a.bot) {
@@ -1063,7 +1090,7 @@
           a.stamina = Math.min(CONFIG.SPRINT_S, a.stamina + dt * CONFIG.SPRINT_S / CONFIG.SPRINT_REFILL);
           if (a.tired && a.stamina >= CONFIG.SPRINT_S * CONFIG.SPRINT_MIN) a.tired = false;
         }
-        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
+        const speed = CONFIG.SPEED * (a.crouch ? CONFIG.CROUCH_SPEED : 1) * (a.sprinting ? CONFIG.SPRINT : 1) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1) * (a.flight === 2 ? CONFIG.CHUTE_SPEED / CONFIG.SPEED : 1);
         const tx = input.x * speed, tz = input.z * speed, k = Math.min(1, CONFIG.ACCEL * dt);
         a.vx += (tx - a.vx) * k;
         a.vz += (tz - a.vz) * k;
@@ -1071,6 +1098,19 @@
         // press in the air is the double jump.
         jump = !!input.jump;
         input.jump = 0;
+      }
+      // Flung by a catapult: no steering, nothing in the way, until the top of the arc opens the parachute.
+      if (a.flight === 1) {
+        a.vy -= CONFIG.FALL * dt;
+        a.x += a.vx * dt; a.y += a.vy * dt; a.z += a.vz * dt;
+        a.moving = 0;
+        if (a.vy <= 0) {
+          a.flight = 2;
+          a.vx *= 0.08; a.vz *= 0.08; a.vy = -CONFIG.CHUTE_FALL;
+          emit(sim, "chute", a.team, a.id, a.x, a.y, a.z);
+        }
+        if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
+        continue;
       }
       // On a zipline the cable carries you; a jump lets go.
       if (a.riding) {
@@ -1080,7 +1120,7 @@
         continue;
       }
       // A jump from the ground, and one more in the air, carrying or not; a net stops both.
-      if (jump && free && a.netted <= 0) {
+      if (jump && free && a.netted <= 0 && !a.flight) {
         const k = a.carrying ? CONFIG.CARRY_JUMP : 1;
         if (a.grounded) {
           a.vy = CONFIG.JUMP * k; a.grounded = false; a.jumps = 1;
@@ -1126,12 +1166,14 @@
           emit(sim, "climbed", a.team, a.id, a.x, a.y, a.z);
         }
       } else if (a.vy !== 0 || a.y > ground) {
-        a.vy -= CONFIG.FALL * dt;
+        // Under a parachute the fall is a steady drift.
+        if (a.flight === 2) a.vy = -CONFIG.CHUTE_FALL; else a.vy -= CONFIG.FALL * dt;
         a.y += a.vy * dt;
         const ceiling = ceilingAt(a.x, a.z, a.y - a.vy * dt);
         if (a.vy > 0 && a.y + heightOf(a) > ceiling) { a.y = ceiling - heightOf(a); a.vy = 0; }
         if (a.y <= ground) {
           if (!a.grounded && a.vy < -1) emit(sim, "land", a.team, a.id, a.x, ground, a.z);
+          if (a.flight) { a.flight = 0; emit(sim, "touchdown", a.team, a.id, a.x, ground, a.z); }
           a.y = ground; a.vy = 0; a.grounded = true; a.jumps = 0;
         } else a.grounded = false;
       } else { a.y = ground; a.grounded = true; }
@@ -1222,7 +1264,7 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENAS, MAPS, TEAMS, other, create, reset, step, tick, setLive, newBlock, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENAS, MAPS, TEAMS, other, create, reset, step, tick, setLive, newBlock, launch, nearCatapult, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
   // The map last stepped (or reset), for the scene's and models' reads.
   Object.defineProperty(BL.blockSim, "ARENA", { get: () => ARENA, enumerable: true });
 })();

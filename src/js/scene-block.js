@@ -93,7 +93,7 @@
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
-  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null;
+  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null, catapults = null, catNear = false;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
   // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
@@ -150,7 +150,8 @@
       const netted = createNode({ geometry: BM.draped(), visible: false });
       const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
       const trolley = createNode({ geometry: BM.trolley(), position: { x: 0, y: C.ZIP_HANG + 0.15, z: 0 }, visible: false });
-      addChild(body, ring, blob, bubble, netted, held, trolley);
+      const chute = createNode({ geometry: BM.chute(0), visible: false });
+      addChild(body, ring, blob, bubble, netted, held, trolley, chute);
       // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
       let gun = null;
       if (cave) {
@@ -170,7 +171,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, trolley, gun, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, gun, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -486,6 +487,7 @@
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
     else if (t === "gold") feed(`${who} won a Golden AK!`, e.team);
+    else if (t === "launch") feed(`${who} catapulted toward the ${TEAM_NAME[SIM.other(e.team)]} fort!`, e.team);
     else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden AK!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
@@ -651,7 +653,16 @@
         if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : "HALVING!", 900);
         notice(words[kind], 2600);
         updateStrip();
-      } else if (e.type === "gold") {
+      } else if (e.type === "launch") {
+        for (const c of catapults) if (c.team === e.team) c.at = sceneTime;
+        fx.burst(e.x, 1, e.z, 14, WOOD_BITS, 2.4);
+        audio.cues.boom(me ? 0.6 : 0.3);
+        if (me) { center("LAUNCH!", 900); }
+      } else if (e.type === "chute") {
+        audio.cues.zipOn();
+        if (me) notice("Parachute open · steer with W A S D · shoot on the way down", 2600);
+      } else if (e.type === "touchdown") { if (me) notice("Touchdown in their fort!", 1400); }
+      else if (e.type === "gold") {
         fx.burst(e.x, e.y + 1.4, e.z, 24, ORANGE_BITS, 3);
         audio.cues.power();
         if (me) {
@@ -791,7 +802,7 @@
       if (n) n.textContent = k === "paint" ? "∞" : k === "sniper" ? (a.sniper ? "∞" : "tower") : k === "gold" ? (a.gold ? "∞" : "—") : k === "crate" ? String(a.crates) : String(a[k]);
       if (k === "gold") b.disabled = !a.gold;
       if (k === "pass") b.disabled = !a.carrying && !a.holding;
-      if (k === "zip") b.disabled = !SIM.nearZip(sim, a);
+      if (k === "zip") b.disabled = !SIM.nearZip(sim, a) && !SIM.nearCatapult(sim, a);
       if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
@@ -872,6 +883,7 @@
   // Ride your tower's zipline down into the rival fort, from the platform by its gap.
   const zipNow = () => {
     if (phase !== "play") return false;
+    if (SIM.launch(sim, 0)) return true;
     if (SIM.zip(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
     notice(sim.prep > 0 ? "The zipline opens when the round starts" : a.holding ? "Put the crate down first (F)" : "Climb a sniper tower's ladder and stand by the cable to ride", 1600);
@@ -944,9 +956,11 @@
       a.held.visible = s.holding && !(i === 0 && cam.first);
       if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
       a.trolley.visible = s.riding;
+      a.chute.visible = s.flight === 2;
+      if (a.chute.visible) a.chute.geometry = BM.chute(TEAM_INDEX[s.team]);
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
+      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -984,7 +998,13 @@
         p.legL.rotation.x = -0.9 * Math.max(0, w); p.legR.rotation.x = -0.9 * Math.max(0, -w);
         continue;
       }
-      if (s.riding || s.climbing) {
+      if (s.flight === 1) {
+        // Flung: tucked up, arms in.
+        p.armL.rotation.x = p.armR.rotation.x = -0.6;
+        p.legL.rotation.x = p.legR.rotation.x = -1.2;
+        continue;
+      }
+      if (s.riding || s.climbing || s.flight === 2) {
         // Hanging from the trolley, or hand over hand up a ladder.
         const k = s.climbing ? Math.sin(elapsed * 9) * 0.4 : 0;
         p.armL.rotation.x = -2.9 + k; p.armR.rotation.x = -2.9 - k;
@@ -1116,6 +1136,17 @@
     }
     // An ammo cache glows while it's ready and goes grey while it rests.
     for (let i = 0; i < caches.length; i++) caches[i].geometry = BM.cache(sim.caches[i].dark > 0 ? 1 : 0);
+    // A catapult's arm whips over when it throws, then winds back down.
+    for (const c of catapults) {
+      const t = elapsed - c.at, up = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 1.4);
+      c.arm.rotation.x = -0.25 + up * 1.9;
+    }
+    const onPad = phase === "play" && SIM.nearCatapult(sim, sim.actors[0]);
+    if (onPad !== catNear) {
+      catNear = onPad;
+      updateTools();
+      if (onPad) notice(`${COARSE ? "Ride" : "E"} fires the catapult · parachute into their fort`, 2400);
+    }
     // The zipline button wakes as the visitor reaches the cable, with a word the first time.
     const near = phase === "play" && !!SIM.nearZip(sim, sim.actors[0]);
     if (near !== zipNear) {
@@ -1365,6 +1396,14 @@
     powerNodes = A.powers.map(([x, z]) => add(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
     trampNodes = A.tramps.map(([x, z]) => add(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
     caches = A.caches.map(([x, y, z]) => add(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
+    // Each side's catapult, aimed at the other end; its arm swings when it throws.
+    catapults = SIM.TEAMS.map((t) => {
+      const [x, z] = A.catapults[t][0], [tx, tz] = A.drops[t], i = TEAM_INDEX[t], turn = Math.atan2(tx - x, tz - z);
+      const node = add(createNode({ geometry: BM.catapult(i), position: { x: x + Math.sin(turn) * 1.6, y: 0, z: z + Math.cos(turn) * 1.6 }, rotation: { x: 0, y: turn, z: 0 } }));
+      const arm = createNode({ geometry: BM.catapultArm(i), position: { x: 0, y: 0.45, z: 0.25 }, rotation: { x: -0.25, y: 0, z: 0 } });
+      addChild(node, arm);
+      return { team: t, arm, at: -10 };
+    });
     const [fx, fz] = A.fire;
     add(createNode({ geometry: BM.firePit(), position: { x: fx, y: 0, z: fz } }));
     fireNode = add(createNode({ geometry: BM.flames(), position: { x: fx, y: 0.05, z: fz } }));
@@ -1598,7 +1637,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · W into a ladder climbs · E zipline · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden AK · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -1678,7 +1717,8 @@
     hud.dispose();
     phase = "board";
     sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
-    mapRoot = fireNode = dancers = peelNodes = null;
+    mapRoot = fireNode = dancers = peelNodes = catapults = null;
+    catNear = false;
     for (const t of SIM.TEAMS) iceNodes[t] = null;
     zipNear = false;
     hud = hooks = input = fx = controls = clock = null;

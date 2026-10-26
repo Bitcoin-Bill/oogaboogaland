@@ -475,5 +475,45 @@
   });
   // A ball of gold paint, for the Golden AK.
   const goldBall = cached(() => { const geo = bevelBox({ w: 0.22, h: 0.22, d: 0.22, color: GOLD, emissive: 0.9 }); geo.castShadow = false; return geo; });
-  BL.blockModels = { goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // A catapult in its team's colours, in its own frame throwing toward +z: a timber base on wheels with two uprights
+  // and a crossbar (`catapult`), and its throwing arm with a bucket (`catapultArm`), pivoting at its foot so the scene
+  // can swing it.
+  const catapult = variants((i) => {
+    const c = TEAM[SIM.TEAMS[i]], parts = [];
+    for (const x of [-0.7, 0.7]) {
+      parts.push(bevelBox({ w: 0.2, h: 0.24, d: 2.2, color: "#6a4a2a", offset: { x, y: 0.3 } }));
+      for (const z of [-0.8, 0.8]) parts.push(bevelBox({ w: 0.14, h: 0.5, d: 0.5, color: "#3a2a1a", offset: { x: x * 1.15, y: 0.25, z } }));
+      parts.push(bevelBox({ w: 0.16, h: 1.4, d: 0.16, color: "#6a4a2a", offset: { x, y: 1.0, z: 0.25 } }));
+    }
+    parts.push(bevelBox({ w: 1.6, h: 0.2, d: 0.2, color: c.deep, offset: { y: 1.6, z: 0.25 } }));
+    parts.push(box({ w: 1.6, h: 0.16, d: 0.16, color: "#6a4a2a", offset: { y: 0.35, z: -0.85 } }));
+    // A pad to stand on, painted in the team's colour so it reads as the way in.
+    parts.push(box({ w: 1.5, h: 0.05, d: 1.5, color: c.paint, emissive: 0.35, offset: { y: 0.03, z: -1.6 } }));
+    return merge(...parts);
+  });
+  const catapultArm = variants((i) => {
+    const c = TEAM[SIM.TEAMS[i]];
+    return merge(
+      bevelBox({ w: 0.16, h: 0.16, d: 2.1, color: "#8a6440", offset: { z: -1.0 } }),
+      bevelBox({ w: 0.6, h: 0.18, d: 0.6, color: c.paint, emissive: 0.2, offset: { y: 0.1, z: -2.1 } }),
+      box({ w: 0.66, h: 0.2, d: 0.08, color: "#5a3a22", offset: { y: 0.2, z: -2.4 } })
+    );
+  });
+  // A parachute: a domed canopy in panels of the team's colour and cream, and four cords down to the shoulders.
+  const chute = variants((i) => {
+    const c = TEAM[SIM.TEAMS[i]], parts = [];
+    for (let k = 0; k < 8; k++) {
+      const a = k / 8 * Math.PI * 2;
+      parts.push(turnedY(box({ w: 0.95, h: 0.12, d: 0.7, color: k % 2 ? c.paint : "#fff3d6", emissive: 0.15, offset: { y: 3.2, z: 0.85 } }), a));
+      parts.push(turnedY(box({ w: 0.7, h: 0.1, d: 0.5, color: k % 2 ? c.light : c.paint, offset: { y: 3.45, z: 0.35 } }), a));
+    }
+    for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
+      const n = 6;
+      for (let k = 0; k < n; k++) parts.push(box({ w: 0.03, h: 0.32, d: 0.03, color: "#ddd2b8", offset: { x: x * (0.25 + 0.75 * k / n), y: 1.7 + k * 0.25, z: z * (0.25 + 0.75 * k / n) } }));
+    }
+    const geo = merge(...parts);
+    geo.castShadow = false;
+    return geo;
+  });
+  BL.blockModels = { catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();
