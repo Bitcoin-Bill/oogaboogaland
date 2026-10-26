@@ -26,6 +26,9 @@
   const SHOULDER_PITCH = 0.42, SHOULDER_LIFT = 0.8, SHOULDER_LIFT_UP = 0.16, SHOULDER_LEVEL = 0.22, SHOULDER_DISTANCE = 3.6, SHOULDER_SIDE = 0.9;
   // A cursor point nearer the body than this (in Ooga heights) is beside it: the shoulder eye cannot centre it.
   const SHOULDER_NEAR = 1.2;
+  // A settled shoulder replay with less side offset than this is a collapsed cursor entry and is repaired. Links saved
+  // before the shoulder moved out kept 0.6 and replay as recorded.
+  const SHOULDER_REPAIR_SIDE = 0.6;
   const SHOULDER_SWAP_RATE = 10, PEEK_CAMERA = 0.34, PEEK_RATE = 14;
   const RIGHT_DOUBLE_TIME = 350, RIGHT_TAP_TRAVEL = 8;
   const LOGIN_VIEW_KEY = "ooga-login-view", LOGIN_VIEW_AGE = 10 * 60 * 1000;
@@ -3533,7 +3536,7 @@
       // Older cursor-target entries saved a collapsed shoulder eye, sometimes
       // with an offset effectively zero. Repair it before holding the replay;
       // waiting for input leaves the first frame centred behind the head.
-      const repairShoulder = shoulderView && !closeWanted && pose.closeMix === 0 && Math.abs(pose.shoulderSide) < SHOULDER_SIDE - 1e-4;
+      const repairShoulder = shoulderView && !closeWanted && pose.closeMix === 0 && Math.abs(pose.shoulderSide) < SHOULDER_REPAIR_SIDE - 1e-4;
       if (repairShoulder) exactCamera = false;
       if (cave) {
         cave.weapon.aiming = pose.combat === undefined ? pose.mode === "shoulder" || closeWanted && !crew.sleeping : !!pose.combat;
