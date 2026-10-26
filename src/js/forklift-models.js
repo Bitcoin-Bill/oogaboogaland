@@ -22,12 +22,13 @@
   const U = 0.125, SCALE = 1.15;
   const YELLOW = "#f2b01e", YELLOW_B = "#e3a114", BLACK = "#1f2125", BLACK_B = "#2b2e34", BLUE = "#2443a8", BLUE_B = "#2b4dbb", GOLD = "#ffc83a";
   const RUBBER = "#17181b", STEEL = "#a9b1bc", STEEL_DK = "#5d6470", RED = "#e8342a", AMBER = "#ffb02e", LAMP = "#fff1b8", TAIL = "#ff3b2e";
-  const FORK = "#4c5159", TIP = "#ffd23e", CHROME = "#d3d9e0";
+  const FORK = "#4c5159", TIP = "#ffd23e", CHROME = "#d3d9e0", GRIP = "#e8542a";
   // The body's palette, by index.
   const PALETTE = [null, YELLOW, YELLOW_B, BLACK, BLACK_B, BLUE, BLUE_B, TAIL];
   const Y = 1, Y_B = 2, K = 3, K_B = 4, B = 5, B_B = 6, T = 7;
   // Where its parts stand: the axles' z, the wheels' radius, width and how far out their middles are; the hull's half
-  // width and its levels (the underbody's top, the cab's floor, the deck the seat stands on, the counterweight's top);
+  // width and its levels (the underbody's top, the cab's floor, the cowl's top, the deck the seat stands on, the
+  // counterweight's top);
   // the cowl's front and the dash's back, the cab's back and the counterweight's front and back (the sides and the back
   // on the voxels' grid, so the decals and doors lie on their faces); the mast's uprights, the carriage's face, how far
   // the forks reach and how high the carriage rests off the floor, the back's vented doors (their half width and their
@@ -35,7 +36,7 @@
   // its cover's hinge at its block's far edge, and the beacon.
   const PLACES = {
     front: -0.98, rear: 0.98, frontR: 0.55, rearR: 0.46, frontW: 0.44, rearW: 0.4, frontX: 0.78, rearX: 0.72,
-    half: 0.875, under: 0.44, floor: 0.6, deck: 1.08, top: 1.6,
+    half: 0.875, under: 0.44, floor: 0.6, cowlTop: 1.12, deck: 1.08, top: 1.6,
     cowl: -1.28, dash: -0.72, cab: 0.08, weight: 0.72, back: 1.5,
     mastX: 0.42, mastZ: -1.5, mastTop: 2.62, face: -1.72, forks: 1.3, lift: 0.08, doorX: 0.62, doorY: [0.64, 1.32],
     postX: 0.74, postFront: -0.9, postRear: 0.8, roof: 2.68,
@@ -62,10 +63,11 @@
     if (Math.abs(x) < 0.42) return Infinity;
     return Math.min(Math.hypot(z - P.front, y - P.frontR) - P.frontR - 0.07, Math.hypot(z - P.rear, y - P.rearR) - P.rearR - 0.07);
   };
-  // The hull's top over z at |x|: the cowl's front rising into the dash, the cab's floor between the dash and the deck
-  // but a fender over each front wheel, the engine's deck, and the counterweight with its top's back edge cut away.
+  // The hull's top over z at |x|: the cowl's, flat up to the dash, where the dashboard stands on it; the cab's floor
+  // between the dash and the deck but a fender over each front wheel, the engine's deck, and the counterweight with its
+  // top's back edge cut away.
   const topAt = (ax, z) => {
-    if (z < P.dash) return z < P.dash - 0.3 ? 1.12 : 1.12 + (z - P.dash + 0.3) / 0.3 * 0.28;
+    if (z < P.dash) return P.cowlTop;
     if (z < P.cab) return ax > 0.46 && z < -0.4 ? 0.98 : P.floor;
     if (z < P.weight) return P.deck;
     return Math.min(P.top, P.top - (z - (P.back - 0.25)));
@@ -229,10 +231,24 @@
     return shaded(round, flat);
   });
 
+  // The instrument panel along the dash's top, sloped toward the driver: where its middle stands, its tilt and its
+  // depth. `dashAt` says where (u across, v up its face) lies, `out` proud of it, and `onDash` stands a part built facing
+  // +z there. On it, [u, v, radius] the gauges, [u, v, half width, half height] the screen, [u, v] the lamp panel, and
+  // [colour, u] the warning lights along its top. The fork stick stands right of the column on a pedestal from the floor:
+  // the pedestal's top, and the stick's grip.
+  const DASH = { x: -0.1, y: 1.34, z: P.dash - 0.08, tilt: -0.55, d: 0.06 };
+  const dashAt = (u, v, out = 0) => {
+    const c = Math.cos(DASH.tilt), s = Math.sin(DASH.tilt), w = DASH.d / 2 + out;
+    return [DASH.x + u, DASH.y + v * c - w * s, DASH.z + v * s + w * c];
+  };
+  const onDash = (geo, u, v, out = 0) => moved(turnedX(geo, DASH.tilt), ...dashAt(u, v, out));
+  const GAUGES = [[-0.05, -0.02, 0.07], [-0.22, -0.035, 0.05]], SCREEN = [0.24, -0.01, 0.075, 0.045], LAMP_PANEL = [-0.33, -0.01];
+  const LIGHTS = [["#3dff7a", 0.17], [AMBER, 0.205], ["#ff3b2e", 0.24], ["#3aa8ff", 0.275], [AMBER, 0.31]];
+  const STICK = { x: 0.19, y: 1.12, z: -0.62, grip: [0.19, 1.34, -0.57] };
+
   // The overhead guard: a post at each corner from the hull up to its roof, the roof's frame and its slats, the work
-  // lights' black housings at its front corners and the beacon's base; the bolt in gold on each side's blue panel; and
-  // the seat on its deck, the steering column and the dashboard on the dash, the lever beside the wheel, and the
-  // button's block with its lamp housings.
+  // lights' black housings at its front corners and the beacon's base; the bolt in gold on each side's blue panel; the
+  // seat on its deck; the cockpit (below); and the button's block.
   const fittings = cached(() => {
     const flat = [], round = [];
     for (const s of [-1, 1]) flat.push(moved(turnedY(boltSolid(0.3, 0.25, 0.04, GOLD, 0.15), s * Math.PI / 2), s * (P.half + 0.018), 0.87, 0.3));
@@ -248,27 +264,60 @@
     flat.push(bevelBox({ w: 0.56, h: CUSHION, d: 0.52, color: BLACK, bevel: 0.05, offset: { x: sx, y: sy + CUSHION / 2, z: sz } }));
     flat.push(moved(turnedX(bevelBox({ w: 0.56, h: 0.6, d: 0.13, color: BLACK, bevel: 0.05, offset: { y: 0.3 } }), 0.12), sx, sy + 0.12, sz + 0.27));
     for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.06, h: 0.18, d: 0.36, color: BLACK_B, bevel: 0.02, offset: { x: sx + s * 0.31, y: sy + 0.2, z: sz + 0.08 } }));
-    // The dashboard: a dark panel along the dash's top facing the driver.
-    flat.push(moved(turnedX(bevelBox({ w: 0.74, h: 0.3, d: 0.06, color: BLACK_B, bevel: 0.02 }), -0.55), -0.1, 1.34, P.dash - 0.08));
+    // The dashboard: a console standing on the cowl, its sloped face the instrument panel under its brow, a bezel round
+    // each gauge, the screen in its frame and the lamp panel's housing (the dials, the screen and the lamps are pictures
+    // and `lamps`).
+    flat.push(bevelBox({ w: 0.74, h: DASH.y - P.cowlTop, d: 0.2, color: BLACK, bevel: 0.02, offset: { x: DASH.x, y: (DASH.y + P.cowlTop) / 2, z: DASH.z - 0.1 } }));
+    flat.push(moved(turnedX(bevelBox({ w: 0.74, h: 0.3, d: DASH.d, color: BLACK_B, bevel: 0.02 }), DASH.tilt), DASH.x, DASH.y, DASH.z));
+    flat.push(onDash(bevelBox({ w: 0.78, h: 0.035, d: 0.1, color: BLACK, bevel: 0.012, offset: { z: 0.03 } }), 0, 0.165));
+    for (const [u, v, r] of GAUGES) round.push(onDash(turnedX(torus(r + 0.008, 0.012, BLACK, 0, 20, 6), Math.PI / 2), u, v, 0.004));
+    const [su, sv, sw, sh] = SCREEN;
+    for (const [w, h, du, dv] of [[2 * sw + 0.03, 0.015, 0, sh + 0.0075], [2 * sw + 0.03, 0.015, 0, -sh - 0.0075], [0.015, 2 * sh, sw + 0.0075, 0], [0.015, 2 * sh, -sw - 0.0075, 0]]) {
+      flat.push(onDash(box({ w, h, d: 0.012, color: BLACK }), su + du, sv + dv, 0.006));
+    }
+    flat.push(onDash(bevelBox({ w: 0.08, h: 0.08, d: 0.02, color: BLACK, bevel: 0.008 }), ...LAMP_PANEL, 0.01));
     // The steering column's shroud along the wheel's axis, up out of the dash to its hub, and its tilt lever.
     const [wx, wy, wz, tilt] = P.steering, ay = Math.cos(tilt), az = Math.sin(tilt), len = 0.44;
     round.push(along(turn([[0, 0], [0.055, 0], [0.055, len - 0.12], [0.045, len - 0.08], [0.038, len - 0.03], [0.03, len]], 14, BLACK), wx, wy - ay * len, wz - az * len, 0, ay, az));
     flat.push(beam(wx - 0.04, wy - ay * 0.2, wz - az * 0.2, wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03, 0.018, STEEL_DK));
     round.push(moved(turn([[0, -0.02], [0.022, -0.015], [0.022, 0.015], [0, 0.02]], 10, BLACK), wx - 0.13, wy - ay * 0.17, wz - az * 0.2 + 0.03));
-    // The lever for the forks, left of the wheel.
-    flat.push(beam(-0.53, 1.36, P.dash - 0.1, -0.53, 1.58, P.dash - 0.02, 0.025, STEEL_DK));
-    round.push(moved(turn([[0, -0.04], [0.035, -0.03], [0.04, 0], [0.035, 0.03], [0, 0.04]], 12, BLACK), -0.53, 1.6, P.dash - 0.01));
-    // The button's block on the dash's right, its top level, and the housings of the two amber lamps beside it.
-    const [bx, by, bz] = P.button;
-    flat.push(bevelBox({ w: 0.3, h: 0.16, d: 0.26, color: BLACK, bevel: 0.025, offset: { x: bx, y: by - 0.08, z: bz } }));
+    // The fork stick, right of the column: its pedestal up from the floor against the dash, a plate on its top, the
+    // rubber boot, the shaft and the red grip.
+    const { x: kx, y: ky, z: kz, grip } = STICK, dx = grip[0] - kx, dy = grip[1] - ky, dz = grip[2] - kz;
+    flat.push(bevelBox({ w: 0.13, h: ky - P.floor, d: 0.14, color: BLACK, bevel: 0.02, offset: { x: kx, y: (ky + P.floor) / 2, z: kz } }));
+    flat.push(box({ w: 0.1, h: 0.004, d: 0.1, color: STEEL_DK, offset: { x: kx, y: ky + 0.002, z: kz } }));
+    round.push(moved(turn([[0.05, 0], [0.044, 0.014], [0.05, 0.028], [0.042, 0.042], [0.046, 0.056], [0.034, 0.07], [0.02, 0.078], [0, 0.078]], 14, BLACK_B), kx, ky, kz));
+    round.push(along(turn([[0.014, 0], [0.014, Math.hypot(dx, dy, dz)], [0, Math.hypot(dx, dy, dz)]], 10, STEEL), kx, ky, kz, dx, dy, dz));
+    round.push(along(turn([[0, 0], [0.02, 0], [0.032, 0.015], [0.036, 0.05], [0.03, 0.075], [0.016, 0.085], [0, 0.088]], 14, GRIP), ...grip, dx, dy, dz));
+    // The cab's floor: a rubber mat ribbed across, and the brake's wide pedal and the throttle's on their arms.
+    const mz = (P.dash + P.cab) / 2;
+    flat.push(bevelBox({ w: 0.84, h: 0.014, d: P.cab - P.dash - 0.06, color: BLACK_B, bevel: 0.006, offset: { y: P.floor + 0.007, z: mz } }));
+    for (let q = 0; q < 8; q++) flat.push(box({ w: 0.78, h: 0.01, d: 0.022, color: BLACK, offset: { y: P.floor + 0.018, z: P.dash + 0.08 + q * 0.08 } }));
+    for (const [px, w] of [[-0.24, 0.16], [0, 0.11]]) {
+      flat.push(beam(px, P.floor + 0.02, P.dash + 0.02, px, P.floor + 0.12, P.dash + 0.1, 0.03, BLACK));
+      flat.push(moved(turnedX(bevelBox({ w, h: 0.024, d: 0.17, color: STEEL_DK, bevel: 0.008 }), 0.75), px, P.floor + 0.14, P.dash + 0.16));
+      for (let q = -1; q <= 1; q++) flat.push(moved(turnedX(box({ w: w - 0.03, h: 0.008, d: 0.02, color: BLACK_B, offset: { y: 0.016, z: q * 0.05 } }), 0.75), px, P.floor + 0.14, P.dash + 0.16));
+    }
+    // A grab handle up the left front post, standing off its back on two brackets.
+    const gz = P.postFront + 0.065;
+    for (const y of [1.45, 2.05]) flat.push(beam(-P.postX, y, gz, -P.postX, y, gz + 0.075, 0.03, BLACK_B));
+    round.push(moved(turn([[0, 0], [0.018, 0], [0.018, 0.68], [0, 0.68]], 10, YELLOW), -P.postX, 1.41, gz + 0.075));
+    // The button's block on the cowl right of the dashboard, its top level: a bezel round the button, the cover's hinge
+    // knuckles along its far edge, and the housings of the two amber lamps beside it.
+    const [bx, by, bz] = P.button, [, hy, hz] = P.hinge;
+    flat.push(bevelBox({ w: 0.3, h: by - P.cowlTop, d: 0.26, color: BLACK, bevel: 0.025, offset: { x: bx, y: (by + P.cowlTop) / 2, z: bz } }));
+    round.push(moved(torus(0.085, 0.012, BLACK_B, 0, 22, 6), bx, by + 0.006, bz));
+    for (const s of [-1, 1]) round.push(moved(turnedZ(turn([[0, -0.035], [0.016, -0.035], [0.016, 0.035], [0, 0.035]], 10, STEEL_DK), Math.PI / 2), bx + s * 0.09, hy + 0.012, hz));
     for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.07, h: 0.07, d: 0.07, color: BLACK_B, bevel: 0.015, offset: { x: bx + s * 0.19, y: by + 0.02, z: bz + 0.06 } }));
     return shaded(round, flat);
   });
-  // The lit parts, on one node so they can dim together: the work lights' lenses, the button's two amber lamps and the
-  // beacon's dome stand apart (`beacon`).
+  // The lit parts, on one node so they can dim together: the work lights' lenses, the dash's lamp panel and its warning
+  // lights, and the button's two amber lamps; the beacon's dome stands apart (`beacon`).
   const lamps = cached(() => {
     const out = [];
     for (const s of [-1, 1]) out.push(bevelBox({ w: 0.18, h: 0.12, d: 0.02, color: LAMP, emissive: 1, bevel: 0.015, offset: { x: s * (P.postX - 0.04), y: P.roof + 0.15, z: P.postFront - 0.115 } }));
+    for (const du of [-0.018, 0.018]) for (const dv of [-0.018, 0.018]) out.push(onDash(box({ w: 0.028, h: 0.028, d: 0.006, color: AMBER, emissive: 1 }), LAMP_PANEL[0] + du, LAMP_PANEL[1] + dv, 0.022));
+    for (const [color, u] of LIGHTS) out.push(onDash(box({ w: 0.022, h: 0.016, d: 0.006, color, emissive: 1 }), u, 0.1, 0.004));
     const [bx, by, bz] = P.button;
     for (const s of [-1, 1]) out.push(bevelBox({ w: 0.05, h: 0.05, d: 0.02, color: AMBER, emissive: 1, bevel: 0.01, offset: { x: bx + s * 0.19, y: by + 0.02, z: bz + 0.1 } }));
     return noShadow(merge(...out));
@@ -351,12 +400,13 @@
       g.strokeStyle = "#ffe0d8"; g.lineWidth = H * 0.08; g.strokeRect(H * 0.08, H * 0.08, W - H * 0.16, H - H * 0.16);
       write(g, "DO NOT PRESS", W / 2, H * 0.54, H * 0.56, "#ffffff", W * 0.86);
     },
-    // EXPERIMENTAL THRUSTER PACKAGE on the block's front, black on yellow beside a bolt.
+    // EXPERIMENTAL THRUSTER PACKAGE on the block's front, black on yellow between two bolts.
     thruster: (g, W, H) => {
       g.fillStyle = YELLOW; g.fillRect(0, 0, W, H);
-      write(g, "EXPERIMENTAL", W * 0.44, H * 0.34, H * 0.3, BLACK, W * 0.74);
-      write(g, "THRUSTER PACKAGE", W * 0.44, H * 0.7, H * 0.3, BLACK, W * 0.74);
-      bolt(g, W * 0.88, H * 0.5, H * 0.74, BLACK);
+      write(g, "EXPERIMENTAL", W * 0.5, H * 0.34, H * 0.3, BLACK, W * 0.68);
+      write(g, "THRUSTER PACKAGE", W * 0.5, H * 0.7, H * 0.3, BLACK, W * 0.68);
+      bolt(g, W * 0.08, H * 0.5, H * 0.74, BLACK);
+      bolt(g, W * 0.92, H * 0.5, H * 0.74, BLACK);
     },
     // The bumper's hazard chevrons, black and yellow, pointing to its middle.
     chevrons: (g, W, H) => {
@@ -374,21 +424,43 @@
       g.fillStyle = BLACK;
       for (let x = -H; x < W + H; x += H * 0.5) { g.beginPath(); g.moveTo(x, H); g.lineTo(x + H * 0.25, H); g.lineTo(x + H * 0.25 + H, 0); g.lineTo(x + H, 0); g.closePath(); g.fill(); }
     },
-    // A round gauge, its face dark with white ticks and an orange needle.
+    // The speed dial: its face dark with a steel rim, ticks every unit and a long one every five with its figure, the
+    // last quarter red, and an orange needle on its cap.
     gauge: (g, W, H) => {
-      const r = W / 2;
+      const r = W / 2, at = (q) => Math.PI * 0.75 + q / 20 * Math.PI * 1.5;
       g.fillStyle = "#0c0e12"; g.beginPath(); g.arc(r, r, r * 0.96, 0, TAU); g.fill();
       g.strokeStyle = STEEL; g.lineWidth = W * 0.05; g.stroke();
-      g.strokeStyle = "#ffffff"; g.lineWidth = W * 0.025;
-      for (let q = 0; q <= 8; q++) { const a = Math.PI * 0.75 + q / 8 * Math.PI * 1.5; g.beginPath(); g.moveTo(r + Math.cos(a) * r * 0.62, r + Math.sin(a) * r * 0.62); g.lineTo(r + Math.cos(a) * r * 0.8, r + Math.sin(a) * r * 0.8); g.stroke(); }
-      g.strokeStyle = AMBER; g.lineWidth = W * 0.05; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(-0.6) * r * 0.66, r + Math.sin(-0.6) * r * 0.66); g.stroke();
+      g.strokeStyle = "#d8261c"; g.lineWidth = W * 0.06; g.beginPath(); g.arc(r, r, r * 0.74, at(15), at(20)); g.stroke();
+      g.strokeStyle = "#ffffff";
+      for (let q = 0; q <= 20; q++) {
+        const a = at(q), long = q % 5 === 0;
+        g.lineWidth = W * (long ? 0.03 : 0.014);
+        g.beginPath(); g.moveTo(r + Math.cos(a) * r * (long ? 0.6 : 0.68), r + Math.sin(a) * r * (long ? 0.6 : 0.68)); g.lineTo(r + Math.cos(a) * r * 0.8, r + Math.sin(a) * r * 0.8); g.stroke();
+        if (long) write(g, String(q), r + Math.cos(a) * r * 0.42, r + Math.sin(a) * r * 0.42, W * 0.12, "#ffffff", W * 0.2);
+      }
+      g.strokeStyle = AMBER; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(3)) * r * 0.7, r + Math.sin(at(3)) * r * 0.7); g.stroke();
+      g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
     },
-    // The dashboard's little screen: the bolt and a battery's bars in blue.
+    // The charge dial: E to F over a red, amber and green arc, its needle near full, and the bolt under it.
+    charge: (g, W, H) => {
+      const r = W / 2, at = (t) => Math.PI * 1.15 + t * Math.PI * 0.7;
+      g.fillStyle = "#0c0e12"; g.beginPath(); g.arc(r, r, r * 0.96, 0, TAU); g.fill();
+      g.strokeStyle = STEEL; g.lineWidth = W * 0.05; g.stroke();
+      for (const [t0, t1, c] of [[0, 0.2, "#d8261c"], [0.2, 0.45, AMBER], [0.45, 1, "#3dff7a"]]) { g.strokeStyle = c; g.lineWidth = W * 0.1; g.beginPath(); g.arc(r, r, r * 0.68, at(t0), at(t1)); g.stroke(); }
+      write(g, "E", r + Math.cos(at(0)) * r * 0.42, r + Math.sin(at(0)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
+      write(g, "F", r + Math.cos(at(1)) * r * 0.42, r + Math.sin(at(1)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
+      g.strokeStyle = "#ffffff"; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(0.86)) * r * 0.74, r + Math.sin(at(0.86)) * r * 0.74); g.stroke();
+      g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
+      bolt(g, r, r * 1.45, r * 0.5, AMBER);
+    },
+    // The dashboard's little screen in blue: the bolt, a battery's bars, the forks' height and READY.
     screen: (g, W, H) => {
       g.fillStyle = "#06122e"; g.fillRect(0, 0, W, H);
-      bolt(g, W * 0.22, H * 0.5, H * 0.7, "#5fe3ff");
+      bolt(g, W * 0.16, H * 0.42, H * 0.6, "#5fe3ff");
       g.fillStyle = "#5fe3ff";
-      for (let q = 0; q < 4; q++) g.fillRect(W * (0.42 + q * 0.13), H * 0.3, W * 0.09, H * 0.4);
+      for (let q = 0; q < 4; q++) g.fillRect(W * (0.32 + q * 0.085), H * 0.18, W * 0.06, H * 0.28);
+      write(g, "0.0m", W * 0.82, H * 0.32, H * 0.26, "#5fe3ff", W * 0.26);
+      write(g, "READY", W * 0.42, H * 0.8, H * 0.22, "#b6f4ff", W * 0.5);
     }
   };
   // A picture `w` by `h` metres facing +z, painted once a page; `round` cuts it to its disc, `lit` how much it glows.
@@ -414,11 +486,10 @@
       body: [
         [picture("boost", 0.62, 0.15), 0, 0.53, P.back + 0.004, 0],
       [picture("chevrons", P.half * 2 - 0.06, 0.17), 0, 0.355, P.back + 0.004, 0],
-        [picture("thruster", 0.28, 0.07), bx, by - 0.08, bz + 0.132, 0],
+        [picture("thruster", 0.28, 0.07), bx, by - 0.14, bz + 0.132, 0],
         [picture("stripes", 0.28, 0.24), bx, by + 0.002, bz, -Math.PI / 2],
-        [picture("gauge", 0.11, 0.11, 0.15, true), -0.4, 1.36, P.dash - 0.05, -0.55],
-        [picture("gauge", 0.11, 0.11, 0.15, true), -0.28, 1.36, P.dash - 0.05, -0.55],
-        [picture("screen", 0.13, 0.08, 0.5), 0.19, 1.35, P.dash - 0.055, -0.55],
+        ...GAUGES.map(([u, v, r], i) => [picture(i ? "charge" : "gauge", 2 * r, 2 * r, 0.15, true), ...dashAt(u, v, 0.002), DASH.tilt]),
+        [picture("screen", 2 * SCREEN[2], 2 * SCREEN[3], 0.5), ...dashAt(SCREEN[0], SCREEN[1], 0.002), DASH.tilt],
         ...[-1, 1].map((s) => [picture("hazard", 0.66, 0.13), s * (P.half + 0.004), 0.52, 0.02, 0, s * Math.PI / 2])
       ],
       cover: [[picture("donot", 0.24, 0.055, 0.3), 0, 0.065, 0.227, 0]]
