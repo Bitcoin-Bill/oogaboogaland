@@ -11,7 +11,7 @@
 // the back's two vented doors (`doors`, each about its outer edge). `PLACES` says where each stands. The decals are
 // pictures painted once a page (`pictures`). In the forklift's frame: the forks toward -z, x to the driver's right,
 // the origin on the floor midway between its axles, in units the scene builds `SCALE` metres each; `FOOTPRINT` is the
-// box round it a walker meets, in metres.
+// box round it, in metres.
 (() => {
   "use strict";
   const BL = window.BL = window.BL || {};
@@ -45,8 +45,8 @@
   const P = PLACES;
   // How thick the seat's cushion is, on the deck at the seat's place: its top is where a driver sits.
   const CUSHION = 0.14;
-  // The box round it that a walker meets, from its carriage's face to its back and out to its wheels, in metres; its
-  // forks lie low enough to step over.
+  // The box round it, from its carriage's face to its back and out to its wheels, in metres, which the scene's reach into
+  // its cab goes by (walkers meet the circles the scene keeps round its body).
   const FOOTPRINT = { x: (P.frontX + P.frontW / 2 + 0.04) * SCALE, z0: (P.face - 0.1) * SCALE, z1: (P.back + 0.02) * SCALE, top: (P.roof + 0.1) * SCALE };
 
   // Two tones a colour, by cell, so a broad face reads as built of blocks.

@@ -1703,13 +1703,6 @@
       around(x, z, hx, hz, stacked > 1 ? 1.5 : 0.85);
     }
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
-    // The forklift, by the box round its turned footprint in four lengths along it; its forks lie low enough to step
-    // over.
-    const FK = L.forklift, FP = BL.forkliftModels.FOOTPRINT, fs = Math.sin(FK.turn), fc = Math.cos(FK.turn), [fx, fz] = turned(FP.x, (FP.z1 - FP.z0) / 8, FK.turn);
-    for (let q = 0; q < 4; q++) {
-      const lz = FP.z0 + (q + 0.5) * (FP.z1 - FP.z0) / 4;
-      around(FK.x + lz * fs, FK.z + lz * fc, fx, fz, FP.top);
-    }
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
     return { rects: new Float32Array(rects), boxes: new Float32Array(boxes), jet: JM.columns() };
