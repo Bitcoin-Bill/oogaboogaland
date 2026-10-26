@@ -158,6 +158,7 @@
         <p data-scene="hub" id="subtitle">an island of caves</p>
         <p data-scene="lab" hidden>EntropyLab cave</p>
         <p data-scene="factory" hidden>Lightning Factory</p>
+        <p data-scene="hangar" hidden>Lightning Jet Hangar</p>
         <p data-scene="bifrost" hidden>₿IFRÖST</p>
         <p data-scene="timechain" id="sphere-subtitle" hidden>Timechain Sphere</p>
         <p data-scene="arcade" hidden>Ooga Arcade</p>
@@ -204,6 +205,11 @@
         <button type="button" data-preset="treasury">Treasury</button>
         <button type="button" data-action="factory-mute">Sound</button>
         <button type="button" class="leave" data-action="leave">Leave<span> cave</span></button>
+      </nav>
+      <nav class="presets" aria-label="Lightning Jet Hangar" data-scene="hangar" hidden>
+        <button type="button" data-preset="entrance">Hangar</button>
+        <button type="button" data-preset="runway">Runway</button>
+        <button type="button" class="leave" data-action="leave">Factory</button>
       </nav>
       <nav class="presets" aria-label="Thro-ball" data-scene="skee" hidden>
         <button type="button" data-action="carnival-mute">Sound</button>
@@ -1837,6 +1843,8 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/kortik.js" data-defer="factory-scene"></script>
   <script src="js/factory-audio.js" data-defer="factory-scene"></script>
   <script src="js/scene-factory.js" data-defer="factory-scene"></script>
+  <script src="js/hangar-models.js" data-defer="hangar-scene"></script>
+  <script src="js/scene-hangar.js" data-defer="hangar-scene"></script>
   <script src="js/arcade-models.js"></script>
   <script src="js/arcade-scene-models.js" data-defer="arcade"></script>
   <script src="js/arcade-games.js" data-defer="arcade"></script>
