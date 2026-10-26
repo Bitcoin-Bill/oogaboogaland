@@ -224,14 +224,30 @@
     screen.visible = false;
     addChild(cover, ...decals.cover.map(picture));
     const inner = createNode({ geometry: FL.innerMast() });
+    // The chains' links, the one kind and then the other, laid along their runs as the carriage stands (`layChains`).
+    const C = FL.CHAIN, ring = FL.chainLink(), count = Math.floor((C.sheave - C.anchor + Math.PI * C.r + C.sheave - C.carriage) / C.pitch), links = [];
+    for (const side of [-1, 1]) for (let i = 0; i < count; i++) links.push(createNode({ geometry: i % 2 ? ring.b : ring.a, position: { x: side * C.x, y: 0, z: 0 }, sightHidden: true }));
     addChild(root, body, createNode({ geometry: FL.mast() }), inner, createNode({ geometry: FL.fittings() }), lit,
-      ...wheels, carriage, steering, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
+      ...wheels, carriage, ...links, steering, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, inner, carriage, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    const f = { root, body, wheels, inner, carriage, links, lift: 0, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off).
     seat.act = () => !f.on && (powerOn(f), true);
+    layChains(f);
     return f;
+  };
+  // Each chain's links along its run as the carriage stands `lift` over its rest, the inner mast half that: up from its
+  // anchor behind the sheave, over it, and down its front to the carriage's anchor; its length stays the same.
+  const layChains = (f) => {
+    const C = BL.forkliftModels.CHAIN, n = f.links.length / 2, top = C.sheave + f.lift / 2, back = top - C.anchor, arc = Math.PI * C.r;
+    for (let i = 0; i < n; i++) {
+      const d = (i + 0.5) * C.pitch, over = (d - back) / C.r;
+      const y = d < back ? C.anchor + d : d < back + arc ? top + Math.sin(over) * C.r : top - (d - back - arc);
+      const z = d < back ? C.z + C.r : d < back + arc ? C.z + Math.cos(over) * C.r : C.z - C.r;
+      const a = d < back ? 0 : d < back + arc ? -over : -Math.PI;
+      for (let k = i; k < f.links.length; k += n) { const link = f.links[k]; link.position.y = y; link.position.z = z; link.rotation.x = a; }
+    }
   };
   // Where the driven Ooga stands in the forklift's frame (`CAB`, x across and z along), and whether that is beside its
   // cab, on the floor, near enough to get in.

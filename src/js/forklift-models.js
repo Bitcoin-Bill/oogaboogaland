@@ -131,10 +131,11 @@
   const sideBolt = (x, y, z, s, r = 0.02) => moved(turnedZ(turn([[r, 0], [r, 0.008], [r * 0.7, 0.012], [0, 0.012]], 6, STEEL_DK), -s * Math.PI / 2), x, y, z);
 
   // How far either side of the middle the chains run and the forks hang; and each chain's run at rest, in the mast's
-  // frame: its anchor's height on the middle tie, the crosshead's and its sheave's, the line of the sheaves' axles (z)
-  // and the chain's radius round them, and the carriage's anchor's height, straight under the sheave's front.
+  // frame: how far out it runs, its anchor's height on the middle tie, the crosshead's and its sheave's, the line of the
+  // sheaves' axles (z) and the chain's radius round them, the carriage's anchor's height, straight under the sheave's
+  // front, and how far apart its links lie (`chainLink`).
   const CHAIN_X = 0.15, FORK_X = 0.32;
-  const CHAIN = { anchor: 1.47, head: 2.24, sheave: 2.31, z: P.mastZ + 0.04, r: 0.08, carriage: P.lift + 0.8 };
+  const CHAIN = { x: CHAIN_X, anchor: 1.47, head: 2.24, sheave: 2.31, z: P.mastZ + 0.04, r: 0.08, carriage: P.lift + 0.8, pitch: 0.028 * 2.2 };
   // The mast, as massive as its concept's, in two stages. Its outer uprights (`mast`), each a channel open toward the
   // middle, its web outside and a flange before and behind it, banded at its seams with bolts in the bands, capped, and
   // its pivot pin through its foot; tie bars across their feet and, behind the inner stage so it rises clear, their
@@ -177,12 +178,6 @@
       round.push(pipe(hx, P.mastTop - 0.1, hz, hx, 0.5, hz, 0.018, BLACK), pipe(hx, 0.5, hz, hx, 0.42, P.cowl, 0.018, BLACK));
       for (const y of [0.8, 1.4, 1.95]) flat.push(bevelBox({ w: 0.05, h: 0.03, d: 0.05, color: STEEL_DK, bevel: 0.008, offset: { x: hx, y, z: hz } }));
     }
-    // The chains, as yet run fixed from their anchors over the sheaves at rest.
-    for (const s of [-1, 1]) {
-      const x = s * CHAIN_X;
-      round.push(...models.chain(x, CHAIN.anchor, CHAIN.z + CHAIN.r, x, CHAIN.sheave, CHAIN.z + CHAIN.r, 0.028, STEEL_DK));
-      round.push(...models.chain(x, CHAIN.sheave, CHAIN.z - CHAIN.r, x, CHAIN.carriage, CHAIN.z - CHAIN.r, 0.028, STEEL_DK));
-    }
     return shaded(round, flat);
   });
   const innerMast = cached(() => {
@@ -197,6 +192,16 @@
       for (const dx of [-0.045, 0.045]) flat.push(bevelBox({ w: 0.018, h: 0.13, d: 0.13, color: BLACK_B, bevel: 0.005, offset: { x: x + dx, y: CHAIN.sheave - 0.01, z: cz } }));
     }
     return shaded(round, flat);
+  });
+  // One of the chains' links, its long axis along y, in the xy plane (`a`) and a quarter turn from it (`b`), which the
+  // scene lays along each chain's run `CHAIN.pitch` apart, the one and then the other.
+  const chainLink = cached(() => {
+    const ring = (quarter) => {
+      const g = turnedX(torus(0.028, 0.0084, STEEL_DK, 0, 10, 6), Math.PI / 2);
+      for (let k = 1; k < g.verts.length; k += 3) g.verts[k] *= 1.55;
+      return shaded([quarter ? turnedY(g, Math.PI / 2) : g]);
+    };
+    return { a: ring(false), b: ring(true) };
   });
   // The carriage in its own frame, the floor under its face at the origin (it rests `PLACES.lift` above it): the two fork
   // bars across the mast, the upper with a lip along its top and the notches the forks' locks drop into; a bracket
@@ -539,5 +544,5 @@
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, innerMast, CHAIN, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, innerMast, CHAIN, chainLink, button, cover, doors, decals };
 })();
