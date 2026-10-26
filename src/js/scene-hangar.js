@@ -134,6 +134,9 @@
   // Its steering: how far the rear wheels turn (radians), how fast they get there (a second), and how many times as far
   // the steering wheel turns.
   const STEER = { max: 0.62, rate: 2.4, wheel: 4 };
+  // Its drive, metres a second: top speed forward and in reverse, and how fast it gathers speed, brakes against the
+  // throttle and coasts to a stop (a second); and its fork tips as obstacles meet them, how far round (m).
+  const DRIVE = { forward: 3.2, reverse: 1.6, accel: 2.2, brake: 5, coast: 1.8, tip: 0.25 };
   const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -245,10 +248,14 @@
       ...wheels, carriage, ...links, steering, stick, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, helm, steer: 0, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
-    // Space in the seat starts it; running, Space gets out (and switches it off).
-    seat.act = () => !f.on && (powerOn(f), true);
-    f.blocks = Array.from({ length: BLOCKS.x.length * BLOCKS.z.length }, () => ({ x: 0, y: 0, z: 0, radius: BLOCKS.radius, height: BLOCKS.height }));
+    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, helm, steer: 0, speed: 0, side: 1, getInZ: 0, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    // Space in the seat starts it; running, Space gets out (and switches it off) beside the cab wherever it stands.
+    seat.act = () => {
+      if (!f.on) { powerOn(f); return true; }
+      if (seat.sitter) standSpot(f, seat.sitter);
+      return false;
+    };
+    f.blocks = Array.from({ length: BLOCKS.x.length * BLOCKS.z.length }, () => ({ x: 0, y: 0, z: 0, radius: BLOCKS.radius, height: BLOCKS.height, forklift: true }));
     placeBlocks(f);
     layChains(f);
     return f;
@@ -283,26 +290,33 @@
     CAB.z = dx * f.sn + dz * f.cs;
     return p.y - cave.baseY < HM.STEP && CAB.z > CAB_SPAN[0] && CAB.z < CAB_SPAN[1] && Math.abs(CAB.x) < BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius + CAB_REACH;
   };
-  // Space beside the cab gets the driven Ooga in, in first person: it will stand up again on the side it got in from, at
-  // the nearest spot out beside the cab it fits, else the other side's.
-  const getIn = (f, cave) => {
-    if (cave.camp.seat || f.seat.sitter || !besideCab(f, cave)) return false;
-    const side = Math.sign(CAB.x) || 1, out = BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius, w = f.seat.walkAt;
-    for (const s of [side, -side]) for (let d = CAB_OUT[0]; d <= CAB_OUT[1]; d += 0.15) {
-      const lx = s * (out + d), lz = CAB.z * 0.3;
+  // Where the Ooga stands up beside the cab (the seat's `walkAt`): on the side it got in from (`f.side`) at the nearest
+  // spot out from the cab it fits, else the other side's; whether there is one.
+  const standSpot = (f, cave) => {
+    const out = BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius, w = f.seat.walkAt;
+    for (let k = 0; k < 2; k++) for (let d = CAB_OUT[0]; d <= CAB_OUT[1]; d += 0.15) {
+      const lx = (k ? -f.side : f.side) * (out + d), lz = f.getInZ;
       w.x = f.x + lx * f.cs + lz * f.sn;
       w.z = f.z - lx * f.sn + lz * f.cs;
-      if (!HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) continue;
-      SEAT_VIEW.mode = pilot.view;
-      SEAT_VIEW.pitch = pilot.orbit.tPitch;
-      // The view turns down the forks from beside the cab at its own zoom, so first person enters looking where the seat
-      // faces.
-      pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: SEAT_PITCH, dist: pilot.orbit.tDist });
-      if (!people.sitPlayer(f.seat)) { SEAT_VIEW.mode = null; return false; }
-      pilot.enterClose();
-      return true;
+      if (HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) return true;
     }
     return false;
+  };
+  // Space beside the cab gets the driven Ooga in, in first person: it will stand up again where `standSpot` finds.
+  const getIn = (f, cave) => {
+    if (cave.camp.seat || f.seat.sitter || !besideCab(f, cave)) return false;
+    f.side = Math.sign(CAB.x) || 1;
+    f.getInZ = CAB.z * 0.3;
+    if (!standSpot(f, cave)) return false;
+    const w = f.seat.walkAt;
+    SEAT_VIEW.mode = pilot.view;
+    SEAT_VIEW.pitch = pilot.orbit.tPitch;
+    // The view turns down the forks from beside the cab at its own zoom, so first person enters looking where the seat
+    // faces.
+    pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: SEAT_PITCH, dist: pilot.orbit.tDist });
+    if (!people.sitPlayer(f.seat)) { SEAT_VIEW.mode = null; return false; }
+    pilot.enterClose();
+    return true;
   };
   // A tap on the fork stick from the seat, running, sends the forks all the way up, or down from above halfway.
   const workStick = (f, cave) => {
@@ -334,6 +348,8 @@
   const powerOff = (f) => {
     if (!f.on) return;
     f.on = false;
+    f.speed = 0;
+    if (f.seat.sitter) standSpot(f, f.seat.sitter);
     f.startT = -1;
     f.keyTo = 0;
     audio.forklift(false);
@@ -386,6 +402,61 @@
     f.steer += clamp(want - f.steer, -STEER.rate * dt, STEER.rate * dt);
     f.wheels[2].rotation.y = f.wheels[3].rotation.y = -f.steer;
     f.helm.rotation.y = f.steer * STEER.wheel;
+  };
+  // Whether the forklift at (x, z) turned `turn` stands clear: its body's circles of the hall (by `clearAt`, from where
+  // each stands now) and of whoever walks it, and its fork tips at their height.
+  const PROBE = { x: 0, z: 0 };
+  const posedAt = (f, lx, lz, x, z, turn) => {
+    const c = Math.cos(turn), sn = Math.sin(turn);
+    PROBE.x = x + lx * c + lz * sn; PROBE.z = z - lx * sn + lz * c;
+    return PROBE;
+  };
+  const clearFor = (f, x, z, turn) => {
+    const S = BL.forkliftModels.SCALE, P = BL.forkliftModels.PLACES, walkers = outsideActors();
+    for (const bz of BLOCKS.z) for (const bx of BLOCKS.x) {
+      const from = posedAt(f, bx, bz, f.x, f.z, f.root.rotation.y), fx = from.x, fz = from.z, to = posedAt(f, bx, bz, x, z, turn);
+      if (!HM.clearAt(to.x, to.z, 0, BLOCKS.radius, fx, fz)) return false;
+      for (let i = 0; i < walkers.length; i++) {
+        const w = walkers[i];
+        if (w.forklift) continue;
+        const r = BLOCKS.radius + (w.radius || 0.4), dn = Math.hypot(to.x - w.x, to.z - w.z);
+        if (dn < r && dn < Math.hypot(fx - w.x, fz - w.z)) return false;
+      }
+    }
+    for (let sx = -1; sx <= 1; sx += 2) {
+      const from = posedAt(f, sx * 0.32 * S, (P.face - P.forks) * S, f.x, f.z, f.root.rotation.y), fx = from.x, fz = from.z;
+      const to = posedAt(f, sx * 0.32 * S, (P.face - P.forks) * S, x, z, turn);
+      if (!HM.clearAt(to.x, to.z, (P.lift + f.lift) * S, DRIVE.tip, fx, fz)) return false;
+    }
+    return true;
+  };
+  // Running, W and S drive it: its speed gathered toward the throttle's, braked against it or coasting to a stop; its
+  // front axle on along its heading and the heading turned by the rear wheels' angle, as a forklift's that steers at the
+  // back; stopped dead where it would not stand clear. The Ooga rides in its seat, the view turning with it, and the
+  // wheels roll.
+  const driveLife = (f, dt) => {
+    const cave = people && people.player, running = f.on && f.startT < 0 && cave && cave.camp.seat === f.seat;
+    const throttle = running ? pilot.controls.axes.y : 0, want = throttle * (throttle >= 0 ? DRIVE.forward : DRIVE.reverse);
+    const rate = !throttle ? DRIVE.coast : want * f.speed < 0 || Math.abs(want) < Math.abs(f.speed) ? DRIVE.brake : DRIVE.accel;
+    f.speed += clamp(want - f.speed, -rate * dt, rate * dt);
+    if (Math.abs(f.speed) < 1e-3) { f.speed = 0; return; }
+    const FL = BL.forkliftModels, S = FL.SCALE, P = FL.PLACES, front = P.front * S, base = (P.rear - P.front) * S;
+    const t = f.root.rotation.y, d = f.speed * dt, nt = t + d * Math.tan(f.steer) / base;
+    const ax = f.x + front * Math.sin(t) - Math.sin(t) * d, az = f.z + front * Math.cos(t) - Math.cos(t) * d;
+    const nx = ax - front * Math.sin(nt), nz = az - front * Math.cos(nt);
+    if (!clearFor(f, nx, nz, nt)) { f.speed = 0; return; }
+    f.x = f.root.position.x = nx;
+    f.z = f.root.position.z = nz;
+    f.root.rotation.y = nt;
+    f.sn = Math.sin(nt); f.cs = Math.cos(nt);
+    pilot.orbit.yaw += nt - t;
+    pilot.orbit.tYaw += nt - t;
+    placeBlocks(f);
+    // The seat with it, and the Ooga in it.
+    const sz = P.seat[2] * S, seat = f.seat;
+    seat.x = nx + sz * f.sn; seat.z = nz + sz * f.cs; seat.ry = nt + Math.PI;
+    if (seat.sitter) { seat.sitter.root.position.x = seat.x; seat.sitter.root.position.z = seat.z; seat.sitter.root.rotation.y = seat.ry; }
+    for (let i = 0; i < 4; i++) f.wheels[i].rotation.x -= d / ((i < 2 ? P.frontR : P.rearR) * S);
   };
   // The beacon's light while it turns, a spot out along its beam (its reflector's axis, the node's x), into `slot`; how
   // many it wrote.
@@ -1127,6 +1198,7 @@
     powerLife(s.forklift, dt);
     forkLife(s.forklift, dt);
     steerLife(s.forklift, dt);
+    driveLife(s.forklift, dt);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
