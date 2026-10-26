@@ -216,8 +216,8 @@
     for (const child of source.children) if (child.visible && !child.portraitHidden) addChild(copy, copyPortraitNode(child, portraitRoot, portraitGeometry));
     return copy;
   };
-  const renderFaceIcon = (canvas, cave, gorilla = null) => {
-    const renderer = canvasRenderer.createRenderer(canvas, { width: ICON_PX, height: ICON_PX, transparent: true });
+  const renderFaceIcon = (canvas, cave, gorilla = null, px = ICON_PX) => {
+    const renderer = canvasRenderer.createRenderer(canvas, { width: px, height: px, transparent: true });
     const source = gorilla ? gorilla.parts.head : cave.parts.head, geometry = gorilla ? source.geometry : cave.portraitHead;
     const root = createNode(), head = copyPortraitNode(source, source, geometry);
     const bounds = boundsOf(geometry), fit = (!gorilla && cave.traits.gasMask ? 0.68 : 0.78) / Math.max(bounds.radius, 0.05);
@@ -234,6 +234,23 @@
     camera.position.x = camera.position.y = 0;
     camera.position.z = 2.7;
     camera.target.x = camera.target.y = camera.target.z = 0;
+    renderer.render(root, camera);
+    renderer.dispose();
+  };
+  // An Ooga standing square to the view, whole, as it stands posed now: its built parts copied (hidden ones left out)
+  // and turned to face the camera, `w` by `h` pixels. A podium's portraits (HALLOWEEN: the ghost hunt's winners).
+  const renderBodyIcon = (canvas, cave, w, h) => {
+    const renderer = canvasRenderer.createRenderer(canvas, { width: w, height: h, transparent: true });
+    const root = createNode(), body = copyPortraitNode(cave.root, null, null), tall = cave.bodyHeight;
+    body.visible = true;
+    body.position.x = body.position.z = 0;
+    body.position.y = cave.baseY;
+    body.rotation.x = body.rotation.y = body.rotation.z = 0;
+    addChild(root, body);
+    // Back far enough that the view's 28 degrees take in 1.2 of its height, for room over its head and under its feet.
+    const camera = createCamera({ fov: 28, near: 0.1, far: 40 }), fit = tall * 0.6 / Math.tan(14 * Math.PI / 180);
+    camera.position.x = 0; camera.position.y = tall * 0.55; camera.position.z = fit;
+    camera.target.x = 0; camera.target.y = tall * 0.5; camera.target.z = 0;
     renderer.render(root, camera);
     renderer.dispose();
   };
@@ -2489,5 +2506,5 @@
       else b.textContent = `Back to ${place}`;
     }
   };
-  BL.hud = { create, renderIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, donationValueText, toast, holdRow, leaveTo, STATE_LABELS, statusFor };
+  BL.hud = { create, renderIcon, renderFaceIcon, renderBodyIcon, signLettering, showAccount, showMic, showVoices, setDonationStats, donationValueText, toast, holdRow, leaveTo, STATE_LABELS, statusFor };
 })();
