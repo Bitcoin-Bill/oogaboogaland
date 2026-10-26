@@ -140,8 +140,8 @@
     hangar: { x: -20.8, y: LEVEL.main, z: 25, turn: Math.PI / 2 },
     // The landing before the hangar's door, at the walkway's end: a deck as wide as the door's frame and its header,
     // so the walkway, narrower than the door, comes out onto deck either side of it, seen from the hall or through the
-    // door from the hangar. Railed but where the walkway arrives and along the door, with a lantern post at each outer
-    // corner (`hangarLamps`).
+    // door from the hangar. Railed but where the walkway arrives and along the door, a lantern post at each outer corner
+    // (`hangarLamps`), and dressed with the hangar's stripes and crates (`hangarLanding`).
     hangarLanding: { x: -18.6, y: LEVEL.main, z: 25, w: 3.2, d: 8.6 },
     // Every other flight of stairs, [x, y, z] at the bottom and at the top and its width, read by the scaffold that
     // builds them (cutting the rail wherever one lands) and by the floor an Ooga walks: pit to the
@@ -566,11 +566,12 @@
     const k = L.kortik, kx = k.x - k.w / 2 + KORTIK.face;
     for (const [along, out, r] of KORTIK.blocks) block(kx + out, k.z - along, r, k.y - 0.5, k.y + 3);
     // On the hangar's landing, what its width brings within reach: the door's frame posts and the legs of its arch
-    // either side of the opening, and the lantern posts.
+    // either side of the opening, the lantern posts and the crates and the drum.
     if (hangarEntry()) {
       const h = L.hangar, c = Math.cos(h.turn), sn = Math.sin(h.turn), at = (lx, lz) => [h.x + lx * c + lz * sn, h.z - lx * sn + lz * c];
       for (const s of [-1, 1]) for (const [lx, lz, r] of [[HANGAR_DOOR.post, 0.35, 0.35], [2.85, 0.1, 0.65]]) block(...at(s * lx, lz), r, h.y - 0.5, h.y + 4);
       for (const [kind, x, , z] of hangarLamps()) if (kind === "post") block(x, z, 0.2, h.y - 0.5, h.y + 3);
+      for (const [x, z, r] of HANGAR_LANDING.blocks) block(x, z, r, h.y - 0.5, h.y + 1.6);
     }
     // The rails along the decks' edges (`deckRailing`, cut by `railPlan`) and the walkways (`walkRails`), as boxes
     // [x0, x1, z0, z1, from, to] round each rail from just past its outer face to its inner one, in the way of walkers
@@ -1114,6 +1115,31 @@
     for (const s of [-1, 1]) out.push(["post", hl.x + hl.w / 2 - 0.45, hl.y, hl.z + s * (hl.d / 2 - 0.45), s * Math.PI / 2]);
     return out;
   };
+  // The landing's dressing in the hall's frame (`hangarLanding`): the hazard stripes across the door's opening, the
+  // crate stack by the door on the hall side and the cable drum on the far side, [x, z] each, and what of them stands
+  // in a walker's way, [x, z, radius].
+  const HANGAR_LANDING = { stripes: 10, crates: [-19.5, 21.6], drum: [-19.55, 28.45], blocks: [[-19.5, 21.6, 0.7], [-19.55, 28.45, 0.55]] };
+  const hangarLanding = cached(() => {
+    const hl = LAYOUT.hangarLanding, h = LAYOUT.hangar, D = HANGAR_DOOR, H = HANGAR_LANDING, y = hl.y, geos = [], lit = [];
+    // Hazard stripes across the threshold, yellow and black as along the hangar's runway.
+    const step = 2 * D.half / H.stripes, sx = hl.x - hl.w / 2 + 0.24;
+    for (let i = 0; i < H.stripes; i++) geos.push(box({ w: 0.36, h: 0.02, d: step, color: i % 2 ? "#1d1d20" : "#f2c230", offset: { x: sx, y: y + 0.01, z: h.z - D.half + (i + 0.5) * step } }));
+    // The hangar's crates, banded in iron, a small one set askew on a big one, the bolt lit on its face to the walkway.
+    const [cx, cz] = H.crates;
+    const crate = (w, ch, d, x, cy, z, a) => {
+      const parts = [bevelBox({ w, h: ch, d, color: TIMBER_LT, bevel: 0.04, offset: { y: ch / 2 } })];
+      for (const t of [0.15, 0.85]) parts.push(box({ w: w + 0.02, h: 0.05, d: d + 0.02, color: IRON_DK, offset: { y: ch * t } }));
+      geos.push(moved(turnedY(merge(...parts), a), x, cy, z));
+    };
+    crate(1, 0.8, 0.9, cx, y, cz, 0);
+    crate(0.7, 0.6, 0.65, cx + 0.05, y + 0.8, cz + 0.02, 0.3);
+    lit.push(moved(turnedY(smoothBolt(0.42, 0.05, "#ffd23a", 1), Math.PI / 2), cx + 0.52, y + 0.42, cz));
+    // A drum of the hangar's orange cable on its side, its flanges either end.
+    const [dx, dz] = H.drum, ring = (r) => Array.from({ length: 16 }, (_, k) => [Math.cos(k / 16 * TAU) * r, Math.sin(k / 16 * TAU) * r]);
+    for (const s of [-1, 1]) geos.push(moved(prism(ring(0.5), 0.07, TIMBER_DK), dx, y + 0.5, dz + s * 0.27));
+    geos.push(moved(prism(ring(0.36), 0.48, "#d8661e"), dx, y + 0.5, dz), moved(prism(ring(0.12), 0.62, IRON_DK), dx, y + 0.5, dz));
+    return { body: merge(...geos), glow: noShadow(merge(...lit)) };
+  });
   // Where the lanterns hang, by the rules `lighting()` in `scene-factory.js` hangs them: [kind, x, y, z, turn] each,
   // and the strings across the hall [ax, ay, az, bx, by, bz, sag, at]. The mouth's own string is past the shield.
   const windowLamps = () => {
@@ -1261,9 +1287,11 @@
         const [[x0, x1, z0, z1]] = L.walkLeft, hl = L.hangarLanding, lx = e.x - e.w / 2 + 0.1, rx = hl.x + hl.w / 2 - 0.1;
         parts.push(span(x0, x1, e.y - 0.2, e.y, z0, z1, TIMBER));
         for (const z of [z0 + 0.1, z1 - 0.1]) parts.push(...railLite(lx, z, rx, z, e.y, { ends: [false, false] }));
-        // And the landing before the door, and its rails.
+        // And the landing before the door, its rails and its dressing.
         parts.push(span(hl.x - hl.w / 2, hl.x + hl.w / 2, hl.y - 0.2, hl.y, hl.z - hl.d / 2, hl.z + hl.d / 2, TIMBER));
         for (const [ax, az, bx, bz, from, to] of models.deckRailSpans(hl.w, hl.d, "nse", railPlan().cutsFor(hl))) parts.push(...railLite(hl.x + ax, hl.z + az, hl.x + bx, hl.z + bz, hl.y, { ends: [from, to] }));
+        const dress = hangarLanding();
+        parts.push(dress.body, dress.glow);
       }
       for (const [ax, ay, az, bx, by, bz, w] of L.stairs) parts.push(board(ax, ay, az, bx, by, bz, w - 0.1, TIMBER));
       for (const [bx0, bz0, bx1, bz1] of RING_BRIDGES) parts.push(board(bx0, M, bz0, bx1, M, bz1, 2, TIMBER));
@@ -1533,7 +1561,7 @@
     return geo;
   };
   BL.factoryModels = {
-    LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, KORTIK, kortikAt, kortikFrom, kortikLamps, kortikLights, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R, forgeWave, COILS, banner, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, sat, satFailed, REB, TRE, COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, BOARD, LOOKOUT_BEAM, STUDY, label, lanterns, hubTunnel, hubWindow, bakeWindow, windowLights, outsideView, hangarEntry, HANGAR_DOOR, hangarLamps, beam, moved, turnedY, smoothBolt, smoothBitcoin
+    LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, KORTIK, kortikAt, kortikFrom, kortikLamps, kortikLights, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R, forgeWave, COILS, banner, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, sat, satFailed, REB, TRE, COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, BOARD, LOOKOUT_BEAM, STUDY, label, lanterns, hubTunnel, hubWindow, bakeWindow, windowLights, outsideView, hangarEntry, HANGAR_DOOR, hangarLamps, hangarLanding, beam, moved, turnedY, smoothBolt, smoothBitcoin
   };
   // Private lexical bindings used by the scene-only extension; read once when that group evaluates.
   BL.factoryModelsSceneKit = { BL, BOARD, BOARD_FACE, BOARD_VALUES, BRASS, BRONZE, BRONZE_DK, CAP, CAP_BLUE, CAP_ORANGE, COILS, COIN_R, CONDUIT_SAMPLES, CONSOLE, COOK, COPPER, COPPER_DK, CRYSTAL, CYAN, FALLS, FLOOR, FORGE_CONSOLE, FORGE_CY, FORGE_TRACKS, GOLD, HALL, HANGAR_DOOR, HANGAR_SET_BACK, IRON_BK, IRON_DK, IRON_LT, KIOSK, LABEL_FONT, LAYOUT, LEVEL, LINE_STEP, LOOKOUT_BEAM, MONITORS, ORANGE, PORCH_HALF, REB, RING_BRIDGES, SHAFTS, STEP, STONE, STONE_DK, STUDY, TAU, TIMBER, TIMBER_DK, TIMBER_LT, TRE, TUNNEL_BOX, TUNNEL_POST, TUNNEL_THEMES, WALL_LEAN, along, banner, beam, bevelBox, box, cached, chain, columnParts, conduitPath, deckParts, donationCorner, face, flame, forwardLathe, gem, geometry, groundUnder, hangarEntry, hexToRgb, label, labelCache, lanternParts, lathe, makeVox, merge, models, moved, mulberry32, networkGlyph, noShadow, outcropTop, outcrops, plate, porchOf, prism, pushVert, railParts, railPlan, deckRailing, walkRails, ringLanding, shaded, smoothBitcoin, smoothBolt, span, stairParts, stationX, stationZ, torus, tube, tunnelFrame, turn, turnedX, turnedY, turnedZ, voxelGeometry };
