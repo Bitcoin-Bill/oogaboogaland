@@ -290,6 +290,9 @@
     const overheadScrollMin = cave => Math.min(overheadMin, SHOULDER_DISTANCE * cave.traits.height + cave.baseY);
     // A scene with no follow (the mine) never carries an Ooga, so it never reads this.
     const carryOrbitMin = follow ? Math.max(DIST_MIN, clamp(close ? close.trailingDist : follow.min, follow.min, follow.max)) : DIST_MIN;
+    // Where a reset puts a carried Ooga's view: the scene's `follow.view` (pitch, dist), else the shoulder's angle
+    // at the trailing distance.
+    const carryView = follow && follow.view ? follow.view : { pitch: SHOULDER_PITCH, dist: carryOrbitMin };
     const overheadDefault = ctx.birdsEyeMin ?? Math.max(OVERHEAD_MIN + 1, DIST_MAX * 0.5);
     let overheadActive = false, overheadMix = 0, overheadExit = 0, overheadTime = 0;
     let overheadHeight = overheadDefault, overheadWanted = overheadHeight, overheadVelocity = 0, overheadYaw = 0;
@@ -2528,7 +2531,8 @@
       quat.fromEuler(entryRoll, 0, 0, 0);
       camera.up = null;
       orbit.yaw = orbit.tYaw = yaw;
-      orbit.pitch = orbit.tPitch = closeWanted ? 0 : SHOULDER_PITCH;
+      const carryReset = !!cave && !closeWanted && !overhead && !aimView();
+      orbit.pitch = orbit.tPitch = closeWanted ? 0 : carryReset ? carryView.pitch : SHOULDER_PITCH;
       closeMix = closeWanted ? 1 : 0;
       closeExitScale = 1; closeCave = closeWanted ? cave : null;
       closeCameraActive = !!cave && closeWanted && !aimView();
@@ -2538,7 +2542,7 @@
         followTarget.x = orbit.tx = p.x; followTarget.z = orbit.tz = p.z;
         followTarget.y = orbit.ty = p === cave.sleepHead ? p.y : p.y - cave.baseY + follow.y + cave.viewLift;
         orbit.target = followTarget;
-        orbit.dist = orbit.tDist = carryOrbitMin;
+        orbit.dist = orbit.tDist = carryReset ? carryView.dist : carryOrbitMin;
         if (closeWanted && syncLyingView(cave)) lyingYaw = lyingPitch = 0;
         if (overhead) {
           beginOverhead(cave, false, true);
