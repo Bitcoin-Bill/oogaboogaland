@@ -137,7 +137,7 @@
 
   // `fx` for her lines and sparks, `audio` for her voice, her boots and her hammer's clang, `fire` the static fire test
   // she freaks out at, `jet` the Jet's node, which her rampage rocks, and `toast` for what the visitor should know.
-  const create = ({ fx, audio, fire, jet, toast }) => {
+  const create = ({ fx, audio, fire, jet, toast, blocks = null }) => {
     const S = HM.LAYOUT.sis, k = SM.rig(), P = k.parts, H = k.heads, rand = BL.math.mulberry32(0x5153), B = HM.blast(), SPARK = B.spark, IRON = B.iron;
     // The Jet's paint flying off it: its white and its livery's blue.
     const CHIPS = [BL.models.particleGeometry("#eeeae2", 0.1, 0), BL.models.particleGeometry("#2a4fb8", 0.1, 0)];
@@ -341,6 +341,16 @@
     const SOOTED = ["torso", "head", "armR", "armL", "foreR", "foreL", "legR", "legL", "shinR", "shinL"];
     // Where the visitor's Ooga stands its feet.
     const feetAt = (driven) => driven.root.position.y - (driven.baseY || 0);
+    // Whether a step to (nx, nz) keeps her out of what moves round the hall in circles (`blocks`, the forklift's), or
+    // takes her no deeper in; the circle in her way, else null.
+    const blockAt = (nx, nz) => {
+      const list = blocks ? blocks() : null;
+      if (list) for (let i = 0; i < list.length; i++) {
+        const b = list[i], r = RADIUS + b.radius, dn = Math.hypot(nx - b.x, nz - b.z);
+        if (dn < r && dn < Math.hypot(p.x - b.x, p.z - b.z)) return b;
+      }
+      return null;
+    };
     // The visitor's spot moved to just short of their Ooga, if she can get there, or null.
     const visit = (driven) => {
       const q = driven.root.position, d = Math.hypot(q.x - p.x, q.z - p.z);
@@ -689,19 +699,24 @@
           wantYaw = Math.atan2(dx, dz);
           if (d > POKE.chaseStop) {
             const step = Math.min(d - POKE.chaseStop, speed * dt), nx = p.x + dx / d * step, nz = p.z + dz / d * step;
-            if (openAt(nx, nz) && HM.walkable(p.x, p.z, nx, nz, feet, RADIUS)) { p.x = nx; p.z = nz; feet = HM.supportAt(p.x, p.z, feet); stepping = true; }
+            if (openAt(nx, nz) && HM.walkable(p.x, p.z, nx, nz, feet, RADIUS) && !blockAt(nx, nz)) { p.x = nx; p.z = nz; feet = HM.supportAt(p.x, p.z, feet); stepping = true; }
           }
         }
         if (chaseT <= 0 || !q) goTo(nextSpot(null));
       } else if (doing === "walk") {
-        // On along her waypoints, turning to each, stopping short of the visitor's Ooga where it stands in her way.
+        // On along her waypoints, turning to each, stopping short of the visitor's Ooga or the forklift where it stands in
+        // her way, and off elsewhere if it stays there.
         const wx = path[pathAt * 2], wz = path[pathAt * 2 + 1], dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);
         if (d > 0.01) wantYaw = Math.atan2(dx, dz);
         const step = Math.min(d, speed * dt), nx = p.x + dx / (d || 1) * step, nz = p.z + dz / (d || 1) * step;
-        const q = driven && driven.root.position, gap = RADIUS + (driven ? driven.bodyRadius || 0.4 : 0) + 0.1;
+        const q = driven && driven.root.position, gap = RADIUS + (driven ? driven.bodyRadius || 0.4 : 0) + 0.1, block = blockAt(nx, nz);
         if (q && Math.abs(feetAt(driven) - feet) < 1.5 && Math.hypot(nx - q.x, nz - q.z) < gap && Math.hypot(nx - q.x, nz - q.z) < Math.hypot(p.x - q.x, p.z - q.z)) {
           blocked += dt;
           glareAt = q;
+          if (blocked > BLOCKED) goTo(nextSpot(null));
+        } else if (block) {
+          blocked += dt;
+          glareAt = block;
           if (blocked > BLOCKED) goTo(nextSpot(null));
         } else {
           stepping = along(dt);
