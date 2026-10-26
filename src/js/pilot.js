@@ -15,6 +15,8 @@
   const AIM_ENTRY_RATE = 8, CARRY_FOCUS_TIME = 0.22;
   const OVERHEAD_TIME = 0.65, OVERHEAD_MIN = 5, OVERHEAD_ZOOM_RATE = 10, OVERHEAD_ZOOM_FAST = 18;
   const OVERHEAD_NORTH_TIME = 0.6;
+  // A bird's-eye scroll hands over to the shoulder this far above the feet (in Ooga heights).
+  const OVERHEAD_HANDOFF = 2.85;
   const overheadNorthEase = t => t * t * t * (10 + t * (-15 + 6 * t));
   const SHOT_SPREAD = 0.015, ADS_SPREAD = 0.005, SPREAD_MASS = 1 - Math.exp(-4.5);
   const TARGET_INTERVAL = 0.05, HIT_TIME = 0.16, TARGET_MARGIN = 0.035;
@@ -22,6 +24,8 @@
   const AIM_RETICLE_RADIUS = 14;
   const AUTO_AIM_PROPS = new Set(["crate", "barrel", "rock"]);
   const SHOULDER_PITCH = 0.42, SHOULDER_LIFT = 0.16, SHOULDER_DISTANCE = 2.85, SHOULDER_SIDE = 0.6;
+  // A cursor point nearer the body than this (in Ooga heights) is beside it: the shoulder eye cannot centre it.
+  const SHOULDER_NEAR = 1.2;
   const SHOULDER_SWAP_RATE = 10, PEEK_CAMERA = 0.34, PEEK_RATE = 14;
   const RIGHT_DOUBLE_TIME = 350, RIGHT_TAP_TRAVEL = 8;
   const LOGIN_VIEW_KEY = "ooga-login-view", LOGIN_VIEW_AGE = 10 * 60 * 1000;
@@ -287,7 +291,7 @@
     // Carry still owns an orbit. Combat's overhead pointer stays on the upper
     // centreline: vertical input sets its reach, horizontal input turns the view.
     const overheadMin = ctx.birdsEyeMin ?? OVERHEAD_MIN;
-    const overheadScrollMin = cave => Math.min(overheadMin, SHOULDER_DISTANCE * cave.traits.height + cave.baseY);
+    const overheadScrollMin = cave => Math.min(overheadMin, OVERHEAD_HANDOFF * cave.traits.height + cave.baseY);
     // A scene with no follow (the mine) never carries an Ooga, so it never reads this.
     const carryOrbitMin = follow ? Math.max(DIST_MIN, clamp(close ? close.trailingDist : follow.min, follow.min, follow.max)) : DIST_MIN;
     // Where a reset puts a carried Ooga's view: the scene's `follow.view` (pitch, dist), else the shoulder's angle
@@ -694,7 +698,7 @@
       // A point beside/under the body cannot be centred from the normal
       // shoulder eye. Keep the character's heading instead of permanently
       // shrinking the sideways offset to reach that point.
-      const cursorTooClose = cursorAim && Math.hypot(cursorPoint.x - cave.root.position.x, cursorPoint.z - cave.root.position.z) < SHOULDER_SIDE * cave.traits.height * 2;
+      const cursorTooClose = cursorAim && Math.hypot(cursorPoint.x - cave.root.position.x, cursorPoint.z - cave.root.position.z) < SHOULDER_NEAR * cave.traits.height;
       aimPreserveFacing = (cursorOccluded || cursorTooClose) && !closeWanted;
       aimAtCursor = cursorAim && !aimPreserveFacing && !closeWanted;
       orbit.yaw = orbit.tYaw = Math.atan2(-dx, -dz);
@@ -2014,7 +2018,7 @@
         cursorAim = true;
       } else if (active && px !== null && py !== null && !closeWanted && !armed() && !scroll) {
         pickCarryTarget(carryPick, px, py, cave, cave.root.position.y - cave.baseY + cave.headOffset * 0.95 + cave.viewLift,
-          SHOULDER_SIDE * cave.traits.height * 2);
+          SHOULDER_NEAR * cave.traits.height);
         cursorPoint.x = carryPick.x; cursorPoint.y = carryPick.y; cursorPoint.z = carryPick.z;
         cursorAim = carryPick.kind === "point";
         cursorOccluded = carryPick.kind === "facing";
