@@ -2,6 +2,39 @@
 
 A WebGL2 floating island whose cliff caves hold projects and an arcade of games. Voxel cavemen stand in for the contributors of [OogaBoogaX](https://github.com/OogaBoogaX); donated bananas feed them, the live Bitcoin mempool makes the weather, and the rim Oogatron shows the org's live stats. Plain JavaScript, no dependencies, read-only network connections only. Payments are a simulator for now; visitor state stays in the visitor's browser.
 
+## Play Block Frenzy (this fork)
+
+Block Frenzy is our capture-the-flag game inside Ooga Booga Land: steal the opposing team's glowing Bitcoin block and bring it home while your own block is home. It is local single-player with bot teammates and opponents; multiplayer is not implemented. This is a fork contribution, not a claim that the game is available on the official oogabooga.land website.
+
+Install Git and Node.js 22 or newer, then run these commands in a terminal. Use a new folder so an existing checkout is left untouched:
+
+```sh
+git clone --depth 1 -b feature/block-frenzy https://github.com/Bitcoin-Bill/oogaboogaland.git block-frenzy-play
+cd block-frenzy-play
+npm run serve
+```
+
+Keep the terminal running, then open **http://127.0.0.1:8080/blockfrenzy** in your browser. Alternatively, open **http://127.0.0.1:8080/oogaarcade** and enter the fifth cabinet. These commands use the latest `feature/block-frenzy` branch. If port 8080 is already in use, run `PORT=8081 npm run serve` and use port 8081 in the address. Press Ctrl+C in the terminal to stop the server.
+
+Choose your Ooga, team and match settings, then start. Click the game view to aim with the mouse.
+
+| Control | Action |
+|---|---|
+| W / S | Run forward / backward |
+| A / D | Turn |
+| Mouse / left click | Aim / fire after clicking the game |
+| 1–6, R or right click | Select tools |
+| Space | Jump; press again in the air for a double jump |
+| Shift | Sprint |
+| Tab | Throw what you hold |
+| F / B | Lift a crate / place a new crate |
+| C / V | Crouch / switch first-person view |
+| E | Use a nearby zipline or catapult |
+| G | Drop the block |
+| Escape | Release the mouse |
+
+Phone/tablet controls, performance and the latest visuals still need real-device playtesting. Developed with AI assistance (Claude Code).
+
 ## Run it
 
 Open `src/index.html` in a browser, or serve `src/` with any static server.
