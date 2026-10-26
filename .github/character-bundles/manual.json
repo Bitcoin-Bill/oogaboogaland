@@ -5,15 +5,6 @@
   "round": "034dafa4380f6b8220fdfe7131c9d4a080604618",
   "entries": [
     {
-      "pr": 294,
-      "head": "8ab7a3c8e4f9eabeaf127c8e0f0211f315a8d2de",
-      "author": "SatsMason",
-      "path": "src/characters/SatsMason.js",
-      "base": null,
-      "hash": "b63ea30d0581dac9f340d82c1eb80a54f8d97de423023d8d6369d04d3a720d7b",
-      "lane": "manual"
-    },
-    {
       "pr": 306,
       "head": "90b34e1a5750ac7ec64232193d0a0e11f76fc9ff",
       "author": "Bitcoin-Bill",
