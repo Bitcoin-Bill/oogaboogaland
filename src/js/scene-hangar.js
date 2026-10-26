@@ -109,6 +109,9 @@
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
   // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
   const CAB_REACH = 0.6, CAB_SPAN = [-1.1, 1.0], CAB_OUT = [0.15, 1.2];
+  // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it), put back as it gets out (the
+  // pilot keeps its zoom and pitch across first person); it sits in first person meanwhile.
+  const SEAT_VIEW = { mode: null };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
@@ -217,8 +220,8 @@
     CAB.z = dx * f.sn + dz * f.cs;
     return p.y - cave.baseY < HM.STEP && CAB.z > CAB_SPAN[0] && CAB.z < CAB_SPAN[1] && Math.abs(CAB.x) < BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius + CAB_REACH;
   };
-  // Space beside the cab gets the driven Ooga in: it will stand up again on the side it got in from, at the nearest spot
-  // out beside the cab it fits, else the other side's.
+  // Space beside the cab gets the driven Ooga in, in first person: it will stand up again on the side it got in from, at
+  // the nearest spot out beside the cab it fits, else the other side's.
   const getIn = (f, cave) => {
     if (cave.camp.seat || f.seat.sitter || !besideCab(f, cave)) return false;
     const side = Math.sign(CAB.x) || 1, out = BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius, w = f.seat.walkAt;
@@ -226,9 +229,23 @@
       const lx = s * (out + d), lz = CAB.z * 0.3;
       w.x = f.x + lx * f.cs + lz * f.sn;
       w.z = f.z - lx * f.sn + lz * f.cs;
-      if (HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) return people.sitPlayer(f.seat);
+      if (!HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) continue;
+      SEAT_VIEW.mode = pilot.view;
+      // The view turns down the forks from beside the cab at its own zoom and pitch, so first person enters looking
+      // where the seat faces.
+      pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: pilot.orbit.tPitch, dist: pilot.orbit.tDist });
+      if (!people.sitPlayer(f.seat)) { SEAT_VIEW.mode = null; return false; }
+      pilot.enterClose();
+      return true;
     }
     return false;
+  };
+  // Out of the forklift's seat, however it got out (Space, or walking off), the view it got in with comes back: first
+  // person stays, the shoulder or the orbit returns.
+  const seatViewBack = (cave) => {
+    if (!SEAT_VIEW.mode || cave && cave.camp.seat === scene.forklift.seat) return;
+    if (cave && SEAT_VIEW.mode !== "first-person") pilot.exitClose(SEAT_VIEW.mode === "shoulder");
+    SEAT_VIEW.mode = null;
   };
   // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
   // round its fuselage's axis.
@@ -932,6 +949,7 @@
     s.sisHead.x = sp.x; s.sisHead.y = sp.y + 0.9; s.sisHead.z = sp.z;
     if (s.sis.rampaging && !s.guide.lent) { s.guide.lend(s.distraction.drive); s.sis.distract(s.guide.root.position); }
     else if (!s.sis.rampaging && s.guide.lent) { s.distraction.done(); s.guide.lend(null); s.sis.distract(null); }
+    seatViewBack(drivenHere);
     pilot.update(dt);
     s.guide.update(dt, elapsed);
     s.fire.view(camera);
@@ -1016,6 +1034,7 @@
   const overlay = (dt) => fx.drawOverlay(dt, drawExtra);
 
   const leave = () => {
+    SEAT_VIEW.mode = null;
     // Left by Back or Forward rather than by its door, the hangar hands the Ooga on, so the next scene plays the same
     // one; the door and Escape have handed theirs over already.
     if (!leaving) {
