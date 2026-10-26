@@ -587,7 +587,7 @@
         if (me) { center("NETTED!", 900); notice("Tangled! Slow and no jumping for a few seconds", 2200); }
         say(e.actor, LINES.net, 1.4);
       } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
-      else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
+      else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets, nets and crates", 1600); updateTools(); } }
       else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
       else if (e.type === "rifle") {
         if (me) {
@@ -615,7 +615,7 @@
       else if (e.type === "boing") {
         fx.burst(e.x, 0.3, e.z, 6, ORANGE_BITS, 1.4);
         if (me && !trampSeen) { trampSeen = true; notice("BOING! Jump again at the top to go even higher", 2400); }
-      } else if (e.type === "cache") { fx.burst(e.x, e.y + 0.5, e.z, 10, ORANGE_BITS, 1.6); if (me) { notice("Ammo cache! Grenades, rockets and nets refilled", 1800); updateTools(); } }
+      } else if (e.type === "cache") { fx.burst(e.x, e.y + 0.5, e.z, 10, ORANGE_BITS, 1.6); if (me) { notice("Ammo cache! Grenades, rockets, nets and crates refilled", 1800); updateTools(); } }
       else if (e.type === "climbed") { if (me) updateTools(); }
       else if (e.type === "zip") { if (me) { center("ZIP!", 700); notice("Space lets go early", 1600); } }
       else if (e.type === "unzip") { if (me) updateTools(); }
@@ -789,7 +789,8 @@
     if (phase !== "play") return false;
     if (SIM.build(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
-    notice(a.crates <= 0 ? "No crates left" : "Can't put a crate there · your own half, clear ground", 1200);
+    const ownHalf = (a.team === "blue" ? a.z : -a.z) >= 2;
+    notice(a.crates <= 0 ? "No crates left · your stand or an ammo cache gives you 3 more" : !a.grounded ? "Land first, then drop a crate" : !ownHalf ? "Crates only go down on your own half" : "No room there · face open ground and try again", 1600);
     return false;
   };
   const updateTools = () => {

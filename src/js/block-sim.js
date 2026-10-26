@@ -391,9 +391,11 @@
     const e = sim.events[sim.eventCount++];
     e.type = type; e.team = team; e.actor = actor; e.by = by; e.x = x; e.y = y; e.z = z;
   };
+  // A stand or a cache tops up the throwables and the crate stock.
   const refill = (a) => {
     let more = false;
     for (const k of KINDS) if (TOOLS[k].max && a[k] < TOOLS[k].max) { a[k] = TOOLS[k].max; more = true; }
+    if (a.crates < CONFIG.CRATE_STOCK) { a.crates = CONFIG.CRATE_STOCK; more = true; }
     return more;
   };
   // True when a crate fits at (x, y, z): inside the arena, off the stands, overlapping no box at that height.
