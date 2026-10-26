@@ -39,6 +39,8 @@
     seat: [0, 1.18, 0.38], steering: [-0.02, 1.62, -0.62, 0.95], button: [0.42, 1.43, -0.74], hinge: [0.42, 1.43, -0.85], beacon: [0, 2.58, 0.55]
   };
   const P = PLACES;
+  // How thick the seat's cushion is, on the deck at the seat's place: its top is where a driver sits.
+  const CUSHION = 0.14;
   // The box round it that a walker meets, from its carriage's face to its back, its forks low enough to step over.
   const FOOTPRINT = { x: P.half + 0.1, z0: P.face - 0.1, z1: P.back + 0.02, top: P.roof + 0.1 };
 
@@ -156,7 +158,7 @@
     round.push(moved(turn([[0.11, 0], [0.11, 0.05], [0.09, 0.07], [0, 0.07]], 16, BLACK), P.beacon[0], P.roof + 0.04, P.beacon[2]));
     // The seat: its cushion, its back and a hip guard round its sides.
     const [sx, sy, sz] = P.seat;
-    flat.push(bevelBox({ w: 0.56, h: 0.14, d: 0.52, color: BLACK, bevel: 0.05, offset: { x: sx, y: sy + 0.07, z: sz } }));
+    flat.push(bevelBox({ w: 0.56, h: CUSHION, d: 0.52, color: BLACK, bevel: 0.05, offset: { x: sx, y: sy + CUSHION / 2, z: sz } }));
     flat.push(moved(turnedX(bevelBox({ w: 0.56, h: 0.6, d: 0.13, color: BLACK, bevel: 0.05, offset: { y: 0.3 } }), 0.12), sx, sy + 0.12, sz + 0.27));
     for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.06, h: 0.18, d: 0.36, color: BLACK_B, bevel: 0.02, offset: { x: sx + s * 0.31, y: sy + 0.2, z: sz + 0.08 } }));
     // The dashboard: a dark panel along the dash's top facing the driver, and the steering column from it.
@@ -324,5 +326,5 @@
     };
   };
 
-  BL.forkliftModels = { U, PLACES, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, button, cover, doors, decals };
+  BL.forkliftModels = { U, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, button, cover, doors, decals };
 })();
