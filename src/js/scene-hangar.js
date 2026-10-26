@@ -110,8 +110,9 @@
     tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
   // The forklift's body as walkers meet it: two rows of circles along it (x either side of its middle and z along it,
-  // metres in its frame), each `radius` round and `height` tall; its forks stay out of them.
-  const BLOCKS = { x: [-0.55, 0.55], z: [-1.5, -0.5, 0.5, 1.25], radius: 0.75, height: 3.2 };
+  // metres in its frame), each `radius` round and `height` tall, the front row's edge at the carriage's face; its forks
+  // stay out of them.
+  const BLOCKS = { x: [-0.55, 0.55], z: [-1.3, -0.5, 0.5, 1.25], radius: 0.75, height: 3.2 };
   // How far past the forklift's side, beyond the Ooga's own body, its cab takes them in (`CAB_REACH`), along how much of
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
   // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
