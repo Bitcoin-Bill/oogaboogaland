@@ -35,8 +35,8 @@
     half: 0.8, under: 0.42, floor: 0.62, deck: 1.18, top: 1.55,
     cowl: -1.22, dash: -0.7, cab: 0.05, weight: 0.7, back: 1.5,
     mastX: 0.42, mastZ: -1.4, mastTop: 2.6, face: -1.56, forks: 1.25, doorX: 0.6, doorY: [0.64, 1.3],
-    postX: 0.7, postFront: -0.88, postRear: 0.78, roof: 2.5,
-    seat: [0, 1.18, 0.38], steering: [-0.02, 1.62, -0.62, 0.95], button: [0.42, 1.43, -0.74], hinge: [0.42, 1.43, -0.85], beacon: [0, 2.58, 0.55]
+    postX: 0.7, postFront: -0.88, postRear: 0.78, roof: 2.9,
+    seat: [0, 1.18, 0.38], steering: [-0.02, 1.62, -0.62, 0.95], button: [0.42, 1.43, -0.74], hinge: [0.42, 1.43, -0.85], beacon: [0, 2.98, 0.55]
   };
   const P = PLACES;
   // How thick the seat's cushion is, on the deck at the seat's place: its top is where a driver sits.
