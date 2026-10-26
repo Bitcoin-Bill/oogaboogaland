@@ -354,7 +354,8 @@
         g.beginPath(); g.moveTo(x, 0); g.lineTo(x + side * H * 0.55, 0); g.lineTo(x + side * H * 1.05, H); g.lineTo(x + side * H * 0.5, H); g.closePath(); g.fill();
       }
     },
-    // Hazard stripes for the button block's top round the button.
+    // Hazard stripes for the button block's top round the button, and down each side between the wheels (`hazard`).
+    hazard: (g, W, H) => PAINT.stripes(g, W, H),
     stripes: (g, W, H) => {
       g.fillStyle = YELLOW; g.fillRect(0, 0, W, H);
       g.fillStyle = BLACK;
@@ -392,8 +393,8 @@
     pictures.set(key, geo);
     return geo;
   };
-  // Every decal and where it goes, [geometry, x, y, z, rotation.x], in the forklift's frame, or for DO NOT PRESS on
-  // the cover's front in the cover's hinge frame (`cover`, so it lifts with it).
+  // Every decal and where it goes, [geometry, x, y, z, rotation.x, rotation.y], in the forklift's frame, or for DO NOT
+  // PRESS on the cover's front in the cover's hinge frame (`cover`, so it lifts with it).
   const decals = () => {
     const [bx, by, bz] = P.button;
     return {
@@ -404,7 +405,8 @@
         [picture("stripes", 0.28, 0.24), bx, by + 0.002, bz, -Math.PI / 2],
         [picture("gauge", 0.11, 0.11, 0.15, true), -0.4, 1.36, P.dash - 0.05, -0.55],
         [picture("gauge", 0.11, 0.11, 0.15, true), -0.28, 1.36, P.dash - 0.05, -0.55],
-        [picture("screen", 0.13, 0.08, 0.5), 0.19, 1.35, P.dash - 0.055, -0.55]
+        [picture("screen", 0.13, 0.08, 0.5), 0.19, 1.35, P.dash - 0.055, -0.55],
+        ...[-1, 1].map((s) => [picture("hazard", 0.66, 0.13), s * (P.half + 0.004), 0.52, 0.02, 0, s * Math.PI / 2])
       ],
       cover: [[picture("donot", 0.24, 0.055, 0.3), 0, 0.065, 0.227, 0]]
     };

@@ -200,7 +200,7 @@
     const carriage = at(FL.carriage(), [0, P.lift, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
     const beacon = at(FL.beacon(), P.beacon, { sightHidden: true }), button = at(FL.button(), P.button), cover = at(FL.cover(), P.hinge, { sightHidden: true });
     const doors = D.map((geometry, i) => at(geometry, [(i ? 1 : -1) * P.doorX, 0, P.back]));
-    const picture = ([geometry, px, py, pz, rx]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: 0, z: 0 }, sightHidden: true, depthBias: -0.15 });
+    const picture = ([geometry, px, py, pz, rx, ry = 0]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: ry, z: 0 }, sightHidden: true, depthBias: -0.15 });
     addChild(cover, ...decals.cover.map(picture));
     addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), createNode({ geometry: FL.lamps(), sightHidden: true }),
       ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
