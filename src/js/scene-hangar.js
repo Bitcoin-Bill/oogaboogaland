@@ -936,7 +936,7 @@
     const lx = (dx * f.cs - dz * f.sn) / S, lz = (dx * f.sn + dz * f.cs) / S - FL.PLACES.face;
     return Math.abs(lx) <= D.x && lz >= D.tip && lz <= D.heel ? (FL.PLACES.lift + f.lift + D.top) * S : -Infinity;
   };
-  // The ground: the hall's (a crate's top under whatever part of the body reaches over it), or the forks'
+  // The ground: the hall's (a crate's or a chest's top under whatever part of the body reaches over it), or the forks'
   // within a step of the feet; and on foot, level with the forks, along them as far as the hall is clear (off a raised
   // fork's edge the hall's own drop holds, as a deck's).
   const groundFor = (x, z, feet, high, actor) => {
@@ -959,8 +959,8 @@
     return true;
   };
   // In the air, the same clearance without the floor within a step, as the Factory keeps it, so a jump carries an Ooga
-  // over a deck's rail and it drops to whatever is below; on foot the edges still hold. A crate blocks the whole
-  // body in the air (a step's foot's breadth is for walking), and the forklift's body holds in the air too (on
+  // over a deck's rail and it drops to whatever is below; on foot the edges still hold. A crate or a chest blocks the
+  // whole body in the air (a step's foot's breadth is for walking), and the forklift's body holds in the air too (on
   // foot the crew keeps its walkers out of it).
   const flyableFor = (ax, az, bx, bz, y, height, actor) => {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2)), radius = actor.bodyRadius || 0.35;
@@ -1234,7 +1234,7 @@
     s.fire.unshake(camera);
     pilot.readInput(dt);
     if (people) people.update(dt, elapsed);
-    // The Ooga driven here never rests inside a crate (`hangarModels.pushOut`).
+    // The Ooga driven here never rests inside a crate or a chest (`hangarModels.pushOut`).
     if (drivenHere && !drivenHere.camp.seat) HM.pushOut(drivenHere.root.position, drivenHere.root.position.y - drivenHere.baseY, drivenHere.bodyRadius || 0.35);
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);

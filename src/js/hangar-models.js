@@ -364,6 +364,8 @@
   // row of sockets; a black rubber worktop with a wrench and a screwdriver left on it, and a chrome push handle on its
   // side; and the top box on its back half, three shallow drawers, side handles, a lid with a chrome latch, and the
   // hangar's lightning bolt on a badge.
+  // Its worktop's height, and its top box's lid's, where things stand on it.
+  const CHEST_TOPS = [0.965, 1.375];
   const CHEST = { red: "#b8231b", face: "#c92b21", dark: "#7e1712", chrome: "#d6dbe1", black: "#1d1f24", rubber: "#2a2c30", gold: "#ffc83a" };
   const toolChest = () => {
     const C = CHEST, f = [];
@@ -1574,7 +1576,7 @@
 
   // Every surface with its height, as the Factory keeps its own: the floor, the landing, the catwalks and the dock's
   // decks as rects, the steps and the stairs as their treads, a rect each at its top (`flight`), the tops of the crates
-  // (`solid`), and the top of the Jet column by column (`jetModels.columns`); and what stands in the way
+  // and tool chests (`solid`), and the top of the Jet column by column (`jetModels.columns`); and what stands in the way
   // as boxes [x0, x1, z0, z1, from, to, top] between two heights of the feet (`top` 1 for a solid's), and the Jet's own
   // cells. `supportAt(x, z,
   // feet)` is the highest surface within a step of the feet, so a walker on a catwalk stands on it and one on the floor
@@ -1709,7 +1711,12 @@
       }
     }
     for (const [x, z] of L.kiosks) around(x, z, 0.4, 0.4, 1.4);
-    for (const [x, z] of L.toolChests) around(x, z, 0.6, 0.6, 1.4);
+    // A tool chest's worktop, and on its back half the top box up to its lid, to stand on.
+    for (const [x, z, turn] of L.toolChests) {
+      solid(x, z, 0.6, 0.6, -1, CHEST_TOPS[0]);
+      const [hx, hz] = turned(0.5, 0.22, turn);
+      solid(x - 0.07 * Math.sin(turn), z - 0.07 * Math.cos(turn), hx, hz, CHEST_TOPS[0], CHEST_TOPS[1]);
+    }
     // A crate's top to stand on, and a stacked pair's: the smaller crate on top standing in the way from the floor up,
     // since the lower one's rim round it is too narrow to stand on.
     for (const [x, z, a, stacked] of L.crates) {
@@ -1745,7 +1752,7 @@
     return n;
   };
   // With a body's `radius`, a solid's top (`solid`) holds it up wherever the body reaches a foot's breadth over it
-  // (SOLID_FOOT), so a body that comes down overlapping a crate stands on its edge rather than sinking into it,
+  // (SOLID_FOOT), so a body that comes down overlapping a crate or a chest stands on its edge rather than sinking into it,
   // and one that only grazes it drops beside it.
   const SOLID_FOOT = 0.25;
   const supportAt = (x, z, feet, radius = 0) => {
