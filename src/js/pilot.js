@@ -2807,7 +2807,9 @@
       const cp = Math.cos(orbit.pitch), sp = Math.sin(orbit.pitch), sy = Math.sin(orbit.yaw), cy = Math.cos(orbit.yaw);
       const eyeClearance = cave.headOffset * 0.95 + cave.viewLift;
       const eyeY = p.y - cave.baseY + eyeClearance;
-      const distance = (shoulderDistance(cave, orbit.pitch) - 0.3 * adsMix) * h * (1 - closeMix), side = shoulderSide * (1 - 0.14 * adsMix) * h * (1 - closeMix);
+      // Aiming down the sights narrows the view only: the eye holds its place,
+      // so the zoom spreads the actor out from the crosshair rather than in.
+      const distance = shoulderDistance(cave, orbit.pitch) * h * (1 - closeMix), side = shoulderSide * h * (1 - closeMix);
       const eyeForward = 0.16 * h * closeMix;
       // Ordinary aim stays above the head. Only a steep upward look lowers
       // the boom; distance supplies the room needed to keep the feet in view.
