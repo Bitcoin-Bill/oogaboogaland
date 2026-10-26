@@ -10998,7 +10998,7 @@ const hubCombatReplay = { name: "birds-eye combat replay", why: "contract: repla
     P.restorePose(JSON.parse(JSON.stringify(pose)), true); B.advance(0.2, 1 / 60);
     return { pose, side, headOffset: B.renderer.size.width / 2 - head.x, held, roundTrip: view === JSON.stringify([C.position, C.target, C.up, C.fov]) };
   })()`);
-  record("shoulder replay: the supplied zero-offset URL loads beside the head before any input and holds the repaired camera", repaired.pose.mode === "shoulder" && repaired.pose.combat && repaired.pose.shoulderSide === 0.6 && Math.abs(repaired.side - 0.6) < 1e-5 && repaired.headOffset > 0 && repaired.held
+  record("shoulder replay: the supplied zero-offset URL loads beside the head before any input and holds the repaired camera", repaired.pose.mode === "shoulder" && repaired.pose.combat && repaired.pose.shoulderSide === 0.9 && Math.abs(repaired.side - 0.9) < 1e-5 && repaired.headOffset > 0 && repaired.held
     && repaired.pose.actor.every((n, i) => Math.abs(n - collapsed.actor[i]) < 1e-6) && repaired.pose.selectedSlot === 2 && repaired.pose.ammo === 30 && repaired.roundTrip, JSON.stringify(repaired));
 } };
 

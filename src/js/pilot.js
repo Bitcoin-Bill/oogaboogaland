@@ -23,7 +23,7 @@
   const AIM_CLOSE_HIT = 0.9, AIM_SPREAD_NEAR = 6, AIM_SPREAD_MAX = 2.4;
   const AIM_RETICLE_RADIUS = 14;
   const AUTO_AIM_PROPS = new Set(["crate", "barrel", "rock"]);
-  const SHOULDER_PITCH = 0.42, SHOULDER_LIFT = 0.16, SHOULDER_DISTANCE = 2.85, SHOULDER_SIDE = 0.6;
+  const SHOULDER_PITCH = 0.42, SHOULDER_LIFT = 0.8, SHOULDER_LIFT_UP = 0.16, SHOULDER_LEVEL = 0.22, SHOULDER_DISTANCE = 3.6, SHOULDER_SIDE = 0.9;
   // A cursor point nearer the body than this (in Ooga heights) is beside it: the shoulder eye cannot centre it.
   const SHOULDER_NEAR = 1.2;
   const SHOULDER_SWAP_RATE = 10, PEEK_CAMERA = 0.34, PEEK_RATE = 14;
@@ -394,11 +394,18 @@
     let lockPending = false, lockCancelled = false, aimLocked = false, softAimFocused = false, externalControl = false, externalCombat = null, menuOpen = false, unlockedAt = -Infinity;
     let savedPitch = 0, savedDist = 0, savedNear = camera.near, sightClear = null, cursorClear = null, aimSurface = null;
     const weaponViewReady = (cave) => active && !!cave && !cave.health.stunned && !crew.sleeping && (closeWanted || (!cave.camp.seat || cave.camp.seat.allowWeapons) && !cave.bedTravel.mode);
-    const shoulderBoomPitch = (pitch) => Math.max(pitch, Math.min(0, pitch + 0.22));
+    const shoulderBoomPitch = (pitch) => Math.max(pitch, Math.min(0, pitch + SHOULDER_LEVEL));
+    // Level and downward aim lift the eye so the head sits below the
+    // crosshair and the band beside it stays clear. Looking up sinks the body
+    // in the frame on its own, so the lift eases back before the boom lowers.
+    const shoulderLift = (pitch) => {
+      const t = clamp(-pitch / SHOULDER_LEVEL, 0, 1);
+      return SHOULDER_LIFT + (SHOULDER_LIFT_UP - SHOULDER_LIFT) * t * t * (3 - 2 * t);
+    };
     const shoulderDistance = (cave, pitch) => {
-      // Keep the feet above the bottom 5% while the head stays near the
-      // crosshair. Looking toward the horizon needs a little more room.
-      const height = (cave.headOffset * 0.95 + cave.viewLift) / cave.traits.height + SHOULDER_LIFT;
+      // Keep the feet above the bottom 5% with the head below the crosshair.
+      // Looking toward the horizon needs a little more room.
+      const height = (cave.headOffset * 0.95 + cave.viewLift) / cave.traits.height + shoulderLift(pitch);
       const margin = 0.9 * Math.tan(BASE_FOV / 2), angle = pitch - shoulderBoomPitch(pitch);
       return Math.max(SHOULDER_DISTANCE, height * (Math.cos(pitch) - margin * Math.sin(pitch)) / (margin * Math.cos(angle) + Math.sin(angle)));
     };
@@ -724,13 +731,13 @@
         const side = SHOULDER_SIDE * h;
         if (horizontal > 1e-6) orbit.yaw = orbit.tYaw = Math.atan2(-x, -z) + Math.asin(side / horizontal);
         const forward = Math.sqrt(Math.max(0, horizontal * horizontal - side * side));
-        const y = p.y - cave.baseY + cave.headOffset * 0.95 + cave.viewLift + SHOULDER_LIFT * h - cursorPoint.y;
+        const y = p.y - cave.baseY + cave.headOffset * 0.95 + cave.viewLift - cursorPoint.y;
         // Solve the viewing angle from the safe shoulder eye. Aiming slightly
         // above eye level must not drag the physical boom under the character.
         let low = TRAILING_PITCH[0], high = TRAILING_PITCH[1];
         for (let i = 0; i < 32; i++) {
           const pitch = (low + high) * 0.5, boom = shoulderBoomPitch(pitch), distance = shoulderDistance(cave, pitch) * h;
-          const look = Math.atan2(y + Math.sin(boom) * distance, forward + Math.cos(boom) * distance);
+          const look = Math.atan2(y + shoulderLift(pitch) * h + Math.sin(boom) * distance, forward + Math.cos(boom) * distance);
           if (pitch < look) low = pitch; else high = pitch;
         }
         orbit.pitch = orbit.tPitch = (low + high) * 0.5;
@@ -753,7 +760,7 @@
         const distance = shoulderDistance(cave, orbit.pitch) * h * (1 - closeMix), side = shoulderSide * h * (1 - closeMix);
         const horizontal = Math.cos(boomPitch) * distance - Math.cos(orbit.pitch) * 0.16 * h * closeMix;
         const endX = sy * horizontal + cy * side, endZ = cy * horizontal - sy * side;
-        const endY = Math.sin(boomPitch) * distance + SHOULDER_LIFT * h * (1 - closeMix);
+        const endY = Math.sin(boomPitch) * distance + shoulderLift(orbit.pitch) * h * (1 - closeMix);
         const radial = Math.hypot(endX, endZ) - aimEntryRadius;
         const yaw = Math.atan2(Math.sin(Math.atan2(endX, endZ) - aimEntryYaw), Math.cos(Math.atan2(endX, endZ) - aimEntryYaw));
         const es = Math.sin(aimEntryYaw), ec = Math.cos(aimEntryYaw);
@@ -2807,7 +2814,7 @@
       const boomPitch = shoulderBoomPitch(orbit.pitch), horizontal = Math.cos(boomPitch) * distance - cp * eyeForward;
       const peek = peekMix * PEEK_CAMERA * h;
       const x = p.x + sy * horizontal + cy * (side + peek);
-      const y = eyeY + Math.sin(boomPitch) * distance + SHOULDER_LIFT * h * (1 - closeMix);
+      const y = eyeY + Math.sin(boomPitch) * distance + shoulderLift(orbit.pitch) * h * (1 - closeMix);
       const z = p.z + cy * horizontal - sy * (side + peek);
       if (aimMix < 1 && closeMix > 0) {
         // A fresh inward scroll may arrive before shoulder entry finishes.
