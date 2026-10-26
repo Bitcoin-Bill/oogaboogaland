@@ -9461,17 +9461,32 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   position: absolute;
   z-index: 11;
   right: 9vw;
-  bottom: 12%;
+  bottom: 9%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 6px 14px;
+  gap: 4px;
+  padding: 8px 14px 10px;
   border: 2px solid var(--wood-edge);
   border-radius: 8px;
-  background: rgba(30, 20, 12, 0.78);
+  background: rgba(30, 20, 12, 0.82);
   color: #f3e6cc;
-  pointer-events: none;
+}
+
+.block-preview-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  margin-top: 4px;
+  min-width: 220px;
+}
+
+.block-preview-pick label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.8;
 }
 
 .block-preview-name b {

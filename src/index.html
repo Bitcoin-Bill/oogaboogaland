@@ -887,8 +887,10 @@
               <button type="button" class="block-side block-target" data-skill="normal" aria-pressed="true">Normal</button>
               <button type="button" class="block-side block-target" data-skill="hard" aria-pressed="false">Hard</button>
             </div>
-            <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
-            <select class="block-ooga" id="block-ooga"></select>
+            <div id="block-ooga-slot">
+              <h3 class="section-head"><label for="block-ooga">Your Ooga</label></h3>
+              <select class="block-ooga" id="block-ooga"></select>
+            </div>
           </div>
           <div class="garage-col">
             <h3 class="section-head">Record</h3>
@@ -903,7 +905,7 @@
           <button type="button" class="feed-open race-go" data-action="block-start"><span data-sign>Play!</span></button>
         </div>
       </section>
-      <div class="block-preview-name" id="block-preview-name" hidden><b></b><span>drag to turn</span></div>
+      <div class="block-preview-name" id="block-preview-name" hidden><b></b><span>drag to turn</span><div class="block-preview-pick" id="block-preview-pick"><label for="block-ooga">Your Ooga</label></div></div>
       <div class="race-strip" id="block-strip" hidden>
         <div class="race-hud race-hud-left">
           <div class="race-lap block-score" data-team="blue"><span>Blue</span><b id="block-score-blue">0</b></div>

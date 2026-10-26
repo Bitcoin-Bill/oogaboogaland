@@ -1182,6 +1182,12 @@
     if (fpGun) fpGun.visible = false;
     preview.wide = window.innerWidth >= PREVIEW_MIN_W;
     el.previewName.hidden = !preview.wide;
+    // The Ooga picker sits under the Ooga on show when there is one, else in the board.
+    const home = preview.wide ? el.previewPick : el.oogaSlot;
+    if (el.oogaPick.parentNode !== home) {
+      home.append(el.oogaPick);
+      el.oogaHead.hidden = preview.wide;
+    }
     if (!preview.wide) {
       const a = elapsed * 0.12;
       setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
@@ -1426,6 +1432,9 @@
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
     el.previewName = document.getElementById("block-preview-name");
+    el.previewPick = document.getElementById("block-preview-pick");
+    el.oogaSlot = document.getElementById("block-ooga-slot");
+    el.oogaHead = el.oogaSlot.querySelector("h3");
     el.previewName.hidden = true;
     el.map = document.getElementById("block-map");
     el.mapCtx = el.map.getContext("2d");
