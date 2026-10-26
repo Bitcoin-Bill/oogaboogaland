@@ -131,6 +131,9 @@
   // How high the forks lift over their rest (the forklift's units) and how fast (units a second), and how far the fork
   // stick leans as they move (radians, back as they rise) and how fast it follows (a second).
   const FORKS = { max: 2, rate: 0.5, lean: 0.3, ease: 10 };
+  // Its steering: how far the rear wheels turn (radians), how fast they get there (a second), and how many times as far
+  // the steering wheel turns.
+  const STEER = { max: 0.62, rate: 2.4, wheel: 4 };
   const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -221,7 +224,9 @@
     const root = createNode({ position: { x, y: 0, z }, rotation: { x: 0, y: turn, z: 0 }, scale: { x: FL.SCALE, y: FL.SCALE, z: FL.SCALE } }), body = createNode({ geometry: FL.body() });
     const wheels = [[-P.frontX, P.frontR, P.front, W.front], [P.frontX, P.frontR, P.front, W.front], [-P.rearX, P.rearR, P.rear, W.rear], [P.rearX, P.rearR, P.rear, W.rear]]
       .map(([wx, wy, wz, geometry]) => at(geometry, [wx, wy, wz]));
-    const carriage = at(FL.carriage(), [0, P.lift, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
+    // The steering wheel turns on its own axis (`helm`) inside its column's tilt (`steering`).
+    const carriage = at(FL.carriage(), [0, P.lift, P.face]), steering = at(null, P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } }), helm = createNode({ geometry: FL.steering() });
+    addChild(steering, helm);
     const beacon = at(FL.beacon(), P.beacon, { sightHidden: true }), button = at(FL.button(), P.button), cover = at(FL.cover(), P.hinge, { sightHidden: true });
     const doors = D.map((geometry, i) => at(geometry, [(i ? 1 : -1) * P.doorX, 0, P.back]));
     const picture = ([geometry, px, py, pz, rx, ry = 0]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: ry, z: 0 }, sightHidden: true, depthBias: -0.15 });
@@ -240,7 +245,7 @@
       ...wheels, carriage, ...links, steering, stick, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, helm, steer: 0, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off).
     seat.act = () => !f.on && (powerOn(f), true);
     f.blocks = Array.from({ length: BLOCKS.x.length * BLOCKS.z.length }, () => ({ x: 0, y: 0, z: 0, radius: BLOCKS.radius, height: BLOCKS.height }));
@@ -371,6 +376,16 @@
     f.carriage.position.y = BL.forkliftModels.PLACES.lift + lift;
     f.inner.position.y = lift / 2;
     layChains(f);
+  };
+  // Running, the seat holds the Ooga (`lockMovement`) and A and D steer: the steering wheel and the rear wheels, which
+  // steer, turn toward where they are going (left, `steer` above 0, the rear wheels' fronts turned out to the right).
+  const steerLife = (f, dt) => {
+    const running = f.on && f.startT < 0 && people && people.player && people.player.camp.seat === f.seat;
+    f.seat.lockMovement = running;
+    const want = running ? -pilot.controls.axes.x * STEER.max : 0;
+    f.steer += clamp(want - f.steer, -STEER.rate * dt, STEER.rate * dt);
+    f.wheels[2].rotation.y = f.wheels[3].rotation.y = -f.steer;
+    f.helm.rotation.y = f.steer * STEER.wheel;
   };
   // The beacon's light while it turns, a spot out along its beam (its reflector's axis, the node's x), into `slot`; how
   // many it wrote.
@@ -1111,6 +1126,7 @@
     pressLife(s.forklift, dt);
     powerLife(s.forklift, dt);
     forkLife(s.forklift, dt);
+    steerLife(s.forklift, dt);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
