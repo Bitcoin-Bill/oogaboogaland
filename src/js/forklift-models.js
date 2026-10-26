@@ -552,17 +552,16 @@
       g.strokeStyle = AMBER; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(3)) * r * 0.7, r + Math.sin(at(3)) * r * 0.7); g.stroke();
       g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
     },
-    // The charge dial: E to F over a red, amber and green arc (CHARGE's sweep), its needle near full, and the bolt under
-    // it.
+    // The charge dial: E to F over a red, amber and green arc (CHARGE's sweep), and the bolt under it; its needle is a
+    // part of its own (`needle`).
     charge: (g, W, H) => {
       const r = W / 2, at = (t) => CHARGE.from + t * CHARGE.sweep;
       g.fillStyle = "#0c0e12"; g.beginPath(); g.arc(r, r, r * 0.96, 0, TAU); g.fill();
       g.strokeStyle = STEEL; g.lineWidth = W * 0.05; g.stroke();
       for (const [t0, t1, c] of [[0, 0.2, "#d8261c"], [0.2, 0.45, AMBER], [0.45, 1, "#3dff7a"]]) { g.strokeStyle = c; g.lineWidth = W * 0.1; g.beginPath(); g.arc(r, r, r * 0.68, at(t0), at(t1)); g.stroke(); }
-      write(g, "E", r + Math.cos(at(0)) * r * 0.42, r + Math.sin(at(0)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
-      write(g, "F", r + Math.cos(at(1)) * r * 0.42, r + Math.sin(at(1)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
-      g.strokeStyle = "#ffffff"; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(CHARGE.level)) * r * 0.74, r + Math.sin(at(CHARGE.level)) * r * 0.74); g.stroke();
-      g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
+      // E and F just under the arc's ends, clear of the needle resting at either.
+      write(g, "E", r + Math.cos(at(0)) * r * 0.5, r + Math.sin(at(0)) * r * 0.5 + W * 0.17, W * 0.16, "#ffffff", W * 0.2);
+      write(g, "F", r + Math.cos(at(1)) * r * 0.5, r + Math.sin(at(1)) * r * 0.5 + W * 0.17, W * 0.16, "#ffffff", W * 0.2);
       bolt(g, r, r * 1.45, r * 0.5, AMBER);
     },
     // The dashboard's little screen in blue: the bolt, a battery's bars, the forks' height and READY.
