@@ -59,6 +59,10 @@
   // The forklift's button: how loud its click, its thunk and the denied buzz are, and the buzz's two pulses, [from, for,
   // Hz], the second lower, as a machine says no.
   const FORK = { click: 0.3, thunk: 0.5, buzz: 0.16 }, DENIED = [[0.06, 0.17, 150], [0.29, 0.24, 132]];
+  // The forklift running: how loud its electric drive's whine, the hydraulic pump's hum and its hiss are, the relay's
+  // click and the ready chime; how long the drive takes to spin up (`spin`, s, the chime at its end) and to run down
+  // (`down`); and how far it carries, half at `ref` metres.
+  const LIFT = { whine: 0.05, hum: 0.11, hiss: 0.025, click: 0.35, chime: 0.1, spin: 0.9, down: 1.3, ref: 6 };
   // The film show's levels at full: the projector's motor, its whir, the gate's clatter and the lamp's buzz, the
   // soundtrack's crackle and hiss, a picture's clunk and the roller's ratchet; and how far the projector and the screen
   // carry (half at that many metres), the hall being quiet enough to hear them across it.
@@ -68,7 +72,8 @@
   const FORMANTS = { 65: [850, 1220], 69: [610, 2330], 73: [430, 2480], 79: [590, 920], 85: [760, 1400], 89: [310, 2790] }, SCHWA = [640, 1500], F3 = 2900;
 
   // `spots`: the door's shield and the launch shield, { x, y, z } each, the tunnel's axis { y, z0, z1 }, the test's
-  // booth and the middle of the Jet's engines, and the film show's projector and its picture, { x, y, z } each.
+  // booth and the middle of the Jet's engines, the film show's projector and its picture, and the forklift, { x, y, z }
+  // each.
   const create = (spots) => {
     let ctx = null, master = null, mix = null, muffle = null, buffer = null, ready = false, muted = false, disposed = false, since = 0, volume = 1;
     try {
@@ -79,8 +84,8 @@
       muted = false;
     }
     const bed = {}, test = {}, sis = {}, proj = {}, fork = {};
-    // Whether the projector runs, so a context opened mid-show starts it running.
-    let projOn = false;
+    // Whether the projector runs, so a context opened mid-show starts it running, and the same for the forklift.
+    let projOn = false, liftOn = false;
     // Her voice while she talks: where she stands (her node's position, read live), until when, and its least level.
     const sisVoice = { pos: null, until: 0, least: 0 };
     // Where the visitor hears from and the way the view faces on the ground, and where the last spot was placed.
@@ -189,6 +194,20 @@
       const tone = filter("lowpass", 1300, 0.8, fork.buzzGain);
       fork.buzz = osc("square", DENIED[0][2], tone);
       fork.buzz2 = osc("square", DENIED[0][2] * 1.05, gain(0.6, tone));
+      // Its run, placed where it stands, under its envelope: the drive's whine (a saw through a band, wavering a little),
+      // the pump's hum and its octave, and the hydraulics' hiss; and the relay's click and the ready chime outside it.
+      fork.runPan = panner();
+      fork.near = gain(0, fork.runPan);
+      fork.env = gain(liftOn ? 1 : 0, fork.near);
+      fork.whine = osc("sawtooth", 440, filter("bandpass", 900, 3, gain(LIFT.whine, fork.env)));
+      fork.waver = wobble(fork.whine.frequency, 3.1, 4);
+      fork.hum = osc("sine", 58, gain(LIFT.hum, fork.env));
+      fork.hum2 = osc("triangle", 116, gain(LIFT.hum * 0.4, fork.env));
+      fork.hiss = hissOf(filter("bandpass", 600, 1, gain(LIFT.hiss, fork.env)));
+      fork.relayGain = gain(0, fork.near);
+      fork.relay = hissOf(filter("bandpass", 1800, 1.5, fork.relayGain));
+      fork.chimeGain = gain(0, fork.near);
+      fork.chime = osc("sine", 880, fork.chimeGain);
     };
     // The projector's voices, all under its envelope, which `projector` opens and closes, and placed where it hangs; and
     // the screen's, placed where its picture falls.
@@ -489,6 +508,10 @@
       place(Sc.x, Sc.y, Sc.z, FILM_REF.screen);
       set(proj.screenNear.gain, AT.level, now);
       set(proj.screenPan.pan, AT.pan * 0.7, now);
+      const Fk = spots.forklift;
+      place(Fk.x, Fk.y, Fk.z, LIFT.ref);
+      set(fork.near.gain, AT.level, now);
+      set(fork.runPan.pan, AT.pan, now);
     };
     // Her voice's level and side from where she stands now, eased, or at once as a line starts.
     const placeSis = (now, snap) => {
@@ -666,6 +689,38 @@
         fork.buzzGain.gain.linearRampToValueAtTime(0, at + length);
       }
     };
+    // The forklift switched on, the relay clicking and its drive spinning up through `spin` and chiming ready, then running;
+    // or off, the relay clicking and all of it running down through `down`.
+    const forklift = (on) => {
+      liftOn = !!on;
+      if (!ready) return;
+      const now = ctx.currentTime, k = muted ? 0 : 1;
+      for (const param of [fork.env.gain, fork.whine.frequency, fork.hum.frequency, fork.relayGain.gain, fork.chimeGain.gain, fork.chime.frequency]) param.cancelScheduledValues(now);
+      fork.env.gain.setValueAtTime(fork.env.gain.value, now);
+      fork.whine.frequency.setValueAtTime(fork.whine.frequency.value, now);
+      fork.hum.frequency.setValueAtTime(fork.hum.frequency.value, now);
+      fork.relayGain.gain.setValueAtTime(LIFT.click * k, now);
+      fork.relayGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+      if (on) {
+        fork.env.gain.linearRampToValueAtTime(1, now + 0.3);
+        fork.whine.frequency.setValueAtTime(80, now);
+        fork.whine.frequency.exponentialRampToValueAtTime(440, now + LIFT.spin);
+        fork.hum.frequency.setValueAtTime(25, now);
+        fork.hum.frequency.exponentialRampToValueAtTime(58, now + LIFT.spin);
+        const at = now + LIFT.spin;
+        fork.chime.frequency.setValueAtTime(880, at);
+        fork.chime.frequency.setValueAtTime(1320, at + 0.13);
+        fork.chimeGain.gain.setValueAtTime(0, at);
+        fork.chimeGain.gain.linearRampToValueAtTime(LIFT.chime * k, at + 0.01);
+        fork.chimeGain.gain.setValueAtTime(LIFT.chime * k, at + 0.12);
+        fork.chimeGain.gain.linearRampToValueAtTime(LIFT.chime * k * 0.8, at + 0.13);
+        fork.chimeGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.42);
+      } else {
+        fork.whine.frequency.exponentialRampToValueAtTime(60, now + LIFT.down);
+        fork.hum.frequency.exponentialRampToValueAtTime(20, now + LIFT.down);
+        fork.env.gain.linearRampToValueAtTime(0, now + LIFT.down);
+      }
+    };
     // The projector starting, its motor and clatter spinning up through 1.5 s and the track coming on, or stopping, all
     // of it running down through 2 s.
     const projector = (on) => {
@@ -742,7 +797,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, projector, clunk, roll, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, forklift, projector, clunk, roll, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
