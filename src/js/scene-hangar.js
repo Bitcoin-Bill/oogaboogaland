@@ -138,6 +138,8 @@
   // Its drive, metres a second: top speed forward and in reverse, and how fast it gathers speed, brakes against the
   // throttle and coasts to a stop (a second); and its fork tips as obstacles meet them, how far round (m).
   const DRIVE = { forward: 3.2, reverse: 1.6, accel: 2.2, brake: 5, coast: 1.8, tip: 0.25 };
+  // What the driver is told once it is ready.
+  const DRIVE_HINT = COARSE ? "Stick drives · tap the fork stick for the forks · tap the wheel to honk" : "W S drive · A D steer · R F forks · H horn · Space gets out";
   const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -371,7 +373,7 @@
     if (f.startT >= 0) {
       f.startT += dt;
       if (f.startT > POWER.crank) f.keyTo = BL.forkliftModels.KEY.on;
-      if (f.startT > POWER.ready) { f.startT = -1; f.lit.glow = POWER.lit[1]; f.screen.visible = true; }
+      if (f.startT > POWER.ready) { f.startT = -1; f.lit.glow = POWER.lit[1]; f.screen.visible = true; hud.hint(DRIVE_HINT, 6000); }
     }
     const k = f.key.rotation.z, step = POWER.turn * dt;
     f.key.rotation.z = k + clamp(f.keyTo - k, -step, step);
