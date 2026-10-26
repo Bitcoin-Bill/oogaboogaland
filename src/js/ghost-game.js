@@ -62,6 +62,8 @@
   const POWER_COLOURS = MODELS.DROPS.map((d, kind) => kind === 4 ? GREEN : { core: d.mist[0], mid: d.mist[1], edge: d.mist[2], ring: d.mist[1], spark: d.mist[1] });
   const hex = (c) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
   const TIPS = ["Ghost · shoot it!", "Ghost general · beware its eye beam", "Wraith · it pulls at your soul"];
+  const BRUTE_TIPS = ["Gorilla · it leaps at you and slams the ground", "Skeleton · it crawls after you", "Giant spider · it spits venom",
+    "Halving Hourglass · halves your rifle while it stands"];
   // The hourglass's gold beam, as the gorillas' green; how tall it stands, and how long its sand takes to run through.
   const GOLD = { core: [255, 245, 215], mid: [255, 170, 40], edge: [247, 147, 26] }, GLASS_H = 3, SAND_MS = 12000;
   const DROP_WORDS = ["Bomb! Every ghost burns", "Shield up for everyone", "Ice! The ghosts slow down", "Health banana! Everyone's bar is full", "Double points",
@@ -162,8 +164,8 @@
     const { root, renderer, fx, crew, island, npcSync } = hub;
     const net = BL.net, coarse = hub.coarse;
     const camera = hub.camera, guide = hub.guide;
-    // `?skip=N` starts a hunt at round N, as the lab's did.
-    const SKIP = Math.max(1, Math.min(SIM.ROUNDS.length, parseInt(hub.params.get("skip"), 10) || 1));
+    // `?skip=N` starts a hunt at round N, as the lab's did (the boss's round, 8, at his countdown).
+    const SKIP = Math.max(1, Math.min(SIM.ROUNDS.length + 1, parseInt(hub.params.get("skip"), 10) || 1));
     MODELS.prepare();
     const group = createNode({ sightHidden: true });
     addChild(root, group);
@@ -307,8 +309,7 @@
     const owner = (role, slot) => ({
       kind: "halloween", role, slot, priority: role === "herald" ? 3 : 2, weaponType: role === "herald" ? "object" : "enemy", active: role === "herald",
       tooltip: () => role === "herald" ? S.state === ST.GATHER ? coarse ? "The restless ghost · tap it to ready up" : "The restless ghost · click it to ready up" : "A restless ghost · shoot it to start the ghost hunt"
-        : role === "boss" ? "THE BOSS · shoot him down" : role === "ling" ? "Spiderling · it scuttles after you and bites" : role === "brute" ? ["Gorilla · it leaps at you and slams the ground", "Skeleton · it crawls after you", "Giant spider · it spits venom",
-          "Halving Hourglass · halves your rifle while it stands"][sim.brutes[slot].kind] : TIPS[sim.ghosts[slot].tier],
+        : role === "boss" ? "THE BOSS · shoot him down" : role === "ling" ? "Spiderling · it scuttles after you and bites" : role === "brute" ? BRUTE_TIPS[sim.brutes[slot].kind] : TIPS[sim.ghosts[slot].tier],
       // Clicking the herald only readies a player in its lobby; only a shot wakes it (`hit`).
       tap: () => { if (role === "herald" && S.state === ST.GATHER) tapHerald(); }
     });
@@ -474,13 +475,18 @@
     const venoms = pool(B.max, MODELS.spiderParts().venom), puddles = pool(B.max, null), venomRings = pool(B.max, null);
     let lingCried = -1e9;
     const puddleAt = new Float64Array(B.max).fill(-1e9), puddleX = new Float64Array(B.max), puddleZ = new Float64Array(B.max);
-    // A brute's body as this page draws it, by kind (gorilla, skeleton, spider), and how tall it stands.
-    const bodyOf = (i, b) => [rigs[i].root, skels[i].root, spiders[i].root, glasses[i].root][b.kind];
-    const heightOf = (b) => [BRUTE_H, BONES_H, SPIDER_H, GLASS_H][b.kind];
-    const fullHp = (b) => SIM.hpOf([B.hp, C.BONES.hp, C.SPIDER.hp, C.HOURGLASS.hp][b.kind], S.round);
+    // By kind (gorilla, skeleton, spider, hourglass), built once so drawing a brute builds nothing: each slot's bodies,
+    // and each kind's height, base health, death pixels and hit radius.
+    const bodies = rigs.map((rig, i) => [rig.root, skels[i].root, spiders[i].root, glasses[i].root]);
+    const KIND_H = [BRUTE_H, BONES_H, SPIDER_H, GLASS_H], KIND_HP = [B.hp, C.BONES.hp, C.SPIDER.hp, C.HOURGLASS.hp];
+    const KIND_PIXELS = [PIXELS.gorilla, PIXELS.skeleton, PIXELS.spider, PIXELS.hourglass], KIND_HIT = [BRUTE_H * 0.55, 0.6, 0.85 * SPIDER_SCALE, 0.9];
+    // A brute's body as this page draws it, how tall it stands and its full health this round.
+    const bodyOf = (i, b) => bodies[i][b.kind];
+    const heightOf = (b) => KIND_H[b.kind];
+    const fullHp = (b) => SIM.hpOf(KIND_HP[b.kind], S.round);
     // Every body of slot `i` but the one its brute of kind `kind` wears put away, and its kind's extras with them.
     const hideOthers = (i, kind) => {
-      const roots = [rigs[i].root, skels[i].root, spiders[i].root, glasses[i].root];
+      const roots = bodies[i];
       for (let k = 0; k < roots.length; k++) if (k !== kind) roots[k].visible = false;
       if (kind !== 2) venoms[i].visible = spiderDollars[i].visible = false;
       if (kind !== 3) glassRings[i].visible = false;
@@ -1683,7 +1689,7 @@
         if (b.dying) {
           const body = bodyOf(i, b);
           if (body.visible) {
-            explode(body.position.x, body.position.y, body.position.z, heightOf(b), [PIXELS.gorilla, PIXELS.skeleton, PIXELS.spider, PIXELS.hourglass][b.kind], b.kind >= 2 ? 90 : 40);
+            explode(body.position.x, body.position.y, body.position.z, heightOf(b), KIND_PIXELS[b.kind], b.kind >= 2 ? 90 : 40);
             audio.play("hit");
             // A spider bursts with a shriek, its brood spilling out of it (the sim's `brood`).
             if (b.kind === 2) { audio.play("brood"); fx.burst(b.x, ground + 1, b.z, 30, VAPOR, 5); landShake = 0.5; }
@@ -2148,7 +2154,7 @@
         // A skeleton is long and low: its sphere sits a little ahead of its hips, round its chest and arms. A spider's
         // sits over its body, a little behind its head, wide enough for its great abdomen.
         const ahead = b.kind === 1 ? 0.25 : b.kind === 2 ? -0.15 * SPIDER_SCALE : 0, x = r.position.x + Math.sin(b.heading) * ahead, z = r.position.z + Math.cos(b.heading) * ahead;
-        if (b.on && !b.dying && r.visible) test("brute", i, x, r.position.y + h * 0.5, z, [h * 0.55, 0.6, 0.85 * SPIDER_SCALE, 0.9][b.kind]);
+        if (b.on && !b.dying && r.visible) test("brute", i, x, r.position.y + h * 0.5, z, KIND_HIT[b.kind]);
       }
       for (let i = 0; i < C.LING.max; i++) {
         const l = sim.lings[i], n = lingNodes[i];
@@ -2398,6 +2404,7 @@
     const MAP = { range: 26, half: 30, size: 192 };
     const MAP_INK = { spider: "#c8ff2e", hourglass: "#f7931a", ring: "rgba(255,138,31,0.55)", pile: "#ffd23f", elixir: "#ff8a1f", player: "#4fa3ff", down: "#8a8f99", ghost: "#ff453a",
       gorilla: "#3dff66", bones: "#ece4cf", boss: "#ff2a1f", me: "#ffffff", edge: "rgba(0,0,0,0.75)", letter: "#f3e9d2", north: "#ff8a1f" };
+    const MAP_KIND = [MAP_INK.gorilla, MAP_INK.bones, MAP_INK.spider, MAP_INK.hourglass];
     // The compass points: a letter and its way on the island (north is -z, the bearing's zero; east +x).
     const COMPASS = [["N", 0, -1], ["E", 1, 0], ["S", 0, 1], ["W", -1, 0]];
     let mapTerrain = null, mapCone = null, mapConeFor = 0;
@@ -2487,7 +2494,7 @@
       }
       for (let i = 0; i < B.max; i++) {
         const q = sim.brutes[i];
-        if (q.on && !q.dying && q.phase >= BP.FALL) dot(g, q.x, q.z, (q.kind === 1 ? 3 : 4.2) * k, [MAP_INK.gorilla, MAP_INK.bones, MAP_INK.spider, MAP_INK.hourglass][q.kind]);
+        if (q.on && !q.dying && q.phase >= BP.FALL) dot(g, q.x, q.z, (q.kind === 1 ? 3 : 4.2) * k, MAP_KIND[q.kind]);
       }
       for (const l of sim.lings) {
         if (l.on && !l.dying) dot(g, l.x, l.z, 2 * k, MAP_INK.spider);

@@ -5603,7 +5603,8 @@ const ghostHuntChecks = async () => {
       && z.brutes.filter((b) => b.on && b.kind === 1).length === G.bonesFor(6, z.state.players);
     record("ghost hunt: full pools defer ghosts, lightning, skeletons and gorillas until slots free, including a partly sent gorilla wave, without ending the round early",
       pooled && waited && came && enemiesWaited && partialWave && enemiesCame, JSON.stringify({ pooled, waited, came, enemiesWaited, partialWave, enemiesCame }));
-  }  {
+  }
+  {
     // A standing hourglass halves the rifles (the hunt reads `halving`) until it dies.
     const z = begin(23);
     let now = T0;
@@ -5734,9 +5735,21 @@ const ghostHuntChecks = async () => {
     const still = held.state.paused && held.state.now === heldAt && held.state.state === heldState && JSON.stringify(held.ghosts.map((g) => [g.on, g.x, g.z])) === stood;
     let heldOutcome = 0;
     play(held, 40000 + G.CONFIG.PAUSE_MAX_MS - 1000, 3600000, { here: 0, watch: (s) => { if (s.state.state === ST.DAWN) heldOutcome = s.state.outcome; } });
-    record("ghost hunt: every player frozen is defeat, an arena left empty ends the hunt, and a pause holds it still only until its limit",
-      defeat && outcome === G.OUTCOME.ABANDON && empty.state.state === ST.IDLE && paused && still && heldOutcome === G.OUTCOME.ABANDON && held.state.state === ST.IDLE,
-      JSON.stringify({ states: [...states], outcome, paused, still, heldOutcome }));
+    // Regression: a spider's brood still out when the hunt is lost goes with the ghosts, not left standing through the
+    // defeat and the dawn.
+    const brood = begin(7);
+    let called = false;
+    let at = play(brood, 0, 45000, { shoot: false, armored: true, watch: (s) => { if (!called && s.state.state === ST.ACTIVE) called = s.debug.spider(1); } });
+    const spider = brood.brutes.find((b) => b.on && b.kind === 2);
+    at = play(brood, at, at + 4000, { shoot: false, armored: true });
+    for (let i = 0; i < 99 && spider && !spider.dying; i++) brood.hit(spider.id, 99, 1);
+    const hatched = brood.lings.filter((l) => l.on && !l.dying).length;
+    let leftAtDefeat = -1;
+    play(brood, at, 3600000, { shoot: false, watch: (s) => { if (s.state.state === ST.DEFEAT && leftAtDefeat < 0) leftAtDefeat = s.lings.filter((l) => l.on && !l.dying).length; } });
+    record("ghost hunt: every player frozen is defeat (taking any spiderlings out with the ghosts), an arena left empty ends the hunt, and a pause holds it still only until its limit",
+      defeat && outcome === G.OUTCOME.ABANDON && empty.state.state === ST.IDLE && paused && still && heldOutcome === G.OUTCOME.ABANDON && held.state.state === ST.IDLE
+        && hatched === G.CONFIG.LING.count && leftAtDefeat === 0,
+      JSON.stringify({ states: [...states], outcome, paused, still, heldOutcome, hatched, leftAtDefeat }));
   }
 };
 const donationClientChecks = async () => {
@@ -8827,10 +8840,11 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
   record("ghost hunt: X and portrait keep combat mode, retaking an Ooga restores combat, and menus can still free the cursor", Object.values(locked).every(Boolean), JSON.stringify(locked));
   const hunt = await b.evaluate(`(() => {
     const B = __ooga, H = BL.scenes.hub.debug, G = H.halloween, C = BL.ghostSim.CONFIG, a = B.crew.player;
-    const cards = BL.ghostSim.introPages(1, false), toRound = G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS + cards * BL.ghostSim.introMs(cards);
-    G.simulate(toRound / 1000 + 0.5);
-    // The hunt clock and the hub's ring animation have separate debug steppers.
-    B.advance(toRound / 1000 + 2, 1 / 60);
+    const cards = BL.ghostSim.introPages(1, false);
+    G.simulate((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS + cards * BL.ghostSim.introMs(cards)) / 1000 + 0.5);
+    // The hunt clock and the hub's ring animation have separate debug steppers. The ring rises with the walls, so it
+    // needs no time for round 1's cards; the hunt keeps running on the real clock meanwhile, so keep this short.
+    B.advance((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS) / 1000 + 2, 1 / 60);
     const position = { ...a.root.position, y: a.root.position.y - a.baseY }, heading = a.root.rotation.y;
     const crossRing = () => {
       B.crew.relocatePlayer({ x: 20, y: H.island.surfaceAt(20, 0), z: 0 }, Math.PI / 2);

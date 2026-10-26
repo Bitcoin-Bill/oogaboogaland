@@ -119,11 +119,11 @@
     // its health (two zaps), then rests `cooldownMs`;
     // the first zap waits `firstMs`. Her player's bar falling below `POWER_KEEP_SEG` sends her away, as it does the monkeys.
     TESS: { range: 8.5, reach: 4, cooldownMs: 2000, firstMs: 600, brute: 12 },
-    // The gorillas: green, 80 health, sent when a round is down to its last two ghosts (never in the boss's
-    // fight), `perRound[round - 1]` of them and one more for every `perPlayers` players past the first (`brutesFor`). Each is called down by a beam (`beamMs`), drops (`fallMs`) and lands
-    // shaking (`shakeMs`), then comes at the nearest player; within `reach` it leaps at them (`leapMs`, `leapH` high),
-    // lands `beside` them and slams the ground, every player within `splashR` of the slam losing `damage` segments, then
-    // gathers itself (`recoverMs`).
+    // The gorillas: green, 80 health, sent when a round is down to its last two ghosts (never in the boss's fight),
+    // `perRound[round - 1]` of them and one more for every `perPlayers` players past the first (`brutesFor`). Each is
+    // called down by a beam (`beamMs`), drops (`fallMs`) and lands shaking (`shakeMs`), then comes at the nearest
+    // player; within `reach` it leaps at them (`leapMs`, `leapH` high), lands `beside` them and slams the ground, every
+    // player within `splashR` of the slam losing `damage` segments, then gathers itself (`recoverMs`).
     BRUTE: { max: 10, hp: 80, kills: 3, speed: 6.2, beamMs: 1300, fallMs: 450, fallFrom: 25, shakeMs: 1000, reach: 5, leapMs: 650, leapH: 2.4, beside: 1,
       splashR: 2.6, recoverMs: 1400, damage: 1, perRound: [1, 1, 1, 2, 2, 2, 3], perPlayers: 2, landMin: 4, landMax: 7, landR: 18, radius: 0.7 },
     // The elixirs: one glowing on each totem pole's front (`elixirs` where they hang), set out afresh as each round
@@ -138,13 +138,13 @@
     // body, pulling itself along by its arms); within `reach` it lunges up at them and bites for `damage` segments (a
     // shield throws it back), then gathers itself (`recoverMs`).
     BONES: { hp: 6, kills: 1, speed: 3.2, beamMs: 1300, fallMs: 450, fallFrom: 25, reach: 1.6, recoverMs: 1000, damage: 1, perRound: [0, 2, 3, 4, 5, 6, 7], perPlayers: 2 },
-    // The giant striped spiders: each in a gorilla's slot (`kind` 2, so the beam, hits, bolts, bomb and Tess take it), sent
-    // once a round's gorillas are down, `perRound[round - 1]` of them. One is called down in a white beam (`beamMs`),
-    // drops (`fallMs`) and walks at the nearest player; within `spitRange` it stops, rears (`windMs`) and spits a glob
-    // of green venom at where they stand, flying `venomSpeed` m/s, which splashes every player within `venomR` of where
-    // it lands (the spider's own width, a pulsing ring shows it) for `damage` segments (the shield and a fresh hurt keep them up); then it gathers itself (`recoverMs`). Its
-    // glob rides in the gorilla's leap fields: from (`fromX`, `fromZ`) to (`toX`, `toZ`), thrown at `fromY` and landing
-    // at `toY` (hunt times).
+    // The giant striped spiders: each in a gorilla's slot (`kind` 2, so the beam, hits, bolts, bomb and Tess take it),
+    // sent once a round's gorillas are down, `perRound[round - 1]` of them. One is called down in a white beam
+    // (`beamMs`), drops (`fallMs`) and walks at the nearest player; within `spitRange` it stops, rears (`windMs`) and
+    // spits a glob of green venom at where they stand, flying `venomSpeed` m/s, which splashes every player within
+    // `venomR` of where it lands (the spider's own width, a pulsing ring shows it) for `damage` segments (the shield and
+    // a fresh hurt keep them up); then it gathers itself (`recoverMs`). Its glob rides in the gorilla's leap fields:
+    // from (`fromX`, `fromZ`) to (`toX`, `toZ`), thrown at `fromY` and landing at `toY` (hunt times).
     SPIDER: { hp: 60, kills: 2, speed: 7.2, beamMs: 1100, fallMs: 700, fallFrom: 20, spitRange: 7, windMs: 300, venomSpeed: 11, venomR: 2.4,
       recoverMs: 700, damage: 1, perRound: [0, 1, 2, 2, 2, 2, 2] },
     // A giant spider killed in a fight bursts into `count` spiderlings (their own pool of `max`): each flung out from
@@ -506,7 +506,8 @@
     const kindOf = (b) => KINDS[b.kind];
     const bruteKills = (b) => kindOf(b).kills;
     // ---------- the lightning drop ----------
-    // Every ghost and landed gorilla gets its bolt in turn, the boss his.
+    // Every ghost and landed gorilla gets its bolt in turn, the boss his. Spiderlings have no crackle of their own: every
+    // landed one burns at once, credited to whoever called the bolt.
     const strikeAll = (p) => {
       const L = C.LIGHTNING;
       s.boltAt = s.now; s.boltBy = p.id;
@@ -519,6 +520,7 @@
       for (const g of ghosts) if (g.on && !g.dying && !g.struckAt) g.struckAt = s.now + L.firstMs + gap * k++;
       for (const b of brutes) if (b.on && !b.dying && !b.struckAt && b.phase >= BRUTE_PHASE.FALL) b.struckAt = s.now + L.firstMs + gap * k++;
       if (s.bossOn && !s.bossDyingAt) s.bossStruckAt = s.now + L.firstMs + gap * k;
+      for (const l of lings) if (l.on && !l.dying && l.phase !== LING_PHASE.DROP) { killLing(l, DYING.ZAPPED); addKills(p, C.LING.kills); }
     };
     // Struck and crackling: held where it is, harmless, and dead once its zap is done (true while held).
     const struck = (e, now) => e.struckAt > 0 && now >= e.struckAt;
@@ -531,9 +533,8 @@
       for (const b of brutes) if (b.on && !b.dying && !b.kind) return true;
       return false;
     };
-    /** A gorilla (or with `kind` 1 a skeleton) called down beside player `p` (or anywhere when there is none). */
-    // A gorilla (or with `kind` 1 a skeleton) called down near player `p`, or, given `at`, dropped from the boss's mouth
-    // there ({ x, z, y }) partway through its fall.
+    // A brute of `kind` (0 a gorilla, 1 a skeleton, 2 a spider, 3 an hourglass) called down near player `p` (or anywhere
+    // when there is none), or, given `at`, dropped from the boss's mouth there ({ x, z, y }) partway through its fall.
     const addBrute = (p, kind = 0, at = null) => {
       for (const b of brutes) {
         if (b.on) continue;
@@ -644,7 +645,6 @@
       g.bounceUntil = s.now + C.BOUNCE_MS;
       g.bounceSpeed = C.BOUNCE_SPEED;
     };
-    // Somewhere new inside the walls for the boss: a few tries for a spot clear of every hunter and away from his last.
     // A spot inside the walls `minR` to `maxR` from the middle, a few tries for one `clearR` from every hunter and
     // `awayR` from (awayX, awayZ), into `OPEN`.
     const OPEN = { x: 0, z: 0 };
@@ -748,11 +748,13 @@
         s.endsAt = s.now + (state === STATE.DEFEAT ? C.DEFEAT_MS : C.VICTORY_MS);
         for (const g of ghosts) if (g.on && !g.dying) kill(g, DYING.SHOT);
         for (const b of brutes) if (b.on && !b.dying) killBrute(b, DYING.SHOT);
+        for (const l of lings) if (l.on && !l.dying) killLing(l, DYING.SHOT);
         if (state === STATE.DEFEAT) s.bossOn = 0;
       } else if (state === STATE.DAWN) {
         s.endsAt = s.now + dawnMs();
         for (const g of ghosts) if (g.on && !g.dying) kill(g, DYING.SHOT);
         for (const b of brutes) if (b.on && !b.dying) killBrute(b, DYING.SHOT);
+        for (const l of lings) if (l.on && !l.dying) killLing(l, DYING.SHOT);
         s.bossOn = 0;
         for (const d of drops) d.on = false;
         s.pendingCount = 0;
@@ -1244,7 +1246,8 @@
     };
     /**
      * The herald was clicked by player `by` (the hunt's host): its lobby opens at `now`, and the hunt, from `round`
-     * (debug only skips ahead), follows only once the host has readied up. `by` 0 (debug) opens it with no host.
+     * (debug only skips ahead; past the last round, to the boss's countdown), follows only once the host has readied
+     * up. `by` 0 (debug) opens it with no host.
      */
     const start = (now, by = 0, fromRound = 1) => {
       if (s.state !== STATE.IDLE) return false;
@@ -1259,6 +1262,8 @@
       s.lapAt = 0;
       s.startedBy = by;
       s.round = Math.min(ROUNDS.length, Math.max(1, fromRound | 0));
+      // The boss: the last round with every ghost spent, so its countdown is his (`bossNext`).
+      if ((fromRound | 0) > ROUNDS.length) s.spawned = Number.MAX_SAFE_INTEGER;
       s.state = STATE.GATHER;
       s.endsAt = C.GATHER_MS;
       if (by) slotFor(by);
