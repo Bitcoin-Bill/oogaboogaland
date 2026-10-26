@@ -275,12 +275,19 @@
   const LOOK_ROTATION = math.quat.create();
   const PILLOW_CLIP_A = new Float64Array(48), PILLOW_CLIP_B = new Float64Array(48);
   const PILLOW_FRAME = { x: 0, y: 0, z: 0, sr: 0, cr: 1, minX: 0, maxX: 0, minZ: 0, maxZ: 0, minimum: Infinity };
+  const pillowCursors = new WeakMap();
   const clipHeadToPillow = (node) => {
     if (!node.visible) return;
     const frame = PILLOW_FRAME;
     if (node.geometry) {
-      const verts = node.geometry.verts, m = node.world;
-      for (const face of node.geometry.faces) {
+      const geometry = node.geometry, verts = geometry.verts, m = node.world;
+      let cursor = null;
+      if (geometry.compactGeometry) {
+        cursor = pillowCursors.get(geometry);
+        if (!cursor) { cursor = BL.compactGeometry.createCursor(geometry); pillowCursors.set(geometry, cursor); }
+      }
+      for (let index = 0; index < geometry.faces.length; index++) {
+        const face = cursor ? BL.compactGeometry.readFace(geometry, index, cursor) : geometry.faces[index];
         let src = PILLOW_CLIP_A, dst = PILLOW_CLIP_B, count = face.i.length;
         for (let i = 0; i < count; i++) {
           const v = face.i[i] * 3, x = m[0] * verts[v] + m[4] * verts[v + 1] + m[8] * verts[v + 2] + m[12] - frame.x;
@@ -465,7 +472,7 @@
     };
     contributors.roster.forEach((contributor, i) => {
       if (ctx.playerName ? contributor.name !== ctx.playerName : !contributors.activeRoster.includes(contributor)) return;
-      const cave = models.caveman(contributors.traitsFor(contributor.name));
+      const cave = ctx.characterModel ? ctx.characterModel(contributor.name) : models.caveman(contributors.traitsFor(contributor.name));
       const h = cave.traits.height;
       let health = world.health.get(contributor.name);
       if (!health) { health = { value: HEALTH_MAX, delay: 0, stunned: false, recovering: false }; world.health.set(contributor.name, health); }
@@ -570,7 +577,7 @@
         index: i,
         animation: { due: true, dt: 0, pending: 0, at: 0, interval: 0, state: "", kind: "", bed: "", updates: 0 },
         bedroll: null,
-        bedTravel: { mode: "", route: null, plan: null, index: 0, toBed: false, bed: null, manual: false, pose: "left", roll: 1, phase: 0, blocked: 0, retry: 0, fromX: 0, fromY: 0, fromZ: 0, fromYaw: 0, fromHeadX: 0, fromHeadY: 0, fromHeadZ: 0, fromArmRX: 0, fromArmLX: 0, fromArmRZ: 0, fromArmLZ: 0, armRX: 0, armLX: 0, armRZ: 0, armLZ: 0, compression: SLEEP_COMPRESSION, fromCompression: SLEEP_COMPRESSION, restY: 0, restZ: 0, pitch: 0, headDrop: 0, headDropX: 0, headDropY: 0, headDropZ: 0 },
+        bedTravel: { mode: "", route: null, plan: null, index: 0, surface: 0, toBed: false, bed: null, manual: false, pose: "left", roll: 1, phase: 0, blocked: 0, retry: 0, fromX: 0, fromY: 0, fromZ: 0, fromYaw: 0, fromHeadX: 0, fromHeadY: 0, fromHeadZ: 0, fromArmRX: 0, fromArmLX: 0, fromArmRZ: 0, fromArmLZ: 0, armRX: 0, armLX: 0, armRZ: 0, armLZ: 0, compression: SLEEP_COMPRESSION, fromCompression: SLEEP_COMPRESSION, restY: 0, restZ: 0, pitch: 0, headDrop: 0, headDropX: 0, headDropY: 0, headDropZ: 0 },
         sleepHead: { x: 0, y: 0, z: 0 },
         sleepWeapons: createNode({ visible: false }),
         headLookRotation: math.quat.create(), headLookPosition: { x: 0, y: 0, z: 0 },
@@ -704,7 +711,7 @@
         // Reserve vacancies for more recent sleepers even when their update
         // comes later in stable roster order. Never evict an occupied bed.
         if (available) for (const other of crewList) {
-          if (other !== cave && other !== player && (!other.bedroll || other.bedroll.outdoor) && !other.camp.burning && !other.camp.panic.active
+          if (other !== cave && other !== player && other.traits.name !== ctx.residentName && (!other.bedroll || other.bedroll.outdoor) && !other.camp.burning && !other.camp.panic.active
             && stateOf(other) === "sleeping" && sleepPriority(other, cave) < 0) available--;
         }
         if (available > 0) for (const bed of bedrolls) if (!bed.sleeper) {
@@ -1051,10 +1058,18 @@
     // that wakes every sleeper at once never stalls a frame. A grounded Ooga waits where it stands until its route is
     // ready; it is planned from that same spot, so it is the route an unbroken plan would have made.
     const PLAN_MS = 4, planQueue = [];
+    // The first waypoint of a route's tail that stays on the surface past every ramp, found once per route: a worker
+    // walking out of bed hands over to ordinary work routing there. Never past the last leg, which ends any route.
+    const surfaceTail = (route) => {
+      let i = route.length - 1;
+      while (i > 0 && route[i - 1].y >= -1e-7) i--;
+      return i;
+    };
     const finishBedRoute = (cave, route) => {
       const travel = cave.bedTravel;
       travel.plan = null;
       travel.route = route;
+      travel.surface = route ? surfaceTail(route) : 0;
       travel.mode = route ? "walk" : "waiting";
       travel.retry = 1;
     };
@@ -1096,6 +1111,7 @@
         return;
       }
       travel.route = airborne ? null : ctx.bedRoute(cave, bed, toBed);
+      travel.surface = travel.route ? surfaceTail(travel.route) : 0;
       if (airborne) cave.hop = Math.max(cave.hop, cave.root.position.y - ground);
       else cave.root.position.y = ground;
       travel.index = travel.phase = travel.blocked = 0;
@@ -1168,12 +1184,13 @@
       }
       if (cave.camp.burning || cave.camp.panic.active) return;
       const wasAwake = cave.state === "working" || cave.state === "chilling";
+      const resident = cave.traits.name === ctx.residentName && (state === "sleeping" || state === "away");
       if (cave.state === state) {
         // Same-state call still re-seats a moved eater; it must interrupt nothing else.
         if (state === "working") walkToSlot(cave);
         return;
       }
-      if (ctx.bedRoute && state === "sleeping") { startSleep(cave, settle && cave.state === "away"); return; }
+      if (ctx.bedRoute && state === "sleeping" && !resident) { startSleep(cave, settle && cave.state === "away"); return; }
       if (ctx.bedRoute && cave.state === "sleeping" && (state === "working" || state === "chilling")) { beginWalk(cave, state); return; }
       if (cave === player) release();
       if (ctx.bedRoute || cave.bedTravel.mode) { standFromBed(cave); cave.bedTravel.bed = null; }
@@ -1187,10 +1204,11 @@
       cave.parts.head.geometry = state === "sleeping" ? cave.headClosed : cave.headOpen;
       resetPose(cave);
       releaseBuild(cave);
-      if (state === "sleeping") claimBedroll(cave);
+      if (state === "sleeping" && !resident) claimBedroll(cave);
       else releaseBedroll(cave);
       const r = cave.root;
-      if (state === "working" || state === "chilling") {
+      if (resident) ctx.residentPose(cave, 0);
+      else if (state === "working" || state === "chilling") {
         r.visible = true;
         if (!wasAwake && state === "working") {
           if (settle && ctx.initialWorkSpot) {
@@ -1239,8 +1257,12 @@
           standFromBed(cave); releaseBedroll(cave);
           cave.state = "away"; applyState(cave, state, true); return;
         }
-        const bed = cave.bedroll;
+        const bed = cave.bedroll, lying = cave.bedTravel.mode === "rest" || cave.bedTravel.mode === "lie";
         standFromBed(cave);
+        // The lying pose is centered over the mattress. Start the return at its
+        // authored floor-side approach, clear of the next sleeper and the bed's collision shell.
+        // An Ooga still on its way to bed turns back from where it stands.
+        if (lying) setVec(cave.root.position, bed.walkAt.x, cave.baseY + bed.walkAt.y, bed.walkAt.z);
         releaseBedroll(cave);
         cave.state = state;
         cave.parts.head.geometry = cave.headOpen;
@@ -3696,7 +3718,13 @@
         && groundAt(x, z, feet, feet, cave) >= feet - STEP - 1e-7;
     };
     const resetWalkerRoute = (cave, retainPath = false) => {
-      const tx = retainPath && cave.pathing ? cave.pathing.tx : NaN, tz = retainPath && cave.pathing ? cave.pathing.tz : NaN;
+      const path = cave.pathing, traffic = cave.traffic;
+      // A direct pile approach has no cached path target. Recovery can step
+      // back outside that approach, so retain its actual destination too.
+      const direct = retainPath && path && !Number.isFinite(path.tx) && traffic.moving
+        && cave.state === "working" && !cave.bedTravel.mode;
+      const tx = direct ? traffic.tx : retainPath && path ? path.tx : NaN;
+      const tz = direct ? traffic.tz : retainPath && path ? path.tz : NaN;
       const a = cave.avoidance;
       a.active = false; a.tx = NaN; a.stalled = 0; a.best = Infinity;
       a.navigation.mode = 0; a.detour.site = -1;
@@ -3752,7 +3780,11 @@
       // Failed recovery jumps count as stalled travel, but neither replanning
       // nor relocation may interrupt the collision-checked airborne motion.
       if (airborne) return;
-      if (!progress.escaped && progress.motionless >= 0.8) {
+      // Small back-and-forth steps are not progress. Give a jittering walker
+      // the same swept escape and route repair as a stationary one, before
+      // the last-resort relocation can become eligible.
+      const stuck = progress.motionless >= 0.8 || progress.stalled >= 2;
+      if (!progress.escaped && stuck) {
         progress.escaped = true;
         const heading = Math.atan2(cave.traffic.tx - p.x, cave.traffic.tz - p.z);
         for (let side = 0; side < 5; side++) {
@@ -3764,7 +3796,7 @@
           break;
         }
       }
-      if (!progress.replanned && progress.stalled >= 1 && progress.motionless >= 0.8 && !progress.backoff) {
+      if (!progress.replanned && progress.stalled >= 1 && stuck && !progress.backoff) {
         resetWalkerRoute(cave, true); progress.replanned = true; progress.replans++;
         ctx.fx.say(cave, "COMING THROUGH!", 1.8);
         if (travel.mode === "walk" && ctx.bedRoute) startBedRoute(cave, travel.toBed ? cave.bedroll : travel.bed, travel.toBed);
@@ -4083,8 +4115,10 @@
       }
       if (travel.mode === "walk") {
         if (cave.hop > 0 || cave.hopV > 0) { runPlayer(cave, dt, false); return; }
-        // The architectural route ends at the meadow. Only workers continue to a live eating slot.
-        if (!travel.toBed && cave.state !== "chilling" && travel.index >= travel.route.length - 1) {
+        // Past its last ramp the route runs on the meadow. A worker standing there leaves it for ordinary work routing
+        // to a live eating slot; a chiller walks on to the apron its route ends at.
+        if (!travel.toBed && cave.state !== "chilling" && travel.index >= travel.surface
+          && p.y - cave.baseY >= -1e-6) {
           travel.mode = ""; travel.route = null; travel.bed = null;
           if (cave.state === "working") { startMeal(cave); walkToSlot(cave, true); }
           else if (wanderSpot) startWander(cave);
@@ -4095,7 +4129,8 @@
         while (remaining > 1e-8 && travel.index < travel.route.length) {
           const target = travel.route[travel.index], dx = target.x - p.x, dz = target.z - p.z, distance = Math.hypot(dx, dz);
           if (distance < 1e-6) { travel.index++; continue; }
-          if (travel.index + 1 < travel.route.length && ctx.npcRouteBlocked && ctx.npcRouteBlocked(cave, target.x, target.y, target.z)) { travel.index++; continue; }
+          if (travel.index + 1 < travel.route.length && ctx.npcRouteBlocked && ctx.npcRouteBlocked(cave, target.x, target.y, target.z)
+            && ctx.bedRouteClear(cave, travel.route[travel.index + 1])) { travel.index++; continue; }
           // Scenery may cover an intermediate waypoint: aim around the prop toward the next one, never insist on it.
           // Keep the doorway turn until the shortcut is clear; temporary bodies still use local walking avoidance.
           if (distance < 3 && travel.index + 1 < travel.route.length && !npcWalkable(target.x, target.z, target.x, target.z, target.y, cave.bodyHeight, cave)) {
@@ -4116,6 +4151,15 @@
           standPose(cave);
           if (travel.toBed) lieDown(cave);
           else {
+            // Layered support can leave the feet below the meadow even when
+            // the final waypoint's x/z was reached. Never start work there.
+            if (p.y - cave.baseY < -1e-6 && underHome(p.x, p.z)) {
+              if (!ctx.initialWorkSpot || !ctx.initialWorkSpot(cave, NPC_RECOVERY_SPOT)) {
+                travel.mode = "waiting"; travel.route = null; travel.retry = 1;
+                return;
+              }
+              setVec(p, NPC_RECOVERY_SPOT.x, cave.baseY + NPC_RECOVERY_SPOT.y, NPC_RECOVERY_SPOT.z);
+            }
             travel.mode = ""; travel.route = null; travel.bed = null;
             if (cave.state === "chilling" && wanderSpot) startWander(cave);
             else { cave.root.rotation.y = Math.atan2(-p.x, -p.z); startMeal(cave); }
@@ -6269,6 +6313,7 @@
       // Collision exclusions belong to this ordered update only; input and relocation see ordinary bodies.
       for (let i = 0; i < crewList.length; i++) crewList[i].riding.support = null;
     };
+    const pause = () => { window.clearTimeout(recipeTimer); recipeTimer = 0; };
     const setCombatEnabled = (on) => {
       on = on === true;
       if (on === combatEnabled) return;
@@ -6326,8 +6371,7 @@
       }
     };
     const dispose = () => {
-      window.clearTimeout(recipeTimer);
-      recipeTimer = 0;
+      pause();
       planQueue.length = 0;
       player = null;
       for (let caveIndex = 0; caveIndex < crewList.length; caveIndex++) {
@@ -6374,7 +6418,7 @@
       get combatEnabled() { return combatEnabled; },
       get weaponsEnabled() { return weaponsEnabled; },
       cavemen, list: crewList, fanSlots, stateOf, stateCounts, workingCavemen, eatingCavemen, workingCount, eatingCount, feedableCavemen, refreshStates, refreshRosterRow, updateFan, rush, headWorldOf, applyAllSwag, wornBy, renderLocker, pokeCave, idleSay, drawDrops,
-      throwTomato, clearProjectiles, control, release, relocatePlayer, sleepPlayer, wakePlayer, sitPlayer, standPlayer, clearHeadLook, prepareDragged, recoverDragged, ignite, dropRoll, damage, fireView, steer: steerPlayer, look: lookPlayer, elevate: elevatePlayer, playerAction, jumpPlayer, poseWeapon, wearJetpack, removeJetpack, setJetpackOwnership, thrust, holdRocketJump, update, dispose, stats,
+      throwTomato, clearProjectiles, control, release, relocatePlayer, sleepPlayer, wakePlayer, sitPlayer, standPlayer, clearHeadLook, prepareDragged, recoverDragged, ignite, dropRoll, damage, fireView, steer: steerPlayer, look: lookPlayer, elevate: elevatePlayer, playerAction, jumpPlayer, poseWeapon, wearJetpack, removeJetpack, setJetpackOwnership, thrust, holdRocketJump, update, pause, dispose, stats,
       actorClear, builtInJetpack, toggleTint, twirl, toggleWeapon, selectWeapon, configureWeapon, swingWeapon, bashWeapon, releaseSwing, fireWeapon, setWeaponTrigger, canFire, weaponOrigin, meleeReach, meleePower, nearReload, canReload, startReload, stopReload, stopBurst, canSwapMagazine, swapMagazine, collectMagazine, collectGroundMagazine, collectAmmo, removeMagazines, hasMagazine, magazineCount, magazineAmmo, totalAmmo, workSites,
       get sleeping() { return !!(player && player.bedTravel.manual && player.state === "sleeping"); },
       get player() {

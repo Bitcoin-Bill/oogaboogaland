@@ -1453,8 +1453,9 @@
     return { visibleNodes: nodes, allNodes: all(root), tweens: tweenCount(), targets: input.targetCount, ...fx.stats(), ...(remotes ? remotes.stats() : {}) };
   };
 
-  const hangarScene = {
-    // Still being built: unregistered unless a page opts in with ?wip=hangar, and the Factory builds no door to it.
+  const hangarScene = BL.deferred.scene("hangar", {
+    // Still being built, as its shell in scene-deferred.js says too: unregistered unless a page opts in with ?wip=hangar,
+    // and the Factory builds no door to it.
     wip: true,
     // Voice zone: the Factory's group, which the hall shares (`factory.hall`).
     voiceZone: "factory.hangar",
@@ -1464,7 +1465,5 @@
     get inMotion() {
       return !!scene;
     }
-  };
-  BL.scenes = BL.scenes || {};
-  BL.scenes.hangar = hangarScene;
+  });
 })();
