@@ -22769,6 +22769,27 @@ scene("dsb",{label:"wallets",query:"&view=wallets-door&weather=clear&time=1200",
   record("Wallets browser: leaving DSB removes the machine's dialog, its handlers and the old carry line, and leaves no device",await b.evaluate('__oldWallets.stats.disposed&&!document.querySelector(".wallets-menu")&&document.querySelectorAll(".wallet-carry").length===1&&BL.dsbMenuShell.count===0&&__ooga.dsb.wallets.stats().wallets===0'));
 }}]});
 // On a phone, in one session: the machine's two pictures and Take, then the carry line with its Throw button beside the sticks.
+// At VAC 2's door, where a visitor walks out with a device: the stoop and the beach below it are not one level, so the
+// ground under the pointer is found down the pointer's ray, and a click on the Ooga itself sets the device at its feet.
+scene("dsb",{label:"wallets door",query:"&interior=free-wallets&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets door",why:"regression: carried out of VAC 2's door, a click on the Ooga said there was no room (the ground behind it is in the wall) and a click on the sloping beach walked the Ooga metres off the point clicked or said no room, so a device could only be thrown; now both set it down, at the Ooga's feet and exactly where clicked",run:async b=>{
+  await walletsStep(b);
+  await b.evaluate('(()=>{const D=__ooga.dsb;__ooga.pilot.navigate(D.interiors.active.room.reviews["wallets-machine"]);D.takeWallet(0);__ooga.pilot.navigate({position:D.interiors.active.room.exit,yaw:Math.PI,pitch:.12,dist:3});})()');
+  await walletsStep(b);await b.key(" ");await walletsStep(b,60);
+  const self=await b.evaluate('(()=>{const D=__ooga.dsb,a=D.avatar,p=a.root.position,s=__ooga.project(p.x,p.y,p.z,{});return {inside:!!D.interiors.active,sx:s.x,sy:s.y,pick:BL.scenes.dsb.input.pick(s.x,s.y)?.owner?.kind||null};})()');
+  await b.click(self.sx,self.sy);const walked=await walletsUntil(b,"!__ooga.dsb.walletWalk");
+  const atFeet=await b.evaluate('(()=>{const D=__ooga.dsb,d=D.wallets.list()[0],a=D.avatar,p=a.root.position;return {state:d.state,off:Math.hypot(d.x-p.x,d.z-p.z),dy:Math.abs(d.y-(p.y-a.baseY))};})()');
+  record("Wallets browser: out of VAC 2's door, a real click on the carrying Ooga sets its device down at its feet",!self.inside&&self.pick==="caveman"&&walked&&atFeet.state==="dropped"&&atFeet.off<.6&&atFeet.dy<.05,JSON.stringify({self,atFeet}));
+  // Down the beach in front of the door, a point well below the stoop the Ooga stands on.
+  await b.evaluate('(()=>{const D=__ooga.dsb;D.wallets.cool();D.takeWallet(1);})()');await walletsStep(b,6);
+  const spot=await b.evaluate(`(()=>{const D=__ooga.dsb,p=D.avatar.root.position,feet=p.y-D.avatar.baseY,W=innerWidth,H=innerHeight;
+    for(const r of [2.5,3.5,4.5])for(let k=0;k<16;k++){const a=k*Math.PI/8,x=p.x+Math.sin(a)*r,z=p.z+Math.cos(a)*r,y=D.groundAt(x,z),s=__ooga.project(x,y,z,{});
+      if(!s||s.x<12||s.x>W-12||s.y<12||s.y>H-12||document.elementFromPoint(s.x,s.y)?.tagName!=="CANVAS"||BL.scenes.dsb.input.pick(s.x,s.y)||feet-y<.4||!D.land.clearAt(x,z,.7))continue;
+      return {x,y,z,drop:feet-y};}
+    return null;})()`);
+  await walletsTap(b,spot.x,spot.y,spot.z);const walked2=await walletsUntil(b,"!__ooga.dsb.walletWalk");
+  const sloped=await b.evaluate(`(()=>{const d=__ooga.dsb.wallets.list().find(e=>e.look==="clowncard");return {state:d.state,off:Math.hypot(d.x-(${spot.x}),d.z-(${spot.z}))};})()`);
+  record("Wallets browser: a real click on the sloping beach below VAC 2's stoop sets the device down exactly where clicked",walked2&&sloped.state==="dropped"&&sloped.off<.06,JSON.stringify({spot,sloped}));
+}}]});
 const walletsPhoneCarrying={name:"wallets phone carrying",why:"rule: every scene is readable and playable on a phone, nothing clipped and every control under a thumb",run:async b=>{
   await b.evaluate('(()=>{const D=__ooga.dsb;D.walletsMenu.close();D.takeWallet(1);__ooga.advance(1,1/60);})()');
   const bad=await b.evaluate(PHONE(["#joy-move","#joy-look",".wallet-carry .wallet-throw"]));

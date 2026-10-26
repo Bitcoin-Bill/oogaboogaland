@@ -281,14 +281,26 @@
     noderunner=BL.dsbNoderunner.create({root:exterior,land});
     weather=BL.dsbWeather.create({root:exterior,renderer:ctx.renderer,camera,land,water,params,audioFactory:noderunner.createAudio});
     input.add(noderunner.screenFace,{kind:"dsb-tv"});
-    // A ground tap while carrying: the ground under the pointer, found on the floor's own height, if a device fits there.
+    // A ground tap while carrying: the first point down the pointer's ray that meets the floor, if a device fits there.
+    // The ray is walked down in quarter metres and the crossing halved eight times, since a slope or a step (the beach
+    // and the stoop at VAC 2's door) throws a plane at the Ooga's feet metres off the point clicked.
     const walletFloor=(x,z)=>interiors.active?interiors.walkable(x,z,x,z,0,1,WALLET):land.groundAt(x,z)>BL.dsbCoast.LEVEL&&walkable(x-.15,z,x+.15,z,groundAt(x,z),.5,WALLET);
     const placeWallet=p=>{
-      let y=avatar.root.position.y-avatar.baseY;
-      for(let k=0;k<3;k++){if(!input.groundPoint(p.x,p.y,y,walletAt))return;y=groundAt(walletAt.x,walletAt.z,y);}
+      const feet=avatar.root.position.y-avatar.baseY;let above=null,under=null;
+      for(let y=feet+3,low=Math.min(feet,BL.dsbCoast.LEVEL)-2;y>=low;y-=.25){if(!input.groundPoint(p.x,p.y,y,walletAt))continue;if(groundAt(walletAt.x,walletAt.z,y)>=y){under=y;break;}above=y;}
+      if(under===null)return;
+      if(above!==null)for(let k=0;k<8;k++){const y=(above+under)/2;input.groundPoint(p.x,p.y,y,walletAt);if(groundAt(walletAt.x,walletAt.z,y)>=y)under=y;else above=y;}
+      input.groundPoint(p.x,p.y,under,walletAt);
       if(walletFloor(walletAt.x,walletAt.z))walkWallet(walletAt.x,walletAt.z,-1);else hud.toast("No room there. Tap open ground.");
     };
-    const tap=hooks.onTap;hooks.onTap=(hit,p)=>{if(rescue.onTap(hit))return;if(hit?.owner?.kind==="studio-screen"&&studioRoom()){studioSession.open();return;}const held=wallets.held();if(held>=0&&(!hit||hit.owner?.kind==="caveman"&&hit.owner.cave===crew.player||hit.owner?.kind==="wallet"&&hit.owner.wallet===held)){placeWallet(p);return;}if(hit?.owner?.kind==="wallet"){if(!wallets.tap(hit.owner.wallet)&&wallets.where(hit.owner.wallet,walletAt))walkWallet(walletAt.x,walletAt.z,hit.owner.wallet);return;}if(hit?.owner?.kind==="wallet-vendor"&&walletsRoom()){openVenue();return;}if(hit?.owner?.kind==="svrn-kiosk"&&svrnRoom()){openVenue();return;}if(hit?.owner?.kind==="big-terminal"&&bigRoom()){openVenue();return;}if(hit?.owner?.kind==="ink-kiosk"&&inkRoom()){openVenue();return;}if(hit?.owner?.kind==="rulers-kiosk"&&shopRoom()){openVenue();return;}if(hit?.owner?.kind==="dsb-tv"){if(nearTv())act();return;}tap?.(hit,p);};
+    // A tap on the carrying Ooga or the device it holds sets the device down at its feet, half a step ahead (or right
+    // under it): the ground under the pointer there is behind the Ooga, often in a wall.
+    const placeAtFeet=()=>{
+      const p=avatar.root.position,h=avatar.root.rotation.y;
+      for(const d of [.5,0]){const x=p.x+Math.sin(h)*d,z=p.z+Math.cos(h)*d;if(walletFloor(x,z)){walkWallet(x,z,-1);return;}}
+      hud.toast("No room there. Tap open ground.");
+    };
+    const tap=hooks.onTap;hooks.onTap=(hit,p)=>{if(rescue.onTap(hit))return;if(hit?.owner?.kind==="studio-screen"&&studioRoom()){studioSession.open();return;}const held=wallets.held();if(held>=0&&!hit){placeWallet(p);return;}if(held>=0&&(hit.owner?.kind==="caveman"&&hit.owner.cave===crew.player||hit.owner?.kind==="wallet"&&hit.owner.wallet===held)){placeAtFeet();return;}if(hit?.owner?.kind==="wallet"){if(!wallets.tap(hit.owner.wallet)&&wallets.where(hit.owner.wallet,walletAt))walkWallet(walletAt.x,walletAt.z,hit.owner.wallet);return;}if(hit?.owner?.kind==="wallet-vendor"&&walletsRoom()){openVenue();return;}if(hit?.owner?.kind==="svrn-kiosk"&&svrnRoom()){openVenue();return;}if(hit?.owner?.kind==="big-terminal"&&bigRoom()){openVenue();return;}if(hit?.owner?.kind==="ink-kiosk"&&inkRoom()){openVenue();return;}if(hit?.owner?.kind==="rulers-kiosk"&&shopRoom()){openVenue();return;}if(hit?.owner?.kind==="dsb-tv"){if(nearTv())act();return;}tap?.(hit,p);};
     tv=BL.dsbTv.create(noderunner.screen,ctx.renderer,{play:()=>noderunner.audio?.play(),radioStatus:()=>noderunner.audio?.status||"Press Play radio to enable sound",onOpen:open=>{pilot.setActive(!open);pilot.controls.reset();input.reset();}});
     nature=BL.dsbNature.create({root:exterior,land,renderer:ctx.renderer,camera,weather});
     detail=BL.dsbExterior.create({root:exterior,land,nature});
