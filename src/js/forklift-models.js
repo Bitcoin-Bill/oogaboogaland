@@ -27,56 +27,58 @@
   const Y = 1, Y_B = 2, K = 3, K_B = 4, B = 5, B_B = 6, T = 7;
   // Where its parts stand: the axles' z, the wheels' radius, width and how far out their middles are; the hull's half
   // width and its levels (the underbody's top, the cab's floor, the deck the seat stands on, the counterweight's top);
-  // the cowl's front and the dash's back, the cab's back and the counterweight's front and back; the mast's channels,
-  // the carriage's face and how far the forks reach, the back's vented doors (their half width and their foot and head);
-  // the guard's posts and roof; the seat, the steering wheel's hub (and its column's tilt), the button, its cover's hinge
-  // at its block's far edge, and the beacon.
+  // the cowl's front and the dash's back, the cab's back and the counterweight's front and back (the sides and the back
+  // on the voxels' grid, so the decals and doors lie on their faces); the mast's channels, the carriage's face and how
+  // far the forks reach, the back's vented doors (their half width and their foot and head); the guard's posts and roof;
+  // the seat, the steering wheel's hub (and its column's tilt), the button, its cover's hinge at its block's far edge,
+  // and the beacon.
   const PLACES = {
-    front: -0.95, rear: 0.95, frontR: 0.5, rearR: 0.42, frontW: 0.38, rearW: 0.34, frontX: 0.7, rearX: 0.66,
-    half: 0.8, under: 0.42, floor: 0.62, deck: 1.18, top: 1.55,
-    cowl: -1.22, dash: -0.7, cab: 0.05, weight: 0.7, back: 1.5,
-    mastX: 0.42, mastZ: -1.4, mastTop: 2.6, face: -1.56, forks: 1.25, doorX: 0.6, doorY: [0.64, 1.3],
-    postX: 0.7, postFront: -0.88, postRear: 0.78, roof: 2.9,
-    seat: [0, 1.18, 0.38], steering: [-0.02, 1.62, -0.62, 0.95], button: [0.42, 1.43, -0.74], hinge: [0.42, 1.43, -0.85], beacon: [0, 2.98, 0.55]
+    front: -0.98, rear: 0.98, frontR: 0.55, rearR: 0.46, frontW: 0.44, rearW: 0.4, frontX: 0.78, rearX: 0.72,
+    half: 0.875, under: 0.44, floor: 0.6, deck: 1.08, top: 1.6,
+    cowl: -1.28, dash: -0.72, cab: 0.08, weight: 0.72, back: 1.5,
+    mastX: 0.42, mastZ: -1.5, mastTop: 2.6, face: -1.72, forks: 1.25, doorX: 0.62, doorY: [0.64, 1.32],
+    postX: 0.74, postFront: -0.9, postRear: 0.8, roof: 2.68,
+    seat: [0, 1.08, 0.38], steering: [-0.02, 1.58, -0.64, 0.95], button: [0.44, 1.42, -0.76], hinge: [0.44, 1.42, -0.87], beacon: [0, 2.76, 0.58]
   };
   const P = PLACES;
   // How thick the seat's cushion is, on the deck at the seat's place: its top is where a driver sits.
   const CUSHION = 0.14;
-  // The box round it that a walker meets, from its carriage's face to its back, in metres; its forks lie low enough to
-  // step over.
-  const FOOTPRINT = { x: (P.half + 0.1) * SCALE, z0: (P.face - 0.1) * SCALE, z1: (P.back + 0.02) * SCALE, top: (P.roof + 0.1) * SCALE };
+  // The box round it that a walker meets, from its carriage's face to its back and out to its wheels, in metres; its
+  // forks lie low enough to step over.
+  const FOOTPRINT = { x: (P.frontX + P.frontW / 2 + 0.04) * SCALE, z0: (P.face - 0.1) * SCALE, z1: (P.back + 0.02) * SCALE, top: (P.roof + 0.1) * SCALE };
 
   // Two tones a colour, by cell, so a broad face reads as built of blocks.
   const tone = (i, j, k, a, b) => ((i * 73856093) ^ (j * 19349663) ^ (k * 83492791)) & 2 ? b : a;
   // The bolt, as one outline in -1..1 (u across, v up): the side panels' and the steering wheel's in gold, and the
   // decals'.
   const BOLT = [[0.1, 1], [0.6, 1], [0.25, 0.2], [0.6, 0.2], [-0.25, -1], [-0.02, -0.15], [-0.38, -0.15]];
-  // Whether (x, y, z) lies in a wheel's arch, cut out of the hull round each wheel with a hand's breadth to spare.
-  const inArch = (x, y, z) => {
-    if (Math.abs(x) < 0.4) return false;
-    const fr = P.frontR + 0.07, rr = P.rearR + 0.07;
-    return (z - P.front) ** 2 + (y - P.frontR) ** 2 < fr * fr || (z - P.rear) ** 2 + (y - P.rearR) ** 2 < rr * rr;
+  // How far (x, y, z) lies outside a wheel's arch, cut out of the hull round each wheel with a hand's breadth to spare
+  // (below 0 inside it), and Infinity inboard of the arches.
+  const archGap = (x, y, z) => {
+    if (Math.abs(x) < 0.42) return Infinity;
+    return Math.min(Math.hypot(z - P.front, y - P.frontR) - P.frontR - 0.07, Math.hypot(z - P.rear, y - P.rearR) - P.rearR - 0.07);
   };
   // The hull's top over z at |x|: the cowl's front rising into the dash, the cab's floor between the dash and the deck
   // but a fender over each front wheel, the engine's deck, and the counterweight with its top's back edge cut away.
   const topAt = (ax, z) => {
-    if (z < P.dash) return z < -1.0 ? 1.12 : 1.12 + (z + 1.0) / 0.3 * 0.28;
+    if (z < P.dash) return z < P.dash - 0.3 ? 1.12 : 1.12 + (z - P.dash + 0.3) / 0.3 * 0.28;
     if (z < P.cab) return ax > 0.46 && z < -0.4 ? 0.98 : P.floor;
     if (z < P.weight) return P.deck;
     return Math.min(P.top, P.top - (z - (P.back - 0.25)));
   };
   // The body's cells: a colour index, or nothing. At the back, the vented panel's place is left open for its doors,
   // dark behind them, the tail lights either side of the plate under them (the plate and the bumper's chevrons are
-  // pictures); a blue panel down each side, for the bolt; the underbody, the cab's floor, the deck and the
-  // counterweight's top edge in black.
+  // pictures); a blue panel down each side, for the bolt; the underbody, a heavy black lip round each wheel arch, the
+  // cab's floor, the deck and the counterweight's top edge in black.
   const bodyCell = (i, j, k, x, y, z) => {
-    const ax = Math.abs(x);
-    if (y < 0.26 || ax > P.half || z < P.cowl || z > P.back || inArch(x, y, z) || y > topAt(ax, z)) return null;
+    const ax = Math.abs(x), gap = archGap(x, y, z);
+    if (y < 0.26 || ax > P.half || z < P.cowl || z > P.back || gap < 0 || y > topAt(ax, z)) return null;
     const back = z > P.back - U, panel = ax < P.doorX && y > P.doorY[0] && y < P.doorY[1];
     if (panel && back) return null;
     if (panel && z > P.back - 2 * U) return K;
     if (back && ax > 0.6 && y > 0.46 && y < 0.64) return T;
     if (y < P.under && !(back && y > 0.26)) return tone(i, j, k, K, K_B);
+    if (gap < 1.6 * U) return tone(i, j, k, K, K_B);
     if (ax > P.half - U && z > P.cab + 0.05 && z < P.back - 0.3 && y > 0.6 && y < 1.14) return tone(i, j, k, B, B_B);
     if (z >= P.dash && z < P.cab && y > P.floor - U) return K;
     if (z >= P.cab && z < P.weight && y > P.deck - U) return K;
@@ -92,8 +94,8 @@
     return voxelGeometry(v, { unit: U, palette: PALETTE, emissive: { [T]: 0.9 } });
   });
 
-  // A wheel about x through its middle: a fat rubber tyre with a lug every so far round its tread, and a yellow hub with
-  // its nuts on both faces.
+  // A wheel about x through its middle: a fat rubber tyre with blocks round its tread, and a yellow hub with its nuts on
+  // both faces.
   const wheel = cached(() => {
     const out = {};
     for (const [key, r, w] of [["front", P.frontR, P.frontW], ["rear", P.rearR, P.rearW]]) {
@@ -102,8 +104,11 @@
       const hub = turnedZ(turn([[0, -h - 0.01], [r * 0.5, -h - 0.01], [r * 0.6, -h + 0.03], [r * 0.6, h - 0.03], [r * 0.5, h + 0.01], [0, h + 0.01]], 18, YELLOW), Math.PI / 2);
       const cap = turnedZ(turn([[0, h + 0.012], [r * 0.18, h + 0.012], [r * 0.2, h + 0.04], [0, h + 0.05]], 12, BLACK), Math.PI / 2);
       const capIn = turnedZ(turn([[0, -h - 0.05], [r * 0.2, -h - 0.04], [r * 0.18, -h - 0.012], [0, -h - 0.012]], 12, BLACK), Math.PI / 2);
-      const n = Math.round(TAU * r / 0.13);
-      for (let q = 0; q < n; q++) lugs.push(turnedX(bevelBox({ w: w * 0.86, h: 0.05, d: 0.075, color: RUBBER, bevel: 0.015, offset: { y: r * 0.98 + 0.012 } }), q / n * TAU));
+      // The tread: chunky blocks in two rows, the one half a block round from the other.
+      const n = Math.round(TAU * r / 0.15);
+      for (let q = 0; q < n; q++) for (const side of [-1, 1]) {
+        lugs.push(turnedX(bevelBox({ w: w * 0.46, h: 0.065, d: 0.1, color: RUBBER, bevel: 0.02, offset: { x: side * w * 0.25, y: r * 0.98 + 0.02 } }), (q + (side > 0 ? 0.5 : 0)) / n * TAU));
+      }
       for (let q = 0; q < 5; q++) for (const s of [-1, 1]) {
         const a = q / 5 * TAU;
         lugs.push(bevelBox({ w: 0.03, h: 0.04, d: 0.04, color: BLACK_B, bevel: 0.01, offset: { x: s * (h + 0.025), y: Math.cos(a) * r * 0.34, z: Math.sin(a) * r * 0.34 } }));
@@ -151,13 +156,13 @@
   const fittings = cached(() => {
     const flat = [], round = [];
     for (const s of [-1, 1]) flat.push(moved(turnedY(models.prism(BOLT.map(([u, v]) => [u * 0.3, v * 0.25]), 0.04, GOLD, 0.15), s * Math.PI / 2), s * (P.half + 0.018), 0.87, 0.3));
-    const post = (x, y0, z) => flat.push(bevelBox({ w: 0.09, h: P.roof - y0, d: 0.09, color: BLACK, bevel: 0.02, offset: { x, y: y0 + (P.roof - y0) / 2, z } }));
-    for (const s of [-1, 1]) { post(s * P.postX, 1.06, P.postFront); post(s * P.postX, P.deck, P.postRear); }
-    for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.1, h: 0.1, d: P.postRear - P.postFront + 0.12, color: BLACK_B, bevel: 0.02, offset: { x: s * P.postX, y: P.roof, z: (P.postFront + P.postRear) / 2 } }));
-    for (const z of [P.postFront, P.postRear]) flat.push(bevelBox({ w: P.postX * 2 + 0.12, h: 0.1, d: 0.1, color: BLACK_B, bevel: 0.02, offset: { y: P.roof, z } }));
-    for (let q = 1; q < 6; q++) flat.push(box({ w: P.postX * 2, h: 0.04, d: 0.06, color: BLACK, offset: { y: P.roof + 0.01, z: P.postFront + (P.postRear - P.postFront) * q / 6 } }));
-    for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.2, h: 0.16, d: 0.16, color: BLACK, bevel: 0.03, offset: { x: s * (P.postX - 0.04), y: P.roof + 0.12, z: P.postFront - 0.02 } }));
-    round.push(moved(turn([[0.11, 0], [0.11, 0.05], [0.09, 0.07], [0, 0.07]], 16, BLACK), P.beacon[0], P.roof + 0.04, P.beacon[2]));
+    const post = (x, y0, z) => flat.push(bevelBox({ w: 0.13, h: P.roof - y0, d: 0.13, color: BLACK, bevel: 0.025, offset: { x, y: y0 + (P.roof - y0) / 2, z } }));
+    for (const s of [-1, 1]) { post(s * P.postX, 1.0, P.postFront); post(s * P.postX, P.deck, P.postRear); }
+    for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.15, h: 0.14, d: P.postRear - P.postFront + 0.16, color: BLACK_B, bevel: 0.025, offset: { x: s * P.postX, y: P.roof, z: (P.postFront + P.postRear) / 2 } }));
+    for (const z of [P.postFront, P.postRear]) flat.push(bevelBox({ w: P.postX * 2 + 0.16, h: 0.14, d: 0.14, color: BLACK_B, bevel: 0.025, offset: { y: P.roof, z } }));
+    for (let q = 1; q < 6; q++) flat.push(box({ w: P.postX * 2, h: 0.05, d: 0.07, color: BLACK, offset: { y: P.roof + 0.02, z: P.postFront + (P.postRear - P.postFront) * q / 6 } }));
+    for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.24, h: 0.18, d: 0.18, color: BLACK, bevel: 0.035, offset: { x: s * (P.postX - 0.04), y: P.roof + 0.15, z: P.postFront - 0.02 } }));
+    round.push(moved(turn([[0.11, 0], [0.11, 0.05], [0.09, 0.07], [0, 0.07]], 16, BLACK), P.beacon[0], P.roof + 0.06, P.beacon[2]));
     // The seat: its cushion, its back and a hip guard round its sides.
     const [sx, sy, sz] = P.seat;
     flat.push(bevelBox({ w: 0.56, h: CUSHION, d: 0.52, color: BLACK, bevel: 0.05, offset: { x: sx, y: sy + CUSHION / 2, z: sz } }));
@@ -180,7 +185,7 @@
   // beacon's dome stand apart (`beacon`).
   const lamps = cached(() => {
     const out = [];
-    for (const s of [-1, 1]) out.push(bevelBox({ w: 0.14, h: 0.1, d: 0.02, color: LAMP, emissive: 1, bevel: 0.015, offset: { x: s * (P.postX - 0.04), y: P.roof + 0.12, z: P.postFront - 0.105 } }));
+    for (const s of [-1, 1]) out.push(bevelBox({ w: 0.18, h: 0.12, d: 0.02, color: LAMP, emissive: 1, bevel: 0.015, offset: { x: s * (P.postX - 0.04), y: P.roof + 0.15, z: P.postFront - 0.115 } }));
     const [bx, by, bz] = P.button;
     for (const s of [-1, 1]) out.push(bevelBox({ w: 0.05, h: 0.05, d: 0.02, color: AMBER, emissive: 1, bevel: 0.01, offset: { x: bx + s * 0.19, y: by + 0.02, z: bz + 0.1 } }));
     return noShadow(merge(...out));
