@@ -425,6 +425,51 @@
     return out;
   });
 
+  // Its shape as walkers meet it, in its own frame and units, as the Jet's columns are (`jetModels.columns`): over a grid
+  // `U` across, each column's solid from `bottom` to `top` (`bottom` below 0 where there is none): its voxel body with
+  // its back's doors in their recess, its wheels, its mast, its dashboard, button block and seat, and its guard's posts
+  // up to the roof; and the roof itself
+  // apart (`roof`, its extent either side of the middle, from and to along z, and its underside and top), so walkers
+  // pass under it in the cab. The carriage and its forks move, so the scene adds them as they stand.
+  const columns = cached(() => {
+    const I0 = Math.floor(-1.1 / U), I1 = Math.ceil(1.1 / U), K0 = Math.floor((P.face - 0.2) / U), K1 = Math.ceil((P.back + 0.12) / U);
+    const ni = I1 - I0, nk = K1 - K0, bottom = new Float32Array(ni * nk).fill(-1), top = new Float32Array(ni * nk).fill(-1);
+    const span = (i, k, y0, y1) => {
+      const c = (i - I0) * nk + (k - K0);
+      if (bottom[c] < 0 || y0 < bottom[c]) bottom[c] = y0;
+      if (y1 > top[c]) top[c] = y1;
+    };
+    // Every cell whose middle lies in the box [x0, x1] by [z0, z1], from y0 to y1.
+    const fill = (x0, x1, z0, z1, y0, y1) => {
+      for (let i = I0; i < I1; i++) for (let k = K0; k < K1; k++) {
+        const x = (i + 0.5) * U, z = (k + 0.5) * U;
+        if (x >= x0 && x <= x1 && z >= z0 && z <= z1) span(i, k, y0, y1);
+      }
+    };
+    for (let i = I0; i < I1; i++) for (let k = K0; k < K1; k++) {
+      let lo = -1, hi = -1;
+      for (let j = 0; j <= Math.ceil(P.top / U); j++) {
+        if (!bodyCell(i, j, k, (i + 0.5) * U, (j + 0.5) * U, (k + 0.5) * U)) continue;
+        if (lo < 0) lo = j;
+        hi = j;
+      }
+      if (lo >= 0) span(i, k, lo * U, (hi + 1) * U);
+    }
+    for (const [x, z, r, w] of [[P.frontX, P.front, P.frontR, P.frontW], [P.rearX, P.rear, P.rearR, P.rearW]]) {
+      for (const s of [-1, 1]) fill(s * x - w / 2, s * x + w / 2, z - r, z + r, 0, 2 * r);
+    }
+    fill(-P.mastX - 0.14, P.mastX + 0.14, P.mastZ - 0.15, P.mastZ + 0.21, 0.12, P.mastTop + 0.05);
+    fill(-P.doorX, P.doorX, P.back - U, P.back, P.doorY[0], P.doorY[1]);
+    fill(DASH.x - 0.37, DASH.x + 0.37, DASH.z - 0.2, DASH.z + 0.03, P.cowlTop, DASH.y + 0.16);
+    const [bx, by, bz] = P.button, [sx, sy, sz] = P.seat;
+    fill(bx - 0.15, bx + 0.15, bz - 0.13, bz + 0.13, P.cowlTop, by + 0.15);
+    fill(sx - 0.28, sx + 0.28, sz - 0.26, sz + 0.26, sy, sy + CUSHION);
+    fill(sx - 0.28, sx + 0.28, sz + 0.2, sz + 0.34, sy, sy + 0.72);
+    for (const s of [-1, 1]) for (const z of [P.postFront, P.postRear]) fill(s * P.postX - 0.13, s * P.postX + 0.13, z - 0.13, z + 0.13, 1, P.roof + 0.07);
+    const roof = { x: P.postX + 0.08, z0: P.postFront - 0.07, z1: P.postRear + 0.07, bottom: P.roof - 0.07, top: P.roof + 0.07 };
+    return { U, i0: I0, k0: K0, ni, nk, bottom, top, roof };
+  });
+
   // ---- the decals, pictures painted once a page ----
 
   const PX = 700, SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -552,5 +597,5 @@
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, FORK_DECK, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, FORK_DECK, columns, button, cover, doors, decals };
 })();
