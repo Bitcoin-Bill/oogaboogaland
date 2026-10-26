@@ -272,6 +272,10 @@
   const GAUGES = [[-0.05, -0.02, 0.07], [-0.22, -0.035, 0.05]], SCREEN = [0.24, -0.01, 0.075, 0.045], LAMP_PANEL = [-0.33, -0.01], IGNITION = [0.1, -0.08];
   const LIGHTS = [["#3dff7a", 0.17], [AMBER, 0.205], ["#ff3b2e", 0.24], ["#3aa8ff", 0.275], [AMBER, 0.31]];
   const STICK = { x: 0.19, y: 1.12, z: -0.62, grip: [0.19, 1.34, -0.57] };
+  // The charge dial's needle, for the scene: where its pivot stands proud of the dial, the panel's tilt, and the dial's
+  // arc, E at `from` round `sweep` to F (radians on the picture, clockwise as it is painted), and the charge it reads
+  // (`level`, 0 to 1) while the forklift runs.
+  const CHARGE = { at: dashAt(GAUGES[1][0], GAUGES[1][1], 0.006), tilt: DASH.tilt, r: GAUGES[1][2], from: Math.PI * 1.15, sweep: Math.PI * 0.7, level: 0.86 };
   // The key in the ignition, for the scene: where it stands proud of the lock, the panel's tilt, and how far it turns
   // (radians about the lock, clockwise to the driver below 0) to ON and to START, where the lock's marks stand.
   const KEY = { at: dashAt(IGNITION[0], IGNITION[1], 0.012), tilt: DASH.tilt, on: -1, start: -1.45 };
@@ -376,6 +380,13 @@
     const mark = boltSolid(0.04, 0.04, 0.008, GOLD, 0.5);
     flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.047, 0));
     return shaded(round, flat);
+  });
+  // The charge dial's needle in its own frame, its pivot at the origin and its length along +x on the dial's face (+z
+  // out of it), and the dark cap over its pivot.
+  const needle = cached(() => {
+    const r = CHARGE.r;
+    return shaded([turnedX(turn([[0, 0], [r * 0.12, 0], [r * 0.12, 0.003], [0, 0.004]], 12, "#3a3f47"), Math.PI / 2)],
+      [box({ w: r * 0.74, h: r * 0.09, d: 0.002, color: "#ffffff", emissive: 0.6, offset: { x: r * 0.37 } })]);
   });
   // The fork stick in its own frame, its pivot in the boot at the origin (`STICK`'s foot): the shaft and the red grip,
   // which the scene leans back as the forks rise and forward as they fall.
@@ -541,15 +552,16 @@
       g.strokeStyle = AMBER; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(3)) * r * 0.7, r + Math.sin(at(3)) * r * 0.7); g.stroke();
       g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
     },
-    // The charge dial: E to F over a red, amber and green arc, its needle near full, and the bolt under it.
+    // The charge dial: E to F over a red, amber and green arc (CHARGE's sweep), its needle near full, and the bolt under
+    // it.
     charge: (g, W, H) => {
-      const r = W / 2, at = (t) => Math.PI * 1.15 + t * Math.PI * 0.7;
+      const r = W / 2, at = (t) => CHARGE.from + t * CHARGE.sweep;
       g.fillStyle = "#0c0e12"; g.beginPath(); g.arc(r, r, r * 0.96, 0, TAU); g.fill();
       g.strokeStyle = STEEL; g.lineWidth = W * 0.05; g.stroke();
       for (const [t0, t1, c] of [[0, 0.2, "#d8261c"], [0.2, 0.45, AMBER], [0.45, 1, "#3dff7a"]]) { g.strokeStyle = c; g.lineWidth = W * 0.1; g.beginPath(); g.arc(r, r, r * 0.68, at(t0), at(t1)); g.stroke(); }
       write(g, "E", r + Math.cos(at(0)) * r * 0.42, r + Math.sin(at(0)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
       write(g, "F", r + Math.cos(at(1)) * r * 0.42, r + Math.sin(at(1)) * r * 0.42 + W * 0.04, W * 0.16, "#ffffff", W * 0.2);
-      g.strokeStyle = "#ffffff"; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(0.86)) * r * 0.74, r + Math.sin(at(0.86)) * r * 0.74); g.stroke();
+      g.strokeStyle = "#ffffff"; g.lineWidth = W * 0.045; g.beginPath(); g.moveTo(r, r); g.lineTo(r + Math.cos(at(CHARGE.level)) * r * 0.74, r + Math.sin(at(CHARGE.level)) * r * 0.74); g.stroke();
       g.fillStyle = "#3a3f47"; g.beginPath(); g.arc(r, r, r * 0.12, 0, TAU); g.fill();
       bolt(g, r, r * 1.45, r * 0.5, AMBER);
     },
@@ -597,5 +609,5 @@
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, FORK_DECK, columns, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, needle, CHARGE, stick, STICK, innerMast, CHAIN, chainLink, FORK_DECK, columns, button, cover, doors, decals };
 })();
