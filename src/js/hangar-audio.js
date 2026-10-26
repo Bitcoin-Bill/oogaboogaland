@@ -66,6 +66,8 @@
   // How it sounds at work: how far its whine climbs (Hz) and swells at full speed, and how far the pump's hum climbs and
   // its hiss swells while the forks move.
   const WORK = { whine: 420, swell: 1.8, pump: 34, hiss: 3 };
+  // Its horn: how loud, its two notes (Hz) and how long a honk sounds (s).
+  const HORN = { level: 0.13, notes: [415, 523], length: 0.42 };
   // The film show's levels at full: the projector's motor, its whir, the gate's clatter and the lamp's buzz, the
   // soundtrack's crackle and hiss, a picture's clunk and the roller's ratchet; and how far the projector and the screen
   // carry (half at that many metres), the hall being quiet enough to hear them across it.
@@ -213,6 +215,10 @@
       fork.relay = hissOf(filter("bandpass", 1800, 1.5, fork.relayGain));
       fork.chimeGain = gain(0, fork.near);
       fork.chime = osc("sine", 880, fork.chimeGain);
+      // Its horn, two squares a third apart through a band.
+      fork.hornGain = gain(0, fork.near);
+      const horn = filter("bandpass", 900, 1.2, fork.hornGain);
+      fork.horn = HORN.notes.map((hz) => osc("square", hz, horn));
     };
     // The projector's voices, all under its envelope, which `projector` opens and closes, and placed where it hangs; and
     // the screen's, placed where its picture falls.
@@ -700,6 +706,16 @@
         fork.buzzGain.gain.linearRampToValueAtTime(0, at + length);
       }
     };
+    // The forklift's horn, a short honk.
+    const horn = () => {
+      if (!ready || muted) return;
+      const now = ctx.currentTime, k = HORN.level, g = fork.hornGain.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(0, now);
+      g.linearRampToValueAtTime(k, now + 0.012);
+      g.setValueAtTime(k, now + HORN.length - 0.05);
+      g.linearRampToValueAtTime(0, now + HORN.length);
+    };
     // How hard the forklift works, each 0 to 1: its speed of its top, and whether the forks are moving.
     const forkliftWork = (drive, pump) => { liftDrive = drive; liftPump = pump; };
     // The forklift switched on, the relay clicking and its drive spinning up through `spin` and chiming ready, then running;
@@ -811,7 +827,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, forklift, forkliftWork, projector, clunk, roll, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, forklift, forkliftWork, horn, projector, clunk, roll, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
