@@ -66,6 +66,10 @@
   // frame, as wide as the arch, in the hall's cyan; and where whoever comes back out of the hangar stands, a step out of
   // the door on the walkway facing back along it, the view just inside the doorway behind it.
   const HANGAR_OPENING = { minX: -FM.HANGAR_DOOR.half, maxX: FM.HANGAR_DOOR.half, floorY: 0, ceilingY: FM.HANGAR_DOOR.top }, HANGAR_TINT = BL.factoryWindow.TINT;
+  // How the hangar door answers whoever comes near, as ₿IFRÖST's windows do: from DOOR_FAR metres of its opening,
+  // growing faster the nearer they come, and fully only at the doorway itself (DOOR_NEAR), easing at DOOR_EASE a second,
+  // its arch's glow brightening by up to DOOR_BRIGHTEN.
+  const DOOR_NEAR = 0, DOOR_FAR = 12, DOOR_EASE = 5, DOOR_BRIGHTEN = 3.2;
   const HANGAR_ARRIVAL = { yaw: -Math.PI / 2, pitch: 0.12, dist: FOLLOW.min, position: { x: LAYOUT.hangar.x + 1.4, y: LAYOUT.hangar.y, z: LAYOUT.hangar.z } };
   // `entrance` is the balcony's view across the core; the rest frame one station each.
   const PRESETS = {
@@ -192,6 +196,13 @@
     shaftIn: [FM.SHAFTS[0][0], 0.5, FM.SHAFTS[0][1]], shaftOut: [FM.SHAFTS[1][0], 0.5, FM.SHAFTS[1][1]], gallery: [0, LEVEL.top + 4.5, HALL.back + 4.9]
   };
   const hearAt = (name, p, loud = 1, n = 0) => audio.cue(name, p[0], p[1], p[2], loud, n);
+  // Kortik's Sis answering her brother from behind the Lightning Jet Hangar's door, her line over it and her voice
+  // through it, a syllable for every few letters; and where that is.
+  const SIS_AT = [FM.LAYOUT.hangar.x + 0.6, FM.LAYOUT.hangar.y + 2, FM.LAYOUT.hangar.z], SIS_LINES = BL.kortik.RIVALRY.map(([, hers]) => "KORTIK'S SIS: " + hers);
+  const sisAnswers = (i) => {
+    fx.sayAt(SIS_AT[0], SIS_AT[1] + 3.2, SIS_AT[2], SIS_LINES[i], 3.4);
+    hearAt("sis", SIS_AT, 1, Math.min(12, Math.max(2, Math.round(BL.kortik.RIVALRY[i][1].length / 4))));
+  };
   const hearNode = (name, node, up, loud = 1, n = 0) => audio.cue(name, node.position.x, node.position.y + up, node.position.z, loud, n);
   // An event's sound at its line's bay or gallery stand, or at the forge for a line the hall does not show.
   const hearPlace = (name, place) => { if (place) hearNode(name, place.node, 2, place.bay ? 1 : 0.6); else hearAt(name, SPOTS.forge, 0.6); };
@@ -1116,6 +1127,13 @@
     return along <= FM.HANGAR_DOOR.plane + margin && along > -2 && across >= HANGAR_OPENING.minX && across <= HANGAR_OPENING.maxX
       && feet >= HANGAR_OPENING.floorY - 0.12 && feet < HANGAR_OPENING.ceilingY;
   };
+  // While the hangar is open its door shows the hangar through the shield from the hangar's own stand-in, so a hosted
+  // page fetches the hangar's code with the hall's. Should that fail, the hall opens all the same, its door keeping the
+  // glimpse, and walking through tries the hangar's code again.
+  const prepare = () => {
+    const loading = FM.hangarEntry() ? BL.deferred.load("hangar-scene") : null;
+    return loading && loading.catch(() => null);
+  };
   // On in through the gate's shield from the island: as far across and as far past it as the Ooga went through the
   // island's, facing in, the view square behind it, and the walk on.
   const walkIn = (c) => {
@@ -1340,13 +1358,19 @@
     // the hangar.
     if (FM.hangarEntry()) {
       const h = L.hangar, D = FM.HANGAR_DOOR, door = FM.hangarDoor();
-      const node = createNode({ position: { x: h.x, y: h.y, z: h.z }, rotation: { x: 0, y: h.turn, z: 0 } }), stone = createNode({ geometry: door.stone });
-      addChild(node, stone, createNode({ geometry: door.glow, sightHidden: true }), createNode({ geometry: door.glimpse, sightHidden: true }));
+      const node = createNode({ position: { x: h.x, y: h.y, z: h.z }, rotation: { x: 0, y: h.turn, z: 0 } }), stone = createNode({ geometry: door.stone }), glow = createNode({ geometry: door.glow, sightHidden: true });
+      addChild(node, stone, glow, createNode({ geometry: door.glimpse, sightHidden: true }));
       setBoard(labelNode(node, D.sign[0], D.sign[1], D.sign[2]), "LIGHTNING JET\nHANGAR", "", true, { height: 1.3 });
       for (const side of [-1, 1]) addChild(node, createNode({ position: { x: side * (D.post + 0.75), y: 5.9, z: 0.6 }, geometry: FM.banner(2.2) }));
       addChild(root, node);
       const mouth = { x: h.x, z: h.z, ry: h.turn, floorY: h.y, room: { w: 4.4, h: 5, from: 0, to: 3.3 } };
-      s.hangar = { node, stone, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };
+      s.hangar = { node, stone, glow, near: 0, hum: 0, phase: BL.labPhase.create(node, mouth, HANGAR_OPENING, D.plane, HANGAR_TINT) };
+      // Through the shield, the hangar as it stands, from its own stand-in (`hangar-window.js`; WebGL only, the glimpse
+      // staying behind it and in its place on Canvas 2D).
+      if (renderer.kind !== "canvas2d" && BL.hangarWindow) {
+        const HD = BL.hangarModels.LAYOUT.door;
+        s.hangar.window = BL.hangarWindow.create({ group: node, pieces: BL.hangarModels.doorWindow(), beyond: BL.hangarWindow.across(HD.x, HD.y, HD.z, HD.turn, D.plane), plane: D.plane });
+      }
     }
     // Gallery stands along the top decks.
     const gcaps = FM.galleryCaps();
@@ -1898,9 +1922,10 @@
       visitor: () => people && people.player === avatar ? avatar : null,
       demoRunning: () => feed.reading.contract === "obl.factory.demo.v1" || feed.reading.contract === null && !!shared.mock, coarse: COARSE, camera, quality: () => renderer.quality,
       onKortik: () => kortik && kortik.tourHere() });
-    // When Kortik shouts for Tess, she answers back if she is at work.
+    // When Kortik shouts for Tess, she answers back if she is at work; where the hall has the Lightning Jet Hangar's
+    // door, he shouts at his sister through it now and then, and she answers from behind it.
     // His board's sounds come from where he sits.
-    kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort(), onSound: (name, n) => hearAt(name, SPOTS.board, 1, n) });
+    kortik = BL.kortik.create({ fx, onShout: () => greeter && greeter.retort(), onSound: (name, n) => hearAt(name, SPOTS.board, 1, n), onSis: FM.hangarEntry() ? sisAnswers : null });
     addChild(root, kortik.node);
     // Kortik himself takes pokes; his board frames itself and says what it is, as the stations do.
     // He outranks the board he sits in, but not an Ooga or the guide nearer the view.
@@ -2141,15 +2166,20 @@
       g.hum = 0.1 + Math.random() * 0.22;
       g.phase.ripples.pulse(GATE_OPENING.minX + Math.random() * (GATE_OPENING.maxX - GATE_OPENING.minX), Math.random() * GATE_OPENING.ceilingY, 0);
     }
-    // So does the hangar door's, in the same cyan.
+    // So does the hangar door's, in the same cyan; and, as ₿IFRÖST's windows do, the door answers whoever comes near
+    // (the Ooga driven here, or with none the view), its arch's studs and neon brightening and its field humming faster.
     const hg = s.hangar;
     if (hg) {
+      if (hg.window) hg.window.update(camera);
+      const p = hg.node.position, want = clamp((DOOR_FAR - Math.max(0, Math.hypot(at.x - p.x, at.y - p.y - 1, at.z - p.z) - 2)) / (DOOR_FAR - DOOR_NEAR), 0, 1);
+      hg.near += (want * want - hg.near) * Math.min(1, dt * DOOR_EASE);
+      hg.glow.glow = 1 + DOOR_BRIGHTEN * hg.near;
       hg.phase.update(dt, elapsed);
       hg.phase.body.update(dt);
       hg.phase.body.time = hg.phase.ripples.time;
       hg.hum -= dt;
       if (hg.hum <= 0) {
-        hg.hum = 0.12 + Math.random() * 0.25;
+        hg.hum = (0.12 + Math.random() * 0.25) * (1 - 0.65 * hg.near);
         hg.phase.ripples.pulse(HANGAR_OPENING.minX + Math.random() * (HANGAR_OPENING.maxX - HANGAR_OPENING.minX), Math.random() * HANGAR_OPENING.ceilingY, 0);
       }
     }
@@ -2394,7 +2424,10 @@
     }
     for (const g of scene.crew) g.agent.dispose();
     scene.gate.phase.dispose();
-    if (scene.hangar) scene.hangar.phase.dispose();
+    if (scene.hangar) {
+      scene.hangar.phase.dispose();
+      if (scene.hangar.window) scene.hangar.window.dispose();
+    }
     for (const t of scene.tunnels) { t.ripples.dispose(); t.body.dispose(); }
     // Save the carry/combat choice while the controlled actor still exists.
     pilot.dispose();
@@ -2450,7 +2483,7 @@
     // Voice zone: the Factory group, which its tunnel on the island shares (`factory`).
     voiceZone: "factory.hall",
     micKey: true,
-    id: "factory", buildSteps: () => FM.buildSteps(), enter, update, overlay, onDonation, previewDonation, onSeen, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry, allGeometry, hallGeometry,
+    id: "factory", prepare, buildSteps: () => FM.buildSteps(), enter, update, overlay, onDonation, previewDonation, onSeen, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry, allGeometry, hallGeometry,
     root: null, camera: null, input: null, debug: null, agent: null, agentView: null, agentControls: null, agentHandoff: null,
     // Diagnostics observe the existing detached owner without reading model caches.
     get retainedGeometry() { return world ? world.factoryKeep : null; },

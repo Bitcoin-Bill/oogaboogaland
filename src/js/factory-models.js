@@ -143,13 +143,15 @@
     // core's walkway, the main level to the high lines up the lines' inner sides, the high
     // lines to the landing in front of the first gallery, one flight from each, the pit up to the platform by the
     // cooker and up to Kortik's deck, and a level flight from his deck to the Routing Console's. An end on a deck's
-    // edge stands on that edge's rail line and crosses it square, so its rails meet the ends of the deck's.
+    // edge stands on that edge's rail line and crosses it square, so its rails meet the ends of the deck's. The level
+    // flight stands midway between his deck's east rail and the console deck's west one, wide enough to cut both decks'
+    // rails to their corners, so the widest Ooga crosses clear of the rails either side.
     stairs: [
       [-4.8, 0, 7.5, -4.8, LEVEL.main, 1.3, 1.6], [4.8, 0, 7.5, 4.8, LEVEL.main, 1.3, 1.6],
       [-9.2, LEVEL.main, -4.4, -9.2, LEVEL.high, -9.6, 1.6], [9.2, LEVEL.main, -4.4, 9.2, LEVEL.high, -9.6, 1.6],
       [-6.4, LEVEL.high, -14.05, -0.8, LEVEL.top, -14.05, 1.6], [6.4, LEVEL.high, -14.05, 0.8, LEVEL.top, -14.05, 1.6],
       [5.6, 0, 20.4, 9.5, LEVEL.low, 20.4, 1.6],
-      [-9.5, 0, 13.4, -13.4, LEVEL.low, 13.4, 1.6], [-13.9, LEVEL.low, 9.3, -13.9, LEVEL.low, 8.4, 1.2]
+      [-9.5, 0, 13.4, -13.4, LEVEL.low, 13.4, 1.6], [-14.4, LEVEL.low, 9.3, -14.4, LEVEL.low, 8.4, 1.8]
     ],
     // The landing the flights from A and B meet at, against the first gallery's front, and the bridges along the top:
     // the watchtower to the first gallery and the first gallery to the second, [x0, z0, x1, z1, width] edge to edge.
@@ -342,6 +344,95 @@
     return best;
   };
 
+  // Where the timber's rails run, shared by the mesh (`scaffold`) and the floor an Ooga walks (`FLOOR`): the bridges'
+  // sides from rail line to rail line, and the cuts each deck's rails leave where something lands on them (`cutsFor`).
+  const railPlan = cached(() => {
+    const L = LAYOUT, r = L.ring, R = r.outer - 0.15, e = L.entrance, [[, , a0, a1]] = L.walk;
+    // A bridge's two sides, each from where it leaves the rail line `from` of what it starts on to where it meets the
+    // rail line `to` of what it lands on: `t0` and `t1` the fractions along it, `a` and `b` the points. A line is a
+    // function of a side's ends giving that fraction: the circle round the core's walkway going out, or a line x = x.
+    const crossCircle = (rad) => (ax, az, bx, bz) => {
+      const dx = bx - ax, dz = bz - az, cx = ax - r.x, cz = az - r.z, qa = dx * dx + dz * dz, qb = 2 * (cx * dx + cz * dz), qc = cx * cx + cz * cz - rad * rad;
+      return (-qb + Math.sqrt(qb * qb - 4 * qa * qc)) / (2 * qa);
+    };
+    const crossX = (x) => (ax, az, bx) => (x - ax) / (bx - ax);
+    const bridgeOf = (x0, z0, x1, z1, w, from, to) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), px = -(z1 - z0) / len * w / 2, pz = (x1 - x0) / len * w / 2;
+      const sides = [-1, 1].map((s) => {
+        const ax = x0 + px * s, az = z0 + pz * s, bx = x1 + px * s, bz = z1 + pz * s, t0 = from(ax, az, bx, bz), t1 = to(ax, az, bx, bz);
+        const at = (t) => [ax + (bx - ax) * t, az + (bz - az) * t];
+        return { t0, t1, at, a: at(t0), b: at(t1) };
+      });
+      return { x0, z0, x1, z1, w, len, sides };
+    };
+    const ringBridges = RING_BRIDGES.map(([x0, z0, x1, z1]) => {
+      const line = Math.sign(x1) * (Math.abs(L.bays[3].x) - L.bays[3].w / 2 + 0.1);
+      return { ...bridgeOf(x0, z0, x1, z1, 2, crossCircle(R), crossX(line)), line };
+    });
+    const topBridges = L.bridges.map(([x0, z0, x1, z1, w]) => bridgeOf(x0, z0, x1, z1, w, crossX(x0 - 0.1), crossX(x1 + 0.1)));
+    // Where a stair, a bridge, a porch, the stairway or the walkway lands on a deck, as cuts on that deck's rail:
+    // exactly as wide as the rails that arrive, which end on the cut's end posts.
+    const landings = [];
+    for (const [ax, ay, az, bx, by, bz, w] of L.stairs) {
+      const l = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / l, dz = (bz - az) / l;
+      landings.push([ax, ay, az, w / 2 + 0.05, dx, dz], [bx, by, bz, w / 2 + 0.05, -dx, -dz]);
+    }
+    for (const l of L.ladders) {
+      landings.push([l.x, l.top, l.z, l.width / 2 + 0.15, l.nx, l.nz]);
+      landings.push([l.x, l.bottom, l.z, l.width / 2 + 0.15, l.nx, l.nz]);
+    }
+    const cutAcross = ([p, q], y) => landings.push([(p[0] + q[0]) / 2, y, (p[1] + q[1]) / 2, Math.hypot(p[0] - q[0], p[1] - q[1]) / 2]);
+    for (const bd of ringBridges) cutAcross(bd.sides.map((sd) => sd.b), LEVEL.main);
+    for (const bd of topBridges) for (const end of ["a", "b"]) cutAcross(bd.sides.map((sd) => sd[end]), LEVEL.top);
+    // The first gallery's front opens onto the landing, exactly between the flights' rails.
+    const ld = L.landing;
+    landings.push([ld.x, ld.y, ld.z - ld.d / 2 - 0.1, ld.w / 2 - 0.1]);
+    for (const t of L.tunnels) {
+      const b = L.bays[t.bay];
+      landings.push(t.turn === 0 ? [t.x, t.y, b.z - b.d / 2 + 0.1, PORCH_HALF - 0.1] : [b.x + Math.sign(t.x) * (b.w / 2 - 0.1), t.y, t.z, PORCH_HALF - 0.1]);
+    }
+    const [gx, , , , gy1, , gw] = L.stairway;
+    landings.push([gx, gy1, e.z - e.d / 2 + 0.1, gw / 2 + 0.1], [e.x + e.w / 2 - 0.1, e.y, (a0 + a1) / 2, (a1 - a0) / 2 - 0.1]);
+    if (hangarEntry()) {
+      const [[, , b0, b1]] = L.walkLeft;
+      landings.push([e.x - e.w / 2 + 0.1, e.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1]);
+    }
+    const cutsFor = (d) => landings.filter(([x, y, z]) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 1 && Math.abs(z - d.z) < d.d / 2 + 1).map(([x, , z, ...rest]) => [x - d.x, z - d.z, ...rest]);
+    return { ringBridges, topBridges, cutsFor };
+  });
+  // Every deck and the edges it is railed along (`deckParts`' `rails`), with how far its posts reach down where that is
+  // not to whatever stands under it: railed all round, open only where something lands on it (`railPlan`'s cuts); the
+  // galleries' backs are the wall, and they hang from it on brackets rather than stand on posts, which would land in
+  // the porches below them; Kortik's switchboard stands along his deck's west edge, where a rail would be.
+  const deckRailing = cached(() => {
+    const L = LAYOUT;
+    return [...L.bays.map((b) => [b, "nsew"]), [L.switchboard, "nsew"], [L.platform, "nsew"], [L.kortik, "nse"], [L.lookout, "nsew"],
+      [L.lookoutDeck, "nsew", 0], [L.lookoutApproach, "ew", 0], [L.landing, "s"], ...L.galleries.map((g) => [g, "swe", 0]), [L.entrance, "nwe"]];
+  });
+  // The rails along level 2's walkway round the right wall, from the balcony's rail to the Harbor porch's, every corner
+  // one shared post; along both sides of the hangar's walkway on the left while it is open; and along each line's porch
+  // out to its peer tunnel from its deck's rail: [x0, z0, x1, z1, y, ends], as `railParts` takes them.
+  const walkRails = cached(() => {
+    const L = LAYOUT, e = L.entrance, [[, , a0, a1], [s1x0, s1x1, s1z0]] = L.walk, out = [];
+    const ex = e.x + e.w / 2 - 0.1, wx = s1x0 + 0.1;
+    out.push([ex, a0 + 0.1, wx, a0 + 0.1, e.y, [false, true]], [ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, e.y, [false, true]], [wx, a0 + 0.1, wx, s1z0 - 0.1, e.y, [false, true]]);
+    if (hangarEntry()) {
+      const [[x0, , z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1;
+      for (const z of [z0 + 0.1, z1 - 0.1]) out.push([lx, z, x0 + 0.1, z, e.y, [false, true]]);
+    }
+    for (const t of L.tunnels) {
+      const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
+      if (t.turn === 0) for (const x of [x0 + 0.1, x1 - 0.1]) out.push([x, z0, x, z1 + 0.1, t.y, [true, false]]);
+      else {
+        const inner = b.x + s * (b.w / 2 - 0.1), face = t.x - s * 0.5;
+        out.push([inner, z0 + 0.1, face, z0 + 0.1, t.y, [false, true]]);
+        // The Harbor line's porch meets the walkway along its hall-side edge.
+        out.push(t.x > 0 ? [inner, z1 - 0.1, wx, z1 - 0.1, t.y, [false, false]] : [inner, z1 - 0.1, face, z1 - 0.1, t.y, [false, true]]);
+      }
+    }
+    return out;
+  });
+
   // ---- the floor an Ooga walks --------------------------------------------------------------------------
 
   // Every surface in the hall with its height at a point: the pit floor, the decks, the balcony and its stairway, the
@@ -420,7 +511,7 @@
       const b = -CONSOLE.arc + (i + 0.5) / 5 * CONSOLE.arc * 2;
       block(sw.x + CONSOLE.x + Math.sin(b) * CONSOLE.desk, sw.z + CONSOLE.z - Math.cos(b) * CONSOLE.desk, 0.65, sw.y - 0.5, sw.y + 3);
     }
-    block(sw.x - 3, sw.z + 1.4, 0.75, sw.y - 0.5, sw.y + 2);
+    block(sw.x - 3, sw.z - 1.4, 0.75, sw.y - 0.5, sw.y + 2);
     // The low drum is a step, not a four-metre invisible wall. Its column and glass tubes have their own shells.
     discs.push(rb.x, rb.z + REB.cz, 1.85, rb.y + 0.56);
     block(rb.x, rb.z + REB.cz, 0.36, rb.y + 0.54, rb.y + REB.top + 0.36);
@@ -465,7 +556,29 @@
     // Kortik's switchboard, desk, stool, side table and crates.
     const k = L.kortik, kx = k.x - k.w / 2 + KORTIK.face;
     for (const [along, out, r] of KORTIK.blocks) block(kx + out, k.z - along, r, k.y - 0.5, k.y + 3);
-    return { rects: new Float32Array(rects), strips: new Float32Array(strips), blocks: new Float32Array(blocks), discs: new Float32Array(discs),
+    // The rails along the decks' edges (`deckRailing`, cut by `railPlan`) and the walkways (`walkRails`), as boxes
+    // [x0, x1, z0, z1, from, to] round each rail from just past its outer face to its inner one, in the way of walkers
+    // on foot on that deck (`railClear`), so a body stops at a rail rather than in it; walkers below pass under and a
+    // jump goes over. A length ends `CUT_EASE` short of a cut, since the stairs and bridges landing there are about as
+    // narrow as the widest Ooga.
+    const walls = [], CUT_EASE = 0.6;
+    const wall = (x0, x1, z0, z1, y) => walls.push(x0, x1, z0, z1, y - 0.5, y + 1.1);
+    const { cutsFor } = railPlan();
+    for (const [d, rails] of deckRailing()) {
+      const hw = d.w / 2 - 0.1, hd = d.d / 2 - 0.1;
+      for (const [x0, z0, x1, z1] of models.deckRailSpans(d.w, d.d, rails, cutsFor(d))) {
+        const ease = (u, half) => Math.abs(Math.abs(u) - half) < 0.01 ? 0 : CUT_EASE;
+        if (z0 === z1) {
+          const a = Math.min(x0, x1), b = Math.max(x0, x1), ea = ease(a, hw), eb = ease(b, hw), inner = z0 < 0 ? 1 : -1;
+          if (b - eb > a + ea) wall(d.x + a + ea, d.x + b - eb, d.z + Math.min(z0 - 0.15 * inner, z0 + 0.1 * inner), d.z + Math.max(z0 - 0.15 * inner, z0 + 0.1 * inner), d.y);
+        } else {
+          const a = Math.min(z0, z1), b = Math.max(z0, z1), ea = ease(a, hd), eb = ease(b, hd), inner = x0 < 0 ? 1 : -1;
+          if (b - eb > a + ea) wall(d.x + Math.min(x0 - 0.15 * inner, x0 + 0.1 * inner), d.x + Math.max(x0 - 0.15 * inner, x0 + 0.1 * inner), d.z + a + ea, d.z + b - eb, d.y);
+        }
+      }
+    }
+    for (const [ax, az, bx, bz, y] of walkRails()) wall(Math.min(ax, bx) - 0.1, Math.max(ax, bx) + 0.1, Math.min(az, bz) - 0.1, Math.max(az, bz) + 0.1, y);
+    return { rects: new Float32Array(rects), strips: new Float32Array(strips), blocks: new Float32Array(blocks), discs: new Float32Array(discs), walls: new Float32Array(walls),
       stairs: new Float32Array([L.stairway, ...L.stairs].flat()), ring: L.ring };
   });
   // Conduits from each featured line's capacitors to the chamber: a thick tube of clear glass (`glass`, drawn in the
@@ -600,7 +713,7 @@
       // apart, so they mesh.
       gears: [[-1.2, 0.96, 0.5, 0.34, 13], [-1.2, 0.54, 0.956, 0.18, 7]],
       stack: [1.55, -0.85], stackTop: 3.7, hatch, lip, intakeY: HALL.h - c.y - 1.35, dir: [dx / l, dz / l],
-      post: 2.5, postZ: -2.3, postH: 6.2, sign: [0, 5.65, -1.97], board: [-1.3, 2.55, -2.05], lamps: [[-2.5, 5.84, -1.8], [2.5, 5.84, -1.8]],
+      post: 2, postZ: -2.3, postH: 6.2, sign: [0, 5.65, -1.97], board: [-0.8, 2.55, -2.05], lamps: [[-2, 5.84, -1.8], [2, 5.84, -1.8]],
       operator: [1.95, 0.75]
     };
   })();
@@ -1402,5 +1515,5 @@
     LAYOUT, LEVEL, HALL, WALL_LEAN, STATION_BACK, KORTIK, kortikAt, kortikFrom, kortikLamps, kortikLights, stationX, stationZ, SHIELD_Z, porchOf, FORGE_TRACKS, FORGE_STORES, FORGE_CY, SHAFTS, LINE_STEP, COIN_R, forgeWave, COILS, banner, TUNNEL_SIGN, TUNNEL_POST, EXIT_Z, CONDUIT_SAMPLES, TUNNEL_THEMES, STEP, sat, satFailed, REB, TRE, COOK, ROOF_TUBE, bananaOutlet, outletShaft, KIOSK, donationCorner, BOARD, LOOKOUT_BEAM, STUDY, label, lanterns, hubTunnel, hubWindow, bakeWindow, windowLights, outsideView, hangarEntry, HANGAR_DOOR, hangarLamps, beam, moved, turnedY, smoothBolt, smoothBitcoin
   };
   // Private lexical bindings used by the scene-only extension; read once when that group evaluates.
-  BL.factoryModelsSceneKit = { BL, BOARD, BOARD_FACE, BOARD_VALUES, BRASS, BRONZE, BRONZE_DK, CAP, CAP_BLUE, CAP_ORANGE, COILS, COIN_R, CONDUIT_SAMPLES, CONSOLE, COOK, COPPER, COPPER_DK, CRYSTAL, CYAN, FALLS, FLOOR, FORGE_CONSOLE, FORGE_CY, FORGE_TRACKS, GOLD, HALL, HANGAR_DOOR, HANGAR_SET_BACK, IRON_BK, IRON_DK, IRON_LT, KIOSK, LABEL_FONT, LAYOUT, LEVEL, LINE_STEP, LOOKOUT_BEAM, MONITORS, ORANGE, PORCH_HALF, REB, RING_BRIDGES, SHAFTS, STEP, STONE, STONE_DK, STUDY, TAU, TIMBER, TIMBER_DK, TIMBER_LT, TRE, TUNNEL_BOX, TUNNEL_POST, TUNNEL_THEMES, WALL_LEAN, along, banner, beam, bevelBox, box, cached, chain, columnParts, conduitPath, deckParts, donationCorner, face, flame, forwardLathe, gem, geometry, groundUnder, hangarEntry, hexToRgb, label, labelCache, lanternParts, lathe, makeVox, merge, models, moved, mulberry32, networkGlyph, noShadow, outcropTop, outcrops, plate, porchOf, prism, pushVert, railParts, ringLanding, shaded, smoothBitcoin, smoothBolt, span, stairParts, stationX, stationZ, torus, tube, tunnelFrame, turn, turnedX, turnedY, turnedZ, voxelGeometry };
+  BL.factoryModelsSceneKit = { BL, BOARD, BOARD_FACE, BOARD_VALUES, BRASS, BRONZE, BRONZE_DK, CAP, CAP_BLUE, CAP_ORANGE, COILS, COIN_R, CONDUIT_SAMPLES, CONSOLE, COOK, COPPER, COPPER_DK, CRYSTAL, CYAN, FALLS, FLOOR, FORGE_CONSOLE, FORGE_CY, FORGE_TRACKS, GOLD, HALL, HANGAR_DOOR, HANGAR_SET_BACK, IRON_BK, IRON_DK, IRON_LT, KIOSK, LABEL_FONT, LAYOUT, LEVEL, LINE_STEP, LOOKOUT_BEAM, MONITORS, ORANGE, PORCH_HALF, REB, RING_BRIDGES, SHAFTS, STEP, STONE, STONE_DK, STUDY, TAU, TIMBER, TIMBER_DK, TIMBER_LT, TRE, TUNNEL_BOX, TUNNEL_POST, TUNNEL_THEMES, WALL_LEAN, along, banner, beam, bevelBox, box, cached, chain, columnParts, conduitPath, deckParts, donationCorner, face, flame, forwardLathe, gem, geometry, groundUnder, hangarEntry, hexToRgb, label, labelCache, lanternParts, lathe, makeVox, merge, models, moved, mulberry32, networkGlyph, noShadow, outcropTop, outcrops, plate, porchOf, prism, pushVert, railParts, railPlan, deckRailing, walkRails, ringLanding, shaded, smoothBitcoin, smoothBolt, span, stairParts, stationX, stationZ, torus, tube, tunnelFrame, turn, turnedX, turnedY, turnedZ, voxelGeometry };
 })();

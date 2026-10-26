@@ -1,7 +1,7 @@
 // Scene-only factory geometry. Shared island props and their model-cache owners stay in factory-models.js.
 (() => {
   "use strict";
-  const { BL, BOARD, BOARD_FACE, BOARD_VALUES, BRASS, BRONZE, BRONZE_DK, CAP, CAP_BLUE, CAP_ORANGE, COILS, COIN_R, CONDUIT_SAMPLES, CONSOLE, COOK, COPPER, COPPER_DK, CRYSTAL, CYAN, FALLS, FLOOR, FORGE_CONSOLE, FORGE_CY, FORGE_TRACKS, GOLD, HALL, HANGAR_DOOR, HANGAR_SET_BACK, IRON_BK, IRON_DK, IRON_LT, KIOSK, LABEL_FONT, LAYOUT, LEVEL, LINE_STEP, LOOKOUT_BEAM, MONITORS, ORANGE, PORCH_HALF, REB, RING_BRIDGES, SHAFTS, STEP, STONE, STONE_DK, STUDY, TAU, TIMBER, TIMBER_DK, TIMBER_LT, TRE, TUNNEL_BOX, TUNNEL_POST, TUNNEL_THEMES, WALL_LEAN, along, banner, beam, bevelBox, box, cached, chain, columnParts, conduitPath, deckParts, donationCorner, face, flame, forwardLathe, gem, geometry, groundUnder, hangarEntry, hexToRgb, label, labelCache, lanternParts, lathe, makeVox, merge, models, moved, mulberry32, networkGlyph, noShadow, outcropTop, outcrops, plate, porchOf, prism, pushVert, railParts, ringLanding, shaded, smoothBitcoin, smoothBolt, span, stairParts, stationX, stationZ, torus, tube, tunnelFrame, turn, turnedX, turnedY, turnedZ, voxelGeometry } = window.BL.factoryModelsSceneKit;
+  const { BL, BOARD, BOARD_FACE, BOARD_VALUES, BRASS, BRONZE, BRONZE_DK, CAP, CAP_BLUE, CAP_ORANGE, COILS, COIN_R, CONDUIT_SAMPLES, CONSOLE, COOK, COPPER, COPPER_DK, CRYSTAL, CYAN, FALLS, FLOOR, FORGE_CONSOLE, FORGE_CY, FORGE_TRACKS, GOLD, HALL, HANGAR_DOOR, HANGAR_SET_BACK, IRON_BK, IRON_DK, IRON_LT, KIOSK, LABEL_FONT, LAYOUT, LEVEL, LINE_STEP, LOOKOUT_BEAM, MONITORS, ORANGE, PORCH_HALF, REB, RING_BRIDGES, SHAFTS, STEP, STONE, STONE_DK, STUDY, TAU, TIMBER, TIMBER_DK, TIMBER_LT, TRE, TUNNEL_BOX, TUNNEL_POST, TUNNEL_THEMES, WALL_LEAN, along, banner, beam, bevelBox, box, cached, chain, columnParts, conduitPath, deckParts, donationCorner, face, flame, forwardLathe, gem, geometry, groundUnder, hangarEntry, hexToRgb, label, labelCache, lanternParts, lathe, makeVox, merge, models, moved, mulberry32, networkGlyph, noShadow, outcropTop, outcrops, plate, porchOf, prism, pushVert, railParts, railPlan, deckRailing, walkRails, ringLanding, shaded, smoothBitcoin, smoothBolt, span, stairParts, stationX, stationZ, torus, tube, tunnelFrame, turn, turnedX, turnedY, turnedZ, voxelGeometry } = window.BL.factoryModelsSceneKit;
   // Construction checkpoints (see build-tasks.js). They reach it only when sliced, so an unsliced build runs without it.
   const pause = function* (slice) { if (slice) yield* BL.buildTasks.pause(slice); };
   const ROCK_LT = "#75614f";
@@ -248,74 +248,16 @@
 
   // Decks, bridges, stairs and the core's walkway ring: all the timber, as one mesh.
   const scaffold = BL.models.cachedSteps(function* (slice = null) {
-    const L = LAYOUT, geos = [], r = L.ring, R = r.outer - 0.15, e = L.entrance, [[, , a0, a1], [s1x0, s1x1, s1z0]] = L.walk;
+    const L = LAYOUT, geos = [], r = L.ring, R = r.outer - 0.15, e = L.entrance;
     const place = (parts, x, y, z) => { for (const g of parts) geos.push(moved(g, x, y, z)); };
     // Whether (x, y, z) stands on a deck's rail line, where that rail's cut ends carry the posts.
     const DECKS = [...L.bays, L.switchboard, L.platform, L.lookout, ...L.galleries, e];
     const atRail = (x, y, z) => DECKS.some((d) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 0.2 && Math.abs(z - d.z) < d.d / 2 + 0.2 &&
       (Math.abs(Math.abs(x - d.x) - (d.w / 2 - 0.1)) < 0.15 || Math.abs(Math.abs(z - d.z) - (d.d / 2 - 0.1)) < 0.15));
-    // A bridge's two sides, each from where it leaves the rail line `from` of what it starts on to where it meets the
-    // rail line `to` of what it lands on: `t0` and `t1` the fractions along it, `a` and `b` the points. A line is a
-    // function of a side's ends giving that fraction: the circle round the core's walkway going out, or a line x = x.
-    const crossCircle = (rad) => (ax, az, bx, bz) => {
-      const dx = bx - ax, dz = bz - az, cx = ax - r.x, cz = az - r.z, qa = dx * dx + dz * dz, qb = 2 * (cx * dx + cz * dz), qc = cx * cx + cz * cz - rad * rad;
-      return (-qb + Math.sqrt(qb * qb - 4 * qa * qc)) / (2 * qa);
-    };
-    const crossX = (x) => (ax, az, bx) => (x - ax) / (bx - ax);
-    const bridgeOf = (x0, z0, x1, z1, w, from, to) => {
-      const len = Math.hypot(x1 - x0, z1 - z0), px = -(z1 - z0) / len * w / 2, pz = (x1 - x0) / len * w / 2;
-      const sides = [-1, 1].map((s) => {
-        const ax = x0 + px * s, az = z0 + pz * s, bx = x1 + px * s, bz = z1 + pz * s, t0 = from(ax, az, bx, bz), t1 = to(ax, az, bx, bz);
-        const at = (t) => [ax + (bx - ax) * t, az + (bz - az) * t];
-        return { t0, t1, at, a: at(t0), b: at(t1) };
-      });
-      return { x0, z0, x1, z1, w, len, sides };
-    };
-    const ringBridges = RING_BRIDGES.map(([x0, z0, x1, z1]) => {
-      const line = Math.sign(x1) * (Math.abs(L.bays[3].x) - L.bays[3].w / 2 + 0.1);
-      return { ...bridgeOf(x0, z0, x1, z1, 2, crossCircle(R), crossX(line)), line };
-    });
-    const topBridges = L.bridges.map(([x0, z0, x1, z1, w]) => bridgeOf(x0, z0, x1, z1, w, crossX(x0 - 0.1), crossX(x1 + 0.1)));
-    // Where a stair, a bridge, a porch, the stairway or the walkway lands on a deck, as cuts on that deck's rail:
-    // exactly as wide as the rails that arrive, which end on the cut's end posts.
-    const landings = [];
-    for (const [ax, ay, az, bx, by, bz, w] of L.stairs) {
-      const l = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / l, dz = (bz - az) / l;
-      landings.push([ax, ay, az, w / 2 + 0.05, dx, dz], [bx, by, bz, w / 2 + 0.05, -dx, -dz]);
-    }
-    for (const l of L.ladders) {
-      landings.push([l.x, l.top, l.z, l.width / 2 + 0.15, l.nx, l.nz]);
-      landings.push([l.x, l.bottom, l.z, l.width / 2 + 0.15, l.nx, l.nz]);
-    }
-    const cutAcross = ([p, q], y) => landings.push([(p[0] + q[0]) / 2, y, (p[1] + q[1]) / 2, Math.hypot(p[0] - q[0], p[1] - q[1]) / 2]);
-    for (const bd of ringBridges) { cutAcross(bd.sides.map((sd) => sd.b), LEVEL.main); }
-    for (const bd of topBridges) { for (const end of ["a", "b"]) { cutAcross(bd.sides.map((sd) => sd[end]), LEVEL.top); } }
-    // The first gallery's front opens onto the landing, exactly between the flights' rails.
-    const ld = L.landing;
-    landings.push([ld.x, ld.y, ld.z - ld.d / 2 - 0.1, ld.w / 2 - 0.1]);
-    for (const t of L.tunnels) {
-      const b = L.bays[t.bay];
-      landings.push(t.turn === 0 ? [t.x, t.y, b.z - b.d / 2 + 0.1, PORCH_HALF - 0.1] : [b.x + Math.sign(t.x) * (b.w / 2 - 0.1), t.y, t.z, PORCH_HALF - 0.1]);
-    }
-    const [gx, , , , gy1, , gw] = L.stairway;
-    landings.push([gx, gy1, e.z - e.d / 2 + 0.1, gw / 2 + 0.1], [e.x + e.w / 2 - 0.1, e.y, (a0 + a1) / 2, (a1 - a0) / 2 - 0.1]);
-    if (hangarEntry()) {
-      const [[, , b0, b1]] = L.walkLeft;
-      landings.push([e.x - e.w / 2 + 0.1, e.y, (b0 + b1) / 2, (b1 - b0) / 2 - 0.1]);
-    }
-    const cutsFor = (d) => landings.filter(([x, y, z]) => Math.abs(y - d.y) < 0.3 && Math.abs(x - d.x) < d.w / 2 + 1 && Math.abs(z - d.z) < d.d / 2 + 1).map(([x, , z, ...rest]) => [x - d.x, z - d.z, ...rest]);
+    const { ringBridges, topBridges, cutsFor } = railPlan();
     // A deck's posts reach down to whatever stands under each: a lower floor, a tunnel's rock ledge, or the pit.
     const deckAt = (d, rails, drop = (x, z) => d.y - groundUnder(d.x + x, d.z + z, d.y)) => place(deckParts(d.w, d.d, drop, rails, Math.round(d.x * 7 + d.z), cutsFor(d)), d.x, d.y, d.z);
-    // Every deck is railed all round, open only where something lands on it; the galleries' backs are the wall, and
-    // they hang from it on brackets rather than stand on posts, which would land in the porches below them.
-    for (const b of L.bays) { yield* pause(slice); deckAt(b, "nsew"); }
-    for (const d of [L.switchboard, L.platform]) { yield* pause(slice); deckAt(d, "nsew"); }
-    // Kortik's switchboard stands along its west edge, where a rail would be.
-    deckAt(L.kortik, "nse");
-    yield* pause(slice);
-    deckAt(L.lookout, "nsew");
-    deckAt(L.lookoutDeck, "nsew", 0);
-    deckAt(L.lookoutApproach, "ew", 0);
+    for (const [d, rails, drop] of deckRailing()) { yield* pause(slice); deckAt(d, rails, drop); }
     // Brackets carry the lantern deck out from the tower's four legs.
     for (const sx of [-1, 1]) { for (const sz of [-1, 1]) { geos.push(beam(L.lookout.x + sx * 0.9, L.lookoutDeck.y - 1.4, L.lookout.z + sz * 0.9,
       L.lookout.x + sx * 2.2, L.lookoutDeck.y - 0.4, L.lookout.z + sz * 2.2, 0.16, TIMBER_DK)); } }
@@ -330,9 +272,7 @@
         geos.push(beam(l.x - tx * l.width / 2, y, l.z - tz * l.width / 2, l.x + tx * l.width / 2, y, l.z + tz * l.width / 2, 0.09, TIMBER_LT));
       }
     }
-    deckAt(L.landing, "s");
     for (const g of L.galleries) { yield* pause(slice);
-      deckAt(g, "swe", 0);
       const back = HALL.back + 2, front = g.z + g.d / 2;
       for (const x of galleryBrackets(g)) {
         geos.push(beam(x, g.y - 0.55, back, x, g.y - 0.55, front - 0.2, 0.26, TIMBER_DK), beam(x, g.y - 2.9, back, x, g.y - 0.68, front - 0.7, 0.2, TIMBER));
@@ -345,35 +285,19 @@
         for (const z of [g.z - g.d / 4, g.z + g.d / 4]) { geos.push(beam(wall, g.y - 0.55, z, end - s * 0.2, g.y - 0.55, z, 0.26, TIMBER_DK), beam(wall, g.y - 2.6, z, end - s * 0.6, g.y - 0.68, z, 0.2, TIMBER)); }
       }
     }
-    // The balcony the visitor enters on, running out from the tunnel, open at its front to the stairway and on its
-    // right to the walkway.
-    deckAt(e, "nwe");
-    // Level 2's walkway round the right wall, posted down to the pit floor and railed along the hall side from the
-    // balcony's rail to the Harbor porch's, every corner one shared post; and each line's porch out to its peer
-    // tunnel, railed along both sides from its deck's rail.
+    // Level 2's walkway round the right wall, posted down to the pit floor; while the hangar is open, its walkway on the
+    // left, straight from the balcony's rail to the hangar's door in the left wall, its posts standing on the lowered
+    // outcrop where they come down on it; each line's porch out to its peer tunnel; and their rails (`walkRails`).
     for (const [x0, x1, z0, z1] of L.walk) { yield* pause(slice); place(deckParts(x1 - x0, z1 - z0, e.y, "", 17), (x0 + x1) / 2, e.y, (z0 + z1) / 2); }
-    const ex = e.x + e.w / 2 - 0.1, wx = s1x0 + 0.1;
-    place(railParts(ex, a0 + 0.1, wx, a0 + 0.1, [false, true]), 0, e.y, 0);
-    place(railParts(ex, a1 - 0.1, s1x1 - 0.1, a1 - 0.1, [false, true]), 0, e.y, 0);
-    place(railParts(wx, a0 + 0.1, wx, s1z0 - 0.1, [false, true]), 0, e.y, 0);
-    // While the hangar is open, its walkway on the left: straight from the balcony's rail to the hangar's door in the
-    // left wall, railed along both sides to the wall, its posts standing on the lowered outcrop where they come down on it.
     if (hangarEntry()) {
-      const [[x0, x1, z0, z1]] = L.walkLeft, lx = e.x - e.w / 2 + 0.1, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      const [[x0, x1, z0, z1]] = L.walkLeft, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
       place(deckParts(x1 - x0, z1 - z0, (x, z) => e.y - outcropTop(cx + x, cz + z), "", 19), cx, e.y, cz);
-      for (const z of [z0 + 0.1, z1 - 0.1]) place(railParts(lx, z, x0 + 0.1, z, [false, true]), 0, e.y, 0);
     }
     for (const t of L.tunnels) { yield* pause(slice);
-      const [x0, x1, z0, z1] = porchOf(t), b = L.bays[t.bay], s = Math.sign(t.x);
+      const [x0, x1, z0, z1] = porchOf(t);
       place(deckParts(x1 - x0, z1 - z0, t.turn ? t.y : 0.3, "", 23), (x0 + x1) / 2, t.y, (z0 + z1) / 2);
-      if (t.turn === 0) for (const x of [x0 + 0.1, x1 - 0.1]) { place(railParts(x, z0, x, z1 + 0.1, [true, false]), 0, t.y, 0); }
-      else {
-        const inner = b.x + s * (b.w / 2 - 0.1), face = t.x - s * 0.5;
-        place(railParts(inner, z0 + 0.1, face, z0 + 0.1, [false, true]), 0, t.y, 0);
-        // The Harbor line's porch meets the walkway along its hall-side edge.
-        place(t.x > 0 ? railParts(inner, z1 - 0.1, wx, z1 - 0.1, [false, false]) : railParts(inner, z1 - 0.1, face, z1 - 0.1, [false, true]), 0, t.y, 0);
-      }
     }
+    for (const [ax, az, bx, bz, y, ends] of walkRails()) place(railParts(ax, az, bx, bz, ends), 0, y, 0);
     // The core's walkway: a ring of planks round the chamber's foot, each cut to its wedge so the ring closes
     // without gaps at its rim, posted down to the pit.
     const planks = 28;
@@ -491,7 +415,7 @@
       const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps;
       const floor = supportAt(x, z, feet);
       const px = ax + (bx - ax) * (i - 1) / steps, pz = az + (bz - az) * (i - 1) / steps;
-      if (!clearAt(x, z, Math.max(feet, floor), radius, height, px, pz) || floor < feet - STEP) return false;
+      if (!clearAt(x, z, Math.max(feet, floor), radius, height, px, pz) || !railClear(x, z, Math.max(feet, floor), radius, px, pz) || floor < feet - STEP) return false;
     }
     return true;
   };
@@ -527,6 +451,24 @@
       if (old2 >= r * r || distance2 <= old2 + 1e-12 || ox * (x - fromX) + oz * (z - fromZ) < -1e-12) return false;
     }
     return true;
+  };
+  // Whether a step on foot from (fromX, fromZ) to (x, z) keeps a body of `radius` off the decks' and walkways' rails
+  // (`FLOOR`'s walls): no nearer than `radius` to one, or, already nearer, no deeper into it. A body in the air goes
+  // over them.
+  const railClear = (x, z, feet, radius, fromX, fromZ) => {
+    const W = FLOOR().walls;
+    for (let i = 0; i < W.length; i += 6) {
+      if (feet < W[i + 4] || feet > W[i + 5]) continue;
+      const near = wallDistance(W, i, x, z);
+      if (near >= radius) continue;
+      if (near < wallDistance(W, i, fromX, fromZ) - 1e-9 || wallDistance(W, i, fromX, fromZ) >= radius) return false;
+    }
+    return true;
+  };
+  // How far (x, z) stands outside the wall at `i` in `W`, less than nothing inside it.
+  const wallDistance = (W, i, x, z) => {
+    const dx = Math.max(W[i] - x, x - W[i + 1]), dz = Math.max(W[i + 2] - z, z - W[i + 3]);
+    return dx > 0 || dz > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) : Math.max(dx, dz);
   };
   // Horizontal clearance alone cannot stop a fall entering a lower layer's obstacle. Resolve the new
   // contact at its rim as the feet cross its top, before the walker can land trapped inside it.
@@ -1060,7 +1002,7 @@
       const foot = y > 2 ? 0 : C.top, stem = y - h / 2 - foot + 0.05, back = y > 2 ? reach + 0.12 : reach;
       geos.push(consoleAt(box({ w: 0.12, h: stem, d: 0.12, color: IRON, offset: { y: -stem / 2 - h / 2, z: -0.06 } }), bearing, back, y, 0));
     }
-    geos.push(moved(merge(BL.mineModels.hubCart()), -3, 0, 1.4));
+    geos.push(moved(merge(BL.mineModels.hubCart()), -3, 0, -1.4));
     return merge(...geos);
   });
   // The monitors' faces, dim and busy: a forward routed through the board lights them. The board draws the routes,

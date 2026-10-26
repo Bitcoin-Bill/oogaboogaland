@@ -1206,7 +1206,7 @@
     const createBoardWindow = (node, floatingId = 0, saved = null) => {
       const el = { board: node };
       const ids = {
-        boardTitle: "board-title", boardScreen: "board-screen", boardCaption: "board-caption", boardNote: "board-note",
+        boardTitle: "board-title", boardScreen: "board-screen", boardCaption: "board-caption", boardNote: "board-note", boardLinks: "board-links",
         boardDots: "board-dots", boardPrev: "board-prev", boardNext: "board-next", boardHelp: "board-help",
         boardHead: "board-head", boardPause: "board-pause", boardResize: "board-resize",
         boardFilter: "board-filter", boardFilterMenu: "board-filter-menu", boardFilterList: "board-filter-list", boardRollup: "board-rollup",
@@ -1233,7 +1233,7 @@
       };
       // Each window copies a readable board's canvas and owns its controls.
       // A board is any object with `title`, `help`, `canvas`, `count`, `index`, `caption`, `note`, `version` and
-      // `go(index)`, plus optional `wide` and `captionAbove` layouts. The dialog copies the canvas, captions the page, lays one dot per page and pages with the
+      // `go(index)`, plus optional `wide` and `captionAbove` layouts and a `link` out ({ href, label }, opened in a new tab). The dialog copies the canvas, captions the page, lays one dot per page and pages with the
       // chevrons, the dots and the arrow keys; it never learns what a board shows, so a board can change freely.
       // `updateBoard` repaints whenever the open board's version moves.
       // A `floating` board also supplies `paused` and `setPaused`, and keeps island input available.
@@ -1513,6 +1513,22 @@
         el.boardCaption.textContent = board.caption;
         el.boardNote.textContent = board.note || "";
         el.boardNote.hidden = !!board.floating || !board.note;
+        // A board's links out, one anchor each under its note, made the first time a board needs that many.
+        const links = board.links || [];
+        el.boardLinks.hidden = !links.length;
+        for (let i = el.boardLinks.children.length; i < links.length; i++) {
+          const a = document.createElement("a");
+          a.className = "board-link";
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.referrerPolicy = "no-referrer";
+          el.boardLinks.append(a);
+        }
+        for (let i = 0; i < el.boardLinks.children.length; i++) {
+          const a = el.boardLinks.children[i];
+          a.hidden = i >= links.length;
+          if (i < links.length) { a.href = links[i].href; a.textContent = links[i].label; }
+        }
         if (board.floating || board.carousel) paintBoardPause();
         if (board.floating) {
           el.boardRollup.checked = board.rollup;

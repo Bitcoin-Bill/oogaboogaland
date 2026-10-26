@@ -208,7 +208,10 @@
       </nav>
       <nav class="presets" aria-label="Lightning Jet Hangar" data-scene="hangar" hidden>
         <button type="button" data-preset="entrance">Hangar</button>
+        <button type="button" data-preset="jet">Jet</button>
+        <button type="button" data-preset="boards">Boards</button>
         <button type="button" data-preset="runway">Runway</button>
+        <button type="button" data-action="hangar-mute">Sound</button>
         <button type="button" class="leave" data-action="leave">Factory</button>
       </nav>
       <nav class="presets" aria-label="Thro-ball" data-scene="skee" hidden>
@@ -1609,6 +1612,7 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
       </div>
       <div class="board-dots" id="board-dots" aria-label="Pages"></div>
       <p class="board-note" id="board-note" hidden></p>
+      <div class="board-links" id="board-links" hidden></div>
       <p class="help" id="board-help"></p>
       <button type="button" class="board-resize" id="board-resize" aria-label="Resize Oogatron window; arrow keys adjust size" hidden></button>
     </dialog>
@@ -1678,6 +1682,15 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
         <button type="button" class="ghost-spectate-next" id="ghost-spectate-next" aria-label="Next player">Next ▶</button>
       </div>
     </div>
+    <section class="hangar-sound" id="hangar-sound" aria-label="Hangar sound" hidden>
+      <div class="hangar-sound-head">
+        <h3>Sound</h3>
+        <button type="button" class="hangar-sound-toggle" id="hangar-sound-toggle" aria-pressed="true">Sound on</button>
+      </div>
+      <label class="hangar-sound-row" for="hangar-volume"><span>Volume</span><input type="range" id="hangar-volume" min="0" max="100" step="5" value="100"></label>
+      <label class="hangar-sound-row" for="hangar-vibration"><span>Vibration</span><input type="range" id="hangar-vibration" min="0" max="100" step="5" value="100"></label>
+      <p class="hangar-sound-note">Pad vibration: Chrome and Edge</p>
+    </section>
     <div class="ghost-player" id="ghost-player" hidden>
       <span class="ghost-player-note" aria-hidden="true">♪</span>
       <span class="ghost-player-title" id="ghost-player-title"></span>
@@ -1843,7 +1856,18 @@ Then run npm run build and ONLY=characters node test/run.mjs.</pre>
   <script src="js/kortik.js" data-defer="factory-scene"></script>
   <script src="js/factory-audio.js" data-defer="factory-scene"></script>
   <script src="js/scene-factory.js" data-defer="factory-scene"></script>
+  <script src="js/jet-models.js" data-defer="hangar-scene"></script>
+  <script src="js/jet-data.js" data-defer="hangar-scene"></script>
+  <script src="js/jet-feed.js" data-defer="hangar-scene"></script>
+  <script src="js/forklift-models.js" data-defer="hangar-scene"></script>
   <script src="js/hangar-models.js" data-defer="hangar-scene"></script>
+  <script src="js/hangar-fire.js" data-defer="hangar-scene"></script>
+  <script src="js/hangar-terminals.js" data-defer="hangar-scene"></script>
+  <script src="js/sis-models.js" data-defer="hangar-scene"></script>
+  <script src="js/sis.js" data-defer="hangar-scene"></script>
+  <script src="js/hangar-window.js" data-defer="hangar-scene"></script>
+  <script src="js/hangar-guide.js" data-defer="hangar-scene"></script>
+  <script src="js/hangar-audio.js" data-defer="hangar-scene"></script>
   <script src="js/scene-hangar.js" data-defer="hangar-scene"></script>
   <script src="js/arcade-models.js"></script>
   <script src="js/arcade-scene-models.js" data-defer="arcade"></script>
