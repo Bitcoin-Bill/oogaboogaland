@@ -17005,8 +17005,13 @@ const rescueMenuChecks = BL => {
     const chose=choice&&choice.breed===4&&!("owner" in choice)&&choice.stray===5&&/^[^<>]{1,16}$/.test(choice.name)&&choice.name.includes("Rex")&&!M.isOpen;
     M.open({breed:1,ooga:"Yellow",suggest:"Max"});input.value="";dialog.listeners.get("click")({target:find(dialog,n=>n.dataset.adopt!==undefined)});const fallback=choice.name==="Max"&&choice.stray===-1;
     M.open({breed:1,ooga:"Yellow",suggest:"Max"});dialog.listeners.get("keydown")({type:"keydown",key:"Escape",target:dialog,preventDefault(){},stopPropagation(){}});const escaped=!M.isOpen;
+    // Signed out it opens on the personal line alone, and the next adoption brings the puppies, name and Adopt back.
+    const go=find(dialog,n=>n.dataset.adopt!==undefined),note=find(dialog,n=>n.className==="svrn-note");M.setLine("Sign in to adopt a puppy.");M.open({signIn:true,stray:4});
+    const refused=M.isOpen&&M.stats.signIn&&M.stats.stray===-1&&[pups,input.parentElement,go].every(n=>n.style.display==="none")&&note.textContent==="Sign in to adopt a puppy."&&note.style.display!=="none";
+    dialog.listeners.get("click")({target:find(dialog,n=>n.dataset.close!==undefined)});const backed=!M.isOpen;
+    M.open({breed:0,ooga:"Yellow",suggest:"Max"});const restored=M.isOpen&&!M.stats.signIn&&[pups,input.parentElement,go].every(n=>n.style.display==="");M.close();
     M.dispose();
-    record("Rescue dialog: six painted breeds in SVRN's menu classes, for the visitor's own Ooga with no other to choose, Enter adopts the sanitized name or the suggestion, Escape closes and disposal leaves no panel or handler",shown&&chose&&fallback&&escaped&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({shown,chose,fallback,escaped,choice}));
+    record("Rescue dialog: six painted breeds in SVRN's menu classes, for the visitor's own Ooga with no other to choose, Enter adopts the sanitized name or the suggestion, Escape closes, signed out it shows only the sign-in line and Back, and disposal leaves no panel or handler",shown&&chose&&fallback&&escaped&&refused&&backed&&restored&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({shown,chose,fallback,escaped,refused,backed,restored,choice}));
   }finally{for(const [k,v] of Object.entries(saved))globalThis[k]=v;}
 };
 const menuShellChecks = BL => {
@@ -19414,14 +19419,18 @@ const RESCUE_LOOK='const look=(x,z)=>{const D=__ooga.dsb,yaw=.6,ax=x-Math.sin(ya
 // The visitor signed in as the Ooga walking DSB Land (no Worker on the test page, so only `state.me` says so).
 const RESCUE_SIGN_IN='(()=>{const c=BL.characters.get(__ooga.dsb.avatar.traits.name);BL.net.state.me={id:1,login:c.github||c.handle};})()';
 const RESCUE_SIGN_IN_WORDS="Sign in to adopt a puppy.";
+// The dialog as a signed-out visitor sees it: only the sign-in line (on screen) and Back, no puppies, name or Adopt.
+const RESCUE_REFUSAL='(()=>{const M=__ooga.dsb.rescue.menu,p=document.querySelector(".rescue-menu"),n=p&&p.querySelector(".svrn-note"),r=n&&n.getBoundingClientRect(),shown=s=>!!p&&p.querySelector(s).getClientRects().length>0;return {open:M.isOpen,signIn:M.stats.signIn,note:n&&n.textContent,seen:!!r&&r.width>0&&r.height>0&&r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth,pups:shown("nav"),name:shown("input"),adopt:shown("button[data-adopt]")};})()';
+const rescueRefused=r=>r.open&&r.signIn&&r.note===RESCUE_SIGN_IN_WORDS&&r.seen&&!r.pups&&!r.name&&!r.adopt;
 const RESCUE_SAVED='JSON.parse(localStorage.getItem(BL.rescueDsb.KEY)||"null")';
 scene("dsb",{label:"rescue checkpoint",query:"&view=rescue-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb rescue checkpoint",why:"playthrough: VAC 1's real door enters Free Puppies Rescue; signed out the dog houses only say to sign in; signed in, a puppy adopted through the dialog is the visitor's one dog, saved at once, and follows its Ooga out into the Chora and through later door round trips",run:async b=>{
   await rescueStep(b);await b.key(" ");await rescueStep(b);
   const entry=await b.evaluate('(()=>{const D=__ooga.dsb,I=D.interiors,V=D.vacancies.resolve(1);window.__rescueAvatar=D.avatar;return {id:I.active?.room.id,text:V.text,status:V.address.status,exterior:D.exterior.visible,drawn:D.rescue.dogs.stats().dogsDrawn,strays:D.rescue.dogs.strays().filter(s=>s.shown).length};})()');
   record("Rescue browser: Space at VAC 1's door enters Free Puppies Rescue, where only the yard's six puppies show",entry.id==="puppy-rescue"&&entry.text==="Free Puppies Rescue"&&entry.status==="occupied"&&!entry.exterior&&entry.drawn===6&&entry.strays===0,JSON.stringify(entry));
   await b.evaluate('__ooga.pilot.navigate(__ooga.dsb.interiors.active.room.reviews["rescue-kennels"])');await rescueStep(b);await b.key(" ");await rescueStep(b);
-  const out=await b.evaluate(`({open:__ooga.dsb.rescue.menu.isOpen,toast:document.getElementById("toast").textContent,line:__ooga.dsb.rescue.line,saved:${RESCUE_SAVED},dog:__ooga.dsb.rescue.dogs.dog()})`);
-  record("Rescue browser: signed out, Space at the dog houses opens no adoption and says to sign in; nothing is adopted or saved",!out.open&&out.toast===RESCUE_SIGN_IN_WORDS&&out.line===RESCUE_SIGN_IN_WORDS&&!out.saved&&!out.dog,JSON.stringify(out));
+  const out=await b.evaluate(`({...${RESCUE_REFUSAL},line:__ooga.dsb.rescue.line,saved:${RESCUE_SAVED},dog:__ooga.dsb.rescue.dogs.dog()})`);
+  await b.key("Escape");
+  record("Rescue browser: signed out, Space at the dog houses opens the dialog on the sign-in line alone, with no adoption; nothing is adopted or saved",rescueRefused(out)&&out.line===RESCUE_SIGN_IN_WORDS&&!out.saved&&!out.dog,JSON.stringify(out));
   await b.evaluate(RESCUE_SIGN_IN);await rescueStep(b);await b.key(" ");await rescueStep(b);
   const dialog=await b.evaluate('(()=>{const p=document.querySelector(".rescue-menu");return {open:__ooga.dsb.rescue.menu.isOpen,pups:p.querySelectorAll("nav button[data-breed]").length,engaged:p.classList.contains("dsb-menu-engaged"),selects:p.querySelectorAll("select").length,ooga:__ooga.dsb.rescue.menu.stats.ooga};})()');
   await rescueClick(b,'.rescue-menu button[data-breed="3"]');await rescueClick(b,".rescue-menu button[data-adopt]");await rescueStep(b);
@@ -19463,11 +19472,11 @@ scene("dsb",{label:"rescue flight",query:"&view=rescue-door&weather=clear&time=1
     // A stray clear of the Ooga and of any pile (a pile is a tap target of its own), so the click can only mean that dog.
     const s=R.strays().find(e=>e.shown&&e.mood!=="tag"&&Math.hypot(e.x-p.x,e.z-p.z)>3&&piles.every(q=>Math.hypot(q.x-e.x,q.z-e.z)>1.2));R.hold(true);look(s.x,s.z);return s;})()`);
   await rescueStep(b);await rescueTap(b,stray.x,stray.y+.2,stray.z);await rescueStep(b);
-  const refused=await b.evaluate('({open:__ooga.dsb.rescue.menu.isOpen,toast:document.getElementById("toast").textContent})');
+  const refused=await b.evaluate(RESCUE_REFUSAL);await b.key("Escape");
   await b.evaluate(RESCUE_SIGN_IN);await rescueStep(b);await rescueTap(b,stray.x,stray.y+.2,stray.z);await rescueStep(b);
   const offered=await b.evaluate('(()=>{const M=__ooga.dsb.rescue.menu;return {open:M.isOpen,breed:BL.rescueDogs.BREEDS[M.stats.breed].id,stray:M.stats.stray,ooga:M.stats.ooga};})()');
   await b.key("Escape");await rescueStep(b);
-  record("Rescue browser: a real click on a stray says to sign in while signed out, and signed in opens the adoption on that very dog for the visitor's own Ooga; Escape closes it",!refused.open&&refused.toast===RESCUE_SIGN_IN_WORDS&&offered.open&&offered.breed===stray.breed&&offered.stray===stray.slot&&/Yellow/.test(offered.ooga)&&!(await b.evaluate("__ooga.dsb.rescue.menu.isOpen")),JSON.stringify({stray,refused,offered}));
+  record("Rescue browser: a real click on a stray says to sign in while signed out, and signed in opens the adoption on that very dog for the visitor's own Ooga; Escape closes it",rescueRefused(refused)&&offered.open&&offered.breed===stray.breed&&offered.stray===stray.slot&&/Yellow/.test(offered.ooga)&&!(await b.evaluate("__ooga.dsb.rescue.menu.isOpen")),JSON.stringify({stray,refused,offered}));
   await b.evaluate(`(()=>{__ooga.dsb.rescue.dogs.hold(false);__ooga.dsb.rescue.adopt(3,"Pip");})()`);
   // The flight: from open sky east of the Meme Factory House west over its roof and the rescue's, over the harbour's
   // basin and down on its east pier, on real keys (Z climbs, W flies on); every tick the dog stands on no roof, under
@@ -19488,7 +19497,14 @@ scene("dsb",{label:"rescue flight",query:"&view=rescue-door&weather=clear&time=1
     aloft.x<=-33&&aloft.roof>11.6&&aloft.over>3&&landed.F.count===0&&landed.F.states.fly>10&&landed.F.jet>10&&landed.dog.state==="follow"&&!landed.dog.jet&&landed.near<3&&landed.dry,JSON.stringify({aloft,landed}));
 }}]});
 // On a phone: the adoption dialog with its six puppies, name and Adopt on screen and under a thumb.
-scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adopt&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[phone("rescue",{play:`${RESCUE_SIGN_IN};for(let i=0;i<4;i++)BL.scenes.dsb.update(1/60,i/60);__ooga.dsb.rescue.menu.isOpen||__ooga.dsb.rescue.open()`,required:['.rescue-menu button[data-breed="0"]','.rescue-menu button[data-breed="5"]',".rescue-menu input",".rescue-menu button[data-adopt]"]})]});
+// Signed out first: a thumb on "Adopt a puppy" must show the sign-in line, not a toast at the far edge of the screen.
+scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adopt&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[{name:"dsb rescue phone signed out",why:"regression: signed out, tapping Adopt a puppy only raised a short toast at the far edge of the screen (on a desktop under the bottom bar), so nothing seemed to happen; now the dialog opens on the sign-in line",run:async b=>{
+  await rescueStep(b);await b.evaluate('__ooga.dsb.rescue.menu.close()');await rescueStep(b);
+  const button=await b.evaluate('(()=>{const c=document.getElementById("dsb-context"),r=c.getBoundingClientRect();return {text:c.textContent,hidden:c.hidden,x:r.x+r.width/2,y:r.y+r.height/2};})()');
+  await b.click(button.x,button.y);await rescueStep(b);const tapped=await b.evaluate(RESCUE_REFUSAL);
+  await rescueClick(b,".rescue-menu button[data-close]");await rescueStep(b);const back=await b.evaluate("__ooga.dsb.rescue.menu.isOpen");
+  record("Rescue phone: signed out, a tap on Adopt a puppy opens the dialog on the sign-in line, on screen, with no puppies, name or Adopt, and Back closes it",button.text==="Adopt a puppy"&&!button.hidden&&rescueRefused(tapped)&&!back,JSON.stringify({button,tapped,back}));
+}},phone("rescue",{play:`${RESCUE_SIGN_IN};for(let i=0;i<4;i++)BL.scenes.dsb.update(1/60,i/60);__ooga.dsb.rescue.open()`,required:['.rescue-menu button[data-breed="0"]','.rescue-menu button[data-breed="5"]',".rescue-menu input",".rescue-menu button[data-adopt]"]})]});
 // Review measures settled WebGL views, not the opening curtain's CSS animation.
 // Keep the driver's reduced-motion default: software compositing can delay the
 // full curtain past readiness even on the approved pre-merge build.

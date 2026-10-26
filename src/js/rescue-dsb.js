@@ -11,8 +11,8 @@
 //
 // Adoption is for the signed-in visitor's own Ooga only (`BL.net.ownCharacter`, checked with `BL.net.mayDrive` when
 // adopting), one dog a login; the Ooga a signed-out visitor drives belongs to a contributor, so the desk, the dog
-// houses and a stray's tap answer SIGN_IN. The dog is out while that login drives its own Ooga in DSB Land. Strays and
-// scooping are everyone's.
+// houses and a stray's tap open the dialog on SIGN_IN alone. The dog is out while that login drives its own Ooga in
+// DSB Land. Strays and scooping are everyone's.
 (() => {
   "use strict";
   const BL=window.BL,D=BL.rescueDogs;
@@ -69,9 +69,9 @@
     const open=(route="adopt",breed=-1,stray=-1)=>{
       if(route==="feed")return dogs.feedOwn()||true;
       const who=login(),cave=ownOoga();
-      if(!who||!cave){hud.toast(SIGN_IN);return true;}
+      if(!who||!cave){menu.setLine(SIGN_IN);return menu.open({signIn:true});}
       if(store.dogs[who]){hud.toast(`${store.dogs[who].name} is already with you.`);return true;}
-      return menu.open({breed:breed>=0?breed:D.breedFor(cave.traits.name),ooga:cave.traits.display,suggest:D.nameFor(cave.traits.name),stray});
+      lastLine=null;line();return menu.open({breed:breed>=0?breed:D.breedFor(cave.traits.name),ooga:cave.traits.display,suggest:D.nameFor(cave.traits.name),stray});
     };
     const adopted=({breed,name,stray})=>{
       const who=login(),cave=ownOoga();
