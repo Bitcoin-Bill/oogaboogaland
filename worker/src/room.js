@@ -69,8 +69,8 @@ export class Room extends DurableObject {
       this.studio.invited = this.studio.mode === "qa" ? [...new Set((Array.isArray(this.studio.invited) ? this.studio.invited : []).filter(seated))].slice(0, MAX_PLAYERS) : [];
       this.cleanupJobs = (await ctx.storage.get("voiceCleanup")) || [];
       const stored = await ctx.storage.get(["loopEpoch", "sweepAt"]);
-      this.loopEpoch = stored && stored.loopEpoch || Date.now();
-      this.sweepAt = stored && stored.sweepAt || Date.now() + SWEEP_MS;
+      this.loopEpoch = stored.get("loopEpoch") || Date.now();
+      this.sweepAt = stored.get("sweepAt") || Date.now() + SWEEP_MS;
       await ctx.storage.put("loopEpoch", this.loopEpoch);
       await ctx.storage.put("sweepAt", this.sweepAt);
       if (this.studio.hostId && (!this.players.has(this.studio.hostId) || this.players.get(this.studio.hostId).zone !== STUDIO_ZONE || !studioHostAllowed(env, this.studio.hostId))) this.suspendStudio();
