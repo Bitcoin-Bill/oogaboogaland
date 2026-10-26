@@ -97,7 +97,7 @@
     stats: ["Repo stats · drneski/lightning-jet", ""],
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
-    forklift: ["Hangar forklift", "It moves the Jet's parts round the hangar."],
+    forklift: ["Hangar forklift", COARSE ? "It moves the Jet's parts round the hangar. Walk up to its cab and tap GET IN." : "It moves the Jet's parts round the hangar. Walk up to its cab and press Space to get in."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -105,6 +105,10 @@
     screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."],
     tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
+  // How far past the forklift's side, beyond the Ooga's own body, its cab takes them in (`CAB_REACH`), along how much of
+  // its length (`CAB_SPAN`, from and to in its frame), and how far out beside it, past their body, they stand up again
+  // (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
+  const CAB_REACH = 0.6, CAB_SPAN = [-1, 0.9], CAB_OUT = [0.15, 1.2];
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
@@ -184,7 +188,9 @@
   // The forklift parked at (x, z), its forks pointing `turn` (`forkliftModels`): its voxel body, mast, fittings and
   // lamps, and each part that moves a node of its own, the wheels, the carriage up its mast, the steering wheel on its
   // column, the beacon's dome, the button and its cover on the cover's hinge, the back's two doors on theirs; its decals
-  // as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the cover so it lifts with it.
+  // as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the cover so it lifts with it; and
+  // its driver's seat for the crew's `sitPlayer`, facing the forks, stood up from beside the cab (`walkAt`, set as an
+  // Ooga gets in, on its side).
   const forklift = ({ x, z, turn }) => {
     const FL = BL.forkliftModels, P = FL.PLACES, W = FL.wheel(), D = FL.doors(), decals = FL.decals();
     const at = (geometry, [px, py, pz], options = {}) => createNode({ position: { x: px, y: py, z: pz }, geometry, ...options });
@@ -198,7 +204,31 @@
     addChild(cover, ...decals.cover.map(picture));
     addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), createNode({ geometry: FL.lamps(), sightHidden: true }),
       ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
-    return { root, body, wheels, carriage, steering, beacon, button, cover, doors };
+    const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat;
+    const seat = { x: x + sz * sn, y: sy + FL.CUSHION, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
+    return { root, body, wheels, carriage, steering, beacon, button, cover, doors, seat, x, z, sn, cs };
+  };
+  // Where the driven Ooga stands in the forklift's frame (`CAB`, x across and z along), and whether that is beside its
+  // cab, on the floor, near enough to get in.
+  const CAB = { x: 0, z: 0 };
+  const besideCab = (f, cave) => {
+    const p = cave.root.position, dx = p.x - f.x, dz = p.z - f.z;
+    CAB.x = dx * f.cs - dz * f.sn;
+    CAB.z = dx * f.sn + dz * f.cs;
+    return p.y - cave.baseY < HM.STEP && CAB.z > CAB_SPAN[0] && CAB.z < CAB_SPAN[1] && Math.abs(CAB.x) < BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius + CAB_REACH;
+  };
+  // Space beside the cab gets the driven Ooga in: it will stand up again on the side it got in from, at the nearest spot
+  // out beside the cab it fits, else the other side's.
+  const getIn = (f, cave) => {
+    if (cave.camp.seat || f.seat.sitter || !besideCab(f, cave)) return false;
+    const side = Math.sign(CAB.x) || 1, out = BL.forkliftModels.FOOTPRINT.x + cave.bodyRadius, w = f.seat.walkAt;
+    for (const s of [side, -side]) for (let d = CAB_OUT[0]; d <= CAB_OUT[1]; d += 0.15) {
+      const lx = s * (out + d), lz = CAB.z * 0.3;
+      w.x = f.x + lx * f.cs + lz * f.sn;
+      w.z = f.z - lx * f.sn + lz * f.cs;
+      if (HM.walkable(w.x, w.z, w.x, w.z, 0, cave.bodyRadius)) return people.sitPlayer(f.seat);
+    }
+    return false;
   };
   // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
   // round its fuselage's axis.
@@ -450,7 +480,7 @@
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
     s.jet = jetNode({ position: { x: L.jet.x, y: 0, z: L.jet.z } });
     addChild(root, s.jet);
-    // The forklift, parked in front of the landing.
+    // The forklift, parked on the runway by the steps.
     s.forklift = forklift(L.forklift);
     addChild(root, s.forklift.root);
     // The boards on the left wall: each a glass in its frame with its face built on it and the Jet flying across it,
@@ -782,7 +812,7 @@
       // Keep the visitor's weapons and magazines across the doorway, as the hall does.
       playerWorld = { level: 0, weapons: world.weapons, magazine: world.magazine };
       const shared = { root, input, hud, game, world: playerWorld, playerName, weaponsEnabled: true, fx, viewYaw: 0, outsideActors, outsideActorHeight: BL.remotePlayers.BODY_HEIGHT, groundAt: groundFor, walkable: walkableFor, flyable: flyableFor, clipProjectileTarget, absorbProjectile, reloadPolicy,
-        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) || scene.terminals.useNear(x, z, reach, feet) || scene.sis.useNear() };
+        useNear: (x, z, reach, feet) => scene.fire.useNear(x, z, reach, feet) || scene.terminals.useNear(x, z, reach, feet) || scene.sis.useNear() || getIn(scene.forklift, people.player) };
       shared.onModelChange = () => {
         if (!avatar) return;
         scene.gate.phase.body.refresh(avatar.root);
@@ -919,9 +949,10 @@
     }
     remotes.update(dt);
     footsteps.update(drivenHere);
-    // The act button's DON'T PRESS beside the static fire test's button, DISPLAY (or STOP) beside a terminal, and POKE
-    // beside Kortik's Sis.
-    const actLabel = drivenHere && (s.fire.actLabel() || s.terminals.actLabel() || s.sis.actLabel());
+    // The act button's GET OUT in the forklift, DON'T PRESS beside the static fire test's button, DISPLAY (or STOP) beside
+    // a terminal, POKE beside Kortik's Sis, and GET IN beside the forklift's cab.
+    const actLabel = drivenHere && (drivenHere.camp.seat === s.forklift.seat ? "GET OUT" : s.fire.actLabel() || s.terminals.actLabel() || s.sis.actLabel()
+      || (!s.forklift.seat.sitter && besideCab(s.forklift, drivenHere) ? "GET IN" : null));
     if (actLabel) { hud.setAct(actLabel); actPrompt = true; }
     else if (actPrompt) { actPrompt = false; pilot.showAct(); }
     node.tick(dt);
