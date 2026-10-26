@@ -86,9 +86,9 @@
       ]
     },
     // The forklift (`forklift-models.js`), parked on the runway's right half a few metres from the steps' foot, clear
-    // of the way down its middle, in sight of the door with its forks toward it: where its middle stands and the way its
-    // forks point (0 down the hall).
-    forklift: { x: 3, z: 15, turn: Math.PI - 0.6 },
+    // of the way down its middle, its forks down the runway toward the launch tunnel, angled in toward the runway's
+    // middle, so whoever gets in looks down it: where its middle stands and the way its forks point (0 down the hall).
+    forklift: { x: 3, z: 16.6, turn: 0.5 },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
