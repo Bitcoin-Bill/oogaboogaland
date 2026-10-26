@@ -197,7 +197,7 @@
     const root = createNode({ position: { x, y: 0, z }, rotation: { x: 0, y: turn, z: 0 }, scale: { x: FL.SCALE, y: FL.SCALE, z: FL.SCALE } }), body = createNode({ geometry: FL.body() });
     const wheels = [[-P.frontX, P.frontR, P.front, W.front], [P.frontX, P.frontR, P.front, W.front], [-P.rearX, P.rearR, P.rear, W.rear], [P.rearX, P.rearR, P.rear, W.rear]]
       .map(([wx, wy, wz, geometry]) => at(geometry, [wx, wy, wz]));
-    const carriage = at(FL.carriage(), [0, 0, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
+    const carriage = at(FL.carriage(), [0, P.lift, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
     const beacon = at(FL.beacon(), P.beacon, { sightHidden: true }), button = at(FL.button(), P.button), cover = at(FL.cover(), P.hinge, { sightHidden: true });
     const doors = D.map((geometry, i) => at(geometry, [(i ? 1 : -1) * P.doorX, 0, P.back]));
     const picture = ([geometry, px, py, pz, rx]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: 0, z: 0 }, sightHidden: true, depthBias: -0.15 });

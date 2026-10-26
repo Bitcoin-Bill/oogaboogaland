@@ -16,27 +16,28 @@
   "use strict";
   const BL = window.BL = window.BL || {};
   const { models } = BL;
-  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, makeVox, voxelGeometry, turn, shaded } = models;
+  const { cached, box, bevelBox, merge, noShadow, moved, turnedX, turnedY, turnedZ, beam, lathe, torus, along, makeVox, voxelGeometry, turn, shaded } = models;
   const TAU = Math.PI * 2;
 
   const U = 0.125, SCALE = 1.15;
   const YELLOW = "#f2b01e", YELLOW_B = "#e3a114", BLACK = "#1f2125", BLACK_B = "#2b2e34", BLUE = "#2443a8", BLUE_B = "#2b4dbb", GOLD = "#ffc83a";
   const RUBBER = "#17181b", STEEL = "#a9b1bc", STEEL_DK = "#5d6470", RED = "#e8342a", AMBER = "#ffb02e", LAMP = "#fff1b8", TAIL = "#ff3b2e";
+  const FORK = "#4c5159", TIP = "#ffd23e", CHROME = "#d3d9e0";
   // The body's palette, by index.
   const PALETTE = [null, YELLOW, YELLOW_B, BLACK, BLACK_B, BLUE, BLUE_B, TAIL];
   const Y = 1, Y_B = 2, K = 3, K_B = 4, B = 5, B_B = 6, T = 7;
   // Where its parts stand: the axles' z, the wheels' radius, width and how far out their middles are; the hull's half
   // width and its levels (the underbody's top, the cab's floor, the deck the seat stands on, the counterweight's top);
   // the cowl's front and the dash's back, the cab's back and the counterweight's front and back (the sides and the back
-  // on the voxels' grid, so the decals and doors lie on their faces); the mast's channels, the carriage's face and how
-  // far the forks reach, the back's vented doors (their half width and their foot and head); the guard's posts and roof;
-  // the seat, the steering wheel's hub (and its column's tilt), the button, its cover's hinge at its block's far edge,
-  // and the beacon.
+  // on the voxels' grid, so the decals and doors lie on their faces); the mast's uprights, the carriage's face, how far
+  // the forks reach and how high the carriage rests off the floor, the back's vented doors (their half width and their
+  // foot and head); the guard's posts and roof; the seat, the steering wheel's hub (and its column's tilt), the button,
+  // its cover's hinge at its block's far edge, and the beacon.
   const PLACES = {
     front: -0.98, rear: 0.98, frontR: 0.55, rearR: 0.46, frontW: 0.44, rearW: 0.4, frontX: 0.78, rearX: 0.72,
     half: 0.875, under: 0.44, floor: 0.6, deck: 1.08, top: 1.6,
     cowl: -1.28, dash: -0.72, cab: 0.08, weight: 0.72, back: 1.5,
-    mastX: 0.42, mastZ: -1.5, mastTop: 2.6, face: -1.72, forks: 1.25, doorX: 0.62, doorY: [0.64, 1.32],
+    mastX: 0.42, mastZ: -1.5, mastTop: 2.62, face: -1.72, forks: 1.3, lift: 0.08, doorX: 0.62, doorY: [0.64, 1.32],
     postX: 0.74, postFront: -0.9, postRear: 0.8, roof: 2.68,
     seat: [0, 1.08, 0.38], steering: [-0.02, 1.58, -0.64, 0.95], button: [0.44, 1.42, -0.76], hinge: [0.44, 1.42, -0.87], beacon: [0, 2.76, 0.58]
   };
@@ -118,35 +119,111 @@
     return out;
   });
 
-  // The mast: two channels up the front with crossbars at their head, middle and foot, the lift cylinder between them
-  // and a chain down each; the carriage moves up it.
+  // A round pipe from one point to another, for hoses.
+  const pipe = (ax, ay, az, bx, by, bz, r, color) => along(turn([[r, 0], [r, Math.hypot(bx - ax, by - ay, bz - az)]], 8, color), ax, ay, az, bx - ax, by - ay, bz - az);
+  // A bolt's head, its cap toward -z, and one on a side, its cap out along x toward side `s`.
+  const boltHead = (x, y, z, r = 0.022) => moved(turnedX(turn([[r, 0], [r, 0.014], [r * 0.7, 0.022], [0, 0.022]], 6, STEEL_DK), -Math.PI / 2), x, y, z);
+  const sideBolt = (x, y, z, s, r = 0.02) => moved(turnedZ(turn([[r, 0], [r, 0.008], [r * 0.7, 0.012], [0, 0.012]], 6, STEEL_DK), -s * Math.PI / 2), x, y, z);
+
+  // How far either side of the middle the chains run and the forks hang.
+  const CHAIN_X = 0.15, FORK_X = 0.32;
+  // The mast, as massive as its concept's. Each outer upright is a channel open toward the middle, its web outside and a
+  // flange before and behind it, banded at its seams with bolts in the bands and its pivot pin through its foot; the
+  // inner upright nests in its opening, standing out of it toward the middle. Tie bars cross their heads and feet, bolted
+  // on their faces, and one behind holds the chains' anchors. Between them the lift cylinder stands on the foot's tie,
+  // its chrome rod up to the yellow crosshead, whose two sheaves carry each chain from its anchor up behind and over
+  // and down the front to the carriage's (`carriage`) at rest; and two hoses run down its front, clamped.
   const mast = cached(() => {
-    const flat = [], round = [], z = P.mastZ;
+    const flat = [], round = [], z = P.mastZ, y0 = 0.12, h = P.mastTop - y0, inner = [0.36, P.mastTop - 0.04];
     for (const s of [-1, 1]) {
-      flat.push(bevelBox({ w: 0.12, h: P.mastTop - 0.12, d: 0.18, color: BLACK, bevel: 0.025, offset: { x: s * P.mastX, y: 0.12 + (P.mastTop - 0.12) / 2, z } }));
-      flat.push(bevelBox({ w: 0.05, h: P.mastTop - 0.4, d: 0.1, color: BLACK_B, bevel: 0.012, offset: { x: s * (P.mastX - 0.08), y: 0.3 + (P.mastTop - 0.4) / 2, z: z + 0.02 } }));
-      round.push(...models.chain(s * 0.24, P.mastTop - 0.1, z - 0.06, s * 0.24, 0.7, z - 0.06, 0.035, STEEL_DK));
+      const x = s * P.mastX;
+      flat.push(bevelBox({ w: 0.05, h, d: 0.28, color: BLACK, bevel: 0.015, offset: { x: x + s * 0.095, y: y0 + h / 2, z } }));
+      for (const dz of [-0.115, 0.115]) flat.push(bevelBox({ w: 0.24, h, d: 0.05, color: BLACK, bevel: 0.015, offset: { x, y: y0 + h / 2, z: z + dz } }));
+      for (let q = 1; q < 5; q++) {
+        const y = y0 + h * q / 5;
+        flat.push(bevelBox({ w: 0.065, h: 0.07, d: 0.295, color: BLACK_B, bevel: 0.012, offset: { x: x + s * 0.095, y, z } }));
+        flat.push(bevelBox({ w: 0.25, h: 0.07, d: 0.065, color: BLACK_B, bevel: 0.012, offset: { x, y, z: z - 0.115 } }));
+        for (const dz of [-0.08, 0.08]) round.push(sideBolt(x + s * 0.1275, y, z + dz, s));
+        round.push(boltHead(x - s * 0.065, y, z - 0.148), boltHead(x + s * 0.065, y, z - 0.148));
+      }
+      round.push(moved(turnedZ(turn([[0.055, 0], [0.055, 0.012], [0.04, 0.02], [0, 0.02]], 12, STEEL_DK), -s * Math.PI / 2), x + s * 0.12, 0.3, z));
+      flat.push(bevelBox({ w: 0.12, h: inner[1] - inner[0], d: 0.17, color: BLACK_B, bevel: 0.015, offset: { x: x - s * 0.09, y: (inner[0] + inner[1]) / 2, z } }));
     }
-    for (const y of [0.3, 1.5, P.mastTop - 0.08]) flat.push(bevelBox({ w: P.mastX * 2 + 0.1, h: 0.1, d: 0.14, color: BLACK_B, bevel: 0.02, offset: { y, z: z + 0.04 } }));
-    round.push(moved(turn([[0.07, 0], [0.07, 1.3], [0.05, 1.32], [0.05, 2.05], [0.06, 2.07], [0.06, 2.17], [0, 2.19]], 14, "#6f7782"), 0, 0.3, z + 0.05));
-    flat.push(bevelBox({ w: 0.36, h: 0.14, d: 0.12, color: YELLOW, bevel: 0.02, offset: { y: P.mastTop - 0.2, z: z - 0.04 } }));
+    const across = P.mastX * 2 + 0.28;
+    flat.push(bevelBox({ w: across, h: 0.14, d: 0.3, color: BLACK, bevel: 0.025, offset: { y: P.mastTop - 0.07, z } }));
+    flat.push(bevelBox({ w: across - 0.04, h: 0.16, d: 0.24, color: BLACK, bevel: 0.025, offset: { y: 0.24, z } }));
+    for (let q = -2; q <= 2; q++) round.push(boltHead(q * 0.2, P.mastTop - 0.07, z - 0.152), boltHead(q * 0.2, 0.24, z - 0.122));
+    flat.push(bevelBox({ w: P.mastX * 2, h: 0.1, d: 0.06, color: BLACK_B, bevel: 0.015, offset: { y: 1.36, z: z + 0.17 } }));
+    // The lift cylinder, its clamp at the foot, and the rod up to the crosshead.
+    const cz = z + 0.04, head = 2.24;
+    flat.push(bevelBox({ w: 0.28, h: 0.06, d: 0.22, color: BLACK_B, bevel: 0.015, offset: { y: 0.35, z: cz } }));
+    round.push(moved(turn([[0.085, 0], [0.085, 1.42], [0.1, 1.44], [0.1, 1.54], [0.06, 1.56], [0, 1.56]], 16, BLACK_B), 0, 0.32, cz));
+    round.push(moved(turn([[0.048, 0], [0.048, head - 1.86], [0, head - 1.86]], 14, CHROME), 0, 1.86, cz));
+    flat.push(bevelBox({ w: 0.62, h: 0.1, d: 0.16, color: YELLOW, bevel: 0.02, offset: { y: head, z: cz } }));
+    for (const s of [-1, 1]) {
+      const x = s * CHAIN_X, sy = head + 0.07;
+      // The sheave between its two cheeks, and its chain: anchored behind, up over it and down the front.
+      round.push(moved(turnedZ(turn([[0, -0.03], [0.08, -0.03], [0.064, 0], [0.08, 0.03], [0, 0.03]], 18, STEEL_DK), Math.PI / 2), x, sy, cz));
+      for (const dx of [-0.045, 0.045]) flat.push(bevelBox({ w: 0.018, h: 0.13, d: 0.13, color: BLACK_B, bevel: 0.005, offset: { x: x + dx, y: sy - 0.01, z: cz } }));
+      flat.push(bevelBox({ w: 0.07, h: 0.1, d: 0.06, color: BLACK_B, bevel: 0.012, offset: { x, y: 1.43, z: z + 0.14 } }));
+      round.push(...models.chain(x, 1.47, cz + 0.08, x, sy, cz + 0.08, 0.028, STEEL_DK));
+      round.push(...models.chain(x, sy, cz - 0.08, x, P.lift + 0.8, P.face + 0.12, 0.028, STEEL_DK));
+      // A hose down the front, with its clamps, and back into the cowl at its foot.
+      const hx = s * 0.07, hz = z - 0.09;
+      round.push(pipe(hx, head - 0.04, hz, hx, 0.5, hz, 0.018, BLACK), pipe(hx, 0.5, hz, hx, 0.42, P.cowl, 0.018, BLACK));
+      for (const y of [0.8, 1.4, 1.95]) flat.push(bevelBox({ w: 0.05, h: 0.03, d: 0.05, color: STEEL_DK, bevel: 0.008, offset: { x: hx, y, z: hz } }));
+    }
     return shaded(round, flat);
   });
-  // The carriage in its own frame, the floor under its face at the origin: the face plate across the mast, its backrest
-  // in a grid of bars, and the two forks, each a black shank down the face and a yellow blade along the floor.
+  // The carriage in its own frame, the floor under its face at the origin (it rests `PLACES.lift` above it): the two fork
+  // bars across the mast, the upper with a lip along its top and the notches the forks' locks drop into; a bracket
+  // behind each side of them with two rollers against the inner upright; a yellow guard up each end as its concept's,
+  // strapped in black and bolted; the backrest's grille between them; the chains' anchors; and the forks.
   const carriage = cached(() => {
-    const flat = [], f = 0;
-    flat.push(bevelBox({ w: 1.24, h: 0.38, d: 0.08, color: BLACK, bevel: 0.02, offset: { y: 0.36, z: f } }));
-    flat.push(bevelBox({ w: 1.24, h: 0.06, d: 0.1, color: YELLOW, bevel: 0.015, offset: { y: 0.58, z: f } }));
-    for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.07, h: 0.9, d: 0.07, color: BLACK_B, bevel: 0.015, offset: { x: s * 0.58, y: 0.58 + 0.45, z: f + 0.01 } }));
-    for (const y of [0.95, 1.46]) flat.push(bevelBox({ w: 1.22, h: 0.06, d: 0.06, color: BLACK_B, bevel: 0.015, offset: { y, z: f + 0.01 } }));
-    for (let q = -3; q <= 3; q++) flat.push(box({ w: 0.035, h: 0.9, d: 0.035, color: BLACK, offset: { x: q * 0.17, y: 1.03, z: f + 0.01 } }));
+    const flat = [], round = [], D = 0.08, W = 1.34;
+    flat.push(bevelBox({ w: W, h: 0.14, d: D, color: BLACK, bevel: 0.02, offset: { y: 0.24, z: D / 2 } }));
+    flat.push(bevelBox({ w: W, h: 0.16, d: D, color: BLACK, bevel: 0.02, offset: { y: 0.62, z: D / 2 } }));
+    flat.push(box({ w: W, h: 0.025, d: D + 0.02, color: BLACK_B, offset: { y: 0.7125, z: D / 2 - 0.01 } }));
+    for (let q = -7; q <= 7; q++) if (Math.abs(Math.abs(q) * 0.085 - FORK_X) > 0.1) flat.push(box({ w: 0.022, h: 0.035, d: 0.012, color: STEEL_DK, offset: { x: q * 0.085, y: 0.68, z: -0.006 } }));
     for (const s of [-1, 1]) {
-      const x = s * 0.32;
-      flat.push(bevelBox({ w: 0.13, h: 0.62, d: 0.07, color: BLACK_B, bevel: 0.015, offset: { x, y: 0.35, z: f - 0.07 } }));
-      flat.push(bevelBox({ w: 0.13, h: 0.06, d: P.forks - 0.1, color: YELLOW, bevel: 0.015, offset: { x, y: 0.03, z: f - 0.1 - (P.forks - 0.1) / 2 } }));
+      flat.push(bevelBox({ w: 0.05, h: 0.58, d: 0.18, color: BLACK_B, bevel: 0.012, offset: { x: s * 0.22, y: 0.44, z: D + 0.09 } }));
+      for (const y of [0.3, 0.6]) round.push(moved(turnedZ(turn([[0.055, -0.02], [0.055, 0.02], [0.03, 0.03], [0, 0.03]], 12, STEEL_DK), -s * Math.PI / 2), s * 0.255, y, D + 0.12));
+      // The chain's anchor on the upper bar, and its pin.
+      flat.push(bevelBox({ w: 0.07, h: 0.1, d: 0.07, color: BLACK_B, bevel: 0.012, offset: { x: s * CHAIN_X, y: 0.77, z: 0.12 } }));
+      round.push(sideBolt(s * CHAIN_X + s * 0.035, 0.79, 0.12, s, 0.016));
+      // The guard up the end, its straps and their bolts.
+      const gx = s * 0.6;
+      flat.push(bevelBox({ w: 0.2, h: 1.26, d: 0.1, color: YELLOW, bevel: 0.03, offset: { x: gx, y: 0.79, z: -0.01 } }));
+      for (const y of [0.36, 0.92, 1.34]) {
+        flat.push(bevelBox({ w: 0.214, h: 0.06, d: 0.112, color: BLACK, bevel: 0.012, offset: { x: gx, y, z: -0.01 } }));
+        round.push(boltHead(gx - 0.06, y, -0.066, 0.016), boltHead(gx + 0.06, y, -0.066, 0.016));
+      }
     }
-    return merge(...flat);
+    // The backrest: its top and middle rails and the bars between the guards.
+    for (const y of [1.06, 1.39]) flat.push(bevelBox({ w: 1.0, h: 0.07, d: 0.06, color: BLACK_B, bevel: 0.015, offset: { y, z: 0.01 } }));
+    for (let q = 0; q < 8; q++) flat.push(box({ w: 0.035, h: 0.66, d: 0.035, color: BLACK, offset: { x: -0.4375 + q * 0.125, y: 1.06, z: 0.01 } }));
+    // Each fork: its blade, thinning toward its tip with the tip's underside chamfered and its heel rounded under the
+    // shank, a wedge in the inside of the heel, and its tip lit; the shank up the bars' face, a rating plate on it; the
+    // hooks over the upper bar and under the lower, each turned down behind; and the lock's pin on top.
+    const T = 0.1, L = P.forks, S = 0.07, FW = 0.15, R = 0.07;
+    const bladeTop = (a) => a < 0.8 * L ? T - (T - 0.07) * a / (0.8 * L) : 0.07 - 0.035 * (a - 0.8 * L) / (0.2 * L);
+    const heel = [210, 240].map((d) => [R + R * Math.cos(d * Math.PI / 180), R + R * Math.sin(d * Math.PI / 180)]);
+    // An outline in (forward, up), stood on its side and given the fork's width across.
+    const sideways = (points, w, color, emissive = 0) => turnedY(models.prism(points, w, color, emissive), Math.PI / 2);
+    for (const s of [-1, 1]) {
+      const x = s * FORK_X;
+      flat.push(moved(sideways([[R, 0], [L - 0.04, 0], [L, 0.022], [L, 0.035], [0.8 * L, 0.07], [0, T], [0, R], ...heel], FW, FORK), x, 0, 0));
+      flat.push(moved(sideways([[S - 0.002, bladeTop(S) - 0.004], [S + 0.065, bladeTop(S + 0.065) - 0.004], [S - 0.002, bladeTop(S) + 0.065]], FW - 0.01, FORK), x, 0, 0));
+      flat.push(moved(sideways([[L - 0.16, -0.004], [L - 0.035, -0.004], [L + 0.006, 0.021], [L + 0.006, 0.039], [L - 0.16, bladeTop(L - 0.16) + 0.004]], FW + 0.008, TIP, 1), x, 0, 0));
+      flat.push(bevelBox({ w: FW, h: 0.64, d: S, color: FORK, bevel: 0.015, offset: { x, y: 0.4, z: -S / 2 } }));
+      flat.push(box({ w: 0.07, h: 0.045, d: 0.006, color: STEEL_DK, offset: { x, y: 0.55, z: -S - 0.003 } }));
+      for (const [y, drop] of [[0.75, -0.04], [0.148, 0.04]]) {
+        flat.push(bevelBox({ w: FW, h: 0.05, d: S + D + 0.03, color: FORK, bevel: 0.012, offset: { x, y, z: (D + 0.03 - S) / 2 } }));
+        flat.push(bevelBox({ w: FW, h: 0.09, d: 0.028, color: FORK, bevel: 0.01, offset: { x, y: y + drop, z: D + 0.016 } }));
+      }
+      round.push(moved(turn([[0.022, 0], [0.022, 0.04], [0.034, 0.046], [0.034, 0.066], [0, 0.072]], 10, STEEL_DK), x, 0.775, -0.01));
+    }
+    return shaded(round, flat);
   });
 
   // The overhead guard: a post at each corner from the hull up to its roof, the roof's frame and its slats, the work
