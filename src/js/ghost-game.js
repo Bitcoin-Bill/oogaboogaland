@@ -6,7 +6,7 @@
 // down after the players, the boss blinks about inside the walls spitting more, and when he burns (or every player is down)
 // the dawn comes back, the walls sink away and everything returns.
 //
-// The hub loads this group after it is up (data-defer="halloween") and hands `create` one adapter (`ghostHub` in
+// The herald loads this group when a player starts or joins (data-defer="halloween") and hands `create` one adapter (`ghostHub` in
 // scene-hub.js); every hook the hub keeps for it is tagged HALLOWEEN, so the hunt comes out by deleting the group and
 // those lines. The rules are ghost-sim.js; the room's host page runs them and sends the hunt to the others
 // (ghost-sync.js); a page alone runs its own. Everything this file draws is pooled and built once a visit: the
@@ -23,6 +23,7 @@
   const { clamp, ease, fnv1a } = BL.math;
   const { createNode, addChild, removeChild, createCamera } = BL.scene;
   const SIM = BL.ghostSim, ST = SIM.STATE, C = SIM.CONFIG, MODELS = BL.ghostModels, TIERS = MODELS.TIERS;
+  const { BUTTON: PAD, state: pad } = BL.gamepad;
   const TAU = Math.PI * 2, DEG = Math.PI / 180;
   // The rising (ms): the orange beam held on the herald, its vanishing straight up, when the walls start up together, how
   // long they grind up and how the land shakes meanwhile (`QUAKE` metres at its height), then a moment before the dusk's
@@ -33,7 +34,8 @@
   // While a banner is up (a round coming, a round cleared, the boss, the end, a pause) the island goes darker still, to
   // `BANNER_KEEP` of the hunt's night, over `BANNER_IN_S`, and lifts again over `BANNER_OUT_S` for play.
   const BANNER_KEEP = 0.4, BANNER_IN_S = 0.6, BANNER_OUT_S = 0.9;
-  const NIGHT_FADE_MS = 6000, NIGHT_HOUR = 23.25, COOLDOWN_MS = 30000, START_WAIT_MS = 4000, LOST_HOST_MS = 6000;
+  // An idle host may need the deferred loader's 20 s before it can answer a follower's first start.
+  const NIGHT_FADE_MS = 6000, NIGHT_HOUR = 23.25, COOLDOWN_MS = 30000, START_WAIT_MS = 24000, LOST_HOST_MS = 6000;
   const WALL_H = 3.3, MOUTH_W = 5.6, MOUTH_ALONG = 0.6;
   // Each bridge's wall stands up its steps where the rock rises well over head height at both sides, wide enough to bury
   // its ends in it, so there is no way round; `SINK` puts its foot a little into the tread it stands on.
@@ -165,8 +167,9 @@
     MODELS.prepare();
     const group = createNode({ sightHidden: true });
     addChild(root, group);
+    const targetNodes = [], target = (node, owner) => { hub.addTarget(node, owner); targetNodes.push(node); };
     const audio = BL.ghostAudio.create(), hud = BL.ghostHud.create({ coarse: hub.coarse, onMusic: () => audio.toggleMusic(), onSkip: () => audio.skip(),
-      onReady: () => readyUp(), onDecline: () => { declined = true; hud.lobby(null); }, onLobby: hub.lobbyOpen,
+      onReady: () => readyUp(), onDecline: () => decline(), onLobby: hub.lobbyOpen,
       onSpectate: (mode) => watchFrom(mode), onSpectateNext: () => { specId = nextStanding(specId); } });
     // Every mesh the hunt has shown, kept on the GPU for the visit (`liveGeometry`): frames swap in and out.
     const used = [];
@@ -299,7 +302,7 @@
       addChild(group, node);
       return node;
     });
-    const herald = createNode({ visible: true });
+    const herald = createNode({ visible: true, geometry: hub.heraldGeometry ? keep(hub.heraldGeometry) : null });
     addChild(group, herald);
     const owner = (role, slot) => ({
       kind: "halloween", role, slot, priority: role === "herald" ? 3 : 2, weaponType: role === "herald" ? "object" : "enemy", active: role === "herald",
@@ -310,7 +313,7 @@
       tap: () => { if (role === "herald" && S.state === ST.GATHER) tapHerald(); }
     });
     const heraldOwner = owner("herald", -1);
-    hub.addTarget(herald, heraldOwner);
+    target(herald, heraldOwner);
     const ghostNodes = [], ghostOwners = [];
     // Per slot: the id shown, its dying state, last hp, the flash's end, the sampled position and its velocity.
     const shown = new Float64Array(C.MAX_GHOSTS), dyingShown = new Float64Array(C.MAX_GHOSTS), hpShown = new Float64Array(C.MAX_GHOSTS);
@@ -322,12 +325,12 @@
       const node = createNode({ visible: false });
       addChild(group, node);
       const o = owner("ghost", i);
-      hub.addTarget(node, o);
+      target(node, o);
       ghostNodes.push(node); ghostOwners.push(o);
     }
     const bossNode = createNode({ visible: false }), bossOwner = owner("boss", -1);
     addChild(group, bossNode);
-    hub.addTarget(bossNode, bossOwner);
+    target(bossNode, bossOwner);
     // Each drop: the item, its aura, the halo and pulsing ring on the ground, the beam over it once landed, the streak
     // behind it while it falls, the scorch where it struck.
     const dropNodes = pool(C.MAX_DROPS, null), auras = pool(C.MAX_DROPS, null), halos = pool(C.MAX_DROPS, null), pulses = pool(C.MAX_DROPS, null);
@@ -374,7 +377,7 @@
       rig.root.sightHidden = true;
       addChild(group, rig.root);
       const o = owner("brute", i);
-      for (const name in rig.parts) { const part = rig.parts[name]; if (part && part.geometry) hub.addTarget(part, o); }
+      for (const name in rig.parts) { const part = rig.parts[name]; if (part && part.geometry) target(part, o); }
       rigs.push(rig); bruteOwners.push(o);
     }
     // The skeletons: a crawling upper body in each slot too (ghost-models.js `skeletonParts`), shown in place of the
@@ -393,7 +396,7 @@
       addChild(shR, foR);
       addChild(torso, tail, skull, shL, shR);
       addChild(root, torso);
-      if (o) for (const n of [torso, tail, skull, jaw, shL, shR, foL, foR]) hub.addTarget(n, o);
+      if (o) for (const n of [torso, tail, skull, jaw, shL, shR, foL, foR]) target(n, o);
       return { root, torso, tail, skull, jaw, shL, shR, foL, foR, cycle: 0 };
     };
     const skels = [];
@@ -415,7 +418,7 @@
       const root = createNode({ visible: false, sightHidden: true, scale: { x: scale, y: scale, z: scale } });
       const body = createNode({ geometry: P.body });
       addChild(root, body);
-      if (o) hub.addTarget(body, o);
+      if (o) target(body, o);
       const legs = [];
       for (let k = 0; k < 8; k++) {
         const [x, z, yaw, reach] = SPIDER_LEGS[k % 4], side = k < 4 ? 1 : -1, hx = side * x;
@@ -426,7 +429,7 @@
         addChild(hip, knee);
         addChild(turnNode, hip);
         addChild(body, turnNode);
-        if (o) hub.addTarget(hip, o);
+        if (o) target(hip, o);
         // Alternating fours: right 1 and 3 with left 2 and 4, then the others.
         legs.push({ turn: turnNode, hip, knee, ankle, hx, hz: z, restX: hx + side * Math.cos(yaw) * reach, restZ: z - Math.sin(yaw) * reach,
           group: (k % 4 + (side > 0 ? 0 : 1)) % 2 });
@@ -445,7 +448,7 @@
     const LOWER_TILT = Math.atan2(-LEG.tarsus * Math.sin(LEG.bend), LEG.tibia + LEG.tarsus * Math.cos(LEG.bend));
     // The spiderlings, one node a slot over their two strides, each a target of its own.
     const lingNodes = pool(C.LING.max, MODELS.spiderling(0), { sightHidden: true, scale: { x: LING_SCALE, y: LING_SCALE, z: LING_SCALE } });
-    const lingOwners = lingNodes.map((node, i) => { const o = owner("ling", i); hub.addTarget(node, o); return o; });
+    const lingOwners = lingNodes.map((node, i) => { const o = owner("ling", i); target(node, o); return o; });
     const lingShown = new Float64Array(C.LING.max), lingBit = new Float64Array(C.LING.max), lingRun = new Float64Array(C.LING.max), lingPhase = new Int8Array(C.LING.max);
     const lingBeams = pool(LING_BEAMS, null), lingGlows = pool(LING_BEAMS, null);
     const lingX = new Float64Array(C.LING.max), lingZ = new Float64Array(C.LING.max);
@@ -455,7 +458,7 @@
       const root = createNode({ visible: false, sightHidden: true }), frame = createNode({ geometry: P.frame }), glass = createNode({ geometry: P.glass });
       const top = createNode({ geometry: P.sandTop, position: { x: 0, y: MODELS.HOURGLASS_NECK + 0.04, z: 0 } }), bottom = createNode({ geometry: P.sandBottom, position: { x: 0, y: 0.26, z: 0 } });
       addChild(root, frame, top, bottom, glass);
-      if (o) { hub.addTarget(frame, o); hub.addTarget(glass, o); }
+      if (o) { target(frame, o); target(glass, o); }
       return { root, top, bottom };
     };
     const glasses = [], glassRings = pool(B.max, null);
@@ -500,12 +503,12 @@
     for (let i = 0; i < C.WEAPON.damage.length - 1; i++) keep(MODELS.laserBolt(i));
 
     // ---------- the hunt's place on this page ----------
+    const restore = (snap) => { if (sim.load(snap)) heardAt = clock(); };
     const sync = BL.ghostSync.create({
       npcSync,
       write: () => S.state !== ST.IDLE || clock() - idleAt < 3000 ? sim.snapshot() : null,
       onSnapshot: (snap) => {
-        if (npcSync.role !== "follow" || !sim.load(snap)) return;
-        heardAt = clock();
+        if (npcSync.role === "follow") restore(snap);
       },
       onMessage: (msg) => {
         if (msg.k === "pause") togglePause();
@@ -594,10 +597,11 @@
       if (crew.player && !hub.gorillaActive()) hub.readyGun();
     };
     let declined = false;
+    const decline = () => { declined = true; hud.lobby(null); };
     // ---------- the lobby and the waiting room ----------
     // The lobby's rows (one a player there, pooled) and the key its card was last drawn for.
     const LOBBY_ROWS = Array.from({ length: C.MAX_PLAYERS }, () => ({ id: 0, name: "", ready: false, host: false }));
-    let lobbyShown = -1;
+    let lobbyShown = -1, padFrame = -1;
     // Debug only (Shift+9): the stand-in hunters of a mock hunt's end, by id: their names and Oogas from the roster.
     const MOCK = new Map();
     const nameOf = (id) => {
@@ -625,6 +629,13 @@
         count++;
       }
       const signIn = !!net.state.backend && !net.state.me;
+      // A pad's A is the card's Ready and its B "Not this time", for presses made while the card is up.
+      if (lobbyShown === -1) padFrame = pad.frame;
+      else if (pad.frame !== padFrame) {
+        padFrame = pad.frame;
+        if (pad.pressed & PAD.a) readyUp();
+        else if (pad.pressed & PAD.b && !meReady) { decline(); return; }
+      }
       // One number for all of it: seconds, how many, which (a sum of ids by place), who is ready, and the two flags.
       const key = secs * 1e14 + count * 1e12 + (ids % 10000) * 1e8 + readyBits * 8 + (hostReady ? 4 : 0) + (meReady ? 2 : 0) + (signIn ? 1 : 0);
       if (key === lobbyShown) return;
@@ -794,9 +805,10 @@
       return clip ? clip.art : null;
     });
     // The moving models: each built once a visit, its own nodes off the island, posed for each of its `frames` (played
-    // at `fps`) and drawn by the Canvas 2D renderer into one of `CARD_MAX` pictures, a picture a frame while its card is
-    // coming or up, so none of it costs a frame more than one small drawing. The view takes in `h` round height `y`,
-    // the model turned `CARD_TURN` toward it.
+    // at `fps`) and drawn by the HUD's portrait renderer into one of `CARD_MAX` pictures, a picture a frame while its
+    // card is coming or up, so none of it costs a frame more than one small drawing. The view takes in `h` round height
+    // `y`, the model turned `CARD_TURN` toward it. That renderer draws no pictures, so a pose lists where each "$" floats
+    // (`marks`: x, y, z and height, `count` of them) and the "$" is painted over the model there.
     const CARD_W = 320, CARD_H = 220, CARD_MAX = 24, CARD_TURN = -0.55;
     const SWARM = [[-1.15, -0.2], [-0.45, 0.45], [0.3, -0.35], [1.05, 0.25], [-0.6, -0.95], [0.6, -1.05]];
     const FIGURES = {
@@ -824,10 +836,9 @@
       // Walking on the spot, its fours stepping in turn, its "$" over it.
       spider: { frames: 16, fps: 12, h: 2.5, y: 0.95,
         build: () => {
-          const k = buildSpider(null, 1), root = createNode(), dollar = createNode({ geometry: MODELS.dollar(), scale: { x: 0.5, y: 0.5, z: 0.5 } });
+          const k = buildSpider(null, 1);
           k.root.visible = true; k.root.rotation.y = CARD_TURN;
-          addChild(root, k.root, dollar);
-          return { root, k, dollar };
+          return { root: k.root, k, marks: new Float64Array(4), count: 1 };
         },
         pose: (q, f) => {
           const u = f / 16, k = q.k;
@@ -836,7 +847,7 @@
             const a = (u * 2 + L.group * 0.5) * TAU;
             reachLeg(L, L.restX, Math.max(0, Math.sin(a)) * 0.12 - k.body.position.y, L.restZ - 0.14 * Math.cos(a), 0);
           }
-          q.dollar.position.y = 1.45 + 0.05 * Math.sin(u * TAU);
+          q.marks[1] = 1.45 + 0.05 * Math.sin(u * TAU); q.marks[3] = 0.5;
         } },
       // Spiderlings scuttling on the spot, each with its "$".
       swarm: { frames: 16, fps: 12, h: 1.7, y: 0.4,
@@ -844,18 +855,17 @@
           const root = createNode(), lings = SWARM.map(([x, z], n) => {
             const node = createNode({ geometry: MODELS.spiderling(0), position: { x, y: 0, z }, rotation: { x: 0, y: CARD_TURN * 0.5 + (n % 3 - 1) * 0.35, z: 0 },
               scale: { x: LING_SCALE, y: LING_SCALE, z: LING_SCALE } });
-            const dollar = createNode({ geometry: MODELS.dollar(), position: { x, y: 0, z }, scale: { x: 0.28, y: 0.28, z: 0.28 } });
-            addChild(root, node, dollar);
-            return { node, dollar };
+            addChild(root, node);
+            return node;
           });
-          return { root, lings };
+          return { root, lings, marks: new Float64Array(SWARM.length * 4), count: SWARM.length };
         },
         pose: (q, f) => {
           for (let n = 0; n < q.lings.length; n++) {
-            const { node, dollar } = q.lings[n], hop = 0.07 * Math.abs(Math.sin((f / 16 * 4 + n * 0.37) * Math.PI));
+            const node = q.lings[n], hop = 0.07 * Math.abs(Math.sin((f / 16 * 4 + n * 0.37) * Math.PI)), m = n * 4;
             node.geometry = MODELS.spiderling(((f >> 1) + n) % 2);
             node.position.y = hop;
-            dollar.position.y = hop + 0.62;
+            q.marks[m] = node.position.x; q.marks[m + 1] = hop + 0.62; q.marks[m + 2] = node.position.z; q.marks[m + 3] = 0.28;
           }
         } },
       // Its sand running through, swaying a little.
@@ -878,7 +888,7 @@
       if (cardBaked >= F.frames) return;
       if (!cardRenderer) {
         cardCanvas = document.createElement("canvas");
-        cardRenderer = BL.canvasRenderer.createRenderer(cardCanvas, { width: CARD_W, height: CARD_H, transparent: true });
+        cardRenderer = BL.iconRenderer.createRenderer(cardCanvas, { width: CARD_W, height: CARD_H });
       }
       const k = cardFigures[art] || (cardFigures[art] = F.build());
       F.pose(k, cardBaked);
@@ -889,7 +899,22 @@
       const g = cardFrames[cardBaked].getContext("2d");
       g.clearRect(0, 0, CARD_W, CARD_H);
       g.drawImage(cardCanvas, 0, 0, CARD_W, CARD_H);
+      if (k.marks) for (let n = 0; n < k.count; n++) cardMark(g, k.marks, n * 4);
       cardBaked++;
+    };
+    // The "$" at `marks[o..o + 3]` (its foot and height) painted where the card's camera sees it.
+    const cardMark = (g, marks, o) => {
+      const image = MODELS.dollar().imageSurface.asset.load(), e = cardCamera.position, at = cardCamera.target;
+      if (!image.complete || !image.naturalWidth) return;
+      let fx = at.x - e.x, fy = at.y - e.y, fz = at.z - e.z;
+      const fl = Math.hypot(fx, fy, fz);
+      fx /= fl; fy /= fl; fz /= fl;
+      const rl = Math.hypot(fz, fx), rx = -fz / rl, rz = fx / rl, ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+      const vx = marks[o] - e.x, vy = marks[o + 1] - e.y, vz = marks[o + 2] - e.z;
+      const cz = vx * fx + vy * fy + vz * fz, F = CARD_H / 2 / Math.tan(cardCamera.fov / 2) / cz;
+      const sx = CARD_W / 2 + (vx * rx + vz * rz) * F, sy = CARD_H / 2 - (vx * ux + vy * uy + vz * uz) * F;
+      const h = marks[o + 3] * F, w = h * image.naturalWidth / image.naturalHeight;
+      g.drawImage(image, sx - w / 2, sy - h, w, h);
     };
     // The picture card `page` shows at `t`: its ghost's, or its model's loop frame among those drawn so far.
     const cardPicture = (page, t) => {
@@ -2925,6 +2950,8 @@
     };
     const dispose = () => {
       sync.dispose();
+      for (const node of targetNodes) hub.removeTarget(node);
+      targetNodes.length = 0;
       for (const rig of rigs) rig.dispose();
       if (cardFigures.gorilla) cardFigures.gorilla.rig.dispose();
       if (cardRenderer) cardRenderer.dispose();
@@ -2965,6 +2992,7 @@
     };
 
     return {
+      start: () => { if (S.state === ST.IDLE) tapHerald(); }, receive: sync.receive, restore,
       update, drawOverlay, hit, shot, key, down, get waiting() { return spectating; }, shotGeometry: () => { const tier = rifleTier(); return tier ? MODELS.laserBolt(tier - 1) : MODELS.rock(); }, lanternsWanted, lanterns, hour, shade, shake, unshake, release, dispose, liveGeometry, refuseTravel, debug,
       get sealed() { return sealedCount > 0; },
       get hunting() { return !off(S.state); },
