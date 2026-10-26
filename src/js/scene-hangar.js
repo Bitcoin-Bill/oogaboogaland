@@ -202,8 +202,8 @@
     return node;
   };
   // The forklift parked at (x, z), its forks pointing `turn` (`forkliftModels`, built `SCALE` times its units): its voxel
-  // body, mast, fittings and lamps, and each part that moves a node of its own, the wheels, the carriage resting up its
-  // mast, the steering wheel on its column, the beacon's dome, the button and its cover on the cover's hinge, the back's
+  // body, mast, fittings and lamps, and each part that moves a node of its own, the wheels, the inner mast, the carriage
+  // resting up the mast, the steering wheel on its column, the beacon's dome, the button and its cover on the cover's hinge, the back's
   // two doors on theirs; its decals as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the
   // cover so it lifts with it; and its driver's seat for the crew's `sitPlayer`, in metres, facing the forks, stood up
   // from beside the cab (`walkAt`, set as an Ooga gets in, on its side).
@@ -223,11 +223,12 @@
     beacon.glow = POWER.dome[0];
     screen.visible = false;
     addChild(cover, ...decals.cover.map(picture));
-    addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), lit,
+    const inner = createNode({ geometry: FL.innerMast() });
+    addChild(root, body, createNode({ geometry: FL.mast() }), inner, createNode({ geometry: FL.fittings() }), lit,
       ...wheels, carriage, steering, beacon, button, cover, key, screen, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    const f = { root, body, wheels, carriage, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
+    const f = { root, body, wheels, inner, carriage, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off).
     seat.act = () => !f.on && (powerOn(f), true);
     return f;
