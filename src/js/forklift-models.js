@@ -53,6 +53,9 @@
   // The bolt, as one outline in -1..1 (u across, v up): the side panels' and the steering wheel's in gold, and the
   // decals'.
   const BOLT = [[0.1, 1], [0.6, 1], [0.25, 0.2], [0.6, 0.2], [-0.25, -1], [-0.02, -0.15], [-0.38, -0.15]];
+  // The bolt as a solid `depth` thick, `su` by `sv` its outline, its face toward +z: in its two convex halves (the upper
+  // stroke and the lower point), each counter-clockwise, since a prism takes only a convex outline that way round.
+  const boltSolid = (su, sv, depth, color, emissive) => merge(...[[6, 5, 2, 1, 0], [5, 4, 3, 2]].map((part) => models.prism(part.map((i) => [BOLT[i][0] * su, BOLT[i][1] * sv]), depth, color, emissive)));
   // How far (x, y, z) lies outside a wheel's arch, cut out of the hull round each wheel with a hand's breadth to spare
   // (below 0 inside it), and Infinity inboard of the arches.
   const archGap = (x, y, z) => {
@@ -232,7 +235,7 @@
   // button's block with its lamp housings.
   const fittings = cached(() => {
     const flat = [], round = [];
-    for (const s of [-1, 1]) flat.push(moved(turnedY(models.prism(BOLT.map(([u, v]) => [u * 0.3, v * 0.25]), 0.04, GOLD, 0.15), s * Math.PI / 2), s * (P.half + 0.018), 0.87, 0.3));
+    for (const s of [-1, 1]) flat.push(moved(turnedY(boltSolid(0.3, 0.25, 0.04, GOLD, 0.15), s * Math.PI / 2), s * (P.half + 0.018), 0.87, 0.3));
     const post = (x, y0, z) => flat.push(bevelBox({ w: 0.13, h: P.roof - y0, d: 0.13, color: BLACK, bevel: 0.025, offset: { x, y: y0 + (P.roof - y0) / 2, z } }));
     for (const s of [-1, 1]) { post(s * P.postX, 1.0, P.postFront); post(s * P.postX, P.deck, P.postRear); }
     for (const s of [-1, 1]) flat.push(bevelBox({ w: 0.15, h: 0.14, d: P.postRear - P.postFront + 0.16, color: BLACK_B, bevel: 0.025, offset: { x: s * P.postX, y: P.roof, z: (P.postFront + P.postRear) / 2 } }));
@@ -276,7 +279,7 @@
     const flat = [];
     for (let q = 0; q < 3; q++) flat.push(turnedY(box({ w: 0.03, h: 0.02, d: 0.17, color: BLACK_B, offset: { z: 0.095 } }), q / 3 * TAU + Math.PI));
     // The bolt in gold, flat on the hub's face.
-    const mark = models.prism(BOLT.map(([u, v]) => [u * 0.035, v * 0.035]), 0.008, GOLD, 0.5);
+    const mark = boltSolid(0.035, 0.035, 0.008, GOLD, 0.5);
     flat.push(moved(turnedX(mark, -Math.PI / 2), 0, 0.034, 0));
     return shaded(round, flat);
   });
