@@ -98,6 +98,7 @@
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
     forklift: ["Hangar forklift", COARSE ? "It moves the Jet's parts round the hangar. Walk up to its cab and tap GET IN." : "It moves the Jet's parts round the hangar. Walk up to its cab and press Space to get in."],
+    forkliftButton: ["Big red button · DO NOT PRESS", "Get into the forklift to reach its button."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -112,6 +113,10 @@
   // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it), put back as it gets out (the
   // pilot keeps its zoom and pitch across first person); it sits in first person meanwhile.
   const SEAT_VIEW = { mode: null };
+  // The forklift's button pressed, from the seat or beside the cab: its cover flips up to `open` (radians about its
+  // hinge) in `swing` seconds and falls shut after `hold`, the button dipping `dip` in between, while the buzz says it
+  // does nothing; a press waits for the last to finish (`again`, s).
+  const BUTTON_PRESS = { open: -1.1, swing: 0.12, hold: 0.9, dip: 0.012, again: 0.6 };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
   const SHIELD_NEAR = 0.6, SHIELD_REARM = 3;
@@ -209,7 +214,7 @@
       ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
     const sn = Math.sin(turn), cs = Math.cos(turn), [, sy, sz] = P.seat.map((v) => v * FL.SCALE);
     const seat = { x: x + sz * sn, y: sy + FL.CUSHION * FL.SCALE, z: z + sz * cs, ry: turn + Math.PI, floor: 0, sitter: null, walkAt: { x: 0, z: 0 } };
-    return { root, body, wheels, carriage, steering, beacon, button, cover, doors, seat, x, z, sn, cs };
+    return { root, body, wheels, carriage, steering, beacon, button, cover, doors, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1 };
   };
   // Where the driven Ooga stands in the forklift's frame (`CAB`, x across and z along), and whether that is beside its
   // cab, on the floor, near enough to get in.
@@ -239,6 +244,21 @@
       return true;
     }
     return false;
+  };
+  const pressButton = (f, cave) => {
+    if (!cave || cave.camp.seat !== f.seat && !besideCab(f, cave)) { hud.toast(TIPS.forkliftButton[1]); return; }
+    if (f.pressT >= 0 && f.pressT < BUTTON_PRESS.again) return;
+    f.pressT = 0;
+    const m = f.button.world;
+    audio.denied(m[12], m[13], m[14]);
+  };
+  // The press, a frame at a time: the cover up, the button down and back, the cover shut.
+  const pressLife = (f, dt) => {
+    if (f.pressT < 0) return;
+    const B = BUTTON_PRESS, t = f.pressT += dt, shut = B.swing + B.hold;
+    f.cover.rotation.x = B.open * (t < B.swing ? t / B.swing : t < shut ? 1 : Math.max(0, 1 - (t - shut) / (2 * B.swing)));
+    f.button.position.y = f.buttonY - (t > B.swing && t < B.swing + 0.2 ? B.dip : 0);
+    if (t > shut + 2 * B.swing) f.pressT = -1;
   };
   // Out of the forklift's seat, however it got out (Space, or walking off), the view it got in with comes back: first
   // person stays, the shoulder or the orbit returns.
@@ -565,6 +585,9 @@
     target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
     target(s.forklift.body, "forklift", null, 2.6);
+    // The button under its cover, ahead of the forklift round it.
+    input.add(s.forklift.button, { kind: "forkliftButton", preset: null, priority: 1 }, { radius: 0.18 });
+    targets.push(s.forklift.button);
     return s;
   };
 
@@ -755,6 +778,7 @@
         if (o.kind === "firetest" && scene.fire.near && scene.fire.press()) return;
         if (o.kind === "sis" && scene.sis.near && scene.sis.poke()) return;
         if (o.kind === "terminal" && scene.terminals.near && scene.terminals.press()) return;
+        if (o.kind === "forkliftButton") return pressButton(scene.forklift, people && people.player);
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
@@ -942,6 +966,7 @@
     if (people) people.update(dt, elapsed);
     // The static fire test, after the crew has moved, so a presser it knocks down lies where the crew left them.
     s.fire.update(dt, drivenHere);
+    pressLife(s.forklift, dt);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
