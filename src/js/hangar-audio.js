@@ -63,6 +63,9 @@
   // click and the ready chime; how long the drive takes to spin up (`spin`, s, the chime at its end) and to run down
   // (`down`); and how far it carries, half at `ref` metres.
   const LIFT = { whine: 0.05, hum: 0.11, hiss: 0.025, click: 0.35, chime: 0.1, spin: 0.9, down: 1.3, ref: 6 };
+  // How it sounds at work: how far its whine climbs (Hz) and swells at full speed, and how far the pump's hum climbs and
+  // its hiss swells while the forks move.
+  const WORK = { whine: 420, swell: 1.8, pump: 34, hiss: 3 };
   // The film show's levels at full: the projector's motor, its whir, the gate's clatter and the lamp's buzz, the
   // soundtrack's crackle and hiss, a picture's clunk and the roller's ratchet; and how far the projector and the screen
   // carry (half at that many metres), the hall being quiet enough to hear them across it.
@@ -85,7 +88,7 @@
     }
     const bed = {}, test = {}, sis = {}, proj = {}, fork = {};
     // Whether the projector runs, so a context opened mid-show starts it running, and the same for the forklift.
-    let projOn = false, liftOn = false;
+    let projOn = false, liftOn = false, liftReady = 0, liftDrive = 0, liftPump = 0;
     // Her voice while she talks: where she stands (her node's position, read live), until when, and its least level.
     const sisVoice = { pos: null, until: 0, least: 0 };
     // Where the visitor hears from and the way the view faces on the ground, and where the last spot was placed.
@@ -199,11 +202,13 @@
       fork.runPan = panner();
       fork.near = gain(0, fork.runPan);
       fork.env = gain(liftOn ? 1 : 0, fork.near);
-      fork.whine = osc("sawtooth", 440, filter("bandpass", 900, 3, gain(LIFT.whine, fork.env)));
+      fork.whineGain = gain(LIFT.whine, fork.env);
+      fork.whine = osc("sawtooth", 440, filter("bandpass", 900, 3, fork.whineGain));
       fork.waver = wobble(fork.whine.frequency, 3.1, 4);
       fork.hum = osc("sine", 58, gain(LIFT.hum, fork.env));
       fork.hum2 = osc("triangle", 116, gain(LIFT.hum * 0.4, fork.env));
-      fork.hiss = hissOf(filter("bandpass", 600, 1, gain(LIFT.hiss, fork.env)));
+      fork.hissGain = gain(LIFT.hiss, fork.env);
+      fork.hiss = hissOf(filter("bandpass", 600, 1, fork.hissGain));
       fork.relayGain = gain(0, fork.near);
       fork.relay = hissOf(filter("bandpass", 1800, 1.5, fork.relayGain));
       fork.chimeGain = gain(0, fork.near);
@@ -512,6 +517,12 @@
       place(Fk.x, Fk.y, Fk.z, LIFT.ref);
       set(fork.near.gain, AT.level, now);
       set(fork.runPan.pan, AT.pan, now);
+      if (liftOn && now > liftReady) {
+        set(fork.whine.frequency, 440 + WORK.whine * liftDrive, now);
+        set(fork.whineGain.gain, LIFT.whine * (1 + WORK.swell * liftDrive), now);
+        set(fork.hum.frequency, 58 + WORK.pump * liftPump, now);
+        set(fork.hissGain.gain, LIFT.hiss * (1 + WORK.hiss * liftPump), now);
+      }
     };
     // Her voice's level and side from where she stands now, eased, or at once as a line starts.
     const placeSis = (now, snap) => {
@@ -689,6 +700,8 @@
         fork.buzzGain.gain.linearRampToValueAtTime(0, at + length);
       }
     };
+    // How hard the forklift works, each 0 to 1: its speed of its top, and whether the forks are moving.
+    const forkliftWork = (drive, pump) => { liftDrive = drive; liftPump = pump; };
     // The forklift switched on, the relay clicking and its drive spinning up through `spin` and chiming ready, then running;
     // or off, the relay clicking and all of it running down through `down`.
     const forklift = (on) => {
@@ -702,6 +715,7 @@
       fork.relayGain.gain.setValueAtTime(LIFT.click * k, now);
       fork.relayGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
       if (on) {
+        liftReady = now + LIFT.spin;
         fork.env.gain.linearRampToValueAtTime(1, now + 0.3);
         fork.whine.frequency.setValueAtTime(80, now);
         fork.whine.frequency.exponentialRampToValueAtTime(440, now + LIFT.spin);
@@ -797,7 +811,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, forklift, projector, clunk, roll, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, forklift, forkliftWork, projector, clunk, roll, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
