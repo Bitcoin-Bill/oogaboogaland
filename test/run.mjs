@@ -17573,7 +17573,7 @@ const factoryGeometryAudit = (scenes, renderer, state) => {
     }
     const stats = factory.stats();
     audit.current = { generation: ++audit.generation, expected: ids(result), empty: empty && result === set,
-      graph: [...graph], alternatives: slots, borrowed, avatars: factory.debug.crew ? 1 : 0,
+      graph: [...graph], alternatives: slots, borrowed, avatars: factory.debug.crew ? 1 : 0, hangar: factory.debug.factory.scene.hangar ? 1 : 0,
       structural: stats.allNodes - stats.particles - stats.pool, particles: stats.particles + stats.pool,
       workers: factory.debug.factory.scene.crew.length, remotes: stats.reservedPlayers, quality: renderer.quality };
     return result;
@@ -17608,8 +17608,8 @@ const factoryGeometryBound = (baseline, previous, current, { sameVisit = false }
     if (!(f && f.kind === "webgl2" && f.empty && f.hubSeen && f.quality === "low"
       && Array.isArray(rows) && rows.length > 0 && rows.length === snapshot.stats?.gl?.records && list(rows.map(row => row?.id))
       && list(f.keep) && list(f.expected) && f.expected.length > 0 && list(f.hub) && f.hub.length > 0
-      && list(f.graph) && list(f.borrowed) && ids(f.alternatives) && (f.avatars === 0 || f.avatars === 1)
-      && f.alternatives.length === 125 + f.avatars * 2
+      && list(f.graph) && list(f.borrowed) && ids(f.alternatives) && (f.avatars === 0 || f.avatars === 1) && (f.hangar === 0 || f.hangar === 1)
+      && f.alternatives.length === 125 + f.avatars * 2 + f.hangar
       && Number.isSafeInteger(f.generation) && f.generation > 0
       && Number.isSafeInteger(f.structural) && f.structural >= 0
       && Number.isSafeInteger(f.particles) && f.particles >= 0 && f.particles <= 240 && f.workers === 11 && f.remotes === 0
@@ -17624,7 +17624,7 @@ const factoryGeometryBound = (baseline, previous, current, { sameVisit = false }
   if (![baseline, previous, current].every(complete)) return { ok: false, complete: false, captures: [baseline, previous, current].map(s => ({
     records: s?.stats?.gl?.records, rows: s?.geometry?.length, keep: s?.factory?.keep?.length, collected: s?.factory?.expected?.length,
     graph: s?.factory?.graph?.length, slots: s?.factory?.alternatives?.length, structural: s?.factory?.structural,
-    particles: s?.factory?.particles, workers: s?.factory?.workers, avatars: s?.factory?.avatars, remotes: s?.factory?.remotes,
+    particles: s?.factory?.particles, workers: s?.factory?.workers, avatars: s?.factory?.avatars, hangar: s?.factory?.hangar, remotes: s?.factory?.remotes,
     kind: s?.factory?.kind, quality: s?.factory?.quality, empty: s?.factory?.empty, hubSeen: s?.factory?.hubSeen
   })) };
   const a = baseline.factory, p = previous.factory, z = current.factory;
@@ -17633,10 +17633,11 @@ const factoryGeometryBound = (baseline, previous, current, { sameVisit = false }
   const from = outside(baseline), to = outside(current);
   const retired = p.keep.filter(id => !keep.has(id) && !hub.has(id) && resident.has(id));
   // One node per FX slot (fx.js, 240 max). Off graph: 37 fixed variants, 11x6 worker parts,
-  // gate 1, low Tess 13, Kortik 8 and up to two avatar heads. Remotes are absent in this fixture.
+  // gate 1, the hangar's door 1 while the hangar is open, low Tess 13, Kortik 8 and up to two avatar heads. Remotes
+  // are absent in this fixture.
   // This is independent of observed keep sizes; exact membership above rejects extra owners below this ceiling too.
-  const capacity = a.structural + 240 + 127;
-  const structure = p.structural === a.structural && z.structural === a.structural && z.avatars === a.avatars && z.keep.length <= capacity;
+  const capacity = a.structural + 240 + 127 + a.hangar;
+  const structure = p.structural === a.structural && z.structural === a.structural && z.avatars === a.avatars && z.hangar === a.hangar && z.keep.length <= capacity;
   const generation = z.generation === p.generation + (sameVisit ? 0 : 1);
   return { ok: structure && generation && retired.length === 0 && Math.abs(to - from) <= 3,
     complete: true, structure, generation, capacity, keep: z.keep.length, outside: [from, to], retired };
@@ -17759,7 +17760,7 @@ const gpuGeometryDiagnosticChecks = async () => {
   const makeFactorySnapshot = (keep, residents, generation, extra = {}) => ({
     stats: { gl: { records: residents.length } }, geometry: residents.map(id => ({ id, owners: [], references: 24, omittedOwners: 16 })),
     factory: { kind: "webgl2", empty: true, hubSeen: true, quality: "low", structural: 100, particles: 20, workers: 11, remotes: 0,
-      expected: [...keep], keep: [...keep], graph: [...keep], alternatives: Array(125).fill(10), borrowed: [], avatars: 0,
+      expected: [...keep], keep: [...keep], graph: [...keep], alternatives: Array(125).fill(10), borrowed: [], avatars: 0, hangar: 0,
       hub: [1, 2, 3], generation, ...extra }
   });
   const initial = makeFactorySnapshot(firstKeep, [1, 2, 3, 10, ...range(20).slice(0, 5)], 1);
@@ -17781,6 +17782,8 @@ const gpuGeometryDiagnosticChecks = async () => {
     historicalAlternate: !accepts(altered({ keep: [...nextKeep, 20], expected: [...nextKeep, 20], alternatives: [...Array(125).fill(10), 20] })),
     // Reusing a geometry in an existing declared slot is current bounded ownership, not appended history.
     declaredSlotReuse: accepts(altered({ keep: [...nextKeep, 20], expected: [...nextKeep, 20], alternatives: [...Array(124).fill(10), 20] })),
+    // While the hangar is open its door's shield is one more declared slot, in every capture alike.
+    hangarDoor: accepts(altered({ hangar: 1, alternatives: Array(126).fill(10) }), makeFactorySnapshot(firstKeep, initial.geometry.map(row => row.id), 1, { hangar: 1, alternatives: Array(126).fill(10) })),
     growingGraph: !accepts(altered({ keep: [...nextKeep, 20], expected: [...nextKeep, 20], graph: [...nextKeep, 20], structural: 101 })),
     fxCeiling: !accepts(altered({ particles: 241 })),
     duplicateKeep: !accepts(altered({ keep: [...nextKeep, 10], expected: [...nextKeep, 10] })),
