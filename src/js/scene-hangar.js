@@ -108,6 +108,9 @@
     screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."],
     tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
+  // The forklift's body as walkers meet it: two rows of circles along it (x either side of its middle and z along it,
+  // metres in its frame), each `radius` round and `height` tall; its forks stay out of them.
+  const BLOCKS = { x: [-0.55, 0.55], z: [-1.5, -0.5, 0.5, 1.25], radius: 0.75, height: 3.2 };
   // How far past the forklift's side, beyond the Ooga's own body, its cab takes them in (`CAB_REACH`), along how much of
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
   // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
@@ -137,8 +140,8 @@
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false, soundPanel = null;
   const NO_ACTORS = [];
-  // What walks the hall besides the Oogas, for them to keep clear of: the other players' Oogas, Kortik's Sis and the
-  // gorillas of the hangar's crew.
+  // What stands or walks the hall besides the Oogas, for them to keep clear of: the other players' Oogas, Kortik's Sis,
+  // the gorillas of the hangar's crew and the forklift's body (`blocks`).
   const ACTORS = [];
   const outsideActors = () => {
     ACTORS.length = 0;
@@ -146,6 +149,7 @@
     for (let i = 0; i < others.length; i++) ACTORS.push(others[i]);
     if (scene && scene.sis) ACTORS.push(scene.sis.actor);
     if (scene) for (let i = 0; i < scene.crewActors.length; i++) ACTORS.push(scene.crewActors[i]);
+    if (scene) for (let i = 0; i < scene.forklift.blocks.length; i++) ACTORS.push(scene.forklift.blocks[i]);
     return ACTORS;
   };
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
@@ -239,8 +243,19 @@
     const f = { root, body, wheels, inner, carriage, links, lift: 0, liftTo: -1, stick, steering, beacon, button, cover, doors, key, screen, lit, seat, x, z, sn, cs, buttonY: P.button[1], pressT: -1, on: false, startT: -1, keyTo: 0, sweep: 0 };
     // Space in the seat starts it; running, Space gets out (and switches it off).
     seat.act = () => !f.on && (powerOn(f), true);
+    f.blocks = Array.from({ length: BLOCKS.x.length * BLOCKS.z.length }, () => ({ x: 0, y: 0, z: 0, radius: BLOCKS.radius, height: BLOCKS.height }));
+    placeBlocks(f);
     layChains(f);
     return f;
+  };
+  // The forklift's circles where it stands now.
+  const placeBlocks = (f) => {
+    let i = 0;
+    for (const bz of BLOCKS.z) for (const bx of BLOCKS.x) {
+      const b = f.blocks[i++];
+      b.x = f.x + bx * f.cs + bz * f.sn;
+      b.z = f.z - bx * f.sn + bz * f.cs;
+    }
   };
   // Each chain's links along its run as the carriage stands `lift` over its rest, the inner mast half that: up from its
   // anchor behind the sheave, over it, and down its front to the carriage's anchor; its length stays the same.
@@ -719,6 +734,12 @@
   // Whether a gorilla's step from (fx, fz) to (nx, nz) at height y keeps clear of the driven Ooga, or at least goes no
   // nearer it.
   const clearOfOoga = (fx, fz, nx, nz, y) => {
+    // The forklift's body first: no step deeper into one of its circles.
+    const blocks = scene ? scene.forklift.blocks : NO_ACTORS;
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i], r = CREW_BODY + b.radius, dn = Math.hypot(nx - b.x, nz - b.z);
+      if (dn < r && dn < Math.hypot(fx - b.x, fz - b.z)) return false;
+    }
     const o = people && people.player;
     if (!o) return true;
     const p = o.root.position, r = CREW_BODY + (o.bodyRadius || 0.35), dn = Math.hypot(nx - p.x, nz - p.z);
@@ -934,7 +955,7 @@
     targets.push(scene.fire.body);
     soundPanel = openSoundPanel();
     // Kortik's Sis, the hangar's chief engineer (`sis.js`).
-    scene.sis = BL.sis.create({ fx, audio, fire: scene.fire, jet: scene.jet, toast: hud.toast });
+    scene.sis = BL.sis.create({ fx, audio, fire: scene.fire, jet: scene.jet, toast: hud.toast, blocks: () => scene.forklift.blocks });
     addChild(root, scene.sis.node, scene.sis.props);
     input.add(scene.sis.body, { kind: "sis", preset: null }, { radius: 1.2 });
     targets.push(scene.sis.body);
