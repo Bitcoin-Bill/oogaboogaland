@@ -1778,7 +1778,9 @@
   // door's passage out to a little past its shield, so a walker crosses it on its feet. A movement may leave a box it
   // already overlaps, so long as it does not go in deeper, and the same among the Jet's columns: never among more of
   // them than it was, so a walker that ends up in the Jet (a jump, a fall) can always walk out. A box stands in the way
-  // of feet from its foot up to below its top, so one standing on it walks across it.
+  // of feet from its foot up to below its top, so one standing on it walks across it; on foot (`step`), a solid's within a
+  // step above the feet lets a foot's breadth of the body over it (SOLID_FOOT), as a step does, and then holds it up
+  // (`supportAt`).
   const inside = (x, z, feet) => {
     const d = LAYOUT.door, t = LAYOUT.tunnel;
     if (Math.abs(x - d.x) < d.half - 0.3 && z > HALL.front - 2.4 && z < HALL.front + 1 && Math.abs(feet - d.y) < 0.8) return true;
@@ -1789,14 +1791,14 @@
     const dx = Math.max(B[i] - x, 0, x - B[i + 1]), dz = Math.max(B[i + 2] - z, 0, z - B[i + 3]);
     return radius - Math.hypot(dx, dz);
   };
-  const clearAt = (x, z, feet, radius, fromX = x, fromZ = z) => {
+  const clearAt = (x, z, feet, radius, fromX = x, fromZ = z, step = true) => {
     if (!inside(x, z, feet)) return false;
     const B = FLOOR().boxes;
     for (let i = 0; i < B.length; i += 7) {
       if (feet < B[i + 4] || feet >= B[i + 5]) continue;
-      const now = depthIn(B, i, x, z, radius);
+      const r = step && B[i + 6] && B[i + 5] <= feet + STEP ? radius - SOLID_FOOT : radius, now = depthIn(B, i, x, z, r);
       if (now <= 0) continue;
-      if (depthIn(B, i, fromX, fromZ, radius) <= 0 || now > depthIn(B, i, fromX, fromZ, radius) + 1e-9) return false;
+      if (depthIn(B, i, fromX, fromZ, r) <= 0 || now > depthIn(B, i, fromX, fromZ, r) + 1e-9) return false;
     }
     const J = FLOOR().jet, now = jetIn(J, x, z, feet, radius);
     if (now > 0) {

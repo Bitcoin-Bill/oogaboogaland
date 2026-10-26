@@ -959,12 +959,13 @@
     return true;
   };
   // In the air, the same clearance without the floor within a step, as the Factory keeps it, so a jump carries an Ooga
-  // over a deck's rail and it drops to whatever is below; on foot the edges still hold. The forklift's body holds in the
-  // air too (on foot the crew keeps its walkers out of it).
+  // over a deck's rail and it drops to whatever is below; on foot the edges still hold. A crate blocks the whole
+  // body in the air (a step's foot's breadth is for walking), and the forklift's body holds in the air too (on
+  // foot the crew keeps its walkers out of it).
   const flyableFor = (ax, az, bx, bz, y, height, actor) => {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2)), radius = actor.bodyRadius || 0.35;
     for (let i = 1; i <= steps; i++) {
-      if (!HM.clearAt(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, y, radius, ax + (bx - ax) * (i - 1) / steps, az + (bz - az) * (i - 1) / steps)) return false;
+      if (!HM.clearAt(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, y, radius, ax + (bx - ax) * (i - 1) / steps, az + (bz - az) * (i - 1) / steps, false)) return false;
     }
     return forkliftClear(ax, az, bx, bz, y, radius);
   };
