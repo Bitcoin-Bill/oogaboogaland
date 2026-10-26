@@ -56,6 +56,9 @@
     kortik: { f0: 120, len: 0.12, gap: 0.035, level: 0.5, end: 1.12, buzz: 1, breath: 0.1, shake: 0, least: 0.12, formant: 0.82, tone: 700 }
   };
   const SIS_REF = 9, BOOT_REF = 5, BLEEP = 0.3;
+  // The forklift's button: how loud its click, its thunk and the denied buzz are, and the buzz's two pulses, [from, for,
+  // Hz], the second lower, as a machine says no.
+  const FORK = { click: 0.3, thunk: 0.5, buzz: 0.16 }, DENIED = [[0.06, 0.17, 150], [0.29, 0.24, 132]];
   // The film show's levels at full: the projector's motor, its whir, the gate's clatter and the lamp's buzz, the
   // soundtrack's crackle and hiss, a picture's clunk and the roller's ratchet; and how far the projector and the screen
   // carry (half at that many metres), the hall being quiet enough to hear them across it.
@@ -75,7 +78,7 @@
     } catch {
       muted = false;
     }
-    const bed = {}, test = {}, sis = {}, proj = {};
+    const bed = {}, test = {}, sis = {}, proj = {}, fork = {};
     // Whether the projector runs, so a context opened mid-show starts it running.
     let projOn = false;
     // Her voice while she talks: where she stands (her node's position, read live), until when, and its least level.
@@ -170,9 +173,23 @@
       bed.door = shimmer(196);
       initTest();
       initProjector();
+      initForklift();
       ready = true;
     };
 
+    // The forklift's button, placed where it is: its click (a burst of noise) and thunk, and the denied buzz, two squares a
+    // little apart through a lowpass.
+    const initForklift = () => {
+      fork.pan = panner();
+      fork.clickGain = gain(0, fork.pan);
+      fork.click = hissOf(filter("bandpass", 2600, 2, fork.clickGain));
+      fork.thunkGain = gain(0, fork.pan);
+      fork.thunk = osc("sine", 140, fork.thunkGain);
+      fork.buzzGain = gain(0, fork.pan);
+      const tone = filter("lowpass", 1300, 0.8, fork.buzzGain);
+      fork.buzz = osc("square", DENIED[0][2], tone);
+      fork.buzz2 = osc("square", DENIED[0][2] * 1.05, gain(0.6, tone));
+    };
     // The projector's voices, all under its envelope, which `projector` opens and closes, and placed where it hangs; and
     // the screen's, placed where its picture falls.
     const initProjector = () => {
@@ -625,6 +642,30 @@
       sis.boinkGain.gain.setValueAtTime(k, now + 0.09);
       sis.boinkGain.gain.linearRampToValueAtTime(0, now + 0.1);
     };
+    // The forklift's button pressed at (x, y, z): its click and thunk, then the buzz that says no, twice.
+    const denied = (x, y, z) => {
+      if (!ready || muted) return;
+      place(x, y, z, BOOT_REF);
+      const now = ctx.currentTime, k = FORK.buzz * AT.level;
+      fork.pan.pan.setValueAtTime(AT.pan, now);
+      for (const param of [fork.clickGain.gain, fork.thunkGain.gain, fork.thunk.frequency, fork.buzzGain.gain, fork.buzz.frequency, fork.buzz2.frequency]) param.cancelScheduledValues(now);
+      fork.clickGain.gain.setValueAtTime(FORK.click * AT.level, now);
+      fork.clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+      fork.thunk.frequency.setValueAtTime(150, now);
+      fork.thunk.frequency.exponentialRampToValueAtTime(70, now + 0.07);
+      fork.thunkGain.gain.setValueAtTime(FORK.thunk * AT.level, now);
+      fork.thunkGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+      fork.buzzGain.gain.setValueAtTime(0, now);
+      for (const [from, length, hz] of DENIED) {
+        const at = now + from;
+        fork.buzz.frequency.setValueAtTime(hz, at);
+        fork.buzz2.frequency.setValueAtTime(hz * 1.05, at);
+        fork.buzzGain.gain.setValueAtTime(0, at);
+        fork.buzzGain.gain.linearRampToValueAtTime(k, at + 0.006);
+        fork.buzzGain.gain.setValueAtTime(k, at + length - 0.02);
+        fork.buzzGain.gain.linearRampToValueAtTime(0, at + length);
+      }
+    };
     // The projector starting, its motor and clatter spinning up through 1.5 s and the track coming on, or stopping, all
     // of it running down through 2 s.
     const projector = (on) => {
@@ -701,7 +742,7 @@
     };
 
     return {
-      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, projector, clunk, roll, dispose,
+      listen, update, setMuted, setVolume, test: play, clang, voice, boot, poke, beep, denied, projector, clunk, roll, dispose,
       get muted() { return muted; },
       get volume() { return volume; },
       get ready() { return ready; },
