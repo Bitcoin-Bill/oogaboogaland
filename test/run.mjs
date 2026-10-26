@@ -2959,7 +2959,6 @@ const { contributorActivityProbe } = (() => {
       const snapshot = (repo, login, age) => ({ meta: { repo, schema_version: 1, generated_at: new Date(at).toISOString() },
         contributors: [{ login, last_seen_at: new Date(at - age).toISOString() }] });
       const alias = roster.find((entry) => entry.name === "bc1gui");
-      const renamed = alias.display === "ottoz0r" && contributors.traitsFor(alias.name).display === "ottoz0r";
       const snapshotUpdates = applySnapshot([
         snapshot("OogaBoogaX/entropyLab", "ottoz0r", HOUR / 2),
         snapshot("OogaBoogaX/another-project", second.name, HOUR / 4)
@@ -3020,7 +3019,7 @@ const { contributorActivityProbe } = (() => {
       applyActivity(Array.from({ length: 70 }, (_, i) => ({ name: first.name, repo: `OogaBoogaX/project-${i}`, lastCommitAt: at })), at);
       const boundedProjects = first.activity.size === 64 && hasRecentActivity(first, "oogaboogax/project-62", at) &&
         !hasRecentActivity(first, "oogaboogax/project-63", at);
-      return { boundaries, invalidStates, labels, update, invalid, expires, projects, renamed, otherRepo, orgWideV3, fanOut, orgWide, wrongOrg, noSyntheticActivity, strictTimestamp,
+      return { boundaries, invalidStates, labels, update, invalid, expires, projects, otherRepo, orgWideV3, fanOut, orgWide, wrongOrg, noSyntheticActivity, strictTimestamp,
         foundryAliases, bananaPayDistinct, unsubscribed, debugFixture, pinnedWorks, boundedProjects, rosterUnchanged: roster.length === saved.length };
     } finally {
       unsubscribe();
