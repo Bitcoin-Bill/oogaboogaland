@@ -124,6 +124,8 @@
   // the key (`turn`, rad/s); how long the key holds at START while the drive spins up (`crank`, s) and when the dash
   // lights at the chime (`ready`, s); and the beacon's light: how far out its beam's spot falls (`reach`, m), how far it
   // carries and its colour.
+  // How high the forks lift over their rest (the forklift's units) and how fast (units a second).
+  const FORKS = { max: 2, rate: 0.5 };
   const POWER = { lit: [0.12, 1], dome: [0.2, 0.7], flash: 2.6, sharp: 8, rate: 9, turn: 9, crank: 0.75, ready: 0.9, reach: 1.1, radius: 7, color: [1.6, 0.95, 0.22] };
   // How near the hold-short bar the launch shield answers whoever walks up to it, and how far back they must step before
   // it answers again.
@@ -327,6 +329,20 @@
     const m = f.beacon.world, vx = camera.position.x - m[12], vz = camera.position.z - m[14];
     const facing = Math.abs((m[0] * vx + m[2] * vz) / ((Math.hypot(m[0], m[2]) * Math.hypot(vx, vz)) || 1));
     f.beacon.glow = POWER.dome[1] + POWER.flash * facing ** POWER.sharp;
+  };
+  // Running, R raises the forks and F lowers them (borrowed from the view's pitch while it runs): the carriage up its mast,
+  // the inner mast half as far, the chains running over their sheaves.
+  const forkLife = (f, dt) => {
+    const running = f.on && f.startT < 0 && people && people.player && people.player.camp.seat === f.seat;
+    pilot.controls.borrowPitch(running);
+    const dir = running ? pilot.controls.axes.keyPitch : 0;
+    if (!dir) return;
+    const lift = clamp(f.lift + dir * FORKS.rate * dt, 0, FORKS.max);
+    if (lift === f.lift) return;
+    f.lift = lift;
+    f.carriage.position.y = BL.forkliftModels.PLACES.lift + lift;
+    f.inner.position.y = lift / 2;
+    layChains(f);
   };
   // The beacon's light while it turns, a spot out along its beam (its reflector's axis, the node's x), into `slot`; how
   // many it wrote.
@@ -1058,6 +1074,7 @@
     s.fire.update(dt, drivenHere);
     pressLife(s.forklift, dt);
     powerLife(s.forklift, dt);
+    forkLife(s.forklift, dt);
     s.sis.update(dt, drivenHere, camera.position);
     s.terminals.update(dt, drivenHere);
     // Kortik's Sis smashing the Jet brings Tess over to distract her, whatever she was doing; it over, she goes back.
@@ -1151,6 +1168,7 @@
   const overlay = (dt) => fx.drawOverlay(dt, drawExtra);
 
   const leave = () => {
+    pilot.controls.borrowPitch(false);
     SEAT_VIEW.mode = null;
     SEAT_VIEW.back = false;
     // Left by Back or Forward rather than by its door, the hangar hands the Ooga on, so the next scene plays the same
