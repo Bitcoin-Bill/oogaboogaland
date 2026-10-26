@@ -116,10 +116,9 @@
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
   // stand up again (`CAB_OUT`, from and to, the nearest walkable, a step at a time).
   const CAB_REACH = 0.6, CAB_SPAN = [-1.1, 1.0], CAB_OUT = [0.15, 1.2];
-  // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it) and its pitch, put back as it
-  // gets out (the pilot keeps its zoom across first person, and the pitch goes back the frame after, `back`); it sits in
-  // first person meanwhile, entered looking down over the dashboard at SEAT_PITCH.
-  const SEAT_VIEW = { mode: null, pitch: 0, back: false }, SEAT_PITCH = 0.3;
+  // The view an Ooga got into the forklift with (`pilot.view`, null while nobody sits in it), put back as it gets out (the
+  // pilot keeps its zoom and pitch across first person); it sits in first person meanwhile, looking ahead.
+  const SEAT_VIEW = { mode: null };
   // The forklift's button pressed, from the seat or beside the cab: its cover flips up to `open` (radians about its
   // hinge) in `swing` seconds and falls shut after `hold`, the button dipping `dip` in between, while the buzz says it
   // does nothing; a press waits for the last to finish (`again`, s).
@@ -314,10 +313,9 @@
     if (!standSpot(f, cave)) return false;
     const w = f.seat.walkAt;
     SEAT_VIEW.mode = pilot.view;
-    SEAT_VIEW.pitch = pilot.orbit.tPitch;
-    // The view turns down the forks from beside the cab at its own zoom, so first person enters looking where the seat
-    // faces.
-    pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: SEAT_PITCH, dist: pilot.orbit.tDist });
+    // The view turns down the forks from beside the cab at its own zoom and pitch, so first person enters looking where
+    // the seat faces.
+    pilot.navigate({ position: { x: w.x, y: 0, z: w.z }, yaw: f.seat.ry - Math.PI, pitch: pilot.orbit.tPitch, dist: pilot.orbit.tDist });
     if (!people.sitPlayer(f.seat)) { SEAT_VIEW.mode = null; return false; }
     pilot.enterClose();
     return true;
@@ -490,9 +488,8 @@
   // Out of the forklift's seat, however it got out (Space, or walking off), the view it got in with comes back (first
   // person stays, the shoulder or the orbit returns) and it switches off.
   const seatViewBack = (cave) => {
-    if (SEAT_VIEW.back) { pilot.orbit.tPitch = SEAT_VIEW.pitch; SEAT_VIEW.back = false; }
     if (!SEAT_VIEW.mode || cave && cave.camp.seat === scene.forklift.seat) return;
-    if (cave && SEAT_VIEW.mode !== "first-person") { pilot.exitClose(SEAT_VIEW.mode === "shoulder"); SEAT_VIEW.back = true; }
+    if (cave && SEAT_VIEW.mode !== "first-person") pilot.exitClose(SEAT_VIEW.mode === "shoulder");
     SEAT_VIEW.mode = null;
     powerOff(scene.forklift);
   };
@@ -1309,7 +1306,6 @@
   const leave = () => {
     pilot.controls.borrowPitch(false);
     SEAT_VIEW.mode = null;
-    SEAT_VIEW.back = false;
     // Left by Back or Forward rather than by its door, the hangar hands the Ooga on, so the next scene plays the same
     // one; the door and Escape have handed theirs over already.
     if (!leaving) {
