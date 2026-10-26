@@ -109,9 +109,9 @@
     screen: ["The big screen", "Walk up to a terminal by the runway and DISPLAY the Jet's history here."],
     tess: [COARSE ? "Tess the guide · tap for a tour" : "Tess the guide · click for a tour", ""]
   };
-  // The forklift's body as walkers meet it: two rows of circles along it (x either side of its middle and z along it,
-  // metres in its frame), each `radius` round and `height` tall, the front row's edge at the carriage's face; its forks
-  // stay out of them.
+  // The forklift's body as Kortik's Sis, the crew and its own drive meet it: two rows of circles along it (x either side
+  // of its middle and z along it, metres in its frame), each `radius` round and `height` tall, the front row's edge at
+  // the carriage's face; its forks stay out of them. (Oogas meet its own shape, `forkliftIn`.)
   const BLOCKS = { x: [-0.55, 0.55], z: [-1.3, -0.5, 0.5, 1.25], radius: 0.75, height: 3.2 };
   // How far past the forklift's side, beyond the Ooga's own body, its cab takes them in (`CAB_REACH`), along how much of
   // its length (`CAB_SPAN`, from and to in its frame, in metres), and how far out beside it, past their body, they
@@ -149,8 +149,8 @@
   let people = null, avatar = null, playerWorld = null, scene = null, leaving = false, dust = null, unsubscribeAccount = null, remotes = null, footsteps = null, node = null;
   let unsubscribeFeed = null, boardsDirty = false, audio = null, actPrompt = false, soundPanel = null;
   const NO_ACTORS = [];
-  // What stands or walks the hall besides the Oogas, for them to keep clear of: the other players' Oogas, Kortik's Sis,
-  // the gorillas of the hangar's crew and the forklift's body (`blocks`).
+  // What walks the hall besides the Oogas, for them to keep clear of: the other players' Oogas, Kortik's Sis and the
+  // gorillas of the hangar's crew. (The forklift they meet by its own shape, `forkliftIn`.)
   const ACTORS = [];
   const outsideActors = () => {
     ACTORS.length = 0;
@@ -158,7 +158,6 @@
     for (let i = 0; i < others.length; i++) ACTORS.push(others[i]);
     if (scene && scene.sis) ACTORS.push(scene.sis.actor);
     if (scene) for (let i = 0; i < scene.crewActors.length; i++) ACTORS.push(scene.crewActors[i]);
-    if (scene) for (let i = 0; i < scene.forklift.blocks.length; i++) ACTORS.push(scene.forklift.blocks[i]);
     return ACTORS;
   };
   // On the Worker's page the island's driving rules hold in here too, and the Ooga driven is reported to the room every
@@ -936,38 +935,91 @@
     const lx = (dx * f.cs - dz * f.sn) / S, lz = (dx * f.sn + dz * f.cs) / S - FL.PLACES.face;
     return Math.abs(lx) <= D.x && lz >= D.tip && lz <= D.heel ? (FL.PLACES.lift + f.lift + D.top) * S : -Infinity;
   };
-  // The ground: the hall's (a crate's or a chest's top under whatever part of the body reaches over it), or the forks'
-  // within a step of the feet; and on foot, level with the forks, along them as far as the hall is clear (off a raised
-  // fork's edge the hall's own drop holds, as a deck's).
+  // The forklift's own shape where it stands (`forkliftModels.columns`, with its carriage as it stands): `FORK_LOCAL` is
+  // a point in its frame and units; `forkliftIn` how many of its columns a body of `radius` with its feet at `feet`
+  // stands among, those rising more than a step above the feet and coming down below its head (FORKLIFT_HEAD up), as
+  // the Jet's are counted; `forkliftTop` the highest of its tops a body of `radius` at (x, z) reaches a foot's breadth
+  // over (FORKLIFT_FOOT), within a step of the feet, or -Infinity, so a body comes to rest on its counterweight, its deck or its roof,
+  // and on an edge of them, as on a crate's.
+  const FORKLIFT_HEAD = 1.8, FORKLIFT_FOOT = 0.25, FORK_LOCAL = { x: 0, z: 0 };
+  const forkliftLocal = (f, x, z) => {
+    const S = BL.forkliftModels.SCALE, dx = x - f.x, dz = z - f.z;
+    FORK_LOCAL.x = (dx * f.cs - dz * f.sn) / S;
+    FORK_LOCAL.z = (dx * f.sn + dz * f.cs) / S;
+    return FORK_LOCAL;
+  };
+  // How far a point lies from the box [x0, x1] by [z0, z1].
+  const offBox = (x, z, x0, x1, z0, z1) => Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1));
+  const forkliftIn = (x, z, feet, radius) => {
+    if (!scene) return 0;
+    const f = scene.forklift, FL = BL.forkliftModels, S = FL.SCALE, C = FL.columns(), P = FL.PLACES, L = forkliftLocal(f, x, z);
+    const r = radius / S, reach = (feet + HM.STEP) / S, head = (feet + FORKLIFT_HEAD) / S, U = C.U;
+    let n = 0;
+    const i0 = Math.max(0, Math.floor((L.x - r) / U) - C.i0), i1 = Math.min(C.ni - 1, Math.floor((L.x + r) / U) - C.i0);
+    const k0 = Math.max(0, Math.floor((L.z - r) / U) - C.k0), k1 = Math.min(C.nk - 1, Math.floor((L.z + r) / U) - C.k0);
+    for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) {
+      const c = i * C.nk + k, bottom = C.bottom[c];
+      if (bottom < 0 || C.top[c] <= reach || bottom >= head) continue;
+      const cx = (i + C.i0) * U, cz = (k + C.k0) * U;
+      if (offBox(L.x, L.z, cx, cx + U, cz, cz + U) < r) n++;
+    }
+    const R = C.roof;
+    if (R.top > reach && R.bottom < head && offBox(L.x, L.z, -R.x, R.x, R.z0, R.z1) < r) n++;
+    const lift = P.lift + f.lift;
+    if (lift + 1.45 > reach && lift + 0.17 < head && offBox(L.x, L.z, -0.67, 0.67, P.face - 0.08, P.face + 0.27) < r) n++;
+    return n;
+  };
+  const forkliftTop = (x, z, feet, radius) => {
+    if (!scene) return -Infinity;
+    const f = scene.forklift, FL = BL.forkliftModels, S = FL.SCALE, C = FL.columns(), L = forkliftLocal(f, x, z);
+    const r = Math.max(FORKLIFT_FOOT, radius - FORKLIFT_FOOT) / S, reach = (feet + HM.STEP) / S, U = C.U;
+    let best = -Infinity;
+    const i0 = Math.max(0, Math.floor((L.x - r) / U) - C.i0), i1 = Math.min(C.ni - 1, Math.floor((L.x + r) / U) - C.i0);
+    const k0 = Math.max(0, Math.floor((L.z - r) / U) - C.k0), k1 = Math.min(C.nk - 1, Math.floor((L.z + r) / U) - C.k0);
+    for (let i = i0; i <= i1; i++) for (let k = k0; k <= k1; k++) {
+      const top = C.top[i * C.nk + k], cx = (i + C.i0) * U, cz = (k + C.k0) * U;
+      if (top > best && top <= reach && offBox(L.x, L.z, cx, cx + U, cz, cz + U) < r) best = top;
+    }
+    const R = C.roof;
+    if (R.top > best && R.top <= reach && offBox(L.x, L.z, -R.x, R.x, R.z0, R.z1) < r) best = R.top;
+    return best * S;
+  };
+  // Whether a step from (ax, az) to (bx, bz) with the feet at y keeps a body `radius` round out of the forklift, or
+  // among no more of its columns than it was, so a body that ends up in it (a jump, the forklift driven up) walks out.
+  const forkliftClear = (ax, az, bx, bz, y, radius) => {
+    const now = forkliftIn(bx, bz, y, radius);
+    if (now === 0) return true;
+    const was = forkliftIn(ax, az, y, radius);
+    return was > 0 && now <= was;
+  };
+  // The ground: the hall's (a crate's or a chest's top under whatever part of the body reaches over it), the forks'
+  // within a step of the feet, or the forklift's own tops (`forkliftTop`). On foot the walker keeps out of the hall's
+  // boxes and the forklift, and never drops more than a step, so the edges of the forks and the forklift's tops hold as
+  // a deck's.
   const groundFor = (x, z, feet, high, actor) => {
-    const ground = HM.supportAt(x, z, feet, actor ? actor.bodyRadius || 0.35 : 0), top = forkTop(x, z);
-    return top > ground && top <= feet + HM.STEP ? top : ground;
+    const radius = actor ? actor.bodyRadius || 0.35 : 0, ground = HM.supportAt(x, z, feet, radius), forks = forkTop(x, z), body = forkliftTop(x, z, feet, radius);
+    return Math.max(ground, forks <= feet + HM.STEP ? forks : -Infinity, body);
   };
   const walkableFor = (ax, az, bx, bz, y, height, actor) => {
-    const radius = actor.bodyRadius || 0.35, top = forkTop(bx, bz);
-    if (top > HM.supportAt(bx, bz, y) && Math.abs(top - y) <= HM.STEP) return HM.clearAt(bx, bz, Math.max(y, top), radius, ax, az);
-    return HM.walkable(ax, az, bx, bz, y, radius);
-  };
-  // Whether a step from (ax, az) to (bx, bz) with the feet at y keeps a body `radius` round out of the forklift's body (its
-  // circles, below their top), or takes it no deeper in.
-  const forkliftClear = (ax, az, bx, bz, y, radius) => {
-    const blocks = scene ? scene.forklift.blocks : NO_ACTORS;
-    for (let i = 0; i < blocks.length; i++) {
-      const b = blocks[i], r = radius + b.radius, dn = Math.hypot(bx - b.x, bz - b.z);
-      if (y < b.y + b.height && dn < r && dn < Math.hypot(ax - b.x, az - b.z)) return false;
+    const radius = actor.bodyRadius || 0.35, steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2));
+    for (let i = 1; i <= steps; i++) {
+      const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps, px = ax + (bx - ax) * (i - 1) / steps, pz = az + (bz - az) * (i - 1) / steps;
+      const floor = groundFor(x, z, y, 0, actor), feet = Math.max(y, floor);
+      if (floor < y - HM.STEP || !HM.clearAt(x, z, feet, radius, px, pz) || !forkliftClear(px, pz, x, z, feet, radius)) return false;
     }
     return true;
   };
   // In the air, the same clearance without the floor within a step, as the Factory keeps it, so a jump carries an Ooga
   // over a deck's rail and it drops to whatever is below; on foot the edges still hold. A crate or a chest blocks the
-  // whole body in the air (a step's foot's breadth is for walking), and the forklift's body holds in the air too (on
-  // foot the crew keeps its walkers out of it).
+  // whole body in the air (a step's foot's breadth is for walking), and the forklift holds in the air as on foot, a
+  // top within a step of the feet a ledge to land on.
   const flyableFor = (ax, az, bx, bz, y, height, actor) => {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.2)), radius = actor.bodyRadius || 0.35;
     for (let i = 1; i <= steps; i++) {
-      if (!HM.clearAt(ax + (bx - ax) * i / steps, az + (bz - az) * i / steps, y, radius, ax + (bx - ax) * (i - 1) / steps, az + (bz - az) * (i - 1) / steps, false)) return false;
+      const x = ax + (bx - ax) * i / steps, z = az + (bz - az) * i / steps, px = ax + (bx - ax) * (i - 1) / steps, pz = az + (bz - az) * (i - 1) / steps;
+      if (!HM.clearAt(x, z, y, radius, px, pz, false) || !forkliftClear(px, pz, x, z, y, radius)) return false;
     }
-    return forkliftClear(ax, az, bx, bz, y, radius);
+    return true;
   };
   // There is no banana pile in here. Space must jump even when the rifle needs ammunition.
   const reloadPolicy = { near: () => false, available: () => false };
