@@ -20061,13 +20061,15 @@ const reviewCrowdAndFallbackProof = async () => {
 
 const studioVideoSecurityProof = async () => {
   const source=await readFile(join(root,"src/js/gl-renderer.js"),"utf8"),start=source.indexOf("    const drawImageSurface ="),end=source.indexOf("    const drawGlass =",start);
-  if(start<0||end<0)throw Error("image surface entry missing");
-  const calls={uploads:0,deletes:0,draws:0,mipmaps:0,ready:[]};let failure="SecurityError",texture=0;
-  const noop=()=>{},gl={activeTexture:noop,bindTexture:noop,texParameteri:noop,useProgram:noop,uniformMatrix4fv:noop,uniform4fv:noop,uniform1f:noop,bindVertexArray:noop,
-    createTexture:()=>++texture,deleteTexture:()=>calls.deletes++,generateMipmap:()=>calls.mipmaps++,uniform1i:(key,value)=>{if(key==="ready")calls.ready.push(value);},drawArraysInstanced:()=>calls.draws++,
+  const partStart=source.indexOf("    const drawPart ="),partEnd=source.indexOf("    const indexArray =",partStart);
+  if(start<0||end<0||partStart<0||partEnd<0)throw Error("image surface entry missing");
+  const calls={uploads:0,deletes:0,draws:0,mipmaps:0,ready:[],arrays:[],elements:[]};let failure="SecurityError",texture=0;
+  const noop=()=>{},gl={TRIANGLES:4,UNSIGNED_SHORT:5123,activeTexture:noop,bindTexture:noop,texParameteri:noop,useProgram:noop,uniformMatrix4fv:noop,uniform4fv:noop,uniform1f:noop,bindVertexArray:noop,
+    createTexture:()=>++texture,deleteTexture:()=>calls.deletes++,generateMipmap:()=>calls.mipmaps++,uniform1i:(key,value)=>{if(key==="ready")calls.ready.push(value);},
+    drawArraysInstanced:(...args)=>{calls.draws++;calls.arrays.push(args);},drawElementsInstanced:(...args)=>{calls.draws++;calls.elements.push(args);},
     texImage2D:()=>{calls.uploads++;if(failure)throw Object.assign(Error("synthetic upload failure"),{name:failure});},texSubImage2D:()=>{calls.uploads++;if(failure)throw Object.assign(Error("synthetic update failure"),{name:failure});}};
   const context={gl,programs:{image:{prog:"image",u:{uReady:"ready"}},mesh:{prog:"mesh"}},res:{matrixTexture:"fallback"},viewProj:[],mirrorViewProj:[],applyCutaway:noop,cutawayMaxY:1e6};
-  runInNewContext("let imageTextures=0,blendPass=false;"+source.slice(start,end)+";globalThis.draw=(rec,count,cameraPass)=>drawImageSurface(rec,count,cameraPass,programs.mesh);globalThis.textures=()=>imageTextures;globalThis.resetTextureCount=()=>{imageTextures=0;};",context);
+  runInNewContext("let imageTextures=0,blendPass=false;"+source.slice(partStart,partEnd)+source.slice(start,end)+";globalThis.draw=(rec,count,cameraPass)=>drawImageSurface(rec,count,cameraPass,programs.mesh);globalThis.partDraw=drawPart;globalThis.textures=()=>imageTextures;globalThis.resetTextureCount=()=>{imageTextures=0;};",context);
   let image={readyState:2,seeking:false,videoWidth:320,videoHeight:180,currentTime:0,currentSrc:"file:///synthetic.mp4"};const surface={dynamic:true,asset:{load:()=>image},rect:[0,0,7,3.5]},rec={geometry:{imageSurface:surface},mesh:{vao:{},count:6}};
   context.draw(rec,1,true);const fallback=rec.imageTexture===null&&context.textures()===0&&calls.deletes===1&&calls.draws===1&&calls.ready.at(-1)===0&&surface.mediaErrorCode==="video-security";
   context.draw(rec,1,true);const suppressed=calls.uploads===1&&calls.draws===2;
@@ -20079,7 +20081,11 @@ const studioVideoSecurityProof = async () => {
   const staticImage={complete:true,naturalWidth:320},staticRec={geometry:{imageSurface:{asset:{load:()=>staticImage},rect:[0,0,7,3.5]}},mesh:{vao:{},count:6}};
   failure="";context.draw(staticRec,1,true);const staticUnchanged=calls.mipmaps===1&&calls.ready.at(-1)===1;
   failure="SecurityError";staticRec.imageTexture=null;let staticRejects=false;try{context.draw(staticRec,1,true);}catch(error){staticRejects=error.name==="SecurityError";}
-  return {fallback,suppressed,retry,replacementIdentity,replacementStable,updateCleanup,restoredUpload,nonSecurity,staticUnchanged,staticRejects};
+  failure="";const indexedRec={geometry:{imageSurface:surface},mesh:{vao:{},count:12,index:gl.UNSIGNED_SHORT,indexSize:2}};
+  context.draw(indexedRec,3,true);const indexedImage=calls.elements.at(-1).join() === [gl.TRIANGLES,12,gl.UNSIGNED_SHORT,0,3].join();
+  context.partDraw(indexedRec.mesh,3,6,2);const indexedRange=calls.elements.at(-1).join() === [gl.TRIANGLES,6,gl.UNSIGNED_SHORT,6,2].join();
+  context.partDraw(rec.mesh,2,5,4);const arrayRange=calls.arrays.at(-1).join() === [gl.TRIANGLES,2,5,4].join();
+  return {fallback,suppressed,retry,replacementIdentity,replacementStable,updateCleanup,restoredUpload,nonSecurity,staticUnchanged,staticRejects,indexedImage,indexedRange,arrayRange};
 };
 
 const studioCatalogueProof = async () => {
