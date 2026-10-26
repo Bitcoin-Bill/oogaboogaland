@@ -97,6 +97,7 @@
     stats: ["Repo stats · drneski/lightning-jet", ""],
     timeline: ["Lightning Jet timeline", ""],
     station: ["Crew workstations", "Where the crew follows the Jet's build."],
+    forklift: ["Hangar forklift", "It moves the Jet's parts round the hangar."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -179,6 +180,25 @@
     const [cells, ...rest] = JM.pieces(JET_STAGE), node = createNode({ ...options, geometry: cells });
     for (const geometry of rest) addChild(node, createNode({ geometry }));
     return node;
+  };
+  // The forklift parked at (x, z), its forks pointing `turn` (`forkliftModels`): its voxel body, mast, fittings and
+  // lamps, and each part that moves a node of its own, the wheels, the carriage up its mast, the steering wheel on its
+  // column, the beacon's dome, the button and its cover on the cover's hinge, the back's two doors on theirs; its decals
+  // as pictures, drawn before the faces they sit on on Canvas 2D, DO NOT PRESS on the cover so it lifts with it.
+  const forklift = ({ x, z, turn }) => {
+    const FL = BL.forkliftModels, P = FL.PLACES, W = FL.wheel(), D = FL.doors(), decals = FL.decals();
+    const at = (geometry, [px, py, pz], options = {}) => createNode({ position: { x: px, y: py, z: pz }, geometry, ...options });
+    const root = createNode({ position: { x, y: 0, z }, rotation: { x: 0, y: turn, z: 0 } }), body = createNode({ geometry: FL.body() });
+    const wheels = [[-P.frontX, P.frontR, P.front, W.front], [P.frontX, P.frontR, P.front, W.front], [-P.rearX, P.rearR, P.rear, W.rear], [P.rearX, P.rearR, P.rear, W.rear]]
+      .map(([wx, wy, wz, geometry]) => at(geometry, [wx, wy, wz]));
+    const carriage = at(FL.carriage(), [0, 0, P.face]), steering = at(FL.steering(), P.steering, { rotation: { x: P.steering[3], y: 0, z: 0 } });
+    const beacon = at(FL.beacon(), P.beacon, { sightHidden: true }), button = at(FL.button(), P.button), cover = at(FL.cover(), P.hinge, { sightHidden: true });
+    const doors = D.map((geometry, i) => at(geometry, [(i ? 1 : -1) * P.doorX, 0, P.back]));
+    const picture = ([geometry, px, py, pz, rx]) => at(geometry, [px, py, pz], { rotation: { x: rx, y: 0, z: 0 }, sightHidden: true, depthBias: -0.15 });
+    addChild(cover, ...decals.cover.map(picture));
+    addChild(root, body, createNode({ geometry: FL.mast() }), createNode({ geometry: FL.fittings() }), createNode({ geometry: FL.lamps(), sightHidden: true }),
+      ...wheels, carriage, steering, beacon, button, cover, ...doors, ...decals.body.map(picture));
+    return { root, body, wheels, carriage, steering, beacon, button, cover, doors };
   };
   // The Jet in miniature on a board, climbing across its face, turned toward the eye and banked so its top shows,
   // round its fuselage's axis.
@@ -430,6 +450,9 @@
     // The Jet at its dock, nose to the tunnel, as far built as its stage.
     s.jet = jetNode({ position: { x: L.jet.x, y: 0, z: L.jet.z } });
     addChild(root, s.jet);
+    // The forklift, parked in front of the landing.
+    s.forklift = forklift(L.forklift);
+    addChild(root, s.forklift.root);
     // The boards on the left wall: each a glass in its frame with its face built on it and the Jet flying across it,
     // its lettering painted over it from the reading (`paintBoards`); the stats board's fifth tile shows the stars, or
     // a flag while the repository has a milestone open. Each has its picture for the board dialog too, with a link out
@@ -494,6 +517,7 @@
     target(s.boards.stats, "stats", "boards", 4.6);
     target(s.boards.timeline, "timeline", "boards", 5.2);
     target(s.fixtures, "station", null, 1.2);
+    target(s.forklift.body, "forklift", null, 2.2);
     return s;
   };
 

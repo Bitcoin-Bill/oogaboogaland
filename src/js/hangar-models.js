@@ -73,18 +73,22 @@
     // all round the Jet, each [name, x, z, what she does there, the point she looks at, x, y, z, and, up the stair,
     // the height she stands at].
     sis: {
-      x: 9.8, z: 16.6, turn: -Math.PI / 4, floor: [5.9, 26.4, -30, 24.4],
+      x: 12.2, z: 17.6, turn: -Math.PI / 4, floor: [5.9, 26.4, -30, 24.4],
       spots: [
         ["nose gear", 15, -24.7, "fix", 15, 0.9, -23.3], ["nose", 12.2, -26.6, "admire", 15, 3.4, -23], ["left engine", 12.3, 6.6, "inspect", 13, 4, 4.7],
         ["right engine", 17.3, 5.7, "fix", 17, 3, 4.75], ["tail", 15, 8.4, "admire", 15, 6.5, 2], ["wingtip", 20.7, -0.8, "fix", 19.6, 1.4, -0.8],
         ["right wing", 21.6, -5.6, "inspect", 18.8, 1.4, -2.5], ["right flank", 20.6, -14, "admire", 16.6, 4.2, -14], ["gear", 18.6, -19.5, "fix", 17.45, 0.9, -19.5],
-        ["crates", 19.3, 7.3, "inspect", 19.6, 0.8, 5.2], ["booth", 11.8, 14.4, "glare", 8, 1.6, 11], ["door", 9.6, 22.4, "glare", 0, 3, 27],
+        ["crates", 19.3, 7.3, "inspect", 19.6, 0.8, 5.2], ["booth", 12.2, 14.2, "glare", 8, 1.6, 11], ["door", 9.6, 22.4, "glare", 0, 3, 27],
         ["floor", 13.6, 15.6, "pace", 13.6, 1.6, 12], ["hall", 22.4, 15, "pace", 22.4, 1.6, 11],
         ["left wing", 7, -6.6, "inspect", 8, 3.1, -8.9], ["left trestle", 6.4, -11.4, "fix", 7.2, 3, -10.4], ["left flank", 7.2, -17, "admire", 13, 5.6, -17],
         ["cockpit", 11.3, -17.6, "fix", 12.6, 6, -17.6, 5], ["canopy", 11, -14.6, "admire", 15, 6.6, -14.2, 5], ["gangway", 11, -9.6, "pace", 13, 5.6, -9.6, 5],
         ["wing root", 11.1, -11.8, "inspect", 13, 4.8, -11.8, 5]
       ]
     },
+    // The forklift (`forklift-models.js`), parked on the Jet's side between the static fire booth and the crates by the
+    // landing, in sight of the door, its forks toward the crates: where its middle stands and the way its forks point
+    // (0 down the hall).
+    forklift: { x: 8.4, z: 15.2, turn: Math.PI + 0.3 },
     // The crew's workstations on the left, [x, z, turn] each, their screens facing `turn` (0 toward the door); the
     // terminals on stands by the runway, [x, z, turn], the dock's showing the Jet; and the tool chests, [x, z, turn].
     stations: [[-9.5, 17, 0], [-9.5, 9.5, 0.3], [-9.5, 2, 0], [-9.5, -5.5, 0.3], [-9.5, -13, 0], [-9.5, -20.5, 0.3], [-14.5, 6.5, Math.PI / 2], [-14.5, -11, Math.PI / 2], [-14.5, -18.5, Math.PI / 2]],
@@ -1699,6 +1703,13 @@
       around(x, z, hx, hz, stacked > 1 ? 1.5 : 0.85);
     }
     for (const [x, z] of L.floorLamps) around(x, z, 0.3, 0.3, 0.4);
+    // The forklift, by the box round its turned footprint in four lengths along it; its forks lie low enough to step
+    // over.
+    const FK = L.forklift, FP = BL.forkliftModels.FOOTPRINT, fs = Math.sin(FK.turn), fc = Math.cos(FK.turn), [fx, fz] = turned(FP.x, (FP.z1 - FP.z0) / 8, FK.turn);
+    for (let q = 0; q < 4; q++) {
+      const lz = FP.z0 + (q + 0.5) * (FP.z1 - FP.z0) / 4;
+      around(FK.x + lz * fs, FK.z + lz * fc, fx, fz, FP.top);
+    }
     // The lanterns' posts by the runway.
     for (const [kind, x, y, z] of lamps()) if (kind === "post") block(x - 0.2, x + 0.2, z - 0.2, z + 0.2, y - 1, y + 2.9);
     return { rects: new Float32Array(rects), boxes: new Float32Array(boxes), jet: JM.columns() };
