@@ -101,6 +101,7 @@
     forkliftButton: ["Big red button · DO NOT PRESS", "Get into the forklift to reach its button."],
     forkliftKey: ["Ignition key", "Get into the forklift to turn its key."],
     forkliftStick: ["Fork stick", "Get in and start the forklift to work its forks."],
+    forkliftHorn: ["Steering wheel · horn", "Get in and start the forklift to sound its horn."],
     firetest: ["Engine static fire test · DO NOT PRESS", "Whatever you do, don't press the big red button."],
     sis: ["Kortik's Sis · Jet Hangar Chief Engineer", "Walk up to her and poke her. If you dare."],
     terminal: ["Hangar terminal", "Walk up to it and DISPLAY the Jet's history on the big screen."],
@@ -184,6 +185,7 @@
   };
   const onKey = (e) => {
     if (e.key === "0" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !leaving) return pilot.resetCamera();
+    if ((e.key === "h" || e.key === "H") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && scene && honk(scene.forklift, people && people.player, false)) return true;
     if ((e.key === "x" || e.key === "X") && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !leaving) {
       if (pilot.modeAction("mode-toggle")) { e.preventDefault(); return true; }
     }
@@ -322,6 +324,12 @@
   const workStick = (f, cave) => {
     if (!cave || cave.camp.seat !== f.seat || !f.on || f.startT >= 0) { hud.toast(TIPS.forkliftStick[1]); return; }
     f.liftTo = f.lift < FORKS.max / 2 ? FORKS.max : 0;
+  };
+  // H in the seat, or a tap on the steering wheel from it, sounds the horn while it has power.
+  const honk = (f, cave, tapped) => {
+    if (!cave || cave.camp.seat !== f.seat || !f.on) { if (tapped) hud.toast(TIPS.forkliftHorn[1]); return false; }
+    audio.horn();
+    return true;
   };
   // A tap on the key from the seat turns it: on when off, off when on.
   const turnKey = (f, cave) => {
@@ -808,7 +816,8 @@
     input.add(s.forklift.button, { kind: "forkliftButton", preset: null, priority: 1 }, { radius: 0.18 });
     input.add(s.forklift.key, { kind: "forkliftKey", preset: null, priority: 1 }, { radius: 0.07 });
     input.add(s.forklift.stick, { kind: "forkliftStick", preset: null, priority: 1 }, { radius: 0.12 });
-    targets.push(s.forklift.button, s.forklift.key, s.forklift.stick);
+    input.add(s.forklift.helm, { kind: "forkliftHorn", preset: null, priority: 1 }, { radius: 0.2 });
+    targets.push(s.forklift.button, s.forklift.key, s.forklift.stick, s.forklift.helm);
     return s;
   };
 
@@ -1008,6 +1017,7 @@
         if (o.kind === "forkliftButton") return pressButton(scene.forklift, people && people.player);
         if (o.kind === "forkliftKey") return turnKey(scene.forklift, people && people.player);
         if (o.kind === "forkliftStick") return workStick(scene.forklift, people && people.player);
+        if (o.kind === "forkliftHorn") return honk(scene.forklift, people && people.player, true);
         if (o.preset) pilot.goPreset(o.preset);
         if (TIPS[o.kind]) hud.toast(TIPS[o.kind][1]);
       },
