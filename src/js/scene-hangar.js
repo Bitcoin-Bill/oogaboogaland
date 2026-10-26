@@ -928,8 +928,25 @@
     }
   };
 
-  const groundFor = (x, z, feet) => HM.supportAt(x, z, feet);
-  const walkableFor = (ax, az, bx, bz, y, height, actor) => HM.walkable(ax, az, bx, bz, y, actor.bodyRadius || 0.35);
+  // The forklift's forks as a deck where (x, z) lies over them (`FORK_DECK`), at their top as the carriage stands, else
+  // -Infinity.
+  const forkTop = (x, z) => {
+    if (!scene) return -Infinity;
+    const f = scene.forklift, FL = BL.forkliftModels, D = FL.FORK_DECK, S = FL.SCALE, dx = x - f.x, dz = z - f.z;
+    const lx = (dx * f.cs - dz * f.sn) / S, lz = (dx * f.sn + dz * f.cs) / S - FL.PLACES.face;
+    return Math.abs(lx) <= D.x && lz >= D.tip && lz <= D.heel ? (FL.PLACES.lift + f.lift + D.top) * S : -Infinity;
+  };
+  // The ground: the hall's, or the forks' within a step of the feet; and on foot, level with the forks, along them as far
+  // as the hall is clear (off a raised fork's edge the hall's own drop holds, as a deck's).
+  const groundFor = (x, z, feet) => {
+    const ground = HM.supportAt(x, z, feet), top = forkTop(x, z);
+    return top > ground && top <= feet + HM.STEP ? top : ground;
+  };
+  const walkableFor = (ax, az, bx, bz, y, height, actor) => {
+    const radius = actor.bodyRadius || 0.35, top = forkTop(bx, bz);
+    if (top > HM.supportAt(bx, bz, y) && Math.abs(top - y) <= HM.STEP) return HM.clearAt(bx, bz, Math.max(y, top), radius, ax, az);
+    return HM.walkable(ax, az, bx, bz, y, radius);
+  };
   // Whether a step from (ax, az) to (bx, bz) with the feet at y keeps a body `radius` round out of the forklift's body (its
   // circles, below their top), or takes it no deeper in.
   const forkliftClear = (ax, az, bx, bz, y, radius) => {

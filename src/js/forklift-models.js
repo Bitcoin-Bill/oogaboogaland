@@ -135,6 +135,9 @@
   // sheaves' axles (z) and the chain's radius round them, the carriage's anchor's height, straight under the sheave's
   // front, and how far apart its links lie (`chainLink`).
   const CHAIN_X = 0.15, FORK_X = 0.32;
+  // The forks' top as a deck to stand on, in the carriage's frame: how far either side of the middle it reaches over both
+  // blades and the gap between, from their tips back to their shanks along z, and its height over the carriage's foot.
+  const FORK_DECK = { x: FORK_X + 0.075, tip: -P.forks, heel: -0.07, top: 0.085 };
   const CHAIN = { x: CHAIN_X, anchor: 1.47, head: 2.24, sheave: 2.31, z: P.mastZ + 0.04, r: 0.08, carriage: P.lift + 0.8, pitch: 0.028 * 2.2 };
   // The mast, as massive as its concept's, in two stages. Its outer uprights (`mast`), each a channel open toward the
   // middle, its web outside and a flange before and behind it, banded at its seams with bolts in the bands, capped, and
@@ -549,5 +552,5 @@
     };
   };
 
-  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, button, cover, doors, decals };
+  BL.forkliftModels = { U, SCALE, PLACES, CUSHION, FOOTPRINT, body, wheel, mast, carriage, fittings, lamps, beacon, steering, key, KEY, stick, STICK, innerMast, CHAIN, chainLink, FORK_DECK, button, cover, doors, decals };
 })();
