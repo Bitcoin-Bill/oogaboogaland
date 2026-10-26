@@ -49,7 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
-    PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
+    GOLD_GUNS: 2, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -62,7 +62,10 @@
     net: { speed: 15, lift: 3, gravity: 9, life: 1.4, r: 0.75, blast: 0, cool: 0.8, max: 3 },
     crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 },
     // The sniper rifle: it stays in the sniper towers, so it fires only from a tower's platform; fast, flat and long.
-    sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 }
+    sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 },
+    // The Golden AK: semi-automatic paint, one ball a click with almost no wait, never empty. There are `GOLD_GUNS` a
+    // round: mining a block wins one while any are left, and netting whoever holds one takes it.
+    gold: { speed: 34, lift: 1.4, gravity: 7, life: 1.2, r: 0.5, blast: 0, cool: 0.11, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // The maps. A map is its blocks, each [x0, x1, z0, z1, top, bottom] (bottom 0 unless it floats: a floor, a roof or
@@ -360,7 +363,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0,
+      climbing: false, riding: false, zipT: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -373,7 +376,7 @@
     const peels = A.peels.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { goldLeft: CONFIG.GOLD_GUNS, map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -427,7 +430,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = a.slip = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -444,6 +447,7 @@
     for (const t of sim.traps) t.dark = 0;
     for (const c of sim.caches) c.dark = 0;
     for (const p of sim.peels) p.dark = 0;
+    sim.goldLeft = CONFIG.GOLD_GUNS;
     // Each pair of spots starts with the same power (boots, laser eyes, then the halving or cold storage by the seed);
     // after that each draws from the seed, so a seed replays the round's power-ups too.
     for (let i = 0; i < sim.powers.length; i++) { const p = sim.powers[i]; p.dark = 0; p.kind = [0, 3, seed & 1 ? 2 : 1][(i >> 1) % 3]; }
@@ -666,7 +670,7 @@
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || (kind === "gold" && !a.gold)) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -679,7 +683,7 @@
     a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
-    emit(sim, kind === "paint" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
+    emit(sim, kind === "paint" || kind === "gold" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
     return true;
   };
   // `s` is the shot that did it, if any: its thrower is credited with the hit, and a sniper's range is kept.
@@ -837,7 +841,9 @@
       if (t && a.aim >= sim.bots.aim) {
         a.aim = 0;
         const dist = Math.sqrt(best), roll = sim.rng();
-        const kind = t.carrying && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : "paint";
+        // A net at a carrier or at a Golden AK's holder, now and then a grenade or a rocket, otherwise paint (or the
+        // Golden AK, if this bot holds one).
+        const kind = (t.carrying || (t.gold && !a.gold)) && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : a.gold ? "gold" : "paint";
         const lead = dist / TOOLS[kind].speed;
         const yaw = Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z) + (sim.rng() - 0.5) * 2 * sim.bots.spread;
         // Paint lobs flatter at range so the ball arrives near chest height; a grenade arcs to its range.
@@ -923,6 +929,12 @@
       a.captures++;
       sim.score[a.team]++;
       emit(sim, "capture", a.team, a.id, stand.x, 0, stand.z);
+      // A Golden AK for the miner while any are left.
+      if (sim.goldLeft > 0 && !a.gold) {
+        sim.goldLeft--;
+        a.gold = true;
+        emit(sim, "gold", a.team, a.id, a.x, a.y, a.z);
+      }
       if (sim.score[a.team] >= sim.target) {
         sim.over = true;
         sim.winner = a.team;
@@ -1189,6 +1201,13 @@
       else if (hit && s.kind === "net") {
         hit.netted = CONFIG.NET_S;
         emit(sim, "net", hit.team, hit.id, hit.x, hit.y + 1, hit.z);
+        // Netting a Golden AK's holder takes it, unless the netter already has one.
+        const by = s.owner >= 0 ? sim.actors[s.owner] : null;
+        if (hit.gold && by && !by.gold) {
+          hit.gold = false;
+          by.gold = true;
+          emit(sim, "goldsteal", by.team, by.id, hit.x, hit.y + 1, hit.z, hit.id);
+        }
       } else if (hit) splat(sim, hit, s.kind === "crate", s);
       if (s.kind === "crate") landCrate(sim, s);
       else if (!hit) emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
