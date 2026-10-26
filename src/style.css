@@ -9387,7 +9387,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   position: absolute;
   z-index: 11;
   right: calc(12px + var(--safe-right, 0px));
-  top: 96px;
+  top: 160px;
   width: 88px;
   height: 148px;
   border: 2px solid var(--wood-edge);
@@ -9400,7 +9400,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   position: absolute;
   z-index: 11;
   left: calc(12px + var(--safe-left, 0px));
-  top: 96px;
+  top: 160px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -9433,7 +9433,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
 
 @media (max-width: 520px) {
   .block-map {
-    top: 84px;
+    top: 226px;
     width: 66px;
     height: 111px;
   }
