@@ -17054,7 +17054,7 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
     if (!validStart) return { fixture: false, reason: "No supported clear roof start", requestedStart };
     S.updateWorld(root);
     const moveTo = (hit, dt = 1 / 30, controlled = false, reached = hit) => {
-      const from = { ...e.root.position }, recoveries = e.stuck.recoveries;
+      const from = { ...e.root.position }, recoveries = e.stuck.recoveries, torso = new Float64Array(24);
       const accepted = controlled ? C.possess(e) : C.debugMove(e, hit.x, hit.y, hit.z, hit.normal);
       let seconds = 0, maxStep = 0, climbing = 0, verticalExcursion = 0, overlap = null, stayedHanging = e.climb.active, gripFrames = 0, lostGrip = null;
       let controlStatus = "climbing", px = from.x, py = from.y, pz = from.z, lastFace = null;
@@ -17095,7 +17095,8 @@ scene("hub", { label: "gorilla traversal", query: "status=chillin&gorillamove=1"
           } else lastFace = null;
         } else lastFace = null;
         S.updateWorld(e.root, root.world);
-        if (!overlap && B.island.solidAt(p.x, p.y + 1.1, p.z)) overlap = { ...p, seconds };
+        // The full torso must stay outside stone, even when the center is clear.
+        if (!overlap && !B.island.hullClearAt(e.gorilla.bodyHull(torso, 0))) overlap = { ...p, seconds };
       }
       const p = e.root.position, dx = p.x - hit.x, dz = p.z - hit.z;
       if (controlled) C.cancelInput();
