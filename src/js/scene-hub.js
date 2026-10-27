@@ -7272,26 +7272,8 @@
     const minutes = Math.max(0, Math.round((Date.now() - changed) / 60000));
     return minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`;
   };
-  // A caveman's "Ooga booga!" in the browser's own speech, deep and slow: only once the visitor has touched the page
-  // (browsers refuse speech before that), never with the island's sound muted, and only in a voice on this device, so
-  // no text leaves it. The deep male voices go first where the device has them.
-  const OOGA_VOICES = ["Ralph", "Fred", "Daniel", "Alex"];
-  const shoutOoga = () => {
-    const speech = window.speechSynthesis;
-    if (!speech || weather.muted || navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
-    const voices = speech.getVoices().filter((v) => v.localService && /^en/i.test(v.lang));
-    const voice = OOGA_VOICES.map((name) => voices.find((v) => v.name.startsWith(name))).find(Boolean) || voices[0];
-    if (!voice) return;
-    const line = new SpeechSynthesisUtterance("Oooga! Boooga!");
-    line.voice = voice;
-    line.pitch = 0.1;
-    line.rate = 0.7;
-    speech.cancel();
-    speech.speak(line);
-  };
   // A merge landing during the visit: the eyes and runes flare, the Oogas awake within TOTEM_CHEER cheer
-  // and shout its word (never the one being driven), a deep
-  // voice shouts "Ooga booga!", and one notice names the repository.
+  // and show its word in speech bubbles (never the one being driven), and one notice names the repository.
   const flareTotem = (i) => {
     const o = totems[i], p = o.owner.node.position, repo = BL.totemFeed.REPOS[i];
     o.flare = 1;
@@ -7302,7 +7284,6 @@
       cave.cheer = 1.6;
       fx.say(cave, fnv1a(`${repo.word}/${cave.traits.name}`) % 2 ? `${repo.word}!` : "OOGA!", 1.8);
     }
-    shoutOoga();
     hud.toast(`${repo.name} just merged · the ${repo.word} totem blazes`);
   };
   const buildTotems = () => {
@@ -10164,7 +10145,6 @@
     if (factoryMouth?.roofWindow) factoryMouth.roofWindow.suspend();
     hud.dispose();
     BL.net.setBody(null); BL.net.setHub(false); zoneHeld = null;
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     CLANKER_REST_SLOPE.supportEntry = RAGE_WARP_MOTION.supportEntry = null;
     sleepSightSince = Infinity; sleepSightMode = null; sleepSightGorilla = false; sleepSightFrame++;
     CLANKER_HIT.node = CLANKER_HIT.owner = POOL_BLOCK_HIT.node = POOL_BLOCK_HIT.owner = null;
@@ -11448,7 +11428,6 @@
       totemUnsub();
       totemUnsub = null;
     }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     totems.length = 0;
     if (jumbotron) {
       jumbotron.dispose(renderer);
