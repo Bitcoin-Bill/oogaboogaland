@@ -6,13 +6,12 @@
   const INTERACTIVE = "button, a, input, select, textarea, [role='button']";
   const create = ({ canvas, requestLock, unlock }) => {
     const element = document.getElementById("carry-cursor"), reticle = document.getElementById("weapon-reticle");
-    const sheet = document.getElementById("sheet");
     const pressed = [null, null, null];
     let active = false, visible = true, dispatching = false, x = window.innerWidth / 2, y = window.innerHeight / 2;
     let canvasLeft = 0, canvasTop = 0, canvasWidth = 1, canvasHeight = 1;
     let pointerId = 1, buttons = 0, blockedButtons = 0, suppressClick = false;
     let captured = null, hovered = null, hoverButton = null, pendingMove = null;
-    let hoverSheet = false;
+    let hoverSheet = null;
     let aimAnimation = null, reticleAnimation = null, aimProgress = 0, aimBase = 0, visualBase = 0;
     let aimFromX = 0, aimFromY = 0, aimToX = 0, aimToY = 0;
     const locked = () => document.pointerLockElement === canvas;
@@ -29,10 +28,11 @@
     };
     const setHoverButton = (button, target = button) => {
       // Blank panel surfaces reveal the tabs too, including a pilot-placed cursor.
-      const overSheet = sheet.contains(target);
+      const overSheet = target?.closest(".sheet") || null;
       if (overSheet !== hoverSheet) {
+        if (hoverSheet) hoverSheet.classList.remove("virtual-hover");
         hoverSheet = overSheet;
-        sheet.classList.toggle("virtual-hover", overSheet);
+        if (hoverSheet) hoverSheet.classList.add("virtual-hover");
       }
       if (button === hoverButton) return;
       if (hoverButton) hoverButton.classList.remove("virtual-hover");
@@ -233,6 +233,9 @@
           if (e.type === "pointerdown") { stop(); unlock(); suppressClick = false; }
           return;
         }
+        // This capture retry consumes the native event before the page's
+        // canvas focus handler, including when pointer lock is denied.
+        if (e.type === "pointerdown") canvas.focus({ preventScroll: true });
         // Right-click changes the pilot's view even before pointer lock has
         // settled. Let its press and release reach the canvas in that case.
         if (e.button === 2) {
@@ -321,6 +324,7 @@
         animateAimArrow();
       }
     };
+    let listening = true;
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("pointermove", onPointer, true);
     window.addEventListener("pointerup", onPointer, true);
@@ -332,7 +336,24 @@
     window.addEventListener("contextmenu", onMouseButton, true);
     window.addEventListener("wheel", onWheel, { capture: true, passive: false });
     window.addEventListener("resize", onResize);
+    const resume = () => {
+      if (listening) return;
+      listening = true;
+      window.addEventListener("pointerdown", onPointer, true);
+      window.addEventListener("pointermove", onPointer, true);
+      window.addEventListener("pointerup", onPointer, true);
+      window.addEventListener("pointercancel", onPointer, true);
+      window.addEventListener("mousemove", onMouseMove, true);
+      window.addEventListener("mousedown", onMouseButton, true);
+      window.addEventListener("mouseup", onMouseButton, true);
+      window.addEventListener("click", onMouseButton, true);
+      window.addEventListener("contextmenu", onMouseButton, true);
+      window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+      window.addEventListener("resize", onResize);
+    };
     const dispose = () => {
+      if (!listening) return;
+      listening = false;
       stop();
       window.removeEventListener("pointerdown", onPointer, true);
       window.removeEventListener("pointermove", onPointer, true);
@@ -346,7 +367,7 @@
       window.removeEventListener("wheel", onWheel, true);
       window.removeEventListener("resize", onResize);
     };
-    return { start, stop, placeCanvas, beginAim, updateAim, rebaseAim, endAim, dispose, element,
+    return { start, stop, placeCanvas, beginAim, updateAim, rebaseAim, endAim, resume, dispose, element,
       get active() { return active; }, get visible() { return visible; }, get x() { return x; }, get y() { return y; } };
   };
   BL.cursor = { create };

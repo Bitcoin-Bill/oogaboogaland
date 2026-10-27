@@ -127,7 +127,7 @@
   // The last hundredth of a coin the payout tick sounded for, the halving's lamp dip, and its countdown.
   let paidShown = -1, halvingDim = 0, halvingShown = -1;
   let shownLayout = -1, shownFaults = -1, shownMilestone = 0, shownLog = 0, shownEvent = -1, shownCard = "", shownArrivals = 0, shownStrikes = 0;
-  let cpuNodes, gpuNodes, padNodes, holderNodes, powerNodes, trophyNodes, gearNodes, markerNodes, flameNodes, lampNodes, busbars;
+  let cpuNodes, gpuNodes, padNodes, holderNodes, powerNodes, trophyNodes, gearNodes, markerNodes, flameRigs, fireRigOf, lampNodes, busbars;
   // The fan spot a chamber's cooling fault is worked from: its first fan standing, else its first spot.
   const coolSpotOf = (c) => {
     for (let k = c * R.COOL_SPOTS; k < (c + 1) * R.COOL_SPOTS; k++) if (s.cooler[k]) return k;
@@ -436,18 +436,21 @@
       asicBatches[k].instanceCount = asicCount[k];
       asicBatches[k].instanceVersion++;
     }
-    // A flame over every fire.
+    // A flame over every fire. The rig each fault shows is the scene's, kept off the sim's fault so a save
+    // stays plain data.
     let f = 0;
+    fireRigOf.clear();
     for (const fault of s.faults) {
       if (!fault.active || fault.kind !== "fire" || f >= FLAMES) continue;
       unitSpot(fault.unit, SPOT);
-      const node = flameNodes[f++];
-      node.visible = true;
-      node.position.x = SPOT.x;
-      node.position.y = SPOT.y + 0.1;
-      node.position.z = SPOT.z;
+      const rig = flameRigs[f++];
+      fireRigOf.set(fault, rig);
+      rig.root.visible = true;
+      rig.root.position.x = SPOT.x;
+      rig.root.position.y = SPOT.y + 0.1;
+      rig.root.position.z = SPOT.z;
     }
-    for (; f < FLAMES; f++) flameNodes[f].visible = false;
+    for (; f < FLAMES; f++) flameRigs[f].root.visible = false;
     props.price.geometry = MM.priceBoard(s.shortage ? 1 : 0);
     props.board.glow = s.rug ? 0.1 : s.poolBonus ? 1.6 : 1;
     const dim = dark() ? 0.15 : 1;
@@ -546,18 +549,15 @@
   };
   const hashScale = { top: 1 };
 
-  // The type on both boards, set in the jumbotron's 5x7 font on one offscreen canvas for the visit and
-  // merged into quads. Each figure is compared as a rounded number first, so an unchanged board builds
-  // nothing; a rebuilt panel releases the geometry it replaces.
+  // Both boards share a small transparent painter; each stable panel snapshots it to its own canvas.
+  // Figures compare rounded values first, so unchanged boards repaint and upload nothing.
   const { drawText, measureText } = BL.jumbotron.text;
-  const LABEL_PX = 0.011, LABEL_BG = [3, 4, 5], LABEL_BG_CSS = "rgb(3,4,5)";
+  const LABEL_PX = 0.011, LABEL_BG = [3, 4, 5];
   const labelState = { price: -1, change: 0, hi: -1, lo: -1, hash: -1, top: -1, diff: -1, real: -1 };
   const drawLabels = (panelNode, w, h, draw) => {
-    labelCtx.fillStyle = LABEL_BG_CSS;
-    labelCtx.fillRect(0, 0, w, h);
+    labelCtx.clearRect(0, 0, w, h);
     draw();
-    if (panelNode.geometry) renderer.releaseGeometry(panelNode.geometry);
-    panelNode.geometry = BL.poolModels.panelFrom(labelCtx, w, h, LABEL_PX, LABEL_PX, LABEL_BG);
+    panelNode.geometry = BL.poolModels.panelFrom(labelCtx, w, h, LABEL_PX, LABEL_PX, LABEL_BG, panelNode.geometry);
   };
   // Where a height on a chart falls in its panel's canvas rows.
   const rowOf = (C, y) => Math.round((C.labelY + C.labelH * LABEL_PX - y) / LABEL_PX) - 3;
@@ -624,7 +624,8 @@
     for (const fault of s.faults) {
       if (!fault.active) continue;
       spotOf(fault.kind, fault.unit, SPOT);
-      n = fault.kind === "fire" ? pushLight(n, SPOT.x, SPOT.y + 0.8, SPOT.z, 7, 1, 0.42, 0.12) : fault.kind === "melt" ? pushLight(n, SPOT.x, SPOT.y + 0.6, SPOT.z, 6, 1, 0.15, 0.1) : pushLight(n, SPOT.x, 2, SPOT.z, 5, 0.9, 0.25, 0.1);
+      const rig = fireRigOf.get(fault), fk = rig ? rig.light : 1;
+      n = fault.kind === "fire" ? pushLight(n, SPOT.x, SPOT.y + 0.8, SPOT.z, 7, 1 * fk, 0.42 * fk, 0.12 * fk) : fault.kind === "melt" ? pushLight(n, SPOT.x, SPOT.y + 0.6, SPOT.z, 6, 1, 0.15, 0.1) : pushLight(n, SPOT.x, 2, SPOT.z, 5, 0.9, 0.25, 0.1);
     }
     const out = dark();
     if (s.sun > 0.05) n = pushLight(n, L.PROP_AT.shaft.x, 3.4, L.PROP_AT.shaft.z, 7, 0.55 * s.sun, 0.52 * s.sun, 0.4 * s.sun);
@@ -1920,14 +1921,10 @@
     // A sounding smoke alarm blinks its light; a quiet one glows faintly.
     const blink = Math.floor(sceneTime * 4) % 2 ? 1.6 : 0.15;
     for (let c = 0; c <= s.dug; c++) gearNodes[2][c].glow = s.alarmOn[c] ? blink : 0.4;
-    // Flames flicker; the fire itself is the sim's.
+    // Each fire's flame flickers on its own clock; the fire itself is the sim's.
     for (let f = 0; f < FLAMES; f++) {
-      const node = flameNodes[f];
-      if (!node.visible) continue;
-      const k = 0.85 + Math.sin(performance.now() * 0.02 + f * 1.7) * 0.2;
-      node.scale.x = node.scale.z = 0.7 * k;
-      node.scale.y = k;
-      if (Math.random() < dt * 6) fx.burst(node.position.x, node.position.y + 0.4, node.position.z, 1, FIRE_BITS, 1);
+      const rig = flameRigs[f];
+      if (rig.root.visible) rig.update(dt, sceneTime);
     }
     // A block, a milestone or the halving rolls a wave of light down every rack.
     if (ripple > 0) {
@@ -2047,7 +2044,7 @@
     phase = s.over ? "results" : s.time > 0 ? "run" : "intro";
     clock = daylight.createClock({ hour: hourParam, daylen: daylenParam, day: dayParam, time: timeParam, now: new Date() });
 
-    hud = hudMod.create({ roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
+    hud = hudMod.create({ signal: ctx.signal, roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled: ctx.lootEnabled });
     hooks = {};
     input = interactMod.create({ canvas: ctx.canvas, renderer, camera, hooks });
     // Space and the WORK button both come through the pilot's action: whatever is beside the Ooga.
@@ -2097,7 +2094,7 @@
     labelCanvas = document.createElement("canvas");
     labelCanvas.width = 200;
     labelCanvas.height = 100;
-    labelCtx = labelCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    labelCtx = labelCanvas.getContext("2d");
     for (const key of Object.keys(labelState)) labelState[key] = -1;
     shownCandles = shownHist = -1;
     labelTimer = 0;
@@ -2151,8 +2148,14 @@
     }));
     markerNodes = [];
     for (let m = 0; m < MARKERS; m++) markerNodes.push(place(createNode({ geometry: MM.marker(), visible: false })));
-    flameNodes = [];
-    for (let f = 0; f < FLAMES; f++) flameNodes.push(place(createNode({ geometry: MM.flame(), visible: false })));
+    flameRigs = [];
+    fireRigOf = new Map();
+    for (let f = 0; f < FLAMES; f++) {
+      const rig = BL.blaze.createVoxelRig({ scale: 0.7, embers: { get fx() { return fx; }, bits: FIRE_BITS } });
+      place(rig.root);
+      rig.root.visible = false;
+      flameRigs.push(rig);
+    }
     asicBatches = [];
     for (let k = 0; k < ASIC_MODELS; k++) {
       asicBatches.push(place(createNode({ geometry: MM.asic(k), instanceData: new Float32Array(R.PADS * R.BAYS * 20), instanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true })));
@@ -2204,7 +2207,7 @@
     hud.onPreset(pilot.goPreset);
     hud.onAction(onAction);
     hud.setStats(game.state);
-    hud.el.sheet.dataset.open = "false";
+    hud.foldPanels();
 
     mhud.setSection(phase);
     if (phase === "results") mhud.results(s, false, game.state.mine.best, !s.won && s.reason !== "time" && s.reason !== "left");
@@ -2315,7 +2318,7 @@
     drag.count = 0;
     selection.type = "";
     hud = mhud = hooks = input = pilot = fx = audio = crew = clock = cave = props = asicBatches = motes = candles = hashMarks = chartLabels = labelCanvas = labelCtx = null;
-    cpuNodes = gpuNodes = padNodes = holderNodes = powerNodes = trophyNodes = gearNodes = markerNodes = flameNodes = lampNodes = busbars = null;
+    cpuNodes = gpuNodes = padNodes = holderNodes = powerNodes = trophyNodes = gearNodes = markerNodes = flameRigs = fireRigOf = lampNodes = busbars = null;
     breakers = levers = fanNodes = bladeNodes = batteryNode = null;
     sim = s = null;
     mineScene.input = mineScene.debug = mineScene.agentControls = null;
@@ -2326,7 +2329,7 @@
   // or housekeeping frees a buffer the next purchase is about to want back.
   const liveGeometry = (set) => {
     set.add(MM.pebbleBox()).add(MM.shinyRocks()).add(MM.rackFrame()).add(MM.coldPool()).add(MM.pad())
-      .add(MM.marker()).add(MM.flame()).add(MM.seal()).add(MM.fanBlade()).add(MM.fanBlur()).add(MM.candle(0)).add(MM.candle(1)).add(MM.candle(2)).add(MM.chartMark(0)).add(MM.chartMark(1)).add(MM.priceBoard(0)).add(MM.priceBoard(1)).add(MM.fanWall()).add(MM.boxFan());
+      .add(MM.marker()).add(MM.seal()).add(MM.fanBlade()).add(MM.fanBlur()).add(MM.candle(0)).add(MM.candle(1)).add(MM.candle(2)).add(MM.chartMark(0)).add(MM.chartMark(1)).add(MM.priceBoard(0)).add(MM.priceBoard(1)).add(MM.fanWall()).add(MM.boxFan());
     for (let c = 0; c < NC; c++) set.add(MM.chamberDecor(c));
     for (let k = 0; k < ASIC_MODELS; k++) set.add(MM.asic(k));
     for (const build of MM.POWER_BUILDERS) set.add(build());
@@ -2345,14 +2348,14 @@
     };
   };
 
-  const mineScene = {
+  const mineScene = BL.deferred.scene("mine", {
     id: "mine", enter, update, overlay, onDonation, onKey, onLootCleared: () => {}, renderOpts: RENDER_OPTS,
     leave, stats, liveGeometry,
     root: null, camera: null, input: null, debug: null, agent: null, agentControls: null,
     get inMotion() {
       return fx ? fx.inMotion : false;
     }
-  };
+  });
   BL.scenes = BL.scenes || {};
   BL.scenes.mine = mineScene;
 })();

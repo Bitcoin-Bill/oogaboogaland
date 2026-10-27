@@ -1,8 +1,8 @@
 // The Worker in front of Ooga Booga Land: the built page from static assets, GitHub sign-in under
-// /auth/*, the account API under /api/*, voice signalling under /api/voice/*, Tess's answers at
-// /api/tess, /room, the island's live socket, and /donations/*, passed on to bananapayserver over the
-// DONATIONS binding. Only those paths run this code (`run_worker_first` in wrangler.<env>.jsonc);
-// every other path is served straight from _site.
+// /auth/*, the account API under /api/*, the totems' merge summaries under /api/totems/*, voice
+// signalling under /api/voice/*, Tess's answers at /api/tess, /room, the island's live socket, and
+// /donations/*, passed on to bananapayserver over the DONATIONS binding. Only those paths run this code
+// (`run_worker_first` in wrangler.<env>.jsonc); every other path is served straight from _site.
 
 import { handleApi } from "./api.js";
 import { handleAuth } from "./auth.js";
@@ -11,6 +11,7 @@ import { handleDonations } from "./donations.js";
 import { allowed, fromSite, getSessionFromRequest, text } from "./http.js";
 import { handlePoker } from "./poker.js";
 import { handleTess, pruneTess } from "./tess.js";
+import { handleTotems } from "./totems.js";
 
 export { Room } from "./room.js";
 
@@ -41,6 +42,7 @@ const handleVoice = async (request, env, url) => {
   if (!(await allowed(env.VOICE_LIMITER, String(found.player.id)))) return text("Too many voice requests", 429);
   const op = url.pathname.slice("/api/voice/".length);
   const headers = new Headers({ "content-type": "application/json", "x-player-id": String(found.player.id) });
+  headers.set("x-room-token", request.headers.get("x-room-token") || "");
   return env.ROOM.getByName(ROOM_NAME).fetch(new Request(new URL(`/voice/${op}`, url), { method: "POST", headers, body: request.body }));
 };
 
@@ -49,6 +51,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/poker/")) return handlePoker(request, env);
     if (url.pathname.startsWith("/auth/")) return handleAuth(request, env, url);
+    if (url.pathname.startsWith("/api/totems/")) return handleTotems(request, url, env);
     if (url.pathname.startsWith("/api/voice/")) return handleVoice(request, env, url);
     if (url.pathname === "/api/tess") return handleTess(request, env);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
