@@ -22700,9 +22700,11 @@ scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adop
 }},phone("rescue",{play:`${RESCUE_SIGN_IN};for(let i=0;i<4;i++)BL.scenes.dsb.update(1/60,i/60);__ooga.dsb.rescue.open()`,required:['.rescue-menu button[data-breed="0"]','.rescue-menu button[data-breed="5"]',".rescue-menu input",".rescue-menu button[data-adopt]"]})]});
 // Free Hardware Wallets at VAC 2, played with real keys and clicks: one desktop session and one phone session.
 // n sixtieths of a second of play, in updates of a twentieth: a DSB update costs tens of milliseconds on a software renderer.
-const walletsStep=(b,n=36)=>b.evaluate(`for(let i=0;i<${Math.ceil(n/3)};i++)BL.scenes.dsb.update(1/20,i/20)`);
-// A dialog control the way a visitor reaches it: scrolled into view first, then clicked where it shows.
-const walletsClick=async(b,sel)=>{const r=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await b.click(r.x,r.y);};
+// It ends on one whole frame, so `project` and a click's pick use the camera just navigated to, not the last one drawn.
+const walletsStep=(b,n=36)=>b.evaluate(`for(let i=0;i<${Math.ceil(n/3)};i++)BL.scenes.dsb.update(1/20,i/20);__ooga.advance(1/60)`);
+// A dialog control the way a visitor reaches it: scrolled into view first, then clicked where it shows. Two frames
+// follow, as a visitor's next key would: a control the click hid (Take closes the dialog) keeps focus until one is drawn.
+const walletsClick=async(b,sel)=>{const r=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await b.click(r.x,r.y);await b.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');};
 const walletsTap=async(b,x,y,z)=>{const p=await b.evaluate(`__ooga.project(${x},${y},${z},{})`);await b.click(p.x,p.y);};
 // Open ground near the Ooga where a click lands on the world itself: in view, not under a button or the overlay's
 // controls, and on no pick target. What a visitor clicks to set a device down.
