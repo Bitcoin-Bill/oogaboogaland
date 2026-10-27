@@ -14,13 +14,15 @@
 // is told how many pages follow it (`host { id, followers }`) so a lone host sends no frames, and who is
 // in voice or muted goes out (`vstate`) only when it changes, as health does (`hp`). The last voice list
 // each player was sent lives in its attachment (`sent`), so a woken room still knows what every page holds.
+// Voice the room closed and the SFU has not confirmed retries from the alarm, after the last player left too,
+// until it succeeds or CLEANUP_MS passes; without an SFU, nothing wakes for it.
 // Chat: each line is named from the session, rate limited per account across awake-room reconnects, sent to every socket and kept in a
 // ring of the last CHAT_KEEP in memory alone, which a joiner gets after `welcome`. No durable chat storage: a room
 // that hibernates, restarts or is redeployed wakes with an empty ring, and the lines are gone.
 
 import { DurableObject } from "cloudflare:workers";
 import {
-  CLOSE_KICK, CLOSE_PROTOCOL, MAX_PLAYERS, MOVE_HZ, STALE_MS, SWEEP_MS, TICK_HZ,
+  CLOSE_KICK, CLOSE_PROTOCOL, MAX_PLAYERS, MOVE_HZ, STALE_MS, SWEEP_MS, CLEANUP_MS, TICK_HZ,
   NPC_FRAME_MAX, NPC_HZ, OUTSIDE, HP_HZ, VOICE_TRACK, CHAT_HZ, CHAT_BURST, CHAT_BUCKET_KEEP, CHAT_RETRY_KEEP,
   DOOR_ZONE, DOOR_ROOM, DOOR_GRANT_MS, DOOR_TRANSIT_MS, DOOR_PASS_MS, DOOR_HZ, DOOR_BURST, GHOST_HZ, GHOST_BURST,
   chatLog, castIndex, bodyName, ownedBody, electHost, npcFollowers, claimRefusal, parseClientMessage, playerFromHeaders, spawnPoint, takeToken, voicePeers,
@@ -333,7 +335,7 @@ export class Room extends DurableObject {
     p.seenAt = Date.now();
     if (!msg) return;
     if (msg.t === "studio") {
-      this.background(this.checkAccount(p).then(active => { if (active && this.players.get(p.id) === p) this.studioCommand(p, msg); }));
+      this.studioMessage(p, msg);
     } else if (msg.t === "pose") {
       if (!takeToken(p.bucket, MOVE_HZ, p.seenAt)) return;
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw;
@@ -767,7 +769,14 @@ export class Room extends DurableObject {
     this.studio.invited = (this.studio.invited || []).filter(value => value !== id);
   }
 
-  studioCommand(p, msg) {
+  // The command's token is taken before its account read, so commands past the limit cost no D1 read.
+  studioMessage(p, msg) {
+    if (!p.studioBucket) p.studioBucket = { tokens: 8, at: Date.now() };
+    if (!takeToken(p.studioBucket, 8, Date.now())) return this.studioCommand(p, msg, "Please wait before another Studio command");
+    this.background(this.checkAccount(p).then(active => { if (active && this.players.get(p.id) === p) this.studioCommand(p, msg); }));
+  }
+
+  studioCommand(p, msg, refused = "") {
     if (!this.studio) this.studio = studioState();
     const s = this.studio;
     const reply = error => {
@@ -775,8 +784,7 @@ export class Room extends DurableObject {
       this.send(p.ws, { t: "studio-result", action: msg.action, commandId: msg.commandId, ok: !error, error, revision: s.revision });
       this.sendStudio(p);
     };
-    if (!p.studioBucket) p.studioBucket = { tokens: 8, at: Date.now() };
-    if (!takeToken(p.studioBucket, 8, Date.now())) return reply("Please wait before another Studio command");
+    if (refused) return reply(refused);
     if (p.zone !== STUDIO_ZONE) return reply("Enter the Studio first");
     // Only transport acts on what the program was doing, so only it checks a view, and against the playback's own
     // revision: seats, stands and hands never refuse it, and seat and hand commands keep their own checks.
@@ -879,8 +887,8 @@ export class Room extends DurableObject {
     if (!this.sfu || !session || (!mids.length && !inspect)) return;
     if (!this.cleanupJobs) this.cleanupJobs = [];
     const existing = this.cleanupJobs.find(job => job.session === session);
-    if (existing) { existing.revision = (existing.revision || 0) + 1; existing.mids = [...new Set(existing.mids.concat(mids))]; existing.midVersions = existing.midVersions || {}; for (const mid of mids) existing.midVersions[mid] = existing.revision; existing.inspect = existing.inspect || inspect; if (inspect) existing.inspectUntil = Date.now() + 20000; }
-    else this.cleanupJobs.push({ session, revision: 0, mids: [...new Set(mids)], midVersions: Object.fromEntries(mids.map(mid => [mid, 0])), inspect, inspectUntil: inspect ? Date.now() + 20000 : 0 });
+    if (existing) { existing.at = Date.now(); existing.revision = (existing.revision || 0) + 1; existing.mids = [...new Set(existing.mids.concat(mids))]; existing.midVersions = existing.midVersions || {}; for (const mid of mids) existing.midVersions[mid] = existing.revision; existing.inspect = existing.inspect || inspect; if (inspect) existing.inspectUntil = Date.now() + 20000; }
+    else this.cleanupJobs.push({ session, at: Date.now(), revision: 0, mids: [...new Set(mids)], midVersions: Object.fromEntries(mids.map(mid => [mid, 0])), inspect, inspectUntil: inspect ? Date.now() + 20000 : 0 });
     if (this.ctx && this.ctx.storage) await this.ctx.storage.put("voiceCleanup", this.cleanupJobs);
     for (const p of this.players.values()) if (p.zone === STUDIO_ZONE) this.sendStudio(p);
     await this.retryCleanup();
@@ -891,6 +899,8 @@ export class Room extends DurableObject {
     if (this.cleanupRunning) return this.cleanupRunning;
     this.cleanupRunning = (async () => {
       for (const job of [...this.cleanupJobs]) {
+        // A job the SFU has refused for CLEANUP_MS is given up, so a room nobody is in stops waking for it.
+        if (Date.now() - (job.at ??= Date.now()) > CLEANUP_MS) { this.cleanupJobs.splice(this.cleanupJobs.indexOf(job), 1); continue; }
         try {
           const revision = job.revision || 0;
           if (job.inspect) {
@@ -953,10 +963,11 @@ export class Room extends DurableObject {
   }
 
   // The earliest wake the room needs: the next sweep and door expiry while anyone is here, and the next
-  // retry of pending media cleanup, which still runs after the last player left. null: nothing to wake for.
+  // retry of pending media cleanup, which still runs after the last player left, but only with an SFU to run
+  // it and for at most CLEANUP_MS. null: nothing to wake for.
   nextAlarm(now = Date.now()) {
     const here = this.players.size > 0;
-    const cleanup = this.cleanupJobs && this.cleanupJobs.length ? (this.cleanupAt || now + SWEEP_MS) : Infinity;
+    const cleanup = this.sfu && this.cleanupJobs && this.cleanupJobs.length ? (this.cleanupAt || now + SWEEP_MS) : Infinity;
     const next = Math.min(here ? this.sweepAt || now + SWEEP_MS : Infinity, here ? this.nextDoorExpiry() : Infinity, cleanup);
     return Number.isFinite(next) ? next : null;
   }

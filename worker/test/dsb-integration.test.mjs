@@ -429,7 +429,7 @@ test("Studio wake migrates old snapshots, clamps catalogue edits and rechecks co
       { id: 2, login: "synthetic-attendee", contributor: true, zone: studio.STUDIO_ZONE, body: "synthetic-attendee", studioSeat: 0 }
     ];
     const sockets = attachments.map(a => ({ deserializeAttachment: () => a, serializeAttachment() {}, send() {} }));
-    const ctx = { setWebSocketAutoResponse() {}, getWebSockets: () => sockets, blockConcurrencyWhile: fn => pending.push(fn()), waitUntil: p => pending.push(p), storage: { get: async key => key === "studio" ? structuredClone(saved) : null, put: async () => {} } };
+    const ctx = { setWebSocketAutoResponse() {}, getWebSockets: () => sockets, blockConcurrencyWhile: fn => pending.push(fn()), waitUntil: p => pending.push(p), storage: { get: async key => Array.isArray(key) ? new Map() : key === "studio" ? structuredClone(saved) : null, put: async () => {} } };
     const room = new Room(ctx, { STUDIO_HOST_IDS: ids }); await Promise.all(pending); return room;
   };
   const legacy = { ...studio.studioState(1000), hostId: 1, mode: "presentation", source: "sample-quiet", position: 99, playing: false };
@@ -575,7 +575,7 @@ test("the alarm wakes at the earliest of sweep, door expiry and cleanup retry, a
 
 // Regression (#193 review): stored cleanup made SFU calls inside the constructor's blockConcurrencyWhile, where two
 // stuck 10 s jobs pass the 30 s limit and reset the island's only room. The block loads the jobs; an alarm due now retries.
-test("a woken room defers stored cleanup outside its constructor's block and waits for future alarms without an SFU", async () => {
+test("a woken room defers stored cleanup outside its constructor's block, and without an SFU sets no alarm for it", async () => {
   let inBlock = false, callsInBlock = 0, closed = 0, configured = false;
   const sfu = {
     getSession: async () => { if (inBlock) callsInBlock++; return { tracks: [] }; },
@@ -587,7 +587,7 @@ test("a woken room defers stored cleanup outside its constructor's block and wai
   const ctx = {
     setWebSocketAutoResponse() {}, getWebSockets: () => [], getWebSocketAutoResponseTimestamp: () => null, waitUntil() {},
     blockConcurrencyWhile: fn => { inBlock = true; block = fn().finally(() => { inBlock = false; }); return block; },
-    storage: { get: async key => Array.isArray(key) ? null : structuredClone(saved.get(key)), put: async (k, v) => saved.set(k, structuredClone(v)), getAlarm: async () => alarms.at(-1) ?? null, setAlarm: async at => alarms.push(at) },
+    storage: { get: async key => Array.isArray(key) ? new Map(key.filter(k => saved.has(k)).map(k => [k, structuredClone(saved.get(k))])) : structuredClone(saved.get(key)), put: async (k, v) => saved.set(k, structuredClone(v)), getAlarm: async () => alarms.at(-1) ?? null, setAlarm: async at => alarms.push(at) },
   };
   const disabled = new Room(ctx, {});
   await block;
@@ -595,10 +595,10 @@ test("a woken room defers stored cleanup outside its constructor's block and wai
   assert.equal(disabled.cleanupAt, 0, "missing SFU configuration leaves no immediate cleanup deadline");
   assert.equal(alarms.length, 0, "missing SFU configuration sets no immediate wake alarm");
   const now = Date.now();
-  assert.equal(disabled.nextAlarm(now), now + protocol.SWEEP_MS);
+  assert.equal(disabled.nextAlarm(now), null, "an empty room without an SFU has nothing to wake for");
   for (let i = 0; i < 2; i++) {
     await disabled.alarm();
-    assert.ok(alarms.at(-1) > Date.now(), "each wake schedules a future alarm instead of spinning");
+    assert.equal(alarms.length, 0, "a wake sets no alarm for cleanup it cannot run, so it never spins");
     assert.equal(disabled.cleanupJobs.length, 1, "cleanup ownership is retained without an SFU");
     assert.deepEqual(disabled.cleanupJobs, saved.get("voiceCleanup"));
   }
@@ -611,6 +611,22 @@ test("a woken room defers stored cleanup outside its constructor's block and wai
   assert.ok(alarms.length && alarms.at(-1) <= Date.now() && alarms.at(-1) >= before, "an alarm is set for now");
   await room.alarm();
   assert.equal(closed, 1); assert.equal(room.cleanupJobs.length, 0); assert.deepEqual(saved.get("voiceCleanup"), []);
+});
+
+// Regression (#193 review): a job the SFU kept refusing was retried for good, waking a room nobody was in every minute.
+test("cleanup the SFU keeps refusing is given up after CLEANUP_MS, and an empty room stops waking for it", async () => {
+  const { room } = studioRoom(), alarms = [];
+  room.ctx.storage.setAlarm = async at => alarms.push(at);
+  room.ctx.getWebSocketAutoResponseTimestamp = () => null;
+  let attempts = 0; room.sfu.closeTracks = async () => { attempts++; throw new Error("upstream"); };
+  room.cleanupJobs = [{ session: "s", at: Date.now(), revision: 0, mids: ["0"], midVersions: { 0: 0 }, inspect: false, inspectUntil: 0 }];
+  await room.alarm();
+  assert.equal(attempts, 1); assert.equal(room.cleanupJobs.length, 1, "a refused job is kept for its retry");
+  assert.notEqual(room.nextAlarm(), null, "an empty room still wakes to retry it");
+  room.cleanupJobs[0].at = Date.now() - protocol.CLEANUP_MS - 1;
+  await room.alarm();
+  assert.equal(attempts, 1, "a job past CLEANUP_MS is dropped without another SFU call");
+  assert.equal(room.cleanupJobs.length, 0); assert.equal(room.nextAlarm(), null, "nothing is left to wake an empty room for");
 });
 
 // Regression (#193 review): command ids restart at studio-1 with each DSB visit's controller, and the room replayed the
@@ -648,4 +664,18 @@ test("Studio state goes to players in the Studio only; entering sends it", () =>
   room.studioCommand(host, { action: "mode", mode: "presentation" });
   assert.equal(outside.ws.sent.filter(m => m.t === "studio-state").length, 0);
   assert.ok(host.ws.sent.some(m => m.t === "studio-state"));
+});
+
+// Regression (#193 review): every Studio message read D1 before its rate limit, so a flood cost a D1 read a message.
+test("a Studio command past the rate limit is refused before its account read", async () => {
+  const { room, add, pending } = studioRoom(), attendee = add(2);
+  let reads = 0;
+  room.env.DB = { prepare: () => { reads++; return { bind: () => ({ first: async () => ({ id: 2, banned_at: null }) }) }; } };
+  attendee.ws.deserializeAttachment = () => ({ id: 2 });
+  for (let i = 0; i < 9; i++) room.webSocketMessage(attendee.ws, JSON.stringify({ t: "studio", action: "stand", commandId: `burst-${i}` }));
+  await Promise.all(pending);
+  assert.equal(reads, 8, "only commands within the limit read the account");
+  const results = attendee.ws.sent.filter(m => m.t === "studio-result");
+  assert.equal(results.length, 9, "every command still gets its result");
+  assert.deepEqual(results.filter(r => !r.ok).map(r => r.commandId), ["burst-8"]);
 });

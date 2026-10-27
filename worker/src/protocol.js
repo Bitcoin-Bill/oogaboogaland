@@ -54,6 +54,8 @@ export const MESSAGE_MAX = 256;
 // room, so it runs once a minute; three missed 10 s pings make a socket stale.
 export const STALE_MS = 90000;
 export const SWEEP_MS = 60000;
+// Voice cleanup the SFU keeps refusing is given up after an hour, so a room nobody is in stops waking for it.
+export const CLEANUP_MS = 3600000;
 // Generous bounds around the hub: jetpack flight reaches about 140 out and 72 up, falls end at -120.
 export const BOUND_XZ = 160;
 export const BOUND_Y_MIN = -130;
