@@ -9152,6 +9152,11 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
   })()`);
   record("ghost hunt: X and portrait keep combat mode, retaking an Ooga restores combat, and menus can still free the cursor", Object.values(locked).every(Boolean), JSON.stringify(locked));
   const hunt = await b.evaluate(`(() => {
+    // Only the explicit hunt stepper advances time; CPU load must not age
+    // combat or revive timers while the animation fixtures are evaluated.
+    const net = BL.net, serverNow = net.serverNow, held = serverNow();
+    net.serverNow = () => held;
+    try {
     const B = __ooga, H = BL.scenes.hub.debug, G = H.halloween, C = BL.ghostSim.CONFIG, a = B.crew.player;
     const cards = BL.ghostSim.introPages(1, false);
     G.simulate((G.lapMs + C.NIGHT_MS + C.COUNTDOWN_MS + cards * BL.ghostSim.introMs(cards)) / 1000 + 0.5);
@@ -9240,13 +9245,15 @@ const hubGhostEntry = (melee) => ({ name: `ghost entry ${melee ? "melee" : "shoo
     const me = G.sim.playerById(1), bot = G.sim.playerById(BL.ghostSim.REVIVE_BOT), down = !!bot && bot.seg === 0 && me.elixir === 1;
     G.simulate(C.ELIXIR.reviveMs / 1000 + 0.2);
     const revived = down && bot.seg > 0 && me.elixir === 0 && G.sim.state.reviveOf === bot.id;
+    const reviveState = { down, state: G.state, player: { seg: me.seg, elixir: me.elixir, here: me.here, frozenUntil: me.frozenUntil, target: me.reviveTarget, since: me.reviveSince }, bot: bot && { seg: bot.seg, on: bot.on, here: bot.here }, now: G.sim.state.now };
     G.end(); G.simulate(C.DAWN_MS / 1000 + 0.1); B.advance(1 / 60, 1 / 60);
     const ringReleased = crossRing();
     B.pilot.modeAction("mode-toggle");
-    return { active, ghosts, unlimited, shooting, sealed, minimap, skeleton, revived, running, ringHeld, ringReleased,
+    return { active, ghosts, unlimited, shooting, sealed, minimap, skeleton, revived, reviveState, running, ringHeld, ringReleased,
       panels: { hidden: H.hud.el.sheet.hidden, open: H.hud.el.sheet.dataset.open, boards: document.querySelectorAll('.board-floating[open]:not([hidden])').length },
       cleared: map.hidden && document.getElementById("ghost-hud").hidden && G.walls.every(w => !w.sealed),
       restored: !H.gameMode && !B.crew.combatEnabled && !a.weapon.unlimited && !B.crew.damage(a, 100) && B.crew.weaponsEnabled && !a.weapon.aiming };
+    } finally { net.serverNow = serverNow; }
   })()`);
   record("ghost hunt: Ready progresses to an active round with ghosts and unlimited shooting; dawn restores harmless HUB weapons and carry switching", hunt.active === "ACTIVE" && hunt.ghosts > 0 && hunt.unlimited && hunt.shooting && hunt.restored, JSON.stringify(hunt));
   record("ghost hunt: gorillas keep running between host ticks and follower snapshots at 30/60/120 fps, slow with ice, and stop for attacks, stuns and pauses", hunt.running.length === 13 && hunt.running.every(r => r.states ? r.states.every(Boolean) : r.frames > 0 && r.idle === 0 && r.error < 1e-6 && r.arms > 0.3 && r.legs > 0.3), JSON.stringify(hunt.running));
