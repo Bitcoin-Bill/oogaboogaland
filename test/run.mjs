@@ -19844,30 +19844,33 @@ const rescueFlightChecks = BL => {
 };
 // The adoption dialog through a minimal DOM: six portraits, the visitor's own Ooga named, no one else's to choose, Enter adopts the sanitized name, Escape and dispose leave nothing.
 const rescueMenuChecks = BL => {
-  const keys=["document","innerWidth","innerHeight"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]])),elements=[];
+  const keys=["document","innerWidth","innerHeight"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]])),elements=[],hud=BL.hud;
   const element=tag=>{const e={tag,children:[],dataset:{},attributes:{},style:{setProperty(){}},classList:{add(){},remove(){},contains:()=>false},open:false,parentElement:null,textContent:"",value:"",listeners:new Map(),
     setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];},appendChild(c){c.parentElement=this;this.children.push(c);return c;},append(...v){v.forEach(x=>this.appendChild(x));},replaceChildren(...v){this.children=[];this.append(...v);},
     closest(q){return q==="button"?(this.tag==="button"?this:this.parentElement?.closest(q)):null;},querySelector:()=>null,querySelectorAll:()=>[],focus(){},getClientRects:()=>[{}],showModal(){this.open=true;},close(){this.open=false;},
     remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);this.parentElement=null;},addEventListener(k,f){this.listeners.set(k,f);},removeEventListener(k){this.listeners.delete(k);},
     getContext:()=>({fillRect(){}}),get isConnected(){return !!this.parentElement;}};elements.push(e);return e;};
   const body=element("body");globalThis.document={body,createElement:element,activeElement:body,addEventListener(){},removeEventListener(){}};globalThis.innerWidth=1440;globalThis.innerHeight=900;
+  BL.hud={...hud,signLettering:text=>{const svg=element("svg");svg.textContent=text;return svg;}};
   try{
     let opened=0,choice=null;const M=BL.rescueMenu.create({onOpen:on=>{opened+=on?1:0;},onAdopt:c=>(choice=c,true)});
     M.open({breed:2,ooga:"Yellow",suggest:"Biscuit",stray:5});const dialog=body.children.find(n=>n.tag==="dialog"),find=(n,f)=>f(n)?n:n.children.map(c=>find(c,f)).find(Boolean);
     const pups=find(dialog,n=>n.dataset.breed==="0").parentElement,select=find(dialog,n=>n.tag==="select"),input=find(dialog,n=>n.tag==="input");
-    const shown=M.isOpen&&opened===1&&pups.children.length===6&&pups.children.every(b=>b.children[0].tag==="canvas")&&!select&&dialog.className.includes("svrn-menu")&&M.stats.ooga==="For your Ooga, Yellow."&&M.stats.breed===2&&input.placeholder==="Biscuit";
+    const shown=M.isOpen&&opened===1&&pups.children.length===6&&pups.children.every(b=>b.children[0].tag==="canvas"&&b.children[0].attributes["aria-hidden"]==="true"&&b.attributes["aria-pressed"]===String(b.dataset.breed==="2"))&&!select
+      &&dialog.className==="sheet-body rescue-menu"&&find(dialog,n=>n.className==="panel")&&find(dialog,n=>n.className==="slab rescue-adoption")&&find(dialog,n=>n.tag==="svg")?.textContent==="Adopt a puppy"
+      &&input.parentElement.className==="field"&&M.stats.ooga==="For your Ooga, Yellow."&&M.stats.breed===2&&input.placeholder==="Biscuit";
     dialog.listeners.get("click")({target:pups.children[4]});input.value="  Rex<script>  ";dialog.listeners.get("keydown")({type:"keydown",key:"Enter",target:input,preventDefault(){},stopPropagation(){}});
     const chose=choice&&choice.breed===4&&!("owner" in choice)&&choice.stray===5&&/^[^<>]{1,16}$/.test(choice.name)&&choice.name.includes("Rex")&&!M.isOpen;
     M.open({breed:1,ooga:"Yellow",suggest:"Max"});input.value="";dialog.listeners.get("click")({target:find(dialog,n=>n.dataset.adopt!==undefined)});const fallback=choice.name==="Max"&&choice.stray===-1;
     M.open({breed:1,ooga:"Yellow",suggest:"Max"});dialog.listeners.get("keydown")({type:"keydown",key:"Escape",target:dialog,preventDefault(){},stopPropagation(){}});const escaped=!M.isOpen;
     // Signed out it opens on the personal line alone, and the next adoption brings the puppies, name and Adopt back.
-    const go=find(dialog,n=>n.dataset.adopt!==undefined),note=find(dialog,n=>n.className==="svrn-note");M.setLine("Sign in to adopt a puppy.");M.open({signIn:true,stray:4});
+    const go=find(dialog,n=>n.dataset.adopt!==undefined),note=find(dialog,n=>n.className==="help rescue-note");M.setLine("Sign in to adopt a puppy.");M.open({signIn:true,stray:4});
     const refused=M.isOpen&&M.stats.signIn&&M.stats.stray===-1&&[pups,input.parentElement,go].every(n=>n.style.display==="none")&&note.textContent==="Sign in to adopt a puppy."&&note.style.display!=="none";
     dialog.listeners.get("click")({target:find(dialog,n=>n.dataset.close!==undefined)});const backed=!M.isOpen;
     M.open({breed:0,ooga:"Yellow",suggest:"Max"});const restored=M.isOpen&&!M.stats.signIn&&[pups,input.parentElement,go].every(n=>n.style.display==="");M.close();
     M.dispose();
-    record("Rescue dialog: six painted breeds in SVRN's menu classes, for the visitor's own Ooga with no other to choose, Enter adopts the sanitized name or the suggestion, Escape closes, signed out it shows only the sign-in line and Back, and disposal leaves no panel or handler",shown&&chose&&fallback&&escaped&&refused&&backed&&restored&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({shown,chose,fallback,escaped,refused,backed,restored,choice}));
-  }finally{for(const [k,v] of Object.entries(saved))globalThis[k]=v;}
+    record("Rescue dialog: six selectable portraits in the island sheet's frame and slab, shared heading and controls, Enter adopts the sanitized name or suggestion, Escape closes, sign-in hides adoption controls, and disposal leaves no panel or handler",shown&&go.className==="chat-send"&&note.attributes.role==="status"&&chose&&fallback&&escaped&&refused&&backed&&restored&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({shown,chose,fallback,escaped,refused,backed,restored,choice}));
+  }finally{BL.hud=hud;for(const [k,v] of Object.entries(saved))globalThis[k]=v;}
 };
 const menuShellChecks = BL => {
   const keys=["document","innerWidth","innerHeight","visualViewport","addEventListener","removeEventListener"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]]));

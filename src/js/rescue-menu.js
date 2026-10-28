@@ -1,5 +1,5 @@
 // Free Puppies Rescue's adoption for the signed-in visitor's own Ooga: six breeds as painted portraits, a name, and a
-// personal line. It is built from SVRN Society's menu classes in the shared DSB shell, so it brings no style of its own.
+// personal line. The island panels' wooden frame, stone slab and controls sit in the shared DSB dialog shell.
 (() => {
   "use strict";
   const BL=window.BL,D=BL.rescueDogs,NAME_MAX=16,PX=4;
@@ -9,7 +9,7 @@
     const pick=i=>{breed=i;for(const b of pups.children)b.setAttribute("aria-pressed",String(Number(b.dataset.breed)===i));};
     // Each portrait is painted once from its pixel face in the breed's own inks, at its own size.
     const portrait=i=>{
-      const c=el("canvas"),face=D.FACES[i],ink=D.BREEDS[i].ink;c.width=c.height=face.length*PX;const g=c.getContext("2d");
+      const c=el("canvas"),face=D.FACES[i],ink=D.BREEDS[i].ink;c.width=c.height=face.length*PX;c.setAttribute("aria-hidden","true");const g=c.getContext("2d");
       face.forEach((row,y)=>{for(let x=0;x<row.length;x++)if(row[x] in D.FACE_INK){g.fillStyle=ink[D.FACE_INK[row[x]]];g.fillRect(x*PX,y*PX,PX,PX);}});
       return c;
     };
@@ -19,17 +19,18 @@
     const keys=e=>{e.stopPropagation();if(e.type!=="keydown")return;if(e.key==="Escape"){e.preventDefault();close();}else if(e.key==="Enter"&&e.target===name){e.preventDefault();adopt();}};
     const cancel=e=>{e.preventDefault();close();};
     const ensure=()=>{
-      if(root)return;root=el("dialog",null,"svrn-menu rescue-menu");root.setAttribute("aria-label","Free Puppies Rescue");
-      const header=el("header"),title=el("div"),back=el("button","Back");back.type="button";back.dataset.close="";
-      title.append(el("small","VAC 1 · CHORA"),el("h2","Free Puppies Rescue"));header.append(title,back);
-      pups=el("nav");pups.setAttribute("aria-label","Pick a puppy");
-      D.BREEDS.forEach((b,i)=>{const button=el("button");button.type="button";button.dataset.breed=String(i);button.append(portrait(i),el("br"),el("span",b.name));pups.append(button);});
-      const body=el("div",null,"svrn-content"),label=el("label");
-      name=el("input");name.type="text";name.maxLength=NAME_MAX;name.autocomplete="off";name.spellcheck=false;
-      label.append(el("span","Puppy name "),name);who=el("p");
-      const go=el("button","Adopt");go.type="button";go.dataset.adopt="";line=el("small",lineText,"svrn-note");
-      form=[pups,label,who,go];body.append(el("p","Every Ooga needs a dog! Dogs eat bananas from the pile, and they poop."),label,who,go,line);
-      root.append(header,pups,body);document.body.append(root);
+      if(root)return;root=el("dialog",null,"sheet-body rescue-menu");root.setAttribute("aria-label","Free Puppies Rescue");
+      const panel=el("section",null,"panel"),header=el("header",null,"panel-title"),title=el("h2"),back=el("button","Back","foot-button");back.type="button";back.dataset.close="";
+      title.setAttribute("aria-label","Adopt a puppy");title.append(BL.hud.signLettering("Adopt a puppy"));header.append(title,back);
+      const intro=el("p","Free Puppies Rescue · Chora","help"),body=el("div",null,"slab rescue-adoption");
+      pups=el("div",null,"rescue-breeds");pups.setAttribute("role","group");pups.setAttribute("aria-label","Pick a puppy");
+      D.BREEDS.forEach((b,i)=>{const button=el("button",null,"foot-button rescue-breed");button.type="button";button.dataset.breed=String(i);button.append(portrait(i),el("span",b.name));pups.append(button);});
+      const label=el("label",null,"field");
+      name=el("input");name.type="text";name.maxLength=NAME_MAX;name.autocomplete="off";name.spellcheck=false;name.enterKeyHint="done";
+      label.append(el("span","Puppy name"),name);who=el("p",null,"help");
+      const go=el("button","Adopt puppy","chat-send");go.type="button";go.dataset.adopt="";line=el("p",lineText,"help rescue-note");line.setAttribute("role","status");
+      form=[pups,label,who,go];body.append(el("p","Every Ooga needs a dog! Keep yours fed with bananas from the pile.","help"),pups,label,who);
+      panel.append(header,intro,body,go,line);root.append(panel);document.body.append(root);
       root.addEventListener("click",click);root.addEventListener("keydown",keys);root.addEventListener("keyup",keys);root.addEventListener("cancel",cancel);
     };
     return {close,
@@ -41,11 +42,6 @@
         for(const n of form)n.style.display=signIn?"none":"";
         if(!signIn){who.textContent=`For your Ooga, ${ooga}.`;name.value="";name.placeholder=suggest;pick(chosen);}
         if(!root.open){root.showModal();BL.dsbMenuShell.present(root,true);onOpen(true);}
-        if(!signIn){
-          pups.style.setProperty("--rescue-breed-width","max-content");
-          let width=0;for(const b of pups.children)width=Math.max(width,b.offsetWidth||0);
-          if(width)pups.style.setProperty("--rescue-breed-width",`${width}px`);
-        }
         return true;
       },
       // The personal line is kept until the dialog is first built, so a visit that never adopts builds no dialog.
