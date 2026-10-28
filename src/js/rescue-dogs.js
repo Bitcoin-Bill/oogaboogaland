@@ -427,8 +427,9 @@
     // and one a poop, each shown only while in use and in view.
     const dogPicks = [], pickOwners = [], poopPicks = [];
     for (let k = 0; k < DRAWN_CAP; k++) {
-      const node = createNode({ geometry: pickGeometry, visible: false }), owner = { kind: "dog", dog: -1, weaponType: "none" };
-      addTarget(node, owner, { radius: 0.36 });
+      // Match Ooga priority so the nearer body wins when their click areas overlap.
+      const node = createNode({ geometry: bodies[0].geometry, visible: false }), owner = { kind: "dog", dog: -1, weaponType: "none", priority: 1 };
+      addTarget(node, owner);
       dogPicks.push(node);
       pickOwners.push(owner);
     }
@@ -1044,7 +1045,11 @@
       }
       const pick = dogPicks[drawnCount];
       pickOwners[drawnCount++].dog = i;
-      pick.position.x = x0; pick.position.y = y + 0.3 * s; pick.position.z = z0;
+      // Reuse the drawn body's mesh and pose: a small fixed sphere misses the head and longer breeds.
+      pick.geometry = bodies[b].geometry;
+      pick.position.x = x0; pick.position.y = y; pick.position.z = z0;
+      pick.rotation.x = pitch; pick.rotation.y = yaw[i];
+      pick.scale.x = pick.scale.y = pick.scale.z = s;
       pick.visible = true;
       updateWorld(pick);
     };

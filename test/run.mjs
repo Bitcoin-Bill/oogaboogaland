@@ -19678,6 +19678,29 @@ const rescueChecks = BL => {
     const fixed=batches.length===D.BREEDS.length*6+2&&batches.every(b=>b.fixedInstanceCapacity&&b.instanceCount*20<=b.instanceData.length)&&batches.slice(0,6).every(b=>b.instanceData.length===D.SHADOW_CAP*20&&b.geometry.castShadow!==false)&&batches.slice(6,12).every(b=>b.instanceData.length===D.DRAWN_CAP*20&&b.geometry.castShadow===false)&&!!jet&&!jet.visible;
     const sets=T.shadows(),cast=sets.reduce((n,s)=>n+s[0],0),flat=sets.reduce((n,s)=>n+s[1],0),far=drawnStrays.filter(e=>(e.x-cam.x)**2+(e.y-cam.y)**2+(e.z-cam.z)**2>=D.SHADOW_NEAR**2).length;
     record("Rescue stray capacity: 300 strays in fixed slots and batches, at most 128 drawn and only within reach, a pick on each dog drawn, shadows only from those near the camera, the far ones still roaming near home",wide.strays===D.STRAY_CAP&&wide.dogs<=D.DOG_CAP&&drawnStrays.length>0&&drawnStrays.length<=D.DRAWN.high&&inReach&&dogPicks.length===wide.dogsDrawn&&dogPicks.every(([n,o])=>T.strays().some(e=>e.slot===o.dog&&e.shown))&&moved>20&&atHome&&fixed&&cast+flat===wide.dogsDrawn&&far>0&&flat>=far&&cast<=wide.dogsDrawn-far,JSON.stringify({wide,drawn:drawnStrays.length,moved,atHome,fixed,picks:dogPicks.length,cast,flat,far}));
+    // Use the real pointer picker against the drawn stray targets. A nearby Ooga's overlapping sphere must not
+    // outrank a nearer dog, while an Ooga in front must still win. Head clicks use the body's actual posed bounds.
+    const pickWindow={BL:{...BL},clearTimeout:noop};
+    runInNewContext(readFileSync(join(root,"src/js/interact.js"),"utf8"),{window:pickWindow});
+    const pointerRay={ox:0,oy:0,oz:0,dx:0,dy:0,dz:-1},point=new Float32Array(3),center=new Float32Array(3);
+    let pickable=dogPicks.length>0;
+    for(const [node,owner] of dogPicks){
+      const picker=pickWindow.BL.interact.create({canvas:{style:{},addEventListener:noop,removeEventListener:noop},renderer:{ray:(x,y,c,out)=>Object.assign(out,pointerRay)},camera});
+      picker.add(node,owner);
+      const bounds=S.boundsOf(node.geometry);BL.math.mat4.transformPoint(center,node.world,...bounds.center);
+      const ooga=S.createNode({geometry:BL.rescueRoom.PICK,position:{x:center[0],y:center[1],z:center[2]-1}}),oogaOwner={kind:"caveman",priority:1};
+      S.updateWorld(ooga);picker.add(ooga,oogaOwner,{radius:.8});
+      Object.assign(pointerRay,{ox:center[0],oy:center[1],oz:center[2]+4,dx:0,dy:0,dz:-1});
+      pickable&&=picker.pick(0,0)?.owner===owner;
+      ooga.position.z=center[2]+2;S.updateWorld(ooga);pickable&&=picker.pick(0,0)?.owner===oogaOwner;
+      picker.remove(ooga);
+      const verts=node.geometry.verts;let nose=0;for(let k=3;k<verts.length;k+=3)if(verts[k+2]>verts[nose+2])nose=k;
+      BL.math.mat4.transformPoint(point,node.world,verts[nose]*.98+bounds.center[0]*.02,verts[nose+1]*.98+bounds.center[1]*.02,verts[nose+2]*.98+bounds.center[2]*.02);
+      Object.assign(pointerRay,{ox:point[0]+4,oy:point[1],oz:point[2],dx:-1,dy:0,dz:0});
+      pickable&&=picker.pick(0,0)?.owner===owner;
+      picker.dispose();
+    }
+    record("Rescue stray picking: heads are clickable across breeds and poses, and overlapping Ooga/dog targets select the nearer body",pickable);
     // Tiers on a visit of their own: 150 on medium and 60 on low at once, then one newcomer every 45 seconds.
     const tierRenderer={quality:"high"},tiers=make(tierRenderer,{poops:[],scooped:0}),full=tiers.stats().strays;
     tierRenderer.quality="medium";run(.2,D.CHORA,1,tiers);const medium=tiers.stats().strays;tierRenderer.quality="low";run(.2,D.CHORA,1,tiers);const low=tiers.stats().strays;tierRenderer.quality="high";run(46,D.CHORA,1,tiers);const back=tiers.stats().strays;tiers.dispose();
