@@ -310,7 +310,10 @@
   const SKILLS = {
     easy: { spread: 0.36, aim: 1.1, cool: 2.1, speed: 4.8, range: 10 },
     normal: { spread: CONFIG.BOT_SPREAD, aim: CONFIG.BOT_AIM, cool: CONFIG.BOT_COOLDOWN, speed: CONFIG.BOT_SPEED, range: CONFIG.BOT_RANGE },
-    hard: { spread: 0.1, aim: 0.35, cool: 0.95, speed: 6, range: 15 }
+    hard: { spread: 0.1, aim: 0.35, cool: 0.95, speed: 6, range: 15 },
+    // Expert bots play the whole game: they ride the catapult and the ziplines, climb ladders and nets, hop walls on the
+    // jetpack, stack crates at the gate and throw them, and spray the AK in bursts (`akCool` between rounds).
+    expert: { spread: 0.06, aim: 0.22, cool: 0.7, speed: 6.4, range: 18, akCool: 0.16, expert: true }
   };
   // Where the k-th of `size` Oogas a side starts, across the inside of its fort (red's turned half round).
   const startAt = (team, k, size) => {
@@ -438,6 +441,7 @@
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
       climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
+      route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -509,6 +513,7 @@
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
       a.fuel = CONFIG.JET_FUEL; a.jetting = false; a.grabbed = a.grabHits = 0;
       a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
+      a.route = ""; a.routeT = a.jetT = a.hopT = a.crateT = a.stacks = a.crateGo = a.routeBan = 0; a.botClimb = false;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -703,6 +708,7 @@
     a.riding = true;
     a.zipT = 0;
     a.climbing = false;
+    a.route = "";
     emit(sim, "zip", a.team, id, a.x, a.y, a.z);
     return true;
   };
@@ -745,7 +751,7 @@
     a.vy = Math.sqrt(2 * CONFIG.FALL * CONFIG.LAUNCH_H);
     const t = a.vy / CONFIG.FALL;
     a.vx = dx / d * (d / t); a.vz = dz / d * (d / t);
-    a.flight = 1; a.grounded = false; a.jumps = 0; a.crouch = false;
+    a.flight = 1; a.grounded = false; a.jumps = 0; a.crouch = false; a.route = "";
     a.heading = Math.atan2(dx, dz);
     emit(sim, "launch", a.team, id, a.x, a.y, a.z);
     return true;
@@ -781,7 +787,7 @@
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
     if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
-    a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
+    a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? (sim.bots.akCool && (kind === "ak" || kind === "gold") ? sim.bots.akCool : Math.max(tool.cool, sim.bots.cool)) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" || kind === "gold" || kind === "ak" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
@@ -969,8 +975,8 @@
     return base;
   };
   // A grenade's pitch to land about `range` metres off: the closest of a few tries by its own ballistics.
-  const lobPitch = (range) => {
-    const g = TOOLS.grenade;
+  const lobPitch = (range, kind = "grenade") => {
+    const g = TOOLS[kind];
     let best = 0.3, err = Infinity;
     for (let p = -0.2; p <= 0.9; p += 0.05) {
       const vy = g.lift + Math.sin(p) * g.speed, t = (vy + Math.sqrt(vy * vy + 2 * g.gravity * CONFIG.SHOT_Y)) / g.gravity;
@@ -994,21 +1000,163 @@
       }
     }
   };
+  // ---- The expert bot's extra moves ----
+  // A free crate: live, nothing on it, low enough to lift.
+  const freeCrate = (sim, c, a) => c.live && !crateOn(sim, c) && c.y <= a.y + 1.2;
+  const isPlug = (c, team) => { for (const [x, z] of ARENA.plug[team]) if (Math.abs(c.x - x) < 0.3 && Math.abs(c.z - z) < 0.3) return true; return false; };
+  // Walk to (x, z) and, once there, lift (or set down on) the crate there.
+  const crateAt = (sim, a, x, z) => {
+    const d = Math.hypot(x - a.x, z - a.z);
+    goal.x = x; goal.z = z;
+    if (d < 2) { a.vx = a.vz = 0; grab(sim, a.id, Math.atan2(x - a.x, z - a.z)); a.botStop = true; }
+  };
+  // Fortifying: a defender lifts a loose crate on its own half and stacks it on the gate's plug, two stacks a round.
+  const expertFortify = (sim, a) => {
+    if (a.role !== "defend" || a.stacks >= 2 || a.carrying) return false;
+    if (a.holding) {
+      let best = null, bd = Infinity;
+      for (const c of sim.crates) {
+        if (!c.live || c.y > 0.1 || crateOn(sim, c) || !isPlug(c, a.team)) continue;
+        const d = (c.x - a.x) ** 2 + (c.z - a.z) ** 2;
+        if (d < bd) { bd = d; best = c; }
+      }
+      if (!best) { grab(sim, a.id, a.heading); a.stacks = 9; return true; }
+      // Come at the plug from the fort side, so the stack goes on the crate, not beside it.
+      const side = a.team === "blue" ? 1 : -1;
+      if (Math.hypot(best.x - a.x, best.z + side * 1.4 - a.z) > 0.6 && Math.hypot(best.x - a.x, best.z - a.z) > 2) { goal.x = best.x; goal.z = best.z + side * 1.4; return true; }
+      crateAt(sim, a, best.x, best.z);
+      if (!a.holding) a.stacks++;
+      return true;
+    }
+    let best = null, bd = 14 * 14;
+    for (const c of sim.crates) {
+      if (!freeCrate(sim, c, a) || c.y > 0.1 || isPlug(c, a.team) || (a.team === "blue" ? c.z : -c.z) < 3) continue;
+      const d = (c.x - a.x) ** 2 + (c.z - a.z) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) { a.stacks = 9; return false; }
+    crateAt(sim, a, best.x, best.z);
+    return true;
+  };
+  // Climb `team`'s tower ladder and take its zipline.
+  const climbAndZip = (sim, a, team) => {
+    const L = ARENA.ladders[team], Z = ARENA.zips[team];
+    if (a.y >= CONFIG.TOWER_TOP - 0.15 && onTower(a)) {
+      goal.x = Z.ax; goal.z = Z.az;
+      if (nearZip(sim, a)) zip(sim, a.id);
+      return;
+    }
+    const mx = (L.zone[0] + L.zone[1]) / 2, mz = (L.zone[2] + L.zone[3]) / 2, foot = 0.75;
+    const px = mx - L.dx * foot, pz = mz - L.dz * foot;
+    if (a.climbing || Math.hypot(px - a.x, pz - a.z) < 0.6 || ladderAt(a)) {
+      // At the foot: push into the ladder and climb.
+      a.botClimb = true;
+      goal.x = mx + L.dx; goal.z = mz + L.dz;
+      a.botStraight = true;
+    } else { goal.x = px; goal.z = pz; }
+  };
+  // The route an expert takes: the catapult or a zipline to raid, the rivals' zipline home with their block.
+  const expertRoute = (sim, a, dt) => {
+    a.botClimb = false;
+    if (a.riding || a.flight) return false;
+    const own = sim.flags[a.team], theirs = sim.flags[other(a.team)], rival = other(a.team);
+    const mine = a.team === "blue" ? a.z : -a.z;
+    // A route that hasn't worked out in time is dropped, and no new one is tried for a while.
+    if (a.routeBan > 0) a.routeBan -= dt;
+    if (a.route && (a.routeT -= dt) <= 0) { a.route = ""; a.routeBan = 20; }
+    if (a.carrying) {
+      // Their block in hand, deep in their end: their tower's zipline drops it in our fort, if that's much quicker.
+      if (!a.route && a.routeBan <= 0 && mine < -8) {
+        const L = ARENA.ladders[rival], stand = ARENA.stands[a.team];
+        const fx = (L.zone[0] + L.zone[1]) / 2 - L.dx * 0.75, fz = (L.zone[2] + L.zone[3]) / 2 - L.dz * 0.75;
+        const viaZip = Math.hypot(fx - a.x, fz - a.z) + 6;
+        // Only with a clear run to the ladder's foot.
+        if (viaZip < Math.hypot(stand.x - a.x, stand.z - a.z) * 0.6 && clearLine(a.x, a.z, fx, fz, CONFIG.BODY_R)) { a.route = "zipHome"; a.routeT = 10; }
+      }
+      if (a.route === "zipHome") { climbAndZip(sim, a, rival); return true; }
+      return false;
+    }
+    if (a.route === "zipHome") a.route = "";
+    if (a.role !== "attack" || own.state !== "home" || theirs.state !== "home") { a.route = ""; return false; }
+    // A fresh raid from our own end picks its way in: the catapult, our zipline, or on foot.
+    if (!a.route && a.routeBan <= 0 && mine > 12) {
+      const roll = sim.rng();
+      a.route = roll < 0.4 ? "cat" : roll < 0.75 ? "zip" : "walk"; a.routeT = 16;
+    }
+    if (a.route === "cat") {
+      const [x, z] = ARENA.catapults[a.team][0];
+      goal.x = x; goal.z = z;
+      if (nearCatapult(sim, a)) launch(sim, a.id);
+      return true;
+    }
+    if (a.route === "zip") { climbAndZip(sim, a, a.team); return true; }
+    return false;
+  };
+  // Crates as weapons: a rival close by and a free crate at hand, lift it; holding one, throw it at them.
+  const expertCrates = (sim, a, dt) => {
+    if (a.carrying || a.riding || a.flight || a.climbing || !a.grounded) return;
+    if (a.crateT > 0) { a.crateT -= dt; if (!a.holding) return; }
+    let t = null, best = 11 * 11;
+    for (const b of sim.actors) {
+      if (b.team === a.team || !open(b)) continue;
+      const dd = (b.x - a.x) ** 2 + (b.z - a.z) ** 2;
+      if (dd < best && clearLine(a.x, a.z, b.x, b.z, 0.05, 1.8)) { best = dd; t = b; }
+    }
+    if (a.holding) {
+      if (t && a.cooldown <= 0) {
+        const dist = Math.sqrt(best);
+        fire(sim, a.id, Math.atan2(t.x + t.vx * 0.3 - a.x, t.z + t.vz * 0.3 - a.z), lobPitch(dist, "crate"), "crate");
+      } else if (!t && a.crateT <= -3) grab(sim, a.id, a.heading);
+      return;
+    }
+    if (!t || best > 9 * 9 || a.role === "attack" && a.route) return;
+    let near = null, nd = 4.5;
+    for (const c of sim.crates) {
+      if (!freeCrate(sim, c, a) || isPlug(c, a.team)) continue;
+      const cd = Math.hypot(c.x - a.x, c.z - a.z);
+      if (cd < 2 && grab(sim, a.id, Math.atan2(c.x - a.x, c.z - a.z))) { a.crateGo = 0; a.crateT = 0; return; }
+      if (cd < nd) { nd = cd; near = c; }
+    }
+    // One a few steps off: go and get it.
+    if (near && a.crateGo <= 0) { a.crateGo = 1.5; a.crateX = near.x; a.crateZ = near.z; }
+    else if (!near) a.crateT = 1;
+  };
   const thinkBot = (sim, a, dt) => {
-    if (a.splat > 0 || a.trapped > 0) return;
+    if (a.splat > 0 || a.trapped > 0) { a.botClimb = false; return; }
+    const ex = sim.bots.expert;
     if (a.carrying && a.cooldown <= 0 && sim.rng() < dt * 2) botPass(sim, a);
+    a.botStop = a.botStraight = false;
     if (a.detour > 0) {
       a.detour -= dt;
       goal.x = a.detourX; goal.z = a.detourZ;
-    } else botGoal(sim, a);
+      a.botClimb = false;
+    } else {
+      botGoal(sim, a);
+      if (ex) {
+        if (sim.prep > 0) { a.botClimb = false; expertFortify(sim, a); }
+        else if (!expertRoute(sim, a, dt) && a.crateGo > 0 && !a.carrying) { a.crateGo -= dt; goal.x = a.crateX; goal.z = a.crateZ; }
+      }
+    }
+    if (ex && a.hopT > 0) a.hopT -= dt;
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
     const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
     // Burnt feet: a bot hops until they cool.
     if (a.burnt > 0 && a.grounded) a.botJump = true;
-    if (d > 0.4) {
-      const h = steer(sim, a, goal.x, goal.z);
+    if (a.botStop) a.vx = a.vz = 0;
+    else if (d > 0.4) {
+      const h = a.botStraight ? Math.atan2(goal.x - a.x, goal.z - a.z) : steer(sim, a, goal.x, goal.z);
       a.vx = Math.sin(h) * speed; a.vz = Math.cos(h) * speed;
+      // An expert hops a wall or a crate in its way on the jetpack rather than walking round it.
+      if (ex && a.grounded && a.y < 0.3 && !a.botClimb && a.hopT <= 0 && d > 3 && a.netted <= 0 && a.burnt <= 0) {
+        const bh = Math.atan2(goal.x - a.x, goal.z - a.z);
+        const px = a.x + Math.sin(bh) * 1.8, pz = a.z + Math.cos(bh) * 1.8;
+        // Only something low enough to clear (a crate, a wall), not a building or a tower.
+        if (!clearLine(a.x, a.z, px, pz, CONFIG.BODY_R) && groundAt(px, pz, 9) < 4.5) {
+          a.botJump = true; a.jetT = 1.1; a.hopT = 2.2;
+          a.vx = Math.sin(bh) * speed; a.vz = Math.cos(bh) * speed;
+        }
+      }
     } else a.vx = a.vz = 0;
     // Stuck, judged by progress toward the goal over each second: first a double jump over whatever is in the way
     // (twice), then a random spot nearby for a moment.
@@ -1017,10 +1165,11 @@
       a.progT = 0;
       const stalled = d > 1.5 && d > a.lastD - 0.4 && a.detour <= 0;
       a.lastD = d;
-      if (stalled && a.grounded && a.tries < 2 && a.netted <= 0) {
+      if (stalled && a.grounded && a.tries < 2 && a.netted <= 0 && !a.botClimb && !a.botStop) {
         a.tries++;
         a.botJump = true;
-        a.jump2At = sim.time + 0.28;
+        // An expert fires the jetpack on top of the jump.
+        if (ex) a.jetT = 1.2; else a.jump2At = sim.time + 0.28;
       } else if (stalled) {
         a.tries = 0;
         a.detour = 1.2;
@@ -1032,7 +1181,8 @@
     // Throw at the nearest open rival in range, after holding them in sight for `BOT_AIM` (so a rival who runs past
     // gets a moment, and a bot just back from a splat can't throw at once): a net at a carrier, now and then a grenade
     // or a rocket, otherwise paint, leading the run a little with a seeded wobble.
-    if (a.cooldown <= 0 && sim.prep <= 0) {
+    if (ex && sim.prep <= 0) expertCrates(sim, a, dt);
+    if (a.cooldown <= 0 && sim.prep <= 0 && !a.holding) {
       let t = null, best = sim.bots.range * sim.bots.range;
       for (const b of sim.actors) {
         if (b.team === a.team || !open(b)) continue;
@@ -1041,11 +1191,12 @@
       }
       a.aim = t ? a.aim + dt : 0;
       if (t && a.aim >= sim.bots.aim) {
-        a.aim = 0;
         const dist = Math.sqrt(best), roll = sim.rng();
         // A net at a carrier or at a Golden AK's holder, now and then a grenade or a rocket, otherwise paint (or the
         // Golden AK, if this bot holds one).
-        const kind = (t.carrying || (t.gold && !a.gold)) && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : a.gold ? "gold" : "paint";
+        // An expert sprays the AK instead of plain paint while its magazine lasts, holding the target between rounds.
+        const kind = (t.carrying || (t.gold && !a.gold)) && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : a.gold ? "gold" : ex && dist < 16 && a.akMag > 0 && a.akReload <= 0 ? "ak" : "paint";
+        a.aim = ex && (kind === "ak" || kind === "gold") ? sim.bots.aim : 0;
         const lead = dist / TOOLS[kind].speed;
         const yaw = Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z) + (sim.rng() - 0.5) * 2 * sim.bots.spread;
         // Paint lobs flatter at range so the ball arrives near chest height; a grenade arcs to its range.
@@ -1246,7 +1397,7 @@
       // Held by a gorilla: no moving or throwing, only struggling (a jump press each), until free.
       if (a.grabbed) {
         let push = false;
-        if (a.bot) push = sim.rng() < dt * 3.5;
+        if (a.bot) push = sim.rng() < dt * (sim.bots.expert ? 8 : 3.5);
         else { push = !!input.jump; input.jump = 0; }
         if (push) {
           if (--a.grabHits <= 0) letGo(sim, sim.gorillas[a.grabbed - 1], a, true);
@@ -1341,13 +1492,14 @@
       resolve(a, CONFIG.BODY_R, stepUp);
       // The jetpack, every Ooga's as on the island: Space held in the air, once the jump has lost its lift, thrusts up on
       // the fuel; standing, the tank refills.
-      a.jetting = !a.bot && free && !!input.jet && !a.grounded && !a.flight && !a.riding && a.netted <= 0 && a.burnt <= 0 && a.slip <= 0
+      if (a.jetT > 0) a.jetT -= dt;
+      a.jetting = free && (a.bot ? a.jetT > 0 : !!input.jet) && !a.grounded && !a.flight && !a.riding && a.netted <= 0 && a.burnt <= 0 && a.slip <= 0
         && a.fuel > 0 && a.vy < 1.5 && a.y < CONFIG.JET_CEILING;
       if (a.jetting) a.fuel = Math.max(0, a.fuel - dt);
       else if (a.grounded && a.fuel < CONFIG.JET_FUEL) a.fuel = Math.min(CONFIG.JET_FUEL, a.fuel + dt * CONFIG.JET_FUEL / CONFIG.JET_REFILL);
       // A ladder: pushing into a tower's ladder climbs it, and at the top steps onto the platform.
-      const ladder = !a.bot && free && a.netted <= 0 && !a.holding && !a.grabbed ? ladderAt(a) : null;
-      a.climbing = !!ladder && input.x * ladder.dx + input.z * ladder.dz > 0.3;
+      const ladder = (!a.bot || a.botClimb) && free && a.netted <= 0 && !a.holding && !a.grabbed ? ladderAt(a) : null;
+      a.climbing = !!ladder && (a.bot ? a.botClimb : input.x * ladder.dx + input.z * ladder.dz > 0.3);
       // Height: fall onto whatever is underneath, and stop at a floor overhead.
       const ground = groundAt(a.x, a.z, a.y + (stepUp > 0.05 ? stepUp : 0));
       if (a.climbing) {
