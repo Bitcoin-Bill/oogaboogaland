@@ -19612,9 +19612,9 @@ const rescueChecks = BL => {
     // alone, the newest 512 piles, hunger to three decimals, and Right Shift+R's reset deleting it with the island's.
     const pup=(name,breed,at,hunger=0)=>({name,breed,adoptedAt:at,hunger}),saved={};
     for(let i=0;i<20;i++)saved[`ooga-${i}`]=pup("Pup",i%6,1000+i);
-    Object.assign(saved,{"bad login!":pup("Rex",1,5000),"breedless":pup("Rex",7,5000),"starved":pup("Rex",1,5000,2),"long":pup("x".repeat(17),1,5000)});
+    Object.assign(saved,{"@debug":pup("Debug",0,5000),"bad login!":pup("Rex",1,5000),"breedless":pup("Rex",7,5000),"starved":pup("Rex",1,5000,2),"long":pup("x".repeat(17),1,5000)});
     const heap=Array.from({length:(D.POOP_CAP+4)*3},(_,k)=>k/100);store.set(RD.KEY,JSON.stringify({dogs:saved,poops:heap,scooped:3}));
-    const a=RD.load(),kept=Object.keys(a.dogs),loaded=kept.length===RD.LOGINS&&!a.dogs["ooga-3"]&&!!a.dogs["ooga-4"]&&!!a.dogs["ooga-19"]&&a.poops.length===D.POOP_CAP*3&&a.poops[0]===heap[12]&&a.scooped===3;
+    const a=RD.load(),kept=Object.keys(a.dogs),loaded=kept.length===RD.LOGINS+1&&a.dogs["@debug"]?.name==="Debug"&&!a.dogs["ooga-3"]&&!!a.dogs["ooga-4"]&&!!a.dogs["ooga-19"]&&a.poops.length===D.POOP_CAP*3&&a.poops[0]===heap[12]&&a.scooped===3;
     store.set(RD.KEY,JSON.stringify({dogs:{"ooga-1":pup("Rex",1,1)},poops:[1,2,"x"],scooped:-1}));const b=RD.load(),dropped=Object.keys(b.dogs).length===1&&!b.poops.length&&b.scooped===0;
     store.set(RD.KEY,"{");const c=RD.load(),unreadable=!Object.keys(c.dogs).length&&!c.poops.length&&c.scooped===0;
     RD.save({dogs:{"ooga-1":pup("Rex",1,1,.1234567)},poops:[1.25,0,-2],scooped:4});const written=JSON.parse(store.get(RD.KEY)),rounded=written.dogs["ooga-1"].hunger===.123&&written.poops[0]===1.25&&written.scooped===4;
@@ -19624,7 +19624,7 @@ const rescueChecks = BL => {
     const tags=[...readFileSync(join(root,"src/index.html"),"utf8").matchAll(/<script src="js\/([^"]+)"( data-defer="dsb")?><\/script>/g)].map(m=>[m[1],!!m[2]]),at=n=>tags.findIndex(t=>t[0]===n);
     const deferred=["rescue-dogs.js","rescue-models.js","rescue-room.js","rescue-menu.js","rescue-dsb.js"].every((n,k,a)=>at(n)>=0&&tags[at(n)][1]&&at(n)<at("dsb-interiors.js")&&(!k||at(a[k-1])<at(n)));
     record("Rescue loading: its five modules load with DSB Land's deferred code, in order and before dsb-interiors.js",deferred,JSON.stringify(tags.filter(t=>t[0].startsWith("rescue"))));
-    record("Rescue saves: a key of its own, one dog for each of at most 16 logins (newest kept), every bad part dropped alone, the newest 512 piles, hunger to three decimals, the reset deleting it, and nothing in the island's save",loaded&&dropped&&unreadable&&rounded&&reset&&apart&&hungry,JSON.stringify({loaded,dropped,unreadable,rounded,reset,apart,hungry,kept:kept.length}));
+    record("Rescue saves: a key of its own, one dog for each of at most 16 logins (newest kept), a separate debug dog, every bad part dropped alone, the newest 512 piles, hunger to three decimals, the reset deleting it, and nothing in the island's save",loaded&&dropped&&unreadable&&rounded&&reset&&apart&&hungry,JSON.stringify({loaded,dropped,unreadable,rounded,reset,apart,hungry,kept:kept.length}));
     store.clear();
     // The address and room: VAC 1 keeps VACANT 21, its facade and approach; the room's every area is reachable.
     const v=BL.dsbVacancies.REGISTRY.find(p=>p.number===1),W=waterWorld(BL),land=W.land,A=W.avatar,targets=new Set(),toasts=[];
@@ -19683,9 +19683,10 @@ const rescueChecks = BL => {
     tierRenderer.quality="medium";run(.2,D.CHORA,1,tiers);const medium=tiers.stats().strays;tierRenderer.quality="low";run(.2,D.CHORA,1,tiers);const low=tiers.stats().strays;tierRenderer.quality="high";run(46,D.CHORA,1,tiers);const back=tiers.stats().strays;tiers.dispose();
     record("Rescue strays: 300, 150 or 60 by tier, the extra ones gone at once, one newcomer every 45 seconds while short",full===300&&medium===150&&low===60&&back===61,JSON.stringify({full,medium,low,back}));
     look(3.56,9,66,3.56,1,54);run(.2,D.CHORA);const s=T.strays().find(e=>e.shown),breed=D.BREEDS.findIndex(b=>b.id===s.breed),scout={name:"Scout",breed,adoptedAt:1,hunger:0};
-    const taken=sys.adopt(A,scout,s.slot),mine=T.dog();run(2,D.CHORA);
+    const companion=T.strays().find(e=>e.slot!==s.slot),tagged=T.tag(s.slot)&&T.tag(companion.slot);
+    const taken=sys.adopt(A,scout,s.slot),mine=T.dog(),sentHome=T.strays().every(e=>e.mood!=="tag"&&e.with===null);run(2,D.CHORA);
     const follows=T.dog(),strayLeft=T.stats().strays;run(46,D.CHORA);
-    record("Rescue adoption: a tapped stray becomes the own Ooga's dog at its side, and a newcomer takes its home",taken&&sys.own===scout&&mine.slot===s.slot&&follows.state==="follow"&&Math.hypot(follows.x-A.root.position.x,follows.z-A.root.position.z)<2.5&&strayLeft===D.STRAY_TIER.high-1&&T.stats().strays===D.STRAY_TIER.high,JSON.stringify({mine,follows,strayLeft}));
+    record("Rescue adoption: a tapped stray becomes the own Ooga's dog at its side, other strays stop tagging along, and a newcomer takes its home",tagged&&sentHome&&!T.tag(companion.slot)&&T.strays().every(e=>e.mood!=="tag"&&e.with===null)&&taken&&sys.own===scout&&mine.slot===s.slot&&follows.state==="follow"&&Math.hypot(follows.x-A.root.position.x,follows.z-A.root.position.z)<2.5&&strayLeft===D.STRAY_TIER.high-1&&T.stats().strays===D.STRAY_TIER.high,JSON.stringify({tagged,sentHome,mine,follows,strayLeft}));
     Object.assign(A.root.position,{x:0,y:A.baseY,z:6});look(0,2.6,9,0,.4,-5);run(.2,D.ROOM);const roomShown=T.dog().shown&&T.stats().dogsDrawn===1;run(.2,D.YARD);const yardShown=T.dog().shown&&T.stats().dogsDrawn===7;
     record("Rescue spaces: the own dog goes through every door and turns up beside its Ooga there",roomShown&&yardShown&&Math.hypot(T.dog().x-A.root.position.x,T.dog().z-A.root.position.z)<3,JSON.stringify({roomShown,yardShown,dog:T.dog()}));
     Object.assign(A.root.position,{x:3.56,y:land.groundAt(3.56,54.19)+A.baseY,z:54.19});look(3.56,9,66,3.56,1,54);run(.2,D.CHORA);T.hunger(.75);run(.3,D.CHORA);const sits=T.dog().state;world.level=0;const empty=!T.feed()&&T.dog().hunger>=.75;world.level=5;const ate=T.feed()&&world.level===4&&T.dog().hunger===0&&T.dog().state==="eat";
@@ -19710,6 +19711,8 @@ const rescueChecks = BL => {
     record("Rescue strays: by night every stray sleeps at its home and wakes with the day",asleep===0&&home&&T.strays().every(e=>e.mood!=="sleep"));
     T.hunger(1);run(D.STARVE_SECONDS+1,D.CHORA);
     record("Rescue hunger: left empty too long the dog goes back to the rescue, and the scene hears it",!sys.own&&released.length===1&&released[0]===scout&&toasts.some(t=>t.includes("went back to Free Puppies Rescue")),JSON.stringify(toasts.slice(-3)));
+    sys.adopt(A,scout);const returned=sys.releaseOwn();
+    record("Rescue return: releasing the adopted dog clears ownership, tells the scene once, and permits adoption again",returned&&!sys.own&&released.length===2&&released[1]===scout&&!sys.releaseOwn()&&sys.adopt(A,scout)&&sys.own===scout);
     sys.dispose();const after=W.root.children.length;I.dispose();W.dispose();
     record("Rescue disposal: every batch, the jetpack and every pick target leave with the visit",targets.size===0&&after===children,JSON.stringify({targets:targets.size,after,before:children}));
     // The kit's meshes join the builder caches that leaving DSB Land drops.
@@ -19729,7 +19732,8 @@ const rescueFlightChecks = BL => {
   const ground=(x,z,feet)=>house(x,z)&&feet+STEP>=ROOF?ROOF:terrain(x,z);
   const clearSegment=(ax,az,bx,bz,y)=>!sea(bx)&&!house(bx,bz)&&Math.abs(ground(bx,bz,y)-y)<=STEP;
   const standable=(x,y,z)=>!sea(x)&&!house(x,z)&&y-terrain(x,z)<.9;
-  const flyClear=(ax,az,bx,bz,y)=>!(house(bx,bz)&&y<ROOF)&&y>=terrain(bx,bz)&&(!sea(bx)||y>.25);
+  let blockedDescent=false;
+  const flyClear=(ax,az,bx,bz,y)=>!(house(bx,bz)&&y<ROOF)&&y>=terrain(bx,bz)&&(!sea(bx)||y>.25)&&!(blockedDescent&&y>terrain(bx,bz)+.05&&y<ROOF+1);
   const root=S.createNode(),cave={root:{position:{x:0,y:1.1,z:-5},rotation:{x:0,y:Math.PI/2,z:0},visible:true},baseY:.6,jet:{thrust:false},traits:{name:"tester",display:"Tester"}};
   const camera={position:{x:0,y:30,z:-40},target:{x:20,y:0,z:0}},store={poops:[],scooped:0};
   const sys=D.create({root,crew:{player:cave},fx:{say:noop,sayAt:noop,burst:noop},hud:{toast:t=>toasts.push(t)},pile:{eat:()=>true},yard:BL.rescueRoom.YARD,door:[0,0],ground,standable,flyClear,
@@ -19738,11 +19742,14 @@ const rescueFlightChecks = BL => {
   // One tenth of a second: the Ooga moved by `move` (its feet put on what lies under them unless it flies), the dog's
   // whereabouts checked: never inside the house, never under the water, on the ground never up on the roof.
   const tick=(move,label)=>{move();sys.update(.1,0,1,D.CHORA);const d=T.dog(),onGround=["follow","sit","eat","poop","sleep"].includes(d.state);
-    flew||=d.state==="fly";jetShown||=d.jet;
+    flew||=d.state==="fly";jetShown||=d.jet&&d.flame;
     if(house(d.x,d.z)&&d.y<ROOF-.01||d.y<(sea(d.x)?0:terrain(d.x,d.z))-.01||onGround&&(house(d.x,d.z)||sea(d.x)||d.y>terrain(d.x,d.z)+.01))bad.push({label,...d});};
   const walk=(x,z)=>()=>{const dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz),k=Math.min(1,.42/(d||1));p.x+=dx*k;p.z+=dz*k;cave.root.rotation.y=Math.atan2(dx,dz);p.y=terrain(p.x,p.z)+cave.baseY;};
   sys.adopt(cave,{name:"Rex",breed:1,adoptedAt:1,hunger:0});
   for(let i=0;i<20;i++)tick(()=>{},"start");
+  const worn=T.dog().jet&&!T.dog().flame;
+  cave.jet=null;tick(()=>{},"unequip");const removed=!T.dog().jet&&!T.dog().flame;
+  cave.jet={thrust:false};tick(()=>{},"equip");const equipped=T.dog().jet&&!T.dog().flame;
   // Round the house's corner: the dog never cuts through it.
   for(const [x,z] of [[8,-5],[18,-5],[18,5],[20,5]])for(let i=0;i<40&&Math.hypot(p.x-x,p.z-z)>.1;i++)tick(walk(x,z),"corner");
   for(let i=0;i<20;i++)tick(()=>{},"corner");
@@ -19755,16 +19762,37 @@ const rescueFlightChecks = BL => {
     if(i>=20){const d=T.dog(),across=Math.abs(d.z-p.z);abreast.along=Math.max(abreast.along,Math.abs(d.x-p.x));abreast.across=[Math.min(abreast.across[0],across),Math.max(abreast.across[1],across)];abreast.up=Math.max(abreast.up,Math.abs(d.y-feet()-D.FLY_UP));}}
   const alongside=abreast.along<.5&&abreast.across[0]>D.FLY_SIDE-.3&&abreast.across[1]<D.FLY_SIDE+.3&&abreast.up<.3;
   const aloft=T.dog(),after=T.stats().poops;cave.jet.thrust=false;
-  for(let i=0;i<40&&feet()>terrain(p.x,p.z);i++)tick(()=>{p.y=Math.max(terrain(p.x,p.z)+cave.baseY,p.y-.6);},"descent");
+  const falling=[];
+  for(let i=0;i<40&&feet()>terrain(p.x,p.z);i++){
+    tick(()=>{p.y=Math.max(terrain(p.x,p.z)+cave.baseY,p.y-.6);},"descent");
+    if(i<3)falling.push(T.dog());
+  }
+  const gravityFall=falling.length===3&&falling.every(d=>d.state==="land"&&!d.flame&&Math.hypot(d.x-aloft.x,d.z-aloft.z)<.001)
+    &&aloft.y>falling[0].y&&falling[0].y-falling[1].y>aloft.y-falling[0].y&&falling[1].y-falling[2].y>falling[0].y-falling[1].y;
   for(let i=0;i<60;i++)tick(()=>{},"landed");
-  const landed=T.dog(),down=landed.state==="follow"&&!landed.jet&&Math.hypot(landed.x-p.x,landed.z-p.z)<3&&!T.stats().dogJet;
+  const landed=T.dog(),down=landed.state==="follow"&&landed.jet&&!landed.flame&&Math.hypot(landed.x-p.x,landed.z-p.z)<3&&T.stats().dogJet===1;
+  record("Rescue descent: releasing thrust falls faster each frame without flames or horizontal hovering, then follows on foot",gravityFall&&down,JSON.stringify({aloft,falling,landed}));
   // Onto the roof: the dog lands on the ground beside the house and waits under it.
   Object.assign(p,{x:13,z:0,y:ROOF+cave.baseY});cave.root.rotation.y=Math.PI/2;
   for(let i=0;i<60;i++)tick(()=>{},"roof");
   const below=T.dog(),waits=below.state==="follow"&&!house(below.x,below.z)&&below.y===terrain(below.x,below.z)&&Math.hypot(below.x-p.x,below.z-p.z)<6;
+  // A clearance refusal holds the descent above safe ground beside the roof. Its recovery timer must accumulate
+  // across frames, rather than being cleared with the far strays' elapsed-time counters after every thought.
+  p.y=ROOF+cave.baseY+4;for(let i=0;i<60;i++)tick(()=>{},"above roof");
+  const beforeBlocked=T.dog();blockedDescent=true;p.y=ROOF+cave.baseY;
+  for(let i=0;i<60;i++)tick(()=>{},"blocked descent");
+  const recovered=T.dog();blockedDescent=false;
+  record("Rescue landing: a blocked descent beside a rooftop recovers onto safe ground within six seconds",beforeBlocked.state==="fly"&&recovered.state==="follow"&&standable(recovered.x,recovered.y,recovered.z)&&Math.hypot(recovered.x-p.x,recovered.z-p.z)<6,JSON.stringify({beforeBlocked,recovered}));
+  // The same descent after a high jump, without a jetpack, still lands and catches up on foot.
+  cave.jet=null;Object.assign(p,{x:2,z:-8,y:1.1});for(let i=0;i<20;i++)tick(()=>{},"jump start");
+  for(let i=0;i<12;i++)tick(()=>{p.y+=.5;},"jump rise");
+  const jumpTop=T.dog();tick(()=>{p.y-=.6;},"jump fall");const jumpFall=T.dog();
+  for(let i=0;i<60;i++)tick(()=>{p.y=Math.max(1.1,p.y-.6);},"jump landing");
+  const jumpLanded=T.dog();
+  record("Rescue jump: a dog drops without a jetpack and resumes following on the ground",jumpTop.state==="fly"&&jumpFall.state==="land"&&jumpFall.y<jumpTop.y&&!jumpFall.jet&&jumpLanded.state==="follow"&&Math.hypot(jumpLanded.x-p.x,jumpLanded.z-p.z)<3,JSON.stringify({jumpTop,jumpFall,jumpLanded}));
   sys.dispose();
   record("Rescue flight: the own dog walks round a house, flies next to its jetpacked Ooga over it and the sea without passing through a wall or under the water, poops nothing in the air, lands beside it on dry ground, and waits on the ground under an Ooga on a roof",
-    !bad.length&&beside&&flew&&jetShown&&alongside&&aloft.state==="fly"&&aloft.x>26&&after===0&&down&&waits,JSON.stringify({bad:bad.slice(0,4),beside,round,flew,jetShown,abreast,aloft,after,landed,below,p}));
+    worn&&removed&&equipped&&!bad.length&&beside&&flew&&jetShown&&alongside&&aloft.state==="fly"&&aloft.x>26&&after===0&&down&&waits,JSON.stringify({worn,removed,equipped,bad:bad.slice(0,4),beside,round,flew,jetShown,abreast,aloft,after,landed,below,p}));
 };
 // The adoption dialog through a minimal DOM: six portraits, the visitor's own Ooga named, no one else's to choose, Enter adopts the sanitized name, Escape and dispose leave nothing.
 const rescueMenuChecks = BL => {
@@ -22408,19 +22436,18 @@ const rescueTap=async(b,x,y,z)=>{const p=await b.evaluate(`__ooga.project(${x},$
 const RESCUE_LOOK='const look=(x,z)=>{const D=__ooga.dsb,yaw=.6,ax=x-Math.cos(yaw)*1.6,az=z+Math.sin(yaw)*1.6;__ooga.pilot.navigate({position:{x:ax,y:D.groundAt(ax,az),z:az},yaw,pitch:.5,dist:4.5});};';
 // The visitor signed in as the Ooga walking DSB Land (no Worker on the test page, so only `state.me` says so).
 const RESCUE_SIGN_IN='(()=>{const c=BL.characters.get(__ooga.dsb.avatar.traits.name);BL.net.state.me={id:1,login:c.github||c.handle};})()';
-const RESCUE_SIGN_IN_WORDS="Sign in to adopt a puppy.";
-// The dialog as a signed-out visitor sees it: only the sign-in line (on screen) and Back, no puppies, name or Adopt.
-const RESCUE_REFUSAL='(()=>{const M=__ooga.dsb.rescue.menu,p=document.querySelector(".rescue-menu"),n=p&&p.querySelector(".svrn-note"),r=n&&n.getBoundingClientRect(),shown=s=>!!p&&p.querySelector(s).getClientRects().length>0;return {open:M.isOpen,signIn:M.stats.signIn,note:n&&n.textContent,seen:!!r&&r.width>0&&r.height>0&&r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth,pups:shown("nav"),name:shown("input"),adopt:shown("button[data-adopt]")};})()';
-const rescueRefused=r=>r.open&&r.signIn&&r.note===RESCUE_SIGN_IN_WORDS&&r.seen&&!r.pups&&!r.name&&!r.adopt;
+// Debug visitors can reach the adoption controls without signing in.
+const RESCUE_DIALOG='(()=>{const M=__ooga.dsb.rescue.menu,p=document.querySelector(".rescue-menu"),n=p&&p.querySelector(".svrn-note"),r=p&&p.getBoundingClientRect(),shown=s=>!!p&&p.querySelector(s).getClientRects().length>0;return {open:M.isOpen,signIn:M.stats.signIn,note:n&&n.textContent,seen:!!r&&r.width>0&&r.height>0&&r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth,pups:shown("nav"),name:shown("input"),adopt:shown("button[data-adopt]")};})()';
+const rescueOffered=r=>r.open&&!r.signIn&&r.seen&&r.pups&&r.name&&r.adopt;
 const RESCUE_SAVED='JSON.parse(localStorage.getItem(BL.rescueDsb.KEY)||"null")';
-scene("dsb",{label:"rescue checkpoint",query:"&view=rescue-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb rescue checkpoint",why:"playthrough: VAC 1's real door enters Free Puppies Rescue; signed out the dog houses only say to sign in; signed in, a puppy adopted through the dialog is the visitor's one dog, saved at once, and follows its Ooga out into the Chora and through later door round trips",run:async b=>{
+scene("dsb",{label:"rescue checkpoint",query:"&view=rescue-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb rescue checkpoint",why:"playthrough: VAC 1's real door enters Free Puppies Rescue; signed out in debug the dog houses offer adoption; signed in, a puppy adopted through the dialog is the visitor's one dog, saved at once, and follows its Ooga out into the Chora and through later door round trips",run:async b=>{
   await rescueStep(b);await b.key(" ");await rescueStep(b);
   const entry=await b.evaluate('(()=>{const D=__ooga.dsb,I=D.interiors,V=D.vacancies.resolve(1);window.__rescueAvatar=D.avatar;return {id:I.active?.room.id,text:V.text,status:V.address.status,exterior:D.exterior.visible,drawn:D.rescue.dogs.stats().dogsDrawn,strays:D.rescue.dogs.strays().filter(s=>s.shown).length};})()');
   record("Rescue browser: Space at VAC 1's door enters Free Puppies Rescue, where only the yard's six puppies show",entry.id==="puppy-rescue"&&entry.text==="Free Puppies Rescue"&&entry.status==="occupied"&&!entry.exterior&&entry.drawn===6&&entry.strays===0,JSON.stringify(entry));
   await b.evaluate('__ooga.pilot.navigate(__ooga.dsb.interiors.active.room.reviews["rescue-kennels"])');await rescueStep(b);await b.key(" ");await rescueStep(b);
-  const out=await b.evaluate(`({...${RESCUE_REFUSAL},line:__ooga.dsb.rescue.line,saved:${RESCUE_SAVED},dog:__ooga.dsb.rescue.dogs.dog()})`);
+  const out=await b.evaluate(`({...${RESCUE_DIALOG},line:__ooga.dsb.rescue.line,saved:${RESCUE_SAVED},dog:__ooga.dsb.rescue.dogs.dog()})`);
   await b.key("Escape");
-  record("Rescue browser: signed out, Space at the dog houses opens the dialog on the sign-in line alone, with no adoption; nothing is adopted or saved",rescueRefused(out)&&out.line===RESCUE_SIGN_IN_WORDS&&!out.saved&&!out.dog,JSON.stringify(out));
+  record("Rescue browser: signed out in debug, Space at the dog houses offers adoption; closing without adopting saves nothing",rescueOffered(out)&&out.line==="A puppy is waiting for you"&&!out.saved&&!out.dog,JSON.stringify(out));
   await b.evaluate(RESCUE_SIGN_IN);await rescueStep(b);await b.key(" ");await rescueStep(b);
   const dialog=await b.evaluate('(()=>{const p=document.querySelector(".rescue-menu");return {open:__ooga.dsb.rescue.menu.isOpen,pups:p.querySelectorAll("nav button[data-breed]").length,engaged:p.classList.contains("dsb-menu-engaged"),selects:p.querySelectorAll("select").length,ooga:__ooga.dsb.rescue.menu.stats.ooga};})()');
   await rescueClick(b,'.rescue-menu button[data-breed="3"]');await rescueClick(b,".rescue-menu button[data-adopt]");await rescueStep(b);
@@ -22457,20 +22484,31 @@ scene("dsb",{label:"rescue care",query:"&view=rescue-door&weather=clear&time=120
   await rescueStep(b);await rescueTap(b,poop.at.x,poop.at.y+.08,poop.at.z);await rescueStep(b);
   const scooped=await b.evaluate('({poops:__ooga.dsb.rescue.dogs.stats().poops,scooped:__ooga.dsb.rescue.store.scooped})');
   record("Rescue browser: the dog's poop lands in the Chora, is saved, and a real click scoops it",poop.saved===poop.k+1&&scooped.poops===poop.k&&scooped.scooped===1,JSON.stringify({poop,scooped}));
+  const badge=await b.evaluate('(()=>{const e=document.getElementById("rescue-hud");__ooga.dsb.rescue.dogs.hunger(.8);return {shown:!e.hidden,name:e.parentElement.textContent,next:document.getElementById("weapon-hud").nextElementSibling===e.parentElement,face:e.querySelector("canvas").width,level:__ooga.level};})()');
+  await rescueClick(b,"#rescue-hud");
+  const badgeFed=await b.evaluate('({hunger:__ooga.dsb.rescue.dogs.dog().hunger,level:__ooga.level})');
+  record("Rescue button: the adopted dog's face and name appear beside the AK-47, and a click feeds it once",badge.shown&&badge.name==="Rex"&&badge.next&&badge.face===10&&badgeFed.hunger===0&&badgeFed.level===badge.level-1,JSON.stringify({badge,badgeFed}));
+  const at=await b.evaluate('(()=>{__ooga.dsb.rescue.dogs.hunger(.8);const r=document.getElementById("rescue-hud").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()');
+  await b.send("Input.dispatchMouseEvent",{type:"mousePressed",button:"left",clickCount:1,...at});
+  await b.evaluate('new Promise(resolve=>setTimeout(resolve,750))');
+  await b.send("Input.dispatchMouseEvent",{type:"mouseReleased",button:"left",clickCount:1,...at});
+  const returned=await b.evaluate(`({dog:__ooga.dsb.rescue.dogs.dog(),saved:${RESCUE_SAVED}.dogs,hidden:document.getElementById("rescue-hud").hidden,level:__ooga.level})`);
+  record("Rescue button: holding returns the dog, removes its saved adoption and button, and does not feed it",!returned.dog&&!Object.keys(returned.saved).length&&returned.hidden&&returned.level===badgeFed.level,JSON.stringify(returned));
 }}]});
-// The strays and a flight with the dog: a stray's tap refused signed out and opening the adoption on that very dog
-// signed in, then over a house and the harbour; a session of its own, so each stays inside its two minutes.
-scene("dsb",{label:"rescue flight",query:"&view=rescue-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb rescue flight",why:"regression: a stray's tap offered the adoption for any Ooga; now it says to sign in signed out and offers that very dog for the visitor's own Ooga signed in. A dog followed its flying Ooga onto roofs and the seabed, through walls, and pooped in the air; now it flies along on a jetpack over a house and the harbour and lands beside its Ooga on dry ground",run:async b=>{
+// The strays and a flight with the debug dog: a stray's tap opens adoption without signing in,
+// then over a house and the harbour; a session of its own, so each stays inside its two minutes.
+scene("dsb",{label:"rescue flight",query:"&view=rescue-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb rescue flight",why:"playthrough: a debug visitor adopts without signing in, saved separately from signed-in dogs. A dog followed its flying Ooga onto roofs and the seabed, through walls, and pooped in the air; now it flies along on a jetpack over a house and the harbour and lands beside its Ooga on dry ground",run:async b=>{
   const stray=await b.evaluate(`(()=>{${RESCUE_LOOK}const D=__ooga.dsb,R=D.rescue.dogs,p=D.avatar.root.position;for(let i=0;i<8;i++)BL.scenes.dsb.update(1/15,i/15);const piles=Array.from({length:R.stats().poops},(_,k)=>R.poopAt(k));
     // A stray clear of the Ooga and of any pile (a pile is a tap target of its own), so the click can only mean that dog.
     const s=R.strays().find(e=>e.shown&&e.mood!=="tag"&&Math.hypot(e.x-p.x,e.z-p.z)>3&&piles.every(q=>Math.hypot(q.x-e.x,q.z-e.z)>1.2));R.hold(true);look(s.x,s.z);return s;})()`);
   await rescueStep(b);await rescueTap(b,stray.x,stray.y+.2,stray.z);await rescueStep(b);
-  const refused=await b.evaluate(RESCUE_REFUSAL);await b.key("Escape");
-  await b.evaluate(RESCUE_SIGN_IN);await rescueStep(b);await rescueTap(b,stray.x,stray.y+.2,stray.z);await rescueStep(b);
+  const dialog=await b.evaluate(RESCUE_DIALOG);
   const offered=await b.evaluate('(()=>{const M=__ooga.dsb.rescue.menu;return {open:M.isOpen,breed:BL.rescueDogs.BREEDS[M.stats.breed].id,stray:M.stats.stray,ooga:M.stats.ooga};})()');
   await b.key("Escape");await rescueStep(b);
-  record("Rescue browser: a real click on a stray says to sign in while signed out, and signed in opens the adoption on that very dog for the visitor's own Ooga; Escape closes it",rescueRefused(refused)&&offered.open&&offered.breed===stray.breed&&offered.stray===stray.slot&&/Yellow/.test(offered.ooga)&&!(await b.evaluate("__ooga.dsb.rescue.menu.isOpen")),JSON.stringify({stray,refused,offered}));
+  record("Rescue browser: signed out in debug, a real click on a stray offers that very dog for the driven Ooga; Escape closes it",rescueOffered(dialog)&&offered.open&&offered.breed===stray.breed&&offered.stray===stray.slot&&/Yellow/.test(offered.ooga)&&!(await b.evaluate("__ooga.dsb.rescue.menu.isOpen")),JSON.stringify({stray,dialog,offered}));
   await b.evaluate(`(()=>{__ooga.dsb.rescue.dogs.hold(false);__ooga.dsb.rescue.adopt(3,"Pip");})()`);
+  const saved=await b.evaluate(`({me:BL.net.state.me,dogs:${RESCUE_SAVED}.dogs,own:__ooga.dsb.rescue.dogs.dog()})`);
+  record("Rescue browser: debug adoption without sign-in saves a separate puppy",!saved.me&&saved.dogs["@debug"]?.name==="Pip"&&Object.keys(saved.dogs).length===1&&saved.own?.breed==="corgi",JSON.stringify(saved));
   // The flight: from open sky east of the Meme Factory House west over its roof and the rescue's, over the harbour's
   // basin and down on its east pier, on real keys (Z climbs, W flies on); every tick the dog stands on no roof, under
   // no water's surface and inside no house, and it flies on a jetpack while its Ooga does.
@@ -22487,16 +22525,16 @@ scene("dsb",{label:"rescue flight",query:"&view=rescue-door&weather=clear&time=1
   await key("keyUp","w","KeyW");await key("keyUp","z","KeyZ");
   const landed=await b.evaluate(`(()=>{${FLY}for(let i=0;i<100&&!(i>30&&D.rescue.dogs.dog().state==="follow");i++)tick("down");const p=A.root.position,d=D.rescue.dogs.dog();return {p:[p.x,p.y-A.baseY,p.z],dog:d,near:Math.hypot(d.x-p.x,d.z-p.z),dry:L.groundAt(d.x,d.z)>LEVEL,F:{...window.__flight,bad:window.__flight.bad.slice(0,3),count:window.__flight.bad.length}};})()`);
   record("Rescue browser: flying over the Meme Factory House and the harbour, the dog flies along behind its Ooga on a jetpack, never on a roof, under the water or through a wall, and both land, the dog beside its Ooga on dry ground",
-    aloft.x<=-33&&aloft.roof>11.6&&aloft.over>3&&landed.F.count===0&&landed.F.states.fly>10&&landed.F.jet>10&&landed.dog.state==="follow"&&!landed.dog.jet&&landed.near<3&&landed.dry,JSON.stringify({aloft,landed}));
+    aloft.x<=-33&&aloft.roof>11.6&&aloft.over>3&&landed.F.count===0&&landed.F.states.fly>10&&landed.F.jet>10&&landed.dog.state==="follow"&&landed.dog.jet&&!landed.dog.flame&&landed.near<3&&landed.dry,JSON.stringify({aloft,landed}));
 }}]});
 // On a phone: the adoption dialog with its six puppies, name and Adopt on screen and under a thumb.
-// Signed out first: a thumb on "Adopt a puppy" must show the sign-in line, not a toast at the far edge of the screen.
-scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adopt&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[{name:"dsb rescue phone signed out",why:"regression: signed out, tapping Adopt a puppy only raised a short toast at the far edge of the screen (on a desktop under the bottom bar), so nothing seemed to happen; now the dialog opens on the sign-in line",run:async b=>{
+// Signed out in debug: a thumb on "Adopt a puppy" opens the same usable form.
+scene("dsb",{label:"rescue phone",query:"&interior=puppy-rescue&view=rescue-adopt&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[{name:"dsb rescue phone signed out",why:"playthrough: signed out in debug, tapping Adopt a puppy opens the adoption form on screen",run:async b=>{
   await rescueStep(b);await b.evaluate('__ooga.dsb.rescue.menu.close()');await rescueStep(b);
   const button=await b.evaluate('(()=>{const c=document.getElementById("dsb-context"),r=c.getBoundingClientRect();return {text:c.textContent,hidden:c.hidden,x:r.x+r.width/2,y:r.y+r.height/2};})()');
-  await b.click(button.x,button.y);await rescueStep(b);const tapped=await b.evaluate(RESCUE_REFUSAL);
+  await b.click(button.x,button.y);await rescueStep(b);const tapped=await b.evaluate(RESCUE_DIALOG);
   await rescueClick(b,".rescue-menu button[data-close]");await rescueStep(b);const back=await b.evaluate("__ooga.dsb.rescue.menu.isOpen");
-  record("Rescue phone: signed out, a tap on Adopt a puppy opens the dialog on the sign-in line, on screen, with no puppies, name or Adopt, and Back closes it",button.text==="Adopt a puppy"&&!button.hidden&&rescueRefused(tapped)&&!back,JSON.stringify({button,tapped,back}));
+  record("Rescue phone: signed out in debug, a tap on Adopt a puppy opens the adoption form, and Back closes it",button.text==="Adopt a puppy"&&!button.hidden&&rescueOffered(tapped)&&!back,JSON.stringify({button,tapped,back}));
 }},phone("rescue",{play:`${RESCUE_SIGN_IN};for(let i=0;i<4;i++)BL.scenes.dsb.update(1/60,i/60);__ooga.dsb.rescue.open()`,required:['.rescue-menu button[data-breed="0"]','.rescue-menu button[data-breed="5"]',".rescue-menu input",".rescue-menu button[data-adopt]"]})]});
 // Review measures settled WebGL views, not the opening curtain's CSS animation.
 // Keep the driver's reduced-motion default: software compositing can delay the

@@ -3,21 +3,23 @@
 // visitor who never comes to DSB Land fetches and runs none of it, and it writes nothing until they do.
 //
 // Storage: a key of its own (KEY), read and validated on every visit and kept in memory while it lasts: one dog for
-// each signed-in login on this browser (at most LOGINS, the oldest adoption giving way), the piles all over DSB Land
+// each signed-in login on this browser (at most LOGINS, the oldest adoption giving way), a separate debug dog, the piles all over DSB Land
 // (x, y, z each, oldest first, `POOP_CAP` of them within REACH of the middle) and the scoop count. It is written every
 // SAVE_EVERY seconds while there is a dog to keep or a pile has changed, on leaving, and at once for an adoption or a
 // dog going back; hunger is kept to three decimals, coordinates to the centimetre. `game.resetAll` (Right Shift+R)
 // deletes the key with the island's own save.
 //
-// Adoption is for the signed-in visitor's own Ooga only (`BL.net.ownCharacter`, checked with `BL.net.mayDrive` when
+// Outside debug, adoption is for the signed-in visitor's own Ooga only (`BL.net.ownCharacter`, checked with `BL.net.mayDrive` when
 // adopting), one dog a login; the Ooga a signed-out visitor drives belongs to a contributor, so the desk, the dog
 // houses and a stray's tap open the dialog on SIGN_IN alone. The dog is out while that login drives its own Ooga in
-// DSB Land. Strays and scooping are everyone's.
+// DSB Land. Debug visitors may adopt for their driven Ooga without signing in, under a separate saved identity.
+// Strays and scooping are everyone's.
 (() => {
   "use strict";
   const BL=window.BL,D=BL.rescueDogs;
   const KEY="oogaboogaland.rescue.v1",LOGINS=16,LOGIN=/^[a-z0-9-]{1,39}$/,REACH=200,SAVE_EVERY=15;
   const SIGN_IN="Sign in to adopt a puppy.";
+  const DEBUG_LOGIN="@debug"; // Cannot collide with a GitHub login or take one of its saved slots.
   const params=new URLSearchParams(location.search),DEBUG=params.has("debug");
   const isDog=d=>d&&typeof d==="object"&&typeof d.name==="string"&&d.name.length>0&&d.name.length<=BL.rescueMenu.NAME_MAX&&Number.isInteger(d.breed)&&d.breed>=0&&d.breed<D.BREEDS.length
     &&Number.isFinite(d.adoptedAt)&&Number.isFinite(d.hunger)&&d.hunger>=0&&d.hunger<=1;
@@ -29,6 +31,8 @@
       if(!saved||typeof saved!=="object")return out;
       const dogs=saved.dogs&&typeof saved.dogs==="object"&&!Array.isArray(saved.dogs)?Object.entries(saved.dogs).filter(([login,d])=>LOGIN.test(login)&&isDog(d)):[];
       for(const [login,d] of dogs.sort((a,b)=>b[1].adoptedAt-a[1].adoptedAt).slice(0,LOGINS))out.dogs[login]={name:d.name,breed:d.breed,adoptedAt:d.adoptedAt,hunger:d.hunger};
+      const debug=saved.dogs?.[DEBUG_LOGIN];
+      if(isDog(debug))out.dogs[DEBUG_LOGIN]={name:debug.name,breed:debug.breed,adoptedAt:debug.adoptedAt,hunger:debug.hunger};
       const p=saved.poops;
       if(Array.isArray(p)&&p.length%3===0&&p.every(n=>Number.isFinite(n)&&Math.abs(n)<=REACH))out.poops=p.slice(-D.POOP_CAP*3);
       if(Number.isFinite(saved.scooped)&&saved.scooped>=0&&saved.scooped<1e9)out.scooped=Math.floor(saved.scooped);
@@ -54,13 +58,14 @@
     const rescueDoor=vacancies.resolve(1).approach;
     homes||=D.homesAcross({lanes:land.lanes,groundAt:(x,z)=>groundAt(x,z),clearAt:(x,y,z)=>land.groundAt(x,z)>LEVEL+.4&&clear(x-.5,z,x+.5,z,y)&&clear(x,z-.5,x,z+.5,y),count:D.STRAY_CAP,lane:96,radius:120,seed:5281,near:[rescueDoor.x,rescueDoor.z]});
     const room=()=>interiors.active?.room.id==="puppy-rescue"?interiors.active.room:null;
-    // The signed-in visitor's login, and their own Ooga here when they may drive it; else null.
-    const login=()=>{const me=BL.net.state.me;return typeof me?.login==="string"?me.login.toLowerCase():null;};
-    const ownOoga=()=>{const own=BL.net.ownCharacter(),cave=own&&crew.cavemen.get(own.handle);return cave&&!BL.net.mayDrive(cave.traits.name)?cave:null;};
+    // Debug alone lends a signed-out visitor the driven Ooga; signed-in ownership still takes precedence.
+    const login=()=>{const me=BL.net.state.me;return typeof me?.login==="string"?me.login.toLowerCase():DEBUG&&!me?DEBUG_LOGIN:null;};
+    const ownOoga=()=>{const own=BL.net.ownCharacter(),cave=own?crew.cavemen.get(own.handle):DEBUG&&!BL.net.state.me?crew.player:null;return cave&&!BL.net.mayDrive(cave.traits.name)?cave:null;};
     let changes=0,saveTimer=0,shownFor=undefined,lastLine=null,pick=null,inRoom=null;
     const persist=()=>{dogs.writeStore();save(store);changes=dogs.changes;saveTimer=0;};
     // The visitor's own line, in the dialog and on the board over the dog houses (in sign letters, so without the name).
     const line=()=>{
+      button.setDog(dogs.own);
       const who=login(),mine=who&&store.dogs[who],n=store.scooped,scooped=n?` · ${n} poop${n===1?"":"s"} scooped`:"";
       const text=!who?SIGN_IN:mine?`${mine.name} is with you${scooped}`:`A puppy is waiting for you${scooped}`;
       if(text===lastLine)return;lastLine=text;menu.setLine(text);
@@ -76,8 +81,8 @@
     const adopted=({breed,name,stray})=>{
       const who=login(),cave=ownOoga();
       if(!who||!cave||store.dogs[who]){hud.toast(who&&cave?"You already have a dog.":SIGN_IN);return false;}
-      const entry={name,breed,adoptedAt:Date.now(),hunger:0},logins=Object.keys(store.dogs);
-      if(logins.length>=LOGINS)delete store.dogs[logins.reduce((a,b)=>store.dogs[a].adoptedAt<=store.dogs[b].adoptedAt?a:b)];
+      const entry={name,breed,adoptedAt:Date.now(),hunger:0},logins=Object.keys(store.dogs).filter(who=>who!==DEBUG_LOGIN);
+      if(who!==DEBUG_LOGIN&&logins.length>=LOGINS)delete store.dogs[logins.reduce((a,b)=>store.dogs[a].adoptedAt<=store.dogs[b].adoptedAt?a:b)];
       store.dogs[who]=entry;dogs.adopt(cave,entry,stray);shownFor=who;persist();line();
       hud.toast(`${name} the ${D.BREEDS[breed].name} now follows ${cave.traits.display}!`);return true;
     };
@@ -86,18 +91,19 @@
     const dogs=D.create({root,crew,fx,hud,pile:{eat:()=>{if(world.level<1)return false;world.level=Math.max(0,world.level-1);return true;}},yard:BL.rescueRoom.YARD,door:[rescueDoor.x,rescueDoor.z],
       ground:(x,z,feet)=>groundAt(x,z,feet,undefined,DOG),standable,flyClear,addTarget:(node,owner,opts)=>input.add(node,owner,opts),removeTarget:node=>input.remove(node),pickGeometry:BL.rescueRoom.PICK,
       strays:{homes,renderer,clearSegment:clear},camera,store,onRelease});
+    const button=BL.rescueMenu.createButton({onFeed:()=>dogs.feedOwn(),onRelease:()=>dogs.releaseOwn()});
     changes=dogs.changes;line();
     // The rescue's venue for the scene's menu zones and Space.
     const venue={open:route=>open(route),get isOpen(){return menu.isOpen;}};
-    // The own dog follows the login signed in, while it drives its own Ooga; looked at again when the account changes.
-    let me;
+    // Follow the account's own Ooga, or the signed-out debug visitor's driven Ooga, when either changes.
+    let me,player;
     const follow=()=>{
       const who=login(),cave=ownOoga(),out=cave&&who&&store.dogs[who]?who:null;
       if(out!==shownFor){shownFor=out;dogs.setOwn(cave,out&&store.dogs[out]);}
       line();
     };
     const update=(dt,time,day)=>{
-      if(BL.net.state.me!==me){me=BL.net.state.me;follow();}
+      if(BL.net.state.me!==me||DEBUG&&crew.player!==player){me=BL.net.state.me;player=crew.player;follow();}
       const now=room();
       if(now!==inRoom){
         inRoom=now;if(pick){input.remove(pick.screen);pick=null;}
@@ -109,6 +115,7 @@
         if(view==="rescue-adopt"){pilot.navigate(now.reviews["rescue-kennels"]);open();}
       }
       dogs.update(dt,time,day,!interiors.active?D.CHORA:now?D.YARD:D.ROOM);
+      button.update();
       if((saveTimer+=dt)>=SAVE_EVERY){saveTimer=0;if(dogs.own||dogs.changes!==changes)persist();}
     };
     const onTap=hit=>{
@@ -119,7 +126,7 @@
       return false;
     };
     const onKey=e=>{if(!menu.isOpen)return false;if(e.key==="Escape")menu.close();return true;};
-    const dispose=()=>{persist();menu.dispose();if(pick){input.remove(pick.screen);pick=null;}dogs.dispose();};
+    const dispose=()=>{persist();button.dispose();menu.dispose();if(pick){input.remove(pick.screen);pick=null;}dogs.dispose();};
     return {update,drawOverlay:dogs.drawOverlay,onTap,onKey,menuForRoom:r=>r?.id==="puppy-rescue"?venue:null,stats:dogs.stats,dispose,
       get isOpen(){return menu.isOpen;},debug:{get dogs(){return dogs.debug;},menu,open,store,save:persist,get line(){return lastLine;},clear,standable,flyClear,
       // An adoption as the dialog's Adopt makes it, under the same rules.
