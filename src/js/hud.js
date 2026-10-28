@@ -219,8 +219,8 @@
     for (const child of source.children) if (child.visible && !child.portraitHidden) addChild(copy, copyPortraitNode(child, portraitRoot, portraitGeometry));
     return copy;
   };
-  const renderFaceIcon = (canvas, cave, gorilla = null, px = ICON_PX) => {
-    const renderer = iconRendererMod.createRenderer(canvas, { width: px, height: px, transparent: true });
+  const renderFaceIcon = (canvas, cave, gorilla = null, px = ICON_PX, unlit = false) => {
+    const renderer = iconRendererMod.createRenderer(canvas, { width: px, height: px, transparent: true, unlit });
     const source = gorilla ? gorilla.parts.head : cave.parts.head, geometry = gorilla ? source.geometry : cave.portraitHead;
     const root = createNode(), head = copyPortraitNode(source, source, geometry);
     const bounds = boundsOf(geometry), fit = (!gorilla && cave.traits.gasMask ? 0.68 : 0.78) / Math.max(bounds.radius, 0.05);

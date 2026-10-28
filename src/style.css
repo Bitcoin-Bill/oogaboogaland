@@ -9713,6 +9713,49 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .rescue-menu .field input { min-height: 44px; font-size: 16px; }
 }
 
+/* The island panel's frame, slab and controls, painted in the wallet shop's red and white. */
+.wallets-menu {
+  --menu-width: 560px;
+  --menu-font: 13px/1.4 var(--mono);
+  --paper: #fff4ef;
+  --ink: #4b1b17;
+  --wood-edge: #75231e;
+  --nail: #471814;
+  --accent: #bb3027;
+  --accent-text: #fff4ef;
+  --stone-dk: #c7b0a4;
+  --tablet: linear-gradient(160deg,#fffaf4,#eee2d8 55%,#dcc9bd);
+  color: var(--paper);
+  background: linear-gradient(#cf3b30e0,#a52b24e0),var(--planks);
+  border-radius: var(--radius);
+}
+.wallets-menu:not([open]) { display: none; }
+.wallets-menu .panel-title h2 { min-width: 0; }
+.wallets-menu .panel-title .sign { max-width: 100%; }
+.wallets-menu .panel-title .foot-button { flex: none; }
+.wallets-menu .help { color: var(--paper); }
+.wallets-menu .foot-button { color: var(--ink); background: linear-gradient(#fffaf4,#e8d8ce); text-shadow: none; }
+.wallets-menu .foot-button:hover,.wallets-menu .foot-button:focus-visible { background: linear-gradient(#fff,#f3e7df); }
+.wallets-menu .foot-button:focus-visible { box-shadow: 0 2px 0 var(--nail),0 0 0 2px var(--paper); }
+.wallets-content { display: flex; flex-direction: column; gap: 12px; }
+.wallets-picks { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; padding: 12px; }
+.wallets-pick { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-width: 0; padding: 16px 8px; }
+.wallets-pick canvas { max-width: 100%; width: auto; height: 64px; object-fit: contain; image-rendering: pixelated; }
+.wallets-pick b { font-size: 11px; max-width: 100%; overflow-wrap: anywhere; }
+.wallets-menu .wallets-pick[aria-pressed="true"] { color: var(--paper); background: linear-gradient(#d6493b,var(--accent)); border-color: var(--wood-edge); }
+.wallets-pick[aria-pressed="true"] b { text-decoration: underline; text-underline-offset: 3px; }
+.wallets-menu .wallets-take { color: var(--paper); background: linear-gradient(#d6493b,var(--accent)); }
+.wallets-menu .wallets-take:hover,.wallets-menu .wallets-take:focus-visible { background: linear-gradient(#e25748,#c8352a); }
+@media (pointer:coarse) { .wallets-menu .foot-button { min-height: 44px; } }
+@media (max-width: 520px) { .wallets-picks { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+/* The line over the view while a device is carried, with the Throw button beside it. */
+.wallet-carry { position: fixed; left: 50%; top: calc(64px + var(--safe-top)); transform: translateX(-50%); z-index: 15; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; max-width: calc(100vw - 32px); margin: 0; padding: 6px 8px 6px 12px; color: #fff4df; background: #2a1d17e6; border: 2px solid #f2c14e; border-radius: 6px; font: 12px system-ui; letter-spacing: .03em; text-align: center; }
+.wallet-carry[hidden] { display: none; }
+.wallet-throw { min-height: 36px; padding: 0 14px; color: #2a1d17; background: linear-gradient(#ffcf6b,#e2a04a); border: 2px solid #8a5a32; border-radius: 6px; font: 600 12px system-ui; letter-spacing: .06em; cursor: pointer; }
+.wallet-throw:hover { background: linear-gradient(#ffd98a,#f0b05a); }
+/* On touch screens the top holds the scene's buttons: the line sits over the act button, between the sticks. */
+@media (pointer: coarse) { .wallet-carry { top: auto; bottom: calc(172px + var(--safe-bottom)); max-width: min(420px, calc(100vw - 32px)); } }
+
 .studio-session { width:min(42rem,calc(100vw - 2rem)); max-height:85vh; overflow:auto; background:#211b25; color:var(--fg); border:1px solid #aa8054; border-radius:.75rem; padding:1.2rem; }
 .studio-session::backdrop { background:rgba(0,0,0,.65); }
 .studio-session header,.studio-controls { display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; }
