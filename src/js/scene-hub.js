@@ -7,6 +7,7 @@
   const { JET_SPEED, JET_RISE, JET_FUEL_SECONDS, JET_MOVE_SECONDS } = crewMod;
   const { DROP_HEIGHT } = pileMod;
   const params = new URLSearchParams(location.search);
+  const LAZY_BEDDING = params.get("lazyhub") === "1";
   const SEED = 1;
   const DEG = Math.PI / 180;
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
@@ -59,7 +60,9 @@
   const FLY = { speed: 6, perDist: 0.5, climb: 6, yMin: -8, yMax: JET_RISE * JET_FUEL_SECONDS + 16 }, FLY_BOUND = RADIUS + JET_SPEED * JET_MOVE_SECONDS + 8;
   // ABYSS_FLOOR is an unseen support that keeps hop integration finite until the visible abyss fall ends.
   const ABYSS_FLOOR = -120, ABYSS_RESPAWN_Y = -60;
-  const FOLLOW = { y: 0.9, min: 4, max: 10, pitch: [0.25, 0.8] };
+  // `view` is where a driven Ooga's camera arrives at the pile (signing in, a respawn) and where a reset puts it:
+  // high and far enough to read the ground all round the Ooga, the top of the view just reaching the horizon.
+  const FOLLOW = { y: 0.9, min: 4, max: 10, pitch: [0.25, 0.8], view: { pitch: 0.42, dist: 9 } };
   // Close view sits at an average Ooga eye; first person sits at the face surface.
   // Looking down then clears the hidden head. Portal ownership stays with the Ooga, not this offset.
   const CLOSE_VIEW = { eyeHeight: 1.1, eyeRatio: 0.95, eyeForward: 0.16, pitch: [-1.35, 1.35], trailingDist: 6, orbitDist: 6 };
@@ -68,21 +71,9 @@
   // Space at Ooga Arcade's mouth works from MOUTH_REACH of a point MOUTH_ACTION_Z inside its doorway.
   const MOUTH_REACH = 3.2, MOUTH_ACTION_Z = -3.6;
   const MATRIX_TYPES = 8;
-  const MATRIX_RAIN_GAP = 0.19;
-  const MATRIX_SURFACE_PITCH = 0.12, MATRIX_SURFACE_GAP = 0.13, MATRIX_GLYPH_HZ = 20;
-  const MATRIX_PIXEL_PITCH = 0.021, MATRIX_PIXEL_SIZE = 0.016;
-  const MATRIX_STREAM_SPEED_MIN = 0.56, MATRIX_STREAM_SPEED_RANGE = 0.64;
-  const MATRIX_TRAIN_MIN = 7, MATRIX_TRAIN_RANGE = 6, MATRIX_TRAIN_GAP_MIN = 2, MATRIX_TRAIN_GAP_RANGE = 5;
-  const MATRIX_WORLD_SPEED = 72, MATRIX_WORLD_MAX = RADIUS + 8, MATRIX_FRONT_WIDTH = 1.5, MATRIX_GLYPH_REACH = 0.16;
-  const MATRIX_MIRROR_HEIGHT = 3.25;
-  const MATRIX_GATE_HIDDEN_Y = 3.2, MATRIX_GATE_SPEED = 3.2, MATRIX_BUTTON_REACH = 3.4, MATRIX_BUTTON_USE_REACH = 2.2;
+  const MATRIX_GATE_HIDDEN_Y = 3.2, MATRIX_BUTTON_REACH = 3.4, MATRIX_BUTTON_USE_REACH = 2.2;
   const MIRROR_GATE_Z = 0.28;
-  // Breaking the mirror enables a local release; its gate starts locked down.
   const MIRROR_GATE_CLOSED = true;
-  const MATRIX_WORLD = { active: 0, direction: 0, radius: 0, time: 0, density: 1, speed: MATRIX_WORLD_SPEED, retreatSpeed: MATRIX_WORLD_SPEED, maxRadius: MATRIX_WORLD_MAX, permanentCave: 0, permanentPlane: new Float32Array(4), permanentAperture: new Float32Array(4), livingGlobal: 0, origin: new Float32Array([0, 0, 0]), caves: new Float32Array(8 * 4), caveBounds: new Float32Array(8 * 4), caveNear: 0 };
-  // WebGL quality may reduce effects and resolution, but it must not remove whole Matrix lanes:
-  // the black backing turns adjacent omitted lanes into conspicuous missing wall panels.
-  const MATRIX_DENSITY = { high: 8, medium: 8, low: 8, canvas2d: 1 };
   const PORTAL_Z = 0.5, PORTAL_MIN_X = -2.48, PORTAL_MAX_X = 2.48, PORTAL_MIN_Y = 0, PORTAL_MAX_Y = 2.98;
   const RIM_SEAM_DROP = 0.015;
   // The sign's back reaches 0.07 m behind its origin; the Arcade's flat wall sits behind the projecting rim.
@@ -99,7 +90,7 @@
     clear: new Float32Array(3), horizon: new Float32Array(3), zenith: new Float32Array(3), sky: new Float32Array(3), ground: new Float32Array(3), sun: new Float32Array(3), direct: new Float32Array(3),
     light: { x: 0.55, y: 0.78, z: -0.25 }, sunDirection: { x: 0, y: 1, z: 0 }, moon: { x: 0, y: 1, z: 0 }, moonSun: { x: 0, y: -1, z: 0 }, celestialPole: { x: 0, y: Math.sin(20 * DEG), z: -Math.cos(20 * DEG) }, starMatrix: new Float32Array(9),
     stars: 0, torch: 0, day: 1, twilight: 0, lampFactor: 0, directStrength: 1, directionalLightStrength: 1, sunStrength: 1, moonStrength: 0, moonIllumination: 1, moonPhase: 0.5, ambientFloor: 0.18, diffuseFloor: 0, shadowStrength: 1, shadowFloor: 0, shadowBias: 0.002, outdoorDarkestSurfaceEstimate: 0.34, activeLightSource: "sun", latitude: 20, dayOfYear: 172, continuousDay: 171.5, solarDeclination: 0, siderealAngle: 0, sunAltitude: 90, sunAzimuth: 180, moonAltitude: -90, moonAzimuth: 0, sunriseHour: 6, sunsetHour: 18,
-    time: 0, bloomStrength: 0.5, lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, shadowCenter: { x: 0, y: 0, z: 0 }, shadowExtent: 34, matrix: MATRIX_WORLD, sea: -70, cutawayMaxY: 1e6, birdsEyeCutaway: false, cutawayFade: 0, cutawayRockMix: 0, cutawayRegions: [], cutawayRegionCount: 0, cutawayCloudY: 0, cutawayCloudMix: 0
+    time: 0, bloomStrength: 0.5, lights: new Float32Array(BL.glRenderer.POINT_LIGHT_CAPACITY * 8), lightCount: 0, shadowCenter: { x: 0, y: 0, z: 0 }, shadowExtent: 34, sea: -70, cutawayMaxY: 1e6, birdsEyeCutaway: false, cutawayFade: 0, cutawayRockMix: 0, cutawayRegions: [], cutawayRegionCount: 0, cutawayCloudY: 0, cutawayCloudMix: 0
   };
   let viewPoseActor = null;
   RENDER_OPTS.beforeView = () => {
@@ -171,7 +162,6 @@
   const BUILD_RADIUS = 13;
   const NUDGES = [0, -2, 2, -4, 4, -6, 6, -8, 8];
   const PATH_GEOMETRY = new WeakMap();
-  const CAVE_TERRAIN_LAYOUTS = new WeakMap();
   const TIMECHAIN_OUTER_PERIOD = 180;
   const DRESSED = new WeakMap();
   const DRESSING_LAMPS = BL.dressing.LIGHT_RGB.map(([r, g, b]) => ({ r, g, b, radius: 5.5, glow: 0.9, hide: false }));
@@ -234,7 +224,7 @@
   };
 
   // One visit's state: created in enter, dropped in leave.
-  let oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
+  let oogatronUnsub, renderer, game, world, go, lootEnabled, testBananas, root, camera, overlayCanvas, island, terrainRampRoof, pathNode, altar, hud, hooks, input, pilot, fx, cameraCover, bananaCover, solids, rockGuides, objectGuides, sightGuides, bananaGuides, pileGuides, platformGuides, mirrorGuides, pile, crew, crates, critters, clock, presets, entering, mirrorCave, matrixCave, matrixControl, gateRain, fireRigs, firePitRig, fire, headquarters, dockStairs, jumbotron, positionDebug, remotes, npcSync;
   // GAME MODE (`setGameMode`): an island event holds the island still for play while it runs.
   let gameMode = false, gameCombatOnly = false;
   // GAME MODE's ring (`updateGameRing`): the group holding its veils, how far it has risen (0 to 1) and the seconds left
@@ -244,8 +234,8 @@
   // Its floating lanterns (one node each over one geometry), and whether they showed last frame.
   const ringLanterns = [];
   let ringLanternsShown = false;
-  // HALLOWEEN: the ghost hunt (ghost-game.js) once its group has arrived, the visit it was asked for, and its walls' seal.
-  let ghosts = null, ghostLoading = false, ghostVisit = 0, ghostSeal = null;
+  // HALLOWEEN: the lightweight herald, the hunt once a player starts or joins, and its walls' seal.
+  let ghosts = null, ghostEntry = null, ghostSeal = null;
   let magazine, magazineState, clankers, clankerPlay, clankerMeshes, clankerPartOwners, grabSupportEntry = null, entropyLab, chalkboard, factoryMouth = null, arcadeMouth = null, bcaMouth = null, glCanvas = null;
   const dragHand = new Float64Array(3), dragFoot = new Float64Array(3);
   const THROW_SWING_TIME = 0.28, THROW_SETTLE_TIME = 0.2, THROW_CARRY_SPEED_MAX = 8;
@@ -406,7 +396,6 @@
     for (let i = 0; i < headquarters.mattresses.length; i++) hideNodeIfCut(headquarters.mattresses[i].node);
     for (let i = 0; i < headquarters.roomSigns.length; i++) hideNodeIfCut(headquarters.roomSigns[i].node);
     hideNodeIfCut(headquarters.firepit);
-    if (matrixControl?.button) hideNodeIfCut(matrixControl.button);
     for (let i = 0; i < crew.list.length; i++) {
       const drops = crew.list[i].stunGear.drops;
       for (let j = 0; j < drops.length; j++) if (drops[j].active && drops[j].node) hideNodeIfCut(drops[j].node);
@@ -418,7 +407,7 @@
   const CLANKER_HIT = { node: null, owner: null, type: "none", distance: Infinity, x: 0, y: 0, z: 0 };
   const CLANKER_CAVITY = { floor: 0, ceiling: 0, caveIndex: 0 };
   const JETPACK_HUD_STATE = { owned: false, equipped: false, fuel: 1, blocked: false };
-  let enteringTween = null, factoryDeparting = false, bifrostDeparting = false, bifrostHeld = false;
+  let enteringTween = null, factoryDeparting = false, bifrostDeparting = false, factoryHeld = false;
   // The walk through the Lightning Factory's shield (factoryGlide): which way, the Ooga it walks, how long it has
   // walked, where the Ooga stood the frame before, whether it is through, and the shield's light over the view.
   // Coming back out, the Ooga walks on until it is OUT_WALK metres out of the mouth.
@@ -457,6 +446,10 @@
     if (phase.paused) return false;
     phase.update(dt, phase.ripples.time + dt);
     return true;
+  };
+  const absorbCaveVeil = (ax, ay, az, point, dt) => {
+    for (const veil of caveVeils) if (veil.phase.absorb(ax, ay, az, point, dt)) return true;
+    return false;
   };
   // The two boards across the hole from the vine bridge, one reading the chain and one reading the
   // weather. Each holds its canvas, its panel node and the reading it last drew, so a snapshot saying
@@ -678,14 +671,16 @@
   const props = [];
   const scenery = [];
   const sceneryClaims = [];
-  const matrixInteriors = [];
   const matrixGates = [];
   const sealedCaves = [];
+  // Mouths without a specialized portal share the lab's transparent contact veil.
+  const caveVeils = [], ARCADE_VEIL_TINT = [1, 0.16, 0.12];
   let sceneryVisible = 0, sceneryRadiusCulled = 0, sceneryPathCulled = 0, sceneryFixedCulled = 0, sceneryReflows = 0;
   const addTarget = (node, owner, opts) => {
     input.add(node, owner, opts);
     targets.push(node);
   };
+  const removeTarget = (node) => { input.remove(node); drop(targets, node); };
   // Poking the set dressing. Every piece a baked set placed (`baked.picks`) gets a pick sphere on a node kept off
   // the scene graph, over one shared faceless geometry: never drawn, never baked into outlines or the GPU, and
   // released with the visit's other targets. `toWorld` maps a piece's set coordinates to the island, or null to
@@ -753,675 +748,20 @@
       rejected: { above: 0, below: 0, beside: 0 }
     };
   };
-  const matrixModulo = (value, range) => value - Math.floor(value / range) * range;
-  const matrixTravelDistance = (x, z, caveIndex = 0) => {
-    if (!caveIndex) return Math.hypot(x - MATRIX_WORLD.origin[0], z - MATRIX_WORLD.origin[2]);
-    const offset = (caveIndex - 1) * 4, descriptor = MATRIX_WORLD.caves;
-    const depth = Math.max(0, descriptor[offset + 2] - x * descriptor[offset] - z * descriptor[offset + 1]);
-    return Math.hypot(x + descriptor[offset] * depth - MATRIX_WORLD.origin[0], z + descriptor[offset + 1] * depth - MATRIX_WORLD.origin[2]) + depth;
-  };
-  const matrixCoverage = (x, z, caveIndex = 0) => {
-    if (!MATRIX_WORLD.active) return 0;
-    const amount = Math.max(0, Math.min(1, (MATRIX_WORLD.radius - matrixTravelDistance(x, z, caveIndex)) / MATRIX_FRONT_WIDTH));
-    return amount * amount * (3 - 2 * amount);
-  };
-  const matrixEntranceMinimum = (m, minX, maxX) => {
-    const sr = Math.sin(m.ry), cr = Math.cos(m.ry);
-    const x = m.x + sr * PORTAL_Z - MATRIX_WORLD.origin[0], z = m.z + cr * PORTAL_Z - MATRIX_WORLD.origin[2];
-    const cross = Math.max(minX, Math.min(maxX, -(x * cr - z * sr)));
-    return Math.hypot(x + cr * cross, z - sr * cross);
-  };
-  // Hanging-glyph code is separate from the surface-following lanes.
-  // Prepare fixed columns inside the real carved volume, never the old flat liner.
-  const buildCaveRain = (slot, m, group, caveIndex) => {
-    // Falling ceiling glyphs belong to the upper caves only.
-    // HQ keeps surface glyphs through both ramp systems and floors, with no airborne rain batches.
-    if (slot.status === "headquarters") return {
-      streams: [], nodes: [], perGlyphCapacity: 0, capacity: 0, bufferBytes: 0,
-      spacing: MATRIX_RAIN_GAP, activeGlyphCount: 0, brightTipCount: 0, updates: 0, densityRankLimit: 0
-    };
-    const canvas = renderer.kind === "canvas2d", limit = canvas ? 18 : 48, trainLength = canvas ? 9 : 14;
-    const cr = Math.cos(m.ry), sr = Math.sin(m.ry), rand = mulberry32(fnv1a(`${slot.id}:rain`));
-    const streams = [], nodes = [], obstacles = [], column = { caveIndex: 0, floor: 0, ceiling: 0 };
-    const footprint = 0.055, halfHeight = 0.0605, clearance = 0.02;
-    const visit = (node) => {
-      if (node.geometry && !node.mirror) {
-        const verts = node.geometry.verts, transform = node.world;
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-        for (let i = 0; i < verts.length; i += 3) {
-          const x = verts[i], y = verts[i + 1], z = verts[i + 2];
-          const wx = transform[0] * x + transform[4] * y + transform[8] * z + transform[12] - m.x;
-          const wy = transform[1] * x + transform[5] * y + transform[9] * z + transform[13];
-          const wz = transform[2] * x + transform[6] * y + transform[10] * z + transform[14] - m.z;
-          const lx = cr * wx - sr * wz, lz = sr * wx + cr * wz;
-          minX = Math.min(minX, lx); maxX = Math.max(maxX, lx);
-          minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
-          minZ = Math.min(minZ, lz); maxZ = Math.max(maxZ, lz);
-        }
-        if (minZ < -0.6) obstacles.push({ minX, maxX, minY, maxY, minZ, maxZ });
-      }
-      for (let i = 0; i < node.children.length; i++) visit(node.children[i]);
-    };
-    visit(group);
-    for (let attempt = 0; attempt < limit * 16 && streams.length < limit; attempt++) {
-      const side = rand() - 0.5, depth = rand();
-      const lx = side * 5, lz = streams.length < limit * 0.65 ? -0.7 - depth * 1.55 : -2.55 - depth * 3.2;
-      const x = m.x + cr * lx + sr * lz, z = m.z - sr * lx + cr * lz;
-      let minY = -Infinity, maxY = Infinity, valid = true;
-      for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
-        if (!island.cavityAt(x + ix * footprint, z + iz * footprint, column, caveIndex) || column.caveIndex !== caveIndex || !Number.isFinite(column.ceiling)) valid = false;
-        else { minY = Math.max(minY, column.floor); maxY = Math.min(maxY, column.ceiling); }
-      }
-      minY += halfHeight + clearance; maxY -= halfHeight + clearance;
-      if (!valid || maxY - minY < 1) continue;
-      const blocked = [];
-      for (let i = 0; i < obstacles.length; i++) {
-        const o = obstacles[i];
-        if (lx + footprint < o.minX || lx - footprint > o.maxX || lz + footprint < o.minZ || lz - footprint > o.maxZ) continue;
-        blocked.push(o.minY - halfHeight - clearance, o.maxY + halfHeight + clearance);
-      }
-      const seed = fnv1a(`${slot.id}:rain:${streams.length}`), yaw = m.ry + (rand() - 0.5) * 0.18;
-      const period = maxY - minY + (trainLength - 1) * MATRIX_RAIN_GAP;
-      streams.push({
-        x, z, minY, maxY, yaw, cr: Math.cos(yaw), sr: Math.sin(yaw), period, trainLength, seed,
-        speed: MATRIX_STREAM_SPEED_MIN + rand() * MATRIX_STREAM_SPEED_RANGE, phase: rand() * period, brightness: 0.62 + rand() * 0.32,
-        rank: canvas ? 0 : streams.length % 8, distance: matrixTravelDistance(x, z, caveIndex), blocked
-      });
-    }
-    const perGlyphCapacity = streams.length * Math.ceil(trainLength / MATRIX_TYPES);
-    for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) {
-      const node = createNode({ geometry: { ...hubModels.matrixGlyph(glyph), matrixCave: caveIndex }, instanceData: new Float32Array(perGlyphCapacity * 20), instanceCount: 0, drawInstanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true });
-      addChild(root, node); placed.push(node); nodes.push(node);
-    }
-    return {
-      streams, nodes, perGlyphCapacity, capacity: perGlyphCapacity * MATRIX_TYPES, bufferBytes: perGlyphCapacity * MATRIX_TYPES * 80,
-      spacing: MATRIX_RAIN_GAP, activeGlyphCount: 0, brightTipCount: 0, updates: 0, densityRankLimit: 0
-    };
-  };
-  // The Matrix curtain in the gate's opening, `half` either side of its middle and up to just under `top`.
-  const buildGateRain = (gate, half, top) => {
-    const canvas = renderer.kind === "canvas2d", columns = canvas ? 8 : 14, depths = canvas ? 1 : 2, trainLength = canvas ? 9 : 14;
-    const rand = mulberry32(fnv1a("old-gate:rain")), streams = [], nodes = [];
-    const minY = gate.position.y + 0.09, maxY = gate.position.y + top - 0.09;
-    for (let depth = 0; depth < depths; depth++) for (let column = 0; column < columns; column++) {
-      const x = gate.position.x + lerp(-half, half, (column + 0.5) / columns);
-      const z = gate.position.z + (depths === 1 ? 0 : depth ? 0.18 : -0.18);
-      const seed = fnv1a(`old-gate:rain:${streams.length}`), period = maxY - minY + (trainLength - 1) * MATRIX_RAIN_GAP;
-      streams.push({
-        x, z, minY, maxY, yaw: 0, cr: 1, sr: 0, period, trainLength, seed,
-        speed: MATRIX_STREAM_SPEED_MIN + rand() * MATRIX_STREAM_SPEED_RANGE, phase: rand() * period, brightness: 0.62 + rand() * 0.32,
-        rank: canvas ? 0 : streams.length % 8, distance: matrixTravelDistance(x, z), blocked: []
-      });
-    }
-    const perGlyphCapacity = streams.length * Math.ceil(trainLength / MATRIX_TYPES);
-    for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) {
-      const node = createNode({ geometry: { ...hubModels.matrixGlyph(glyph) }, instanceData: new Float32Array(perGlyphCapacity * 20), instanceCount: 0, drawInstanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true });
-      addChild(root, node); placed.push(node); nodes.push(node);
-    }
-    return {
-      streams, nodes, perGlyphCapacity, capacity: perGlyphCapacity * MATRIX_TYPES, bufferBytes: perGlyphCapacity * MATRIX_TYPES * 80,
-      spacing: MATRIX_RAIN_GAP, activeGlyphCount: 0, brightTipCount: 0, updates: 0, densityRankLimit: 0,
-      minX: gate.position.x - half, maxX: gate.position.x + half, minY, maxY, minZ: gate.position.z - 0.18, maxZ: gate.position.z + 0.18
-    };
-  };
-  const updateCaveRain = (rain, elapsed, visible, densityRankLimit, permanent = false) => {
-    rain.activeGlyphCount = rain.brightTipCount = 0;
-    rain.densityRankLimit = densityRankLimit;
-    for (let glyph = 0; glyph < rain.nodes.length; glyph++) rain.nodes[glyph].instanceCount = rain.nodes[glyph].drawInstanceCount = 0;
-    if (!visible) return;
-    for (let i = 0; i < rain.streams.length; i++) {
-      const s = rain.streams[i];
-      if (s.rank >= densityRankLimit || !permanent && s.distance - MATRIX_GLYPH_REACH >= MATRIX_WORLD.radius) continue;
-      const head = s.maxY - matrixModulo(elapsed * s.speed + s.phase, s.period);
-      const version = Math.floor(elapsed * MATRIX_GLYPH_HZ + (s.seed & 15) / 16);
-      for (let character = 0; character < s.trainLength; character++) {
-        const y = head + character * MATRIX_RAIN_GAP;
-        if (y < s.minY || y > s.maxY) continue;
-        let blocked = false;
-        for (let b = 0; b < s.blocked.length; b += 2) if (y >= s.blocked[b] && y <= s.blocked[b + 1]) { blocked = true; break; }
-        if (blocked) continue;
-        const glyph = (character + version + (s.seed & 7)) & 7, node = rain.nodes[glyph], slot = node.instanceCount++;
-        if (slot >= rain.perGlyphCapacity) throw new Error("Cave Matrix rain instance capacity exceeded");
-        const data = node.instanceData, offset = slot * 20;
-        data[offset] = s.cr; data[offset + 1] = 0; data[offset + 2] = -s.sr; data[offset + 3] = 0;
-        data[offset + 4] = 0; data[offset + 5] = 1; data[offset + 6] = 0; data[offset + 7] = 0;
-        data[offset + 8] = s.sr; data[offset + 9] = 0; data[offset + 10] = s.cr; data[offset + 11] = 0;
-        data[offset + 12] = s.x; data[offset + 13] = y; data[offset + 14] = s.z; data[offset + 15] = 1;
-        data[offset + 16] = s.brightness * (0.48 + (1 - character / s.trainLength) * 0.52);
-        data[offset + 17] = 0; data[offset + 18] = character === 0 ? 1 : character === 1 ? 0.55 : 0;
-        // Free-standing voxels, unlike surface glyphs, must be visible from behind.
-        data[offset + 19] = 0;
-        rain.activeGlyphCount++; if (character < 2) rain.brightTipCount++;
-      }
-    }
-    for (let glyph = 0; glyph < rain.nodes.length; glyph++) {
-      const node = rain.nodes[glyph];
-      node.drawInstanceCount = node.instanceCount;
-      if (rain.activeGlyphCount) node.instanceVersion++;
-    }
-    if (rain.activeGlyphCount) rain.updates++;
-  };
-  const clearMatrixDraw = (cave) => {
-    cave.activeGlyphCount = cave.revealedGlyphCount = cave.drawnGlyphCount = cave.brightTipCount = cave.movingGapCount = 0;
-    const counts = cave.activeSurfaceCounts;
-    counts.floor = counts.ceiling = counts.wall = counts.prop = 0;
-    for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) {
-      const node = cave.nodes[glyph];
-      node.instanceCount = node.drawInstanceCount = 0;
-    }
-  };
-  // Intersect a lane's full width with the union of coplanar terrain faces; V intervals have linear edges.
-  // Keep endpoint limits at hole vertices, where a point sample alone would join the intervals across a hole.
-  const matrixSupportIntervals = (supports, left, right) => {
-    const cuts = [left, right];
-    for (const support of supports) for (const point of support.polygon) {
-      if (point[0] > left && point[0] < right) cuts.push(point[0]);
-    }
-    cuts.sort((a, b) => a - b);
-    let allowed = null;
-    for (let slab = 1; slab < cuts.length; slab++) {
-      const loU = cuts[slab - 1], hiU = cuts[slab];
-      if (hiU - loU < 1e-8) continue;
-      const middle = (loU + hiU) * 0.5, intervals = [];
-      for (const support of supports) {
-        const polygon = support.polygon;
-        let lo = Infinity, hi = -Infinity, loLeft = 0, loRight = 0, hiLeft = 0, hiRight = 0;
-        for (let i = 0; i < polygon.length; i++) {
-          const a = polygon[i], b = polygon[(i + 1) % polygon.length];
-          if (middle <= Math.min(a[0], b[0]) || middle >= Math.max(a[0], b[0])) continue;
-          const slope = (b[1] - a[1]) / (b[0] - a[0]);
-          const v = a[1] + (middle - a[0]) * slope;
-          const atLeft = a[1] + (loU - a[0]) * slope, atRight = a[1] + (hiU - a[0]) * slope;
-          if (v < lo) { lo = v; loLeft = atLeft; loRight = atRight; }
-          if (v > hi) { hi = v; hiLeft = atLeft; hiRight = atRight; }
-        }
-        if (hi > lo) intervals.push({ lo, hi, loLeft, loRight, hiLeft, hiRight });
-      }
-      intervals.sort((a, b) => a.lo - b.lo);
-      const union = [];
-      for (let i = 0; i < intervals.length;) {
-        const first = intervals[i++];
-        let hi = first.hi, hiLeft = first.hiLeft, hiRight = first.hiRight;
-        while (i < intervals.length && intervals[i].lo <= hi + 1e-8) {
-          const next = intervals[i++];
-          if (next.hi > hi) { hi = next.hi; hiLeft = next.hiLeft; hiRight = next.hiRight; }
-        }
-        const lo = Math.max(first.loLeft, first.loRight), top = Math.min(hiLeft, hiRight);
-        if (top > lo) union.push([lo, top]);
-      }
-      if (allowed === null) allowed = union;
-      else {
-        const intersection = [];
-        for (let a = 0, b = 0; a < allowed.length && b < union.length;) {
-          const lo = Math.max(allowed[a][0], union[b][0]), hi = Math.min(allowed[a][1], union[b][1]);
-          if (hi > lo) intersection.push([lo, hi]);
-          if (allowed[a][1] < union[b][1]) a++; else b++;
-        }
-        allowed = intersection;
-      }
-      if (!allowed.length) break;
-    }
-    return allowed || [];
-  };
-  // Island faces bucketed per cave plus access-ramp faces, computed once and memoised on the island.
-  // All caves share the original eight voxel meshes and immutable backing geometry.
-  const EMPTY_FACES = [];
+  // Camera ramp ownership still needs these faces after retiring the glyph layouts.
   const islandFaceIndex = () => {
     if (island.faceIndex) return island.faceIndex;
-    const byCave = new Map(), ramps = [];
-    for (let i = 0; i < island.geometry.faces.length; i++) {
-      const face = island.geometry.faces[i];
-      if (face.headquartersRamp || face.headquartersBasementRamp) ramps.push(face);
-      if (face.matrixCave === undefined || face.matrixWorldGlyphSurface) continue;
-      let list = byCave.get(face.matrixCave);
-      if (!list) byCave.set(face.matrixCave, list = []);
-      list.push(face);
-    }
-    return island.faceIndex = { byCave, ramps };
-  };
-  const terrainGlyphLayoutMatches = (layout, geometry, faces, signature) => {
-    if (!layout || layout.verts !== geometry.verts || layout.faces.length !== faces.length) return false;
-    for (let i = 0; i < signature.length; i++) if (layout.signature[i] !== signature[i]) return false;
-    let at = 0;
-    for (let f = 0; f < faces.length; f++) {
-      const face = faces[f];
-      if (layout.faces[f] !== face || layout.lengths[f] !== face.i.length) return false;
-      for (let i = 0; i < face.i.length; i++) {
-        const index = face.i[i], vertex = index * 3;
-        if (layout.coordinates[at++] !== index || layout.coordinates[at++] !== geometry.verts[vertex]
-          || layout.coordinates[at++] !== geometry.verts[vertex + 1] || layout.coordinates[at++] !== geometry.verts[vertex + 2]) return false;
-      }
-    }
-    return at === layout.coordinates.length;
-  };
-  const captureTerrainGlyphSource = (geometry, faces, signature) => {
-    let count = 0;
-    for (const face of faces) count += face.i.length;
-    const coordinates = new Float64Array(count * 4), lengths = new Uint32Array(faces.length);
-    let at = 0;
-    for (let f = 0; f < faces.length; f++) {
-      const indices = faces[f].i; lengths[f] = indices.length;
-      for (let i = 0; i < indices.length; i++) {
-        const index = indices[i], vertex = index * 3;
-        coordinates[at++] = index; coordinates[at++] = geometry.verts[vertex];
-        coordinates[at++] = geometry.verts[vertex + 1]; coordinates[at++] = geometry.verts[vertex + 2];
-      }
-    }
-    return { verts: geometry.verts, faces: faces.slice(), lengths, coordinates, signature };
-  };
-  const buildCaveGlyphs = (slot, m, group) => {
-    const caveIndex = island.mouths.indexOf(m) + 1, cr = Math.cos(m.ry), sr = Math.sin(m.ry);
-    const portalInset = slot.status === "mirror" ? 0 : 0.02;
-    if (slot.status === "mirror") {
-      // Voxel-centre ownership leaves unlabelled floor fragments behind the
-      // glass. Only nearby candidates need the renderer's exact bounded lookup.
-      const geometry = island.geometry, verts = geometry.verts;
-      for (const face of geometry.faces) {
-        if (face.matrixCave) continue;
-        let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-        for (const index of face.i) {
-          const at = index * 3, dx = verts[at] - m.x, dz = verts[at + 2] - m.z;
-          const x = cr * dx - sr * dz, y = verts[at + 1] - m.floorY, z = sr * dx + cr * dz;
-          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
-        }
-        if (minX <= 2.5 && maxX >= -2.5 && minY >= -1e-6 && maxY <= 1e-6 && minZ <= PORTAL_Z && maxZ >= 0) face.matrixPermanentFallback = true;
-      }
-    }
-    const sections = [], streams = [], nodes = [], horizontalDomains = [];
-    // Registry identities are immutable integer triples, not live glyph state.
-    // Fixed chunks avoid one short-lived object allocation per character.
-    const entryChunks = [];
-    let entryLength = 0, entryChunk = null, entryChunkUsed = 0;
-    const addEntry = (stream, character, rank) => {
-      if (!entryChunk || entryChunkUsed === entryChunk.length) {
-        entryChunk = new Uint32Array(4096 * 3);
-        entryChunks.push(entryChunk); entryChunkUsed = 0;
-      }
-      entryChunk[entryChunkUsed++] = stream;
-      entryChunk[entryChunkUsed++] = character;
-      entryChunk[entryChunkUsed++] = rank;
-      entryLength += 3;
-    };
-    const compactEntries = () => {
-      const result = new Uint32Array(entryLength);
-      let offset = 0;
-      for (const chunk of entryChunks) {
-        const length = chunk === entryChunk ? entryChunkUsed : chunk.length;
-        result.set(length === chunk.length ? chunk : chunk.subarray(0, length), offset);
-        offset += length;
-      }
-      return result;
-    };
-    const surfaceCounts = { floor: 0, ceiling: 0, wall: 0, prop: 0 };
-    const halfX = 0.0395, halfY = 0.0605, halfZ = 0.005, clearance = 0.01;
-    let maximumLocalZ = -Infinity, minEntranceX = Infinity, maxEntranceX = -Infinity, propFaces = 0, terrainFaces = 0, perGlyphCapacity = 0;
-    const addStream = (section, column, flowMin, flowMax) => {
-      const { nx, ny, nz, ux, uz, vx, vz, plane, horizontal } = section;
-      const cross = column * MATRIX_SURFACE_PITCH;
-      const seed = fnv1a(`${slot.id}:${Math.round(nx * 1000)}:${Math.round(ny * 1000)}:${Math.round(nz * 1000)}:${column}`);
-      const rand = mulberry32(seed), trainLength = MATRIX_TRAIN_MIN + Math.floor(rand() * MATRIX_TRAIN_RANGE), gapLength = MATRIX_TRAIN_GAP_MIN + Math.floor(rand() * MATRIX_TRAIN_GAP_RANGE);
-      const sequence = trainLength + gapLength, span = sequence * MATRIX_SURFACE_GAP;
-      const speed = MATRIX_STREAM_SPEED_MIN + rand() * MATRIX_STREAM_SPEED_RANGE, phase = rand() * span, brightness = 0.58 + rand() * 0.36;
-      const direction = horizontal && ny > 0 ? 1 : -1;
-      const characters = Math.ceil((flowMax - flowMin) / MATRIX_SURFACE_GAP) + 1, rank = matrixModulo(column, 8);
-      const stream = { section: sections.length, cross, speed, phase, brightness, trainLength, gapLength, direction, flowMin, flowMax, flowRange: span, seed, head: 0, gap: 0, rank, entryStart: entryLength / 3, entryCount: 0 };
-      const streamIndex = streams.length;
-      streams.push(stream);
-      if (renderer.kind !== "canvas2d" || rank < MATRIX_DENSITY.canvas2d) {
-        for (let character = 0; character < characters; character++) addEntry(streamIndex, character, rank);
-        stream.entryCount = characters;
-        // Advected cell identities cover every glyph once per eight consecutive slots (MATRIX_TYPES).
-        perGlyphCapacity += Math.ceil(characters / MATRIX_TYPES);
-      }
-      section.streamCount++;
-      section.glyphCount += characters;
-      const portalU = sr * ux + cr * uz, portalV = sr * vx + cr * vz, portalN = sr * nx + cr * nz;
-      for (let edge = 0; edge < 2; edge++) {
-        const flow = edge ? flowMax : flowMin;
-        const localZ = portalU * cross + portalV * flow + portalN * (plane + halfZ + clearance) - sr * m.x - cr * m.z;
-        maximumLocalZ = Math.max(maximumLocalZ, localZ + Math.abs(portalU) * halfX + Math.abs(portalV) * halfY + Math.abs(portalN) * halfZ);
-      }
-    };
-    const addFace = (geometry, face, transform, source) => {
-      const points = [];
-      for (let i = 0; i < face.i.length; i++) {
-        const p = face.i[i] * 3, x = geometry.verts[p], y = geometry.verts[p + 1], z = geometry.verts[p + 2];
-        points.push(transform ? [transform[0] * x + transform[4] * y + transform[8] * z + transform[12], transform[1] * x + transform[5] * y + transform[9] * z + transform[13], transform[2] * x + transform[6] * y + transform[10] * z + transform[14]] : [x, y, z]);
-      }
-      const a = points[0];
-      let nx = 0, ny = 0, nz = 0;
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i], q = points[(i + 1) % points.length];
-        nx += (p[1] - q[1]) * (p[2] + q[2]);
-        ny += (p[2] - q[2]) * (p[0] + q[0]);
-        nz += (p[0] - q[0]) * (p[1] + q[1]);
-      }
-      const length = Math.hypot(nx, ny, nz);
-      if (length < 1e-8) return;
-      nx /= length; ny /= length; nz /= length;
-      const horizontal = Math.abs(ny) > 0.999;
-      let vx = horizontal ? sr * (ny > 0 ? -1 : 1) : -ny * nx;
-      let vy = horizontal ? 0 : 1 - ny * ny;
-      let vz = horizontal ? cr * (ny > 0 ? -1 : 1) : -ny * nz;
-      const vLength = Math.hypot(vx, vy, vz);
-      vx /= vLength; vy /= vLength; vz /= vLength;
-      const ux = vy * nz - vz * ny, uy = vz * nx - vx * nz, uz = vx * ny - vy * nx;
-      const plane = nx * a[0] + ny * a[1] + nz * a[2], polygon = [];
-      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i], u = ux * p[0] + uy * p[1] + uz * p[2], v = vx * p[0] + vy * p[1] + vz * p[2];
-        const entranceX = cr * (p[0] - m.x) - sr * (p[2] - m.z);
-        minEntranceX = Math.min(minEntranceX, entranceX); maxEntranceX = Math.max(maxEntranceX, entranceX);
-        polygon.push([u, v]);
-        minU = Math.min(minU, u); maxU = Math.max(maxU, u);
-        minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-      }
-      if (source === "terrain" && horizontal) {
-        let domain = null;
-        for (let i = 0; i < horizontalDomains.length; i++) {
-          const candidate = horizontalDomains[i];
-          if (candidate.ny === ny && candidate.plane === plane) { domain = candidate; break; }
-        }
-        if (!domain) {
-          domain = { source, category: ny > 0 ? "floor" : "ceiling", face: null, polygon: null, supports: [], constraints: [], ux, uy, uz, vx, vy, vz, nx, ny, nz, plane, clearance, horizontal, minU, maxU, streamStart: 0, streamCount: 0, glyphCount: 0 };
-          horizontalDomains.push(domain);
-        }
-        domain.supports.push({ face, polygon });
-        domain.minU = Math.min(domain.minU, minU); domain.maxU = Math.max(domain.maxU, maxU);
-        terrainFaces++;
-        return;
-      }
-      let area = 0;
-      for (let i = 0; i < polygon.length; i++) {
-        const p = polygon[i], q = polygon[(i + 1) % polygon.length];
-        area += p[0] * q[1] - q[0] * p[1];
-      }
-      const winding = area < 0 ? -1 : 1, constraints = [];
-      for (let i = 0; i < polygon.length; i++) {
-        const p = polygon[i], q = polygon[(i + 1) % polygon.length];
-        const cu = winding * (q[1] - p[1]), cv = winding * (p[0] - q[0]);
-        constraints.push([cu, cv, cu * p[0] + cv * p[1] - Math.abs(cu) * halfX - Math.abs(cv) * halfY]);
-      }
-      // Account for the entire extruded glyph at the real portal, not only its centre.
-      const portalU = sr * ux + cr * uz, portalV = sr * vx + cr * vz, portalN = sr * nx + cr * nz;
-      constraints.push([portalU, portalV, PORTAL_Z - portalInset + sr * m.x + cr * m.z - portalN * (plane + halfZ + clearance) - Math.abs(portalU) * halfX - Math.abs(portalV) * halfY - Math.abs(portalN) * halfZ]);
-      const category = source === "prop" ? "prop" : horizontal ? ny > 0 ? "floor" : "ceiling" : "wall";
-      const section = { source, category, face, polygon, constraints, ux, uy, uz, vx, vy, vz, nx, ny, nz, plane, clearance, horizontal, streamStart: streams.length, streamCount: 0, glyphCount: 0 };
-      for (let column = Math.ceil((minU + halfX) / MATRIX_SURFACE_PITCH); column * MATRIX_SURFACE_PITCH <= maxU - halfX + 1e-8; column++) {
-        const cross = column * MATRIX_SURFACE_PITCH;
-        let flowMin = minV + halfY, flowMax = maxV - halfY, valid = true;
-        for (let i = 0; i < constraints.length; i++) {
-          const constraint = constraints[i], remain = constraint[2] - constraint[0] * cross;
-          if (constraint[1] > 1e-8) flowMax = Math.min(flowMax, remain / constraint[1]);
-          else if (constraint[1] < -1e-8) flowMin = Math.max(flowMin, remain / constraint[1]);
-          else if (remain < -1e-8) { valid = false; break; }
-        }
-        if (!valid || flowMax - flowMin < 1e-6) continue;
-        addStream(section, column, flowMin, flowMax);
-      }
-      if (section.streamCount) {
-        sections.push(section);
-        surfaceCounts[category] += section.glyphCount;
-      }
-      if (source === "terrain") terrainFaces++; else propFaces++;
-    };
-    const caveFaces = islandFaceIndex().byCave.get(caveIndex) || EMPTY_FACES;
-    let layouts = CAVE_TERRAIN_LAYOUTS.get(island.geometry);
-    if (!layouts) { layouts = new Map(); CAVE_TERRAIN_LAYOUTS.set(island.geometry, layouts); }
-    // At most one layout per cave/backend. Status, portal pose, topology and
-    // source coordinates invalidate that slot instead of accumulating keys.
-    const layoutKey = caveIndex * 2 + (renderer.kind === "canvas2d" ? 1 : 0);
-    const signature = [slot.id, slot.status, m.x, m.z, m.floorY, m.ry, renderer.kind];
-    const cachedLayout = layouts.get(layoutKey);
-    if (terrainGlyphLayoutMatches(cachedLayout, island.geometry, caveFaces, signature)) {
-      for (const section of cachedLayout.sections) sections.push({ ...section });
-      for (const stream of cachedLayout.streams) streams.push({ ...stream, head: 0, gap: 0 });
-      entryChunks.push(cachedLayout.entryData);
-      entryLength = cachedLayout.entryData.length;
-      Object.assign(surfaceCounts, cachedLayout.surfaceCounts);
-      ({ maximumLocalZ, minEntranceX, maxEntranceX, terrainFaces, perGlyphCapacity } = cachedLayout);
-    } else {
-      for (let i = 0; i < caveFaces.length; i++) addFace(island.geometry, caveFaces[i], null, "terrain");
-      for (const section of horizontalDomains) {
-        section.streamStart = streams.length;
-        const portalU = sr * section.ux + cr * section.uz, portalV = sr * section.vx + cr * section.vz;
-        const portalN = sr * section.nx + cr * section.nz;
-        const portalLimit = PORTAL_Z - portalInset + sr * m.x + cr * m.z - portalN * (section.plane + halfZ + clearance) - Math.abs(portalU) * halfX - Math.abs(portalV) * halfY - Math.abs(portalN) * halfZ;
-        section.constraints.push([portalU, portalV, portalLimit]);
-        for (let column = Math.ceil((section.minU + halfX) / MATRIX_SURFACE_PITCH); column * MATRIX_SURFACE_PITCH <= section.maxU - halfX + 1e-8; column++) {
-          const cross = column * MATRIX_SURFACE_PITCH;
-          const intervals = matrixSupportIntervals(section.supports, cross - halfX, cross + halfX);
-          for (let i = 0; i < intervals.length; i++) {
-            let flowMin = intervals[i][0] + halfY, flowMax = intervals[i][1] - halfY;
-            const remain = portalLimit - portalU * cross;
-            if (portalV > 1e-8) flowMax = Math.min(flowMax, remain / portalV);
-            else if (portalV < -1e-8) flowMin = Math.max(flowMin, remain / portalV);
-            else if (remain < -1e-8) continue;
-            if (flowMax - flowMin >= 1e-6) addStream(section, column, flowMin, flowMax);
-          }
-        }
-        if (section.streamCount) {
-          sections.push(section);
-          surfaceCounts[section.category] += section.glyphCount;
-        }
-      }
-      const layout = captureTerrainGlyphSource(island.geometry, caveFaces, signature);
-      const entryData = compactEntries();
-      Object.assign(layout, {
-        sections: sections.map(section => ({ ...section })), streams: streams.map(stream => ({ ...stream, head: 0, gap: 0 })),
-        entryData, surfaceCounts: { ...surfaceCounts },
-        maximumLocalZ, minEntranceX, maxEntranceX, terrainFaces, perGlyphCapacity
-      });
-      layouts.set(layoutKey, layout);
-    }
-    BL.scene.updateWorld(group);
-    const visit = (node, inheritedLiving = false, inheritedEmissive = false, inheritedExterior = false) => {
-      const living = inheritedLiving || !!node.matrixLiving, emissiveLiving = inheritedEmissive || !!node.matrixEmissiveLiving, exterior = inheritedExterior || !!node.matrixExterior;
-      if (node.geometry && !node.geometry.matrixGlyph && !node.geometry.matrixLocalGlyphSurface && !node.mirror && !exterior) {
-        const original = node.geometry, faces = [], transform = node.world;
-        let owned = false;
-        for (let f = 0; f < original.faces.length; f++) {
-          const face = original.faces[f];
-          let inside = true, touches = false;
-          for (let i = 0; i < face.i.length; i++) {
-            const p = face.i[i] * 3, x = original.verts[p], y = original.verts[p + 1], z = original.verts[p + 2];
-            const wx = transform[0] * x + transform[4] * y + transform[8] * z + transform[12];
-            const wz = transform[2] * x + transform[6] * y + transform[10] * z + transform[14];
-            const behind = sr * (wx - m.x) + cr * (wz - m.z) <= PORTAL_Z - portalInset;
-            if (behind) touches = true;
-            else { inside = false; if (slot.status !== "mirror") break; }
-          }
-          if (inside || slot.status === "mirror" && touches) {
-            // A crossing rim face needs procedural glyphs on both sides when
-            // the world wave arrives. Native lanes remain on wholly owned faces.
-            const local = { ...face, matrixCave: caveIndex, matrixLocalGlyphSurface: inside, matrixWorldGlyphSurface: !inside };
-            faces.push(local);
-            if (inside && !living && !(emissiveLiving && face.emissive > 0)) addFace(original, local, transform, "prop");
-            owned = true;
-          } else faces.push(face);
-        }
-        if (owned) node.geometry = { ...original, faces, matrixSourceGeometry: original };
-      }
-      for (let i = 0; i < node.children.length; i++) visit(node.children[i], living, emissiveLiving, exterior);
-    };
-    visit(group);
-    for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) {
-      // A record owns one raw instance buffer; its geometry wrapper is per cave.
-      // The immutable voxel vertices and faces themselves stay shared.
-      const node = createNode({ geometry: { ...hubModels.matrixGlyph(glyph), matrixCave: caveIndex }, instanceData: new Float32Array(perGlyphCapacity * 20), instanceCount: 0, drawInstanceCount: 0, instanceVersion: 0, fixedInstanceCapacity: true });
-      addChild(root, node); placed.push(node); nodes.push(node);
-    }
-    const entries = compactEntries();
-    let registryHash = 2166136261, minBrightness = Infinity, maxBrightness = 0, minTrainLength = Infinity, maxTrainLength = 0, minGapLength = Infinity, maxGapLength = 0;
-    let surfaceMetadataBytes = 0;
-    for (let i = 0; i < sections.length; i++) {
-      const section = sections[i];
-      registryHash = Math.imul(registryHash ^ Math.round(section.plane * 1000) ^ section.streamCount, 16777619) >>> 0;
-      surfaceMetadataBytes += 128 + section.constraints.length * 24;
-      if (section.supports) {
-        for (const support of section.supports) surfaceMetadataBytes += 32 + support.polygon.length * 16;
-      } else surfaceMetadataBytes += section.polygon.length * 16;
-    }
-    for (let i = 0; i < streams.length; i++) {
-      const stream = streams[i];
-      registryHash = Math.imul(registryHash ^ stream.seed ^ Math.round(stream.flowMin * 1000) ^ Math.round(stream.flowMax * 1000), 16777619) >>> 0;
-      minBrightness = Math.min(minBrightness, stream.brightness); maxBrightness = Math.max(maxBrightness, stream.brightness);
-      minTrainLength = Math.min(minTrainLength, stream.trainLength); maxTrainLength = Math.max(maxTrainLength, stream.trainLength);
-      minGapLength = Math.min(minGapLength, stream.gapLength); maxGapLength = Math.max(maxGapLength, stream.gapLength);
-    }
-    const cave = {
-      id: slot.id, caveIndex, mouth: m, cr, sr, nodes, sections, streams, entries, surfaceCounts, activeSurfaceCounts: { floor: 0, ceiling: 0, wall: 0, prop: 0 },
-      rain: buildCaveRain(slot, m, group, caveIndex),
-      glyphCount: surfaceCounts.floor + surfaceCounts.ceiling + surfaceCounts.wall + surfaceCounts.prop,
-      perGlyphCapacity, capacity: perGlyphCapacity * MATRIX_TYPES, bufferBytes: perGlyphCapacity * MATRIX_TYPES * 80,
-      registryBytes: entries.byteLength + streams.length * 112 + surfaceMetadataBytes, surfaceMetadataBytes, registryHash: registryHash.toString(16).padStart(8, "0"),
-      activeGlyphCount: 0, revealedGlyphCount: 0, drawnGlyphCount: 0, brightTipCount: 0, movingGapCount: 0, maximumLocalZ,
-      minimumTravelDistance: matrixEntranceMinimum(m, minEntranceX, maxEntranceX), terrainFaces, propFaces, updates: 0, allocationCount: MATRIX_TYPES, rebuildCount: 1,
-      quality: renderer.kind === "canvas2d" ? "canvas2d" : renderer.quality, densityRankLimit: MATRIX_DENSITY[renderer.kind === "canvas2d" ? "canvas2d" : renderer.quality], glyphVersion: -1, previousGlyphVersion: -1, mutationHash: 0, firstGlyphY: 0,
-      minBrightness, maxBrightness, minTrainLength, maxTrainLength, minGapLength, maxGapLength, visible: false, drawEnabled: false
-    };
-    // One world-space sphere around the whole interior lets the renderer skip the cave's batches.
-    // Sized for a portal at local z .5 out to depth 7.
-    const cullSphere = new Float32Array([m.x + sr * -3.25, m.floorY + 2.1, m.z + cr * -3.25, 5.6]);
-    for (let i = 0; i < nodes.length; i++) nodes[i].cullSphere = cullSphere;
-    for (let i = 0; i < cave.rain.nodes.length; i++) cave.rain.nodes[i].cullSphere = cullSphere;
-    matrixInteriors.push(cave);
-    return cave;
-  };
-  const updateCaveGlyphs = (elapsed, visible, densityRankLimit) => {
-    for (let c = 0; c < matrixInteriors.length; c++) {
-      const cave = matrixInteriors[c];
-      const permanent = cave.caveIndex === MATRIX_WORLD.permanentCave;
-      cave.visible = cave.drawEnabled = permanent || visible && MATRIX_WORLD.radius > cave.minimumTravelDistance;
-      cave.quality = renderer.kind === "canvas2d" ? "canvas2d" : renderer.quality;
-      cave.densityRankLimit = densityRankLimit;
-      updateCaveRain(cave.rain, elapsed, cave.visible, densityRankLimit, permanent);
-      if (!permanent && (!visible || MATRIX_WORLD.radius <= cave.minimumTravelDistance)) {
-        clearMatrixDraw(cave);
-        continue;
-      }
-      const nodes = cave.nodes, streams = cave.streams, sections = cave.sections, radius = MATRIX_WORLD.radius;
-      for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) nodes[glyph].instanceCount = 0;
-      const counts = cave.activeSurfaceCounts;
-      counts.floor = counts.ceiling = counts.wall = counts.prop = 0;
-      let active = 0, revealed = 0, bright = 0, gaps = 0, first = true, mutationHash = 2166136261;
-      // Entries are contiguous per stream with ascending character.
-      // One pass over the streams visits them in registry order with every per-stream term hoisted.
-      for (let s = 0; s < streams.length; s++) {
-        const stream = streams[s], direction = stream.direction, travel = elapsed * stream.speed + stream.phase;
-        if (stream.entryCount && stream.rank < densityRankLimit) {
-          const section = sections[stream.section], flowMin = stream.flowMin, flowMax = stream.flowMax, trainLength = stream.trainLength;
-          const sequence = trainLength + stream.gapLength, shift = direction * travel, brightness = stream.brightness;
-          const base = Math.ceil((flowMin - shift) / MATRIX_SURFACE_GAP), plane = section.plane + 0.015, cross = stream.cross;
-          const ux = section.ux, uy = section.uy, uz = section.uz, vx = section.vx, vy = section.vy, vz = section.vz, nx = section.nx, ny = section.ny, nz = section.nz;
-          const xu = ux * cross, yu = uy * cross, zu = uz * cross, xn = nx * plane, yn = ny * plane, zn = nz * plane;
-          const pick = Math.floor(elapsed * MATRIX_GLYPH_HZ + (stream.seed & 15) / 16) + (stream.seed & 7);
-          const from = stream.entryStart, to = from + stream.entryCount;
-          let streamActive = 0;
-          for (let i = from; i < to; i++) {
-            const cell = base + (i - from), flow = cell * MATRIX_SURFACE_GAP + shift;
-            if (flow < flowMin || flow > flowMax) continue;
-            const x = xu + vx * flow + xn, z = zu + vz * flow + zn;
-            let distance = 0;
-            if (!permanent) {
-              distance = matrixTravelDistance(x, z, cave.caveIndex);
-              if (distance - MATRIX_GLYPH_REACH >= radius) continue;
-            }
-            const trainPosition = matrixModulo(-direction * cell, sequence);
-            if (trainPosition >= trainLength) { gaps++; continue; }
-            const tip = trainPosition === 0 ? 1 : trainPosition === 1 ? 0.55 : 0;
-            const glyph = (cell + pick) & 7;
-            const node = nodes[glyph], slot = node.instanceCount++;
-            if (slot >= cave.perGlyphCapacity) throw new Error("Cave Matrix glyph instance capacity exceeded");
-            const data = node.instanceData, offset = slot * 20;
-            data[offset] = ux; data[offset + 1] = uy; data[offset + 2] = uz; data[offset + 3] = 0;
-            data[offset + 4] = vx; data[offset + 5] = vy; data[offset + 6] = vz; data[offset + 7] = 0;
-            data[offset + 8] = nx; data[offset + 9] = ny; data[offset + 10] = nz; data[offset + 11] = 0;
-            data[offset + 12] = x;
-            data[offset + 13] = yu + vy * flow + yn;
-            data[offset + 14] = z;
-            data[offset + 15] = 1; data[offset + 16] = brightness * (0.48 + (1 - trainPosition / trainLength) * 0.52); data[offset + 17] = 0; data[offset + 18] = tip; data[offset + 19] = 1;
-            if (DEBUG) mutationHash = Math.imul(mutationHash ^ glyph ^ Math.imul(i + 1, 16777619), 16777619) >>> 0;
-            if (first && !section.horizontal) { cave.firstGlyphY = data[offset + 13]; first = false; }
-            streamActive++; if (permanent || distance < radius) revealed++; if (tip) bright++;
-          }
-          counts[section.category] += streamActive; active += streamActive;
-        }
-        const wrapped = matrixModulo(travel, stream.flowRange);
-        stream.head = direction * wrapped;
-        stream.gap = direction * matrixModulo(wrapped - stream.trainLength * MATRIX_SURFACE_GAP, stream.flowRange);
-      }
-      for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) {
-        const node = nodes[glyph];
-        node.drawInstanceCount = node.instanceCount;
-        if (active) node.instanceVersion++;
-      }
-      cave.activeGlyphCount = cave.drawnGlyphCount = active;
-      cave.revealedGlyphCount = revealed;
-      cave.brightTipCount = bright; cave.movingGapCount = gaps; if (active) cave.updates++;
-      cave.previousGlyphVersion = cave.glyphVersion;
-      cave.glyphVersion = Math.floor(elapsed * MATRIX_GLYPH_HZ);
-      cave.mutationHash = mutationHash;
-    }
-  };
-  const matrixWorldStreamSample = (stream, time, downward) => {
-    const hash = (n) => {
-      let value = n | 0;
-      value ^= value >>> 16;
-      value = Math.imul(value, 2146121005);
-      value ^= value >>> 15;
-      value = Math.imul(value, -2073254261);
-      value ^= value >>> 16;
-      return (value >>> 8) / 16777216;
-    };
-    const speed = MATRIX_STREAM_SPEED_MIN + hash(stream + 19) * MATRIX_STREAM_SPEED_RANGE;
-    const trainLength = MATRIX_TRAIN_MIN + Math.floor(hash(stream) * MATRIX_TRAIN_RANGE);
-    const gapLength = MATRIX_TRAIN_GAP_MIN + Math.floor(hash(stream + 41) * MATRIX_TRAIN_GAP_RANGE);
-    const sequenceLength = trainLength + gapLength, span = sequenceLength * MATRIX_SURFACE_GAP;
-    const phase = hash(stream + 73) * span, direction = downward ? -1 : 1;
-    const brightness = 0.58 + hash(stream + 101) * 0.36;
-    return {
-      stream, time, speed, trainLength, gapLength, span, direction, brightness,
-      leadingGlow: brightness,
-      secondGlow: brightness * (0.48 + 0.52 * (trainLength - 1) / trainLength),
-      trailingGlow: brightness * (0.48 + 0.52 / trainLength),
-      head: direction * matrixModulo(time * speed + phase + (trainLength - 1) * MATRIX_SURFACE_GAP, span),
-      gap: direction * matrixModulo(time * speed + phase + trainLength * MATRIX_SURFACE_GAP, span)
-    };
+    const ramps = island.geometry.faces.filter(face => face.headquartersRamp || face.headquartersBasementRamp);
+    return island.faceIndex = { ramps };
   };
   const MATRIX_CAMERA_COLUMN = { caveIndex: 0, floor: 0, ceiling: 0 };
-  const updateMatrixWorld = (dt, elapsed) => {
-    if (!matrixCave) return;
-    const quality = renderer.kind === "canvas2d" ? "canvas2d" : renderer.quality;
-    const densityRankLimit = MATRIX_DENSITY[quality] || MATRIX_DENSITY.high;
-    MATRIX_WORLD.time = elapsed;
-    MATRIX_WORLD.density = densityRankLimit / MATRIX_DENSITY.high;
-    if (MATRIX_WORLD.direction > 0) {
-      MATRIX_WORLD.radius = Math.min(MATRIX_WORLD.maxRadius, MATRIX_WORLD.radius + dt * MATRIX_WORLD.speed);
-      if (MATRIX_WORLD.radius === MATRIX_WORLD.maxRadius) MATRIX_WORLD.direction = 0;
-    }
-    else if (MATRIX_WORLD.direction < 0) {
-      MATRIX_WORLD.radius = Math.max(0, MATRIX_WORLD.radius - dt * MATRIX_WORLD.retreatSpeed);
-      if (MATRIX_WORLD.radius === 0) MATRIX_WORLD.direction = 0;
-    }
-    MATRIX_WORLD.active = MATRIX_WORLD.radius > 0 ? 1 : 0;
-    MATRIX_WORLD.livingGlobal = MATRIX_WORLD.active;
-    const mirrorReveal = mirrorCave.damage.broken || matrixCave.unlocked ? 1 : matrixCave.portal.inside ? Math.max(0, Math.min(1, (MATRIX_WORLD.radius - matrixCave.mirrorDistance) / MATRIX_MIRROR_HEIGHT)) : 0;
-    matrixCave.mirrorNode.mirrorReveal = mirrorReveal;
-    matrixCave.mirrorNode.mirrorPortal = mirrorReveal === 1;
-    updateCaveGlyphs(elapsed, !!MATRIX_WORLD.active, densityRankLimit);
-    if (gateRain) updateCaveRain(gateRain, elapsed, !!MATRIX_WORLD.active, densityRankLimit);
-    if (mirrorGuides) {
-      const eye = camera.position;
-      // A trailing eye can pass through a cave wall while its Ooga stays outdoors.
-      // Read the eye's actual empty cavity rather than its owner.
-      const inside = !!pilot.player && !matrixCave.portal.inside
-        && island.cavityAt(eye.x, eye.z, MATRIX_CAMERA_COLUMN, matrixCave.caveIndex, eye.y) && MATRIX_CAMERA_COLUMN.caveIndex === matrixCave.caveIndex
-        && eye.y >= MATRIX_CAMERA_COLUMN.floor && eye.y < MATRIX_CAMERA_COLUMN.ceiling && island.clearAt(eye.x, eye.y, eye.z, 1e-5, 2e-5);
-      mirrorGuides.updateDoorway(camera, inside, elapsed, MATRIX_WORLD.density);
-    }
+  const cameraInsideMirror = () => {
+    if (!matrixCave) return false;
+    const eye = camera.position, m = matrixCave.mouth;
+    if ((eye.x - m.x) * matrixCave.sr + (eye.z - m.z) * matrixCave.cr >= PORTAL_Z) return false;
+    return island.cavityAt(eye.x, eye.z, MATRIX_CAMERA_COLUMN, matrixCave.caveIndex, eye.y)
+      && MATRIX_CAMERA_COLUMN.caveIndex === matrixCave.caveIndex
+      && eye.y >= MATRIX_CAMERA_COLUMN.floor && eye.y < MATRIX_CAMERA_COLUMN.ceiling;
   };
   const inMatrixCave = () => {
     return !!matrixCave && matrixCave.portal.inside;
@@ -1641,6 +981,8 @@
     }
     return null;
   };
+  // How many point-light slots the lamps took when last chosen (the selection is cached; the hunt's lanterns follow).
+  let lampLights = 0;
   const addLamp = (node, kind, x, y, z, light = true, order = lamps.length, id = `lamp:${lamps.length}`) => {
     node.glow = LAMP_OFF;
     node.flare = 0;
@@ -1651,10 +993,18 @@
   const updateLamps = (dt, elapsed, spark) => {
     const lights = RENDER_OPTS.lights;
     const webgl = renderer.kind === "webgl2";
-    const limit = webgl ? BL.glRenderer.QUALITY[renderer.quality].lights : 6;
+    // HALLOWEEN: through the hunt's night a few slots are kept back for the hunters' lanterns (a quarter of the tier's
+    // at most), filled after the lamps; a change in how many is a new key, so the lamps are chosen again.
+    const tierLimit = webgl ? BL.glRenderer.QUALITY[renderer.quality].lights : 6;
+    const reserved = ghosts ? Math.min(ghosts.lanternsWanted(), Math.floor(tierLimit / 4)) : 0, limit = tierLimit - reserved;
     const phaseNow = daylight.phaseAt(hour);
     const lanternsOn = phaseNow === "dusk" || phaseNow === "night" || phaseNow === "midnight";
     const coilLamp = coilCharge && coilCharge.lamp, coilActive = !!coilLamp && coilCharge.level > 0.02;
+    // The pits' lights follow their flames: the plaza lamp's gain and the HQ hearth's colour pulse with the flicker.
+    const plazaRig = firePitRig, hearthRig = headquarters && headquarters.hearth && headquarters.hearth.rig;
+    const plazaLamp = plazaRig ? plazaRig.lamp : null;
+    const plazaPulse = plazaRig ? 1 + (plazaRig.light - 1) * 1.5 : 1;
+    const hearthK = hearthRig ? 1 + (hearthRig.light - 1) * 1.2 : 1;
     let count = 0, approximated = 0, registered = 0;
     for (let i = 0; i < lamps.length; i++) {
       const l = lamps[i], node = l.node;
@@ -1666,13 +1016,24 @@
       if (lit && !l.lit && spark) fx.burst(l.x, l.y, l.z, 5, [SPARK], 1.3);
       l.lit = lit;
       l.k = k;
+      const steady = l.nightOnly ? 0 : LAMP_OFF;
+      const kindGlow = l.kind.glow * (1 + (l.pileProfile ? RENDER_OPTS.lampFactor * PILE_POST_NIGHT_BOOST * 0.25 : 0));
+      let baseGlow;
       if (k === 0 && node.flare <= 0) {
         // k times a finite factor is exactly 0, so the glow is this constant; skip the flicker sample.
-        const steady = l.nightOnly ? 0 : LAMP_OFF;
-        if (node.glow !== steady) node.glow = steady;
+        baseGlow = steady;
+        if (node.glow !== baseGlow) node.glow = baseGlow;
       } else {
         const flicker = Math.sin(elapsed * 11 + i * 2.3) * 0.15;
-        node.glow = (l.nightOnly ? 0 : LAMP_OFF) + k * (l.kind.glow * (1 + (l.pileProfile ? RENDER_OPTS.lampFactor * PILE_POST_NIGHT_BOOST * 0.25 : 0)) + flicker) + node.flare * 1.5;
+        baseGlow = steady + k * (kindGlow + flicker);
+        node.glow = baseGlow + node.flare * 1.5;
+      }
+      // A fire rig's root carries no geometry, so a glow written on it goes nowhere. Hand the lamp's
+      // lit glow and its click flare to the rig, which writes them onto the flame's blocks.
+      if (node.lampRig) {
+        node.lampK = k;
+        node.lampGlow = baseGlow;
+        node.lampBase = steady + kindGlow;
       }
       if (node.flare > 0) node.flare = Math.max(0, node.flare - dt * 2);
       // kind.hide: the node is hidden while unlit, so a cold fire shows no flame at all.
@@ -1684,7 +1045,7 @@
       if (l.reach > 0) {
         const away = Math.hypot(l.fromX - camera.target.x, l.fromY - camera.target.y, l.fromZ - camera.target.z);
         l.gain = Math.max(poolShade, poolUnder) * Math.min(1, Math.max(0, (l.reach - away) / l.fade));
-      } else l.gain = 1 - poolShade;
+      } else l.gain = (1 - poolShade) * (l === plazaLamp ? plazaPulse : 1);
       l.far = l.gain < 0.02;
       if (l.debug) {
         l.debug.factor = k;
@@ -1745,7 +1106,7 @@
       }
       for (let i = count; i < LIGHT_CAPACITY; i++) LIGHTING_DEBUG.selectedIds[i] = null;
       for (let i = approximated; i < LIGHT_CAPACITY; i++) LIGHTING_DEBUG.approximatedIds[i] = null;
-      RENDER_OPTS.lightCount = count;
+      RENDER_OPTS.lightCount = lampLights = count;
       LIGHTING_DEBUG.registeredLampCount = registered;
       LIGHTING_DEBUG.activeFullLightCount = count;
       LIGHTING_DEBUG.approximatedLightCount = approximated;
@@ -1759,11 +1120,9 @@
       const o = coilLamp.slot * 8, s = coilLamp.k * coilLamp.gain * coilCharge.level;
       lights[o + 4] = coilLamp.kind.r * s; lights[o + 5] = coilLamp.kind.g * s; lights[o + 6] = coilLamp.kind.b * s;
     }
-    if (headquarters) {
-      // The underground hearth stays lit for the windowless common room.
-      // Its emissive flame still breathes with the same flicker as the campfire.
-      const hearth = headquarters.hearth;
-      hearth.node.glow = LAMP_OFF + LAMP.fire.glow + Math.sin(elapsed * 11 + hearth.phase) * 0.15;
+    if (plazaLamp && plazaLamp.selected) {
+      const o = plazaLamp.slot * 8, s = plazaLamp.k * plazaLamp.gain;
+      lights[o + 4] = plazaLamp.kind.r * s; lights[o + 5] = plazaLamp.kind.g * s; lights[o + 6] = plazaLamp.kind.b * s;
     }
     if (!keyHit && headquarters && camera.position.y < -1 && cameraCaveIndex && CAMERA_OPENINGS[cameraCaveIndex - 1].headquarters) {
       const underground = headquarters.sources;
@@ -1779,19 +1138,26 @@
           if (!l.selected && d < distance) { nearest = l; distance = d; }
         }
         const l = nearest, o = i * 8, sky = l.daylight ? 0.12 + RENDER_OPTS.day * 0.88 : 1;
+        const kk = l.rig ? hearthK : 1;
         l.selected = true;
+        l.slot = i;
         lights[o] = l.x;
         lights[o + 1] = l.y;
         lights[o + 2] = l.z;
         lights[o + 3] = l.daylight ? 11 : 9;
-        lights[o + 4] = (l.daylight ? 0.8 : 1) * sky;
-        lights[o + 5] = (l.daylight ? 0.88 : 0.65) * sky;
-        lights[o + 6] = (l.daylight ? 1 : 0.3) * sky;
+        lights[o + 4] = (l.daylight ? 0.8 : 1) * sky * kk;
+        lights[o + 5] = (l.daylight ? 0.88 : 0.65) * sky * kk;
+        lights[o + 6] = (l.daylight ? 1 : 0.3) * sky * kk;
         lights[o + 7] = 0;
         LIGHTING_DEBUG.selectedIds[i] = l.id;
       }
       for (let i = total; i < LIGHT_CAPACITY; i++) LIGHTING_DEBUG.selectedIds[i] = null;
-      RENDER_OPTS.lightCount = LIGHTING_DEBUG.activeFullLightCount = LIGHTING_DEBUG.selectedCount = total;
+      RENDER_OPTS.lightCount = lampLights = LIGHTING_DEBUG.activeFullLightCount = LIGHTING_DEBUG.selectedCount = total;
+    }
+    const hearth = headquarters && headquarters.hearth;
+    if (hearth?.selected && camera.position.y < -1 && cameraCaveIndex && CAMERA_OPENINGS[cameraCaveIndex - 1].headquarters) {
+      const o = hearth.slot * 8;
+      lights[o + 4] = hearthK; lights[o + 5] = 0.65 * hearthK; lights[o + 6] = 0.3 * hearthK;
     }
     if (!keyHit) {
       key.tx = camera.target.x; key.ty = camera.target.y; key.tz = camera.target.z;
@@ -1801,6 +1167,7 @@
       key.lanternsOn = lanternsOn; key.coilActive = coilActive; key.cave = cameraCaveIndex; key.limit = limit;
       lampSelValid = true;
     }
+    RENDER_OPTS.lightCount = lampLights + (reserved ? ghosts.lanterns(lights, lampLights, reserved) : 0); // HALLOWEEN
   };
   const buildFire = () => {
     let p = null;
@@ -1813,10 +1180,17 @@
     }
     if (!p) throw new Error("No clear spot for the fire pit");
     const pit = place(hubModels.firepit(), p.x, p.z, 0, 0, "firepit", 1.2);
-    const flame = createNode({ geometry: hubModels.fireFlame(), matrixEmissiveLiving: true });
-    addChild(pit, flame);
-    fireHazards.push({ node: flame, pit, x: p.x, y: pit.position.y, z: p.z, avoidRadius: FIRE_AVOID_RADIUS });
-    addLamp(flame, LAMP.fire, p.x, 0.6, p.z, true, 3, "firepit").always = true;
+    // The island's voxel flame: a stream of glowing blocks pouring up off the pit's coals. The pit's embers are
+    // the hub's own critter ember batch drawn for the fire at `firePos`, the same style as the HQ hearth's.
+    const rig = BL.blaze.createVoxelRig({ scale: 1, sightHidden: true });
+    addChild(pit, rig.root);
+    rig.lamp = addLamp(rig.root, LAMP.fire, p.x, 0.6, p.z, true, 3, "firepit");
+    rig.lamp.always = true;
+    // The lamp's glow and flare land on this geometry-less root; the rig reads them for its blocks.
+    rig.root.lampRig = rig;
+    fireRigs.push(rig);
+    firePitRig = rig;
+    fireHazards.push({ node: rig.root, boxes: rig.boxes, pit, x: p.x, y: pit.position.y, z: p.z, avoidRadius: FIRE_AVOID_RADIUS });
     claim(p.x, p.z, 1.4);
     // Spare concentric rings let the whole chilling roster arrive together.
     // Keep the original six seats first; ordinary strolls still use that ring.
@@ -2036,7 +1410,7 @@
     c.level = level;
   };
   const CHALKBOARD_X = 6.75, CHALKBOARD_Z = 2.15, CHALKBOARD_YAW = -0.57;
-  let chalkboardDressing = null;
+  let chalkboardDressing = null, chalkboardClearance = null;
   const placeChalkboard = (m, group) => {
     const sr = Math.sin(m.ry), cr = Math.cos(m.ry);
     const wx = m.x + cr * CHALKBOARD_X + sr * CHALKBOARD_Z;
@@ -2050,6 +1424,8 @@
     }
     const boardGroup = createNode({ position: { x: CHALKBOARD_X, y, z: CHALKBOARD_Z }, rotation: { x: 0, y: CHALKBOARD_YAW, z: 0 } });
     addChild(group, boardGroup);
+    const facing = m.ry + CHALKBOARD_YAW;
+    chalkboardClearance = { x: wx, z: wz, rightX: Math.cos(facing), rightZ: -Math.sin(facing), frontX: Math.sin(facing), frontZ: Math.cos(facing) };
     addDressing(chalkboardDressing, boardGroup, wx, m.floorY + y, wz, `${m.id}:chalkboard`, false);
     const sa = Math.sin(CHALKBOARD_YAW), ca = Math.cos(CHALKBOARD_YAW);
     addPieceTargets(chalkboardDressing.picks, (px, py, pz) => {
@@ -2407,13 +1783,13 @@
       registerClimbMasonry(seal, m);
       sealedCaves.push({ caveIndex, mouth: m, node: seal, sr: ax, cr: az, stopZ: seal.position.z + geometry.frontZ + 0.01 });
       closedCaveZones.push({ active: true, x: m.x, z: m.z, floor: m.floorY, sr: ax, cr: az, half: PORTAL_MAX_X + 0.25, front: seal.position.z + geometry.frontZ + 0.26 });
-    } else {
+    } else if (slot.status === "mirror") {
       const opening = rim.geometry.openingBounds;
       const geometry = { ...hubModels.matrixPrisonBars(), matrixCave: caveIndex, clipMinY: m.floorY + opening.floorY, clipMaxY: m.floorY + opening.ceilingY };
       const bars = createNode({ position: { x: 0, y: MATRIX_GATE_HIDDEN_Y, z: 0.78 }, geometry, visible: false, matrixExterior: true });
       addChild(group, bars);
       const bounds = BL.scene.boundsOf(geometry);
-      matrixGates.push({ kind: "matrix-gate", caveIndex, mouth: m, node: bars, sr: ax, cr: az, open: false, localOpen: false, locked: false, raising: false, held: false, floor: opening.floorY, ceiling: opening.ceilingY, bottom: bounds.min[1], top: bounds.max[1], minX: bounds.min[0], maxX: bounds.max[0], minZ: bars.position.z + bounds.min[2], maxZ: bars.position.z + bounds.max[2], distance: matrixTravelDistance(m.x + ax * bars.position.z, m.z + az * bars.position.z) });
+      matrixGates.push({ kind: "matrix-gate", caveIndex, mouth: m, node: bars, sr: ax, cr: az, open: false, localOpen: false, locked: false, raising: false, held: false, floor: opening.floorY, ceiling: opening.ceilingY, bottom: bounds.min[1], top: bounds.max[1], minX: bounds.min[0], maxX: bounds.max[0], minZ: bars.position.z + bounds.min[2], maxZ: bars.position.z + bounds.max[2] });
     }
     if (slot.status === "headquarters") {
       addChild(group, createNode({ position: { x: 0, y: 0, z: 0 }, geometry: headquartersModels.entranceRamp(), depthBias: 0.25 }));
@@ -2482,23 +1858,8 @@
       addChild(group, node);
       mirrorCave = { slot, mouth: m, group, rim, node, sign: null };
       addTarget(node, { kind: "cave", slot, priority: 1 });
-      // Keep the chamber floor clear. The compact control belongs to the cave's
-      // glyph field; the labels stay living, with the grip and rails lit when latched.
-      const buttonZ = -m.room.to + 0.04;
-      const button = createNode({ position: { x: 0, y: 1.2, z: buttonZ }, scale: { x: 0.82, y: 0.82, z: 0.82 }, geometry: { ...hubModels.matrixLeverPlate(), matrixCave: caveIndex }, matrixExterior: true, glow: 0.45 });
-      const lights = createNode({ geometry: { ...hubModels.matrixLeverLights(), matrixCave: caveIndex }, glow: 0.25 });
-      const hub = createNode({ position: { x: 0, y: 0, z: 0.27 }, rotation: { x: Math.PI / 2, y: 0, z: 0 }, geometry: { ...hubModels.matrixLeverHub(), matrixCave: caveIndex } });
-      const lever = createNode({ position: { x: 0, y: 0, z: 0.48 }, rotation: { x: 0.42, y: 0, z: 0 }, geometry: { ...hubModels.matrixLeverArm(), matrixCave: caveIndex }, glow: 0.45 });
-      const grip = createNode({ geometry: { ...hubModels.matrixLeverGrip(), matrixCave: caveIndex }, glow: 0.25 });
-      const labels = createNode({ geometry: { ...hubModels.matrixLeverLabels(), matrixCave: caveIndex }, matrixLiving: true, glow: 0.5 });
-      addChild(lever, grip);
-      addChild(button, lights, hub, lever, labels);
-      addChild(group, button);
-      matrixControl = {
-        button, lights, lever, grip, x: m.x + ax * buttonZ, z: m.z + az * buttonZ,
-        pressed: false, near: false, promptPressed: false, promptPlayer: null, promptAction: null, promptJet: false, promptRecovering: false
-      };
-      addTarget(button, { kind: "matrix-button", priority: 2 }, { radius: 0.72 });
+      // Keep the room empty; this state only caches the shared action prompt.
+      matrixControl = { promptPlayer: null, promptAction: null, promptJet: false, promptRecovering: false };
     } else if (slot.status === "sleeping") {
       // Bedrolls lie along +x, as the sleep pose assumes.
       addChild(group, createNode({ position: { x: 0, y: 0.05, z: -4.5 }, rotation: { x: 0, y: -m.ry, z: 0 }, geometry: hubModels.bedroll(), depthBias: 0.3 }));
@@ -2524,33 +1885,22 @@
       });
       if (mirrorCave && mirrorCave.slot === slot) mirrorCave.sign = sign;
     }
+    if (slot.status !== "mirror" && slot.scene !== "lab" && slot.scene !== "factory" && slot.place !== "bca") {
+      const seal = slot.status === "dark" ? sealedCaves[sealedCaves.length - 1] : null;
+      caveVeils.push({ mouth: m, group, opening: rim.geometry.openingBounds,
+        plane: seal ? seal.stopZ + 0.02 : PORTAL_Z, tint: slot.scene === "arcade" ? ARCADE_VEIL_TINT : null, phase: null });
+    }
     dressMouth(slot, m, group);
     addChild(root, group);
     placed.push(group);
-    const glyphs = buildCaveGlyphs(slot, m, group);
     if (slot.status === "mirror") {
-      matrixCave = glyphs;
-      MATRIX_WORLD.permanentCave = matrixCave.caveIndex;
-      MATRIX_WORLD.permanentPlane[0] = ax;
-      MATRIX_WORLD.permanentPlane[1] = 0;
-      MATRIX_WORLD.permanentPlane[2] = az;
-      MATRIX_WORLD.permanentPlane[3] = -(m.x * ax + m.z * az + mirrorCave.node.position.z);
-      const opening = mirrorCave.rim.geometry.openingBounds, aperture = MATRIX_WORLD.permanentAperture;
-      aperture[0] = opening.maxX;
-      aperture[1] = opening.ceilingY;
-      aperture[2] = mirrorCave.node.position.z - mirrorCave.rim.position.z - opening.minZ;
-      aperture[3] = 0.5 * (Math.abs(ax) + Math.abs(az));
-      matrixCave.portal = buildMatrixPortal(m);
-      matrixCave.mirrorNode = mirrorCave.node;
-      matrixCave.mirrorDistance = matrixEntranceMinimum(m, PORTAL_MIN_X, PORTAL_MAX_X);
-      matrixCave.unlocked = false;
+      matrixCave = { mouth: m, caveIndex, sr: ax, cr: az, portal: buildMatrixPortal(m) };
       const gate = matrixGates.find((candidate) => candidate.caveIndex === matrixCave.caveIndex);
       mirrorCave.gate = gate;
       const gateShift = MIRROR_GATE_Z - gate.node.position.z;
       gate.node.position.z = MIRROR_GATE_Z;
       gate.minZ += gateShift;
       gate.maxZ += gateShift;
-      gate.distance = matrixCave.mirrorDistance + MATRIX_MIRROR_HEIGHT;
       gate.locked = MIRROR_GATE_CLOSED;
       if (gate.locked) {
         gate.node.position.y = gate.floor;
@@ -2568,7 +1918,7 @@
     solids.add(room);
     const benches = [];
     for (const x of [-2.6, 2.6]) for (const z of [-0.55, 0.55]) benches.push({ kind: "bench", x, y: floor + 0.58, z, floor, ry: Math.atan2(-x, -z), sitter: null, walkAt: { x: x - Math.sign(x) * 0.85, z } });
-    const entrances = [], lights = [], mattresses = [], roomSigns = [], rampMarkers = [];
+    const entrances = [], lights = [], mattresses = [], roomSigns = [], rampMarkers = [], lazyBeds = [];
     FLY.yMin = basement.floor - 1;
     const addEntrance = (node, roomIndex, lower, ramp = false) => {
       node.sightSolid = true;
@@ -2589,8 +1939,8 @@
       const entrance = createNode({ position: { x: cave.entrance.x, y: cave.floor, z: cave.entrance.z }, rotation: { x: 0, y: -angle, z: 0 }, scale: { x: (cave.corridorWidth ?? cave.width - 1.3) / 3.86, y: 1, z: 1 }, geometry: headquartersModels.roomEntrance(i) });
       addEntrance(entrance, i, level === basement);
       const dimensions = headquartersModels.MATTRESS, across = -(cave.width / 2 - dimensions.wallInset - dimensions.width / 2), along = cave.depth / 2 - dimensions.wallInset - dimensions.depth / 2;
-      const sx = Math.sin(angle), cx = Math.cos(angle), geometry = headquartersModels.mattress(cave);
-      const sign = createNode({ position: { x: cave.entrance.x - sx * 0.28, y: cave.floor + 3.78, z: cave.entrance.z + cx * 0.28 }, rotation: { x: 0, y: -angle, z: 0 }, geometry: headquartersModels.roomSign(cave), matrixSignLiving: true });
+      const sx = Math.sin(angle), cx = Math.cos(angle), geometry = LAZY_BEDDING ? headquartersModels.mattressPlaceholder(cave) : headquartersModels.mattress(cave);
+      const sign = createNode({ position: { x: cave.entrance.x - sx * 0.28, y: cave.floor + 3.78, z: cave.entrance.z + cx * 0.28 }, rotation: { x: 0, y: -angle, z: 0 }, geometry: headquartersModels.roomSign(cave, LAZY_BEDDING), matrixSignLiving: true });
       addChild(root, sign);
       placed.push(sign);
       const hanging = { roomIndex: i, basement: level === basement, room: cave, node: sign, sr: -sx, cr: cx, velocity: 0, hits: 0, contacts: 0 };
@@ -2608,6 +1958,7 @@
         -0.45, dimensions.surface, dimensions.pillowZ - 0.25, 0.45, dimensions.pillowTop, dimensions.pillowZ + 0.25]),
         walkAt: { x: node.position.x + cx * side, y: cave.floor, z: node.position.z + sx * side }
       });
+      if (LAZY_BEDDING) lazyBeds.push({ bed: mattresses[mattresses.length - 1], ready: false, failed: false });
     }
     for (const ramp of basement.ramps) {
       const p = ramp.entrance;
@@ -2657,17 +2008,19 @@
     }
     const firepit = createNode({ position: { x: 0, y: floor, z: 0 }, geometry: hubModels.firepit() });
     solids.add(firepit);
-    const flame = createNode({ geometry: hubModels.fireFlame(), glow: 0.9, matrixEmissiveLiving: true });
-    addChild(firepit, flame);
-    fireHazards.push({ node: flame, pit: firepit, x: 0, y: floor, z: 0, avoidRadius: FIRE_AVOID_RADIUS });
+    // The island's voxel flame burns in the HQ hearth too; its embers are the hub's critter batch at the hearth.
+    const rig = BL.blaze.createVoxelRig({ scale: 1, sightHidden: true });
+    addChild(firepit, rig.root);
+    fireRigs.push(rig);
+    fireHazards.push({ node: rig.root, boxes: rig.boxes, pit: firepit, x: 0, y: floor, z: 0, avoidRadius: FIRE_AVOID_RADIUS });
     addChild(root, firepit);
     placed.push(firepit);
-    const hearth = { id: "headquarters:hearth", node: flame, x: 0, y: floor + 0.6, z: 0, phase: 23 };
+    const hearth = { id: "headquarters:hearth", node: rig.root, rig, x: 0, y: floor + 0.6, z: 0, phase: 23 };
     lights.push(hearth);
     // The hearth is the only shared HQ point light.
     // Windows and ramp torches stay physical/emissive; no camera-proximity light spills into an unclaimed room.
     const sources = [hearth];
-    return { node: room, entrances, mattresses, roomSigns, rampMarkers, benches, fireHazards, lights, sources, hearth, firepit, rooms: island.headquarters.rooms, windows: island.headquarters.windows, ramps: island.headquarters.ramps, openFloor: island.headquarters.room, basement, sleepMarksVisible };
+    return { node: room, entrances, mattresses, roomSigns, rampMarkers, lazyBeds, benches, fireHazards, lights, sources, hearth, firepit, rooms: island.headquarters.rooms, windows: island.headquarters.windows, ramps: island.headquarters.ramps, openFloor: island.headquarters.room, basement, sleepMarksVisible };
   };
   // An invisible one-way staircase continues from the dock into the sky. It
   // only arms from a grounded step off the outer deck: arriving from the air,
@@ -2785,7 +2138,7 @@
   // The Mempool island off the east rim: a rainforest round a lake, a vine bridge, and the tunnels and chamber
   // under the lake. Everything solid, so an Ooga walks across, in and all the way down without a scene change.
   // `pool-layout.js` says where everything is; the scatter is claimed off the crossing.
-  const buildMempoolIsland = () => {
+  const buildMempoolIsland = function* (slice) {
     const P = poolModels, S = P.SITE, DIR = P.DIR, L = BL.poolLayout;
     // How much ground an animal keeps to itself, measured against each plant's own footprint.
     const BEAST_CLEAR = 1.3;
@@ -3001,6 +2354,7 @@
       planted.push({ x, z, ground: L.membraneY(r), pool: true });
       trunks.push({ x, z, r: 0.6 });
     }
+    yield* pause(slice);
     for (let i = 0; i < 3600 + planted.length; i++) {
       const fixed = i < planted.length ? planted[i] : null;
       const a = rand() * Math.PI * 2, r = Math.sqrt(inner + rand() * (outer - inner)), roll = rand();
@@ -3040,6 +2394,7 @@
         for (const t of [-1.2, 0, 1.2]) obstacles.push({ x: x + ax * t * k, z: z + az * t * k, r: 0.4 * k });
       }
     }
+    yield* pause(slice);
     // Broad leaves, fern fans and flowering thickets form a middle storey beneath the trees. A separate
     // seed leaves the established trunks, animal perches and small forest scatter where they were.
     const foliageRand = mulberry32(6417), undergrowth = P.UNDERGROWTH.map((build) => build()), thickets = [];
@@ -3137,8 +2492,10 @@
       beast.owner = addProp(beast.kind, beast.node, beast.wx, beast.wz, 0.7);
       beasts.set(beast.node, beast);
     }
+    yield* pause(slice);
     // The water, and the paintings on the chamber's wall, each a pick target that opens the board behind it.
     const water = BL.poolWater.create({ site, renderer, seaY: SEA_Y - place.y });
+    yield* pause(slice);
     for (const owner of water.picks) { owner.weaponType = "none"; addTarget(owner.node, owner); }
     const fillParam = DEBUG ? params.get("poolfill") : null;
     if (fillParam !== null && fillParam.trim() !== "" && Number.isFinite(Number(fillParam))) water.previewFill(Number(fillParam));
@@ -3327,12 +2684,15 @@
   };
   // The Timechain Sphere off the southwest rim: the ball, its bridge and its doorway, whose keypad and crossing
   // (timechain-gate.js) open its nine rooms, a scene of their own. Only the outside is the island's.
-  const buildTimechainIsland = () => {
+  const buildTimechainIsland = function* (slice) {
     const T = BL.timechainModels, site = T.build(island), p = site.place;
+    yield* pause(slice);
     const cos = Math.cos(p.ry), sin = Math.sin(p.ry), worldX = (x, z) => p.x + x * cos + z * sin, worldZ = (x, z) => p.z - x * sin + z * cos;
     addChild(root, site.node);
     placed.push(site.node);
+    yield* pause(slice);
     for (const node of [site.shell, site.entrance, site.bridge, site.plug]) solids.add(node);
+    yield* pause(slice);
     // Match the visible grass tiles, not the bounding sphere around the cliff.
     for (const [kind, node, radius] of [["timechainentrance", site.entrance, 3], ["timechainbridge", site.bridge, T.SITE.width / 2 + 0.2], ["timechainkeypad", site.keypad, 0.6]]) {
       const x = node.position.x, z = node.position.z;
@@ -3364,11 +2724,12 @@
   // played Ooga into the chamber, and their lamps with the arch's. The bridge and its head, the rock and the gate are
   // solid; the field, the deck's light and the dressing are not. The field and its window hang in their own group straight
   // under the root, in the portal's frame, as the factory's do.
-  const buildBifrostIsle = (archLamp) => {
+  const buildBifrostIsle = function* (archLamp, slice) {
     const I = BL.bifrostIsle, site = I.site(I.spot(island)), p = site.portal;
     for (const node of site.roots) addChild(root, node);
     placed.push(...site.roots);
     addTerrainSection(site.islet.geometry.cutawaySource, site.node, site.node.position.y);
+    yield* pause(slice);
     // Architecture, as the cave rims are: a walker climbs its stairs rather than shouldering past them as a tall prop.
     for (const node of site.solids) {
       node.sightSolid = true;
@@ -3398,20 +2759,21 @@
     BL.bifrostIsle.update(site, 0, 0, NaN, NaN, NaN);
     return { site, group, claimGround, phase: null, window: null, heimdall: null, hum: 0, effectsActive: false, effectsTime: 0 };
   };
-  // Sani lives in the Sphere's rooms, in his recliner (timechain-interior.js), so on the island he is inside its
-  // closed ball, out of sight, whatever his activity says. Driven, borrowed by someone else, away, or on a debug
-  // visit that sets states by hand, he comes back out, on the bridge before its doors.
+  // Sleeping or away, Sani lives in the Sphere's rooms rather than HQ. Active, he joins the mainland crew.
+  // Possessing him inside the ball brings him out onto the bridge before its doors.
   const timechainResidentPose = (cave) => {
     if (!timechainIsland || cave.traits.name !== "SaniExp") return false;
     const T = timechainIsland;
-    if (cave.state === "away" || cave === pilot?.player || cave.remoteControlled || contributors.debugState || contributors.debugRoster) {
+    if (cave.state === "working" || cave.state === "chilling" || cave === pilot?.player || cave.remoteControlled) {
       if (T.residentInside) {
         T.residentInside = false;
-        const W = BL.timechainModels.SPOTS.WAIT;
-        cave.root.position.x = T.worldX(W.x, W.z + 1.2); cave.root.position.z = T.worldZ(W.x, W.z + 1.2);
-        cave.root.position.y = T.place.y + cave.baseY;
-        cave.root.rotation.y = T.place.ry + Math.PI;
-        cave.root.visible = cave === pilot?.player || cave.state === "chilling" || cave.state === "working";
+        if (cave === pilot?.player) {
+          const W = BL.timechainModels.SPOTS.WAIT;
+          cave.root.position.x = T.worldX(W.x, W.z + 1.2); cave.root.position.z = T.worldZ(W.x, W.z + 1.2);
+          cave.root.position.y = T.place.y + cave.baseY;
+          cave.root.rotation.y = T.place.ry + Math.PI;
+          cave.root.visible = true;
+        }
       }
       return false;
     }
@@ -3443,7 +2805,7 @@
   };
   // Rejection sampling: scatter props, keeping off paths and mouths.
   const SPREAD_CANDIDATES = 40, SPREAD_TRIES = 1500;
-  const scatter = () => {
+  const scatter = function* (slice) {
     const rand = mulberry32(SEED);
     const routeOverlaps = (x, z, radius) => island.path.overlaps(x, z, radius) || island.overlapsStairs(x, z, radius);
     const treeGroundClear = (geometry, x, z, y) => {
@@ -3566,7 +2928,9 @@
         }
       }
     };
+    yield* pause(slice);
     cliff(40, 1.4, 3, "tree", (n) => hubModels.tree(n % 4 === 3 ? 3 : n % 3), true);
+    yield* pause(slice);
     cliff(30, 1, 0.5, "bush", (n) => hubModels.bush(n % 3));
     spread([
       { kind: "bush", count: 30, radius: 0.7, geometryAt: (n) => hubModels.bush(n % 3) }
@@ -3577,6 +2941,12 @@
   const sceneryReason = (o) => {
     const clearance = island.path.debug.ringOuterRadius + SCENERY_CLEARANCE;
     if (o.node.position.y < 2 && !workSceneryClear(o.x, o.z, o.footprint)) return 3;
+    if (o.prop === "bush" && chalkboardClearance) {
+      const board = chalkboardClearance, dx = o.x - board.x, dz = o.z - board.z;
+      const across = dx * board.rightX + dz * board.rightZ, front = dx * board.frontX + dz * board.frontZ;
+      // Keep the board's face and both edges clear without moving the seeded meadow scatter.
+      if (Math.abs(across) < 1.8 + o.footprint && front > 0 && front < 2.4 + o.footprint) return 3;
+    }
     if (Math.hypot(o.x, o.z) - o.footprint < clearance - 1e-9) return 1;
     if (island.path.overlaps(o.x, o.z, o.footprint) || island.overlapsStairs(o.x, o.z, o.footprint)) return 2;
     for (let i = 0; i < claimed.length; i++) {
@@ -3584,6 +2954,20 @@
       if (!c.scenery && Math.hypot(c.x - o.x, c.z - o.z) < c.r + o.footprint) return 3;
     }
     return 0;
+  };
+  // Remove the bush beside the fire after scattering, keeping every other seeded prop in place.
+  const clearFireBush = (firePos) => {
+    let nearest = null, distance = Infinity;
+    for (const o of scenery) {
+      if (o.prop !== "bush" || o.node.position.y !== 0 || sceneryReason(o)) continue;
+      const d = (o.x - firePos.x) ** 2 + (o.z - firePos.z) ** 2;
+      if (d < distance) { nearest = o; distance = d; }
+    }
+    if (!nearest) return;
+    removeTarget(nearest.node);
+    removeChild(root, nearest.node);
+    drop(placed, nearest.node); drop(props, nearest); drop(scenery, nearest);
+    drop(claimed, nearest.reservation); drop(sceneryClaims, nearest.reservation);
   };
   const setSceneryActive = (o, active) => {
     if (o.active === active) return;
@@ -3611,54 +2995,21 @@
     sceneryReflows++;
     if (magazine && !magazine.revealed && !magazine.host.active) attachMagazineHost();
   };
-  const syncMirrorDamage = (quiet = false) => {
-    const damage = mirrorCave.damage;
-    if (mirrorCave.damageVersion === damage.version) return;
-    const wasDamaged = mirrorCave.damageStage > 0;
-    mirrorCave.damageStage = damage.stage;
-    mirrorCave.damageVersion = damage.version;
-    if (damage.broken && !mirrorCave.shattered) {
-      mirrorCave.shattered = world.mirrorBroken = true;
-      const gate = mirrorCave.gate;
-      gate.locked = false;
-      mirrorCave.node.mirrorReveal = 1;
-      mirrorCave.node.mirrorPortal = true;
-      input.remove(mirrorCave.node);
-      drop(targets, mirrorCave.node);
-      addTarget(gate.node, { kind: "matrix-gate", gate, priority: 2, weaponType: "none" });
-      if (!quiet) hud.toast("The mirror shatters. Move close to open the gate.");
-    } else if (!damage.broken && mirrorCave.shattered) {
-      mirrorCave.shattered = world.mirrorBroken = false;
-      const gate = mirrorCave.gate;
-      gate.locked = MIRROR_GATE_CLOSED;
-      input.remove(gate.node);
-      drop(targets, gate.node);
-      addTarget(mirrorCave.node, { kind: "cave", slot: mirrorCave.slot, priority: 1 });
-      const revealed = matrixCave.unlocked || matrixCave.portal.inside;
-      mirrorCave.node.mirrorReveal = revealed ? 1 : 0;
-      mirrorCave.node.mirrorPortal = !!revealed;
-    } else if (!quiet && !wasDamaged && damage.stage > 0) hud.toast("The mirror cracks. Glyphs glow behind the glass.");
-    refreshObjectGuides();
-  };
   const isPlayerAttack = source => !!source && (source === crew.player || source.controlled && source.actionControlled);
-  const hitMirror = (power, x, y, z, source) => {
-    if (!gameMode && !isPlayerAttack(source)) return;
-    const damage = mirrorCave.damage;
-    const scaledPower = power * 4;
-    if (!damage.hit(scaledPower, x, y, z)) return;
-    if (isPlayerAttack(source)) fx.damageNumber(x, y + 0.25, z, scaledPower);
-    syncMirrorDamage();
-  };
   const weaponImpact = (source, hit, dx, dy, dz, power = 1, projectile = null) => {
     // Waking the herald opens a game; it is an interaction before combat exists.
-    if (ghosts && hit.owner.kind === "halloween" && hit.owner.role === "herald") {
-      ghosts.hit(source, hit, power, isPlayerAttack(source), !!projectile);
+    if (hit.owner.kind === "halloween" && hit.owner.role === "herald") {
+      if (ghosts) ghosts.hit(source, hit, power, isPlayerAttack(source), !!projectile);
+      else if (ghostEntry) ghostEntry.hit(isPlayerAttack(source), !!projectile);
       return;
     }
-    if (!gameMode) {
-      if (hit.node === mirrorCave.node) hitMirror(power, hit.x, hit.y, hit.z, source);
+    if (hit.node === mirrorCave.node) {
+      // Ordinary HUB melee reports its contact without the combat-only sweep effect.
+      if (!gameMode && !projectile) mirrorCave.ripples.cross(hit.x - dx * 0.02, hit.y - dy * 0.02, hit.z - dz * 0.02,
+        hit.x + dx * 0.02, hit.y + dy * 0.02, hit.z + dz * 0.02, 0);
       return;
     }
+    if (!gameMode) return;
     if (source && source.controlled && source.actionControlled && source.combat && !source.combat.powerSpent) {
       const combat = source.combat;
       source.poundPower *= 0.25 + 0.75 * clamp((now - combat.lastHitAt - 0.1) / 0.1, 0, 1);
@@ -3676,10 +3027,6 @@
       return;
     }
     if (hit.owner.kind === "halloween") { ghosts.hit(source, hit, power, isPlayerAttack(source), !!projectile); return; } // HALLOWEEN
-    if (hit.node === mirrorCave.node) {
-      hitMirror(power, hit.x, hit.y, hit.z, source);
-      return;
-    }
     hitRoomSign(source, hit, dx, dy, dz);
   };
   const drop = (list, value) => {
@@ -4100,6 +3447,26 @@
     return support && Math.abs(playerSupportAt(p.x, p.z, feet, feet, cave) - feet) <= 1e-6 ? support : null;
   };
   let clankerSupportActor = null;
+  const npcYieldAhead = (cave, fx, fz) => {
+    if (!clankers || cave.humanControlled || cave.remoteControlled) return false;
+    const p = cave.root.position, feet = p.y - cave.baseY, shape = BL.agent.torso;
+    for (const entry of clankers.list) {
+      if (!entry.active || !entry.root.visible || entry.controlled || entry.remoteControlled
+        || Math.abs(entry.speed) <= 0.1 && !entry.drive.airborne && !entry.jump.active) continue;
+      const q = entry.root.position;
+      // A passenger or an Ooga on a different floor keeps its ordinary support.
+      if (feet > q.y + STEP_MAX || feet + cave.bodyHeight <= q.y + 0.1
+        || (p.x - q.x) ** 2 + (p.z - q.z) ** 2 > 16) continue;
+      const sine = Math.sin(entry.heading), cosine = Math.cos(entry.heading);
+      const width = shape.radius(entry) + cave.bodyRadius, reach = width + (cave.traffic.yielding ? 0.85 : 0.6);
+      for (let i = 0; i < shape.count(entry); i++) {
+        const offset = shape.offset(entry, i), dx = q.x + sine * offset - p.x, dz = q.z + cosine * offset - p.z;
+        const along = dx * fx + dz * fz;
+        if (along > 0 && along < reach && Math.abs(dx * fz - dz * fx) < width) return true;
+      }
+    }
+    return false;
+  };
   const characterClankerSupportAllowed = (node, y) => {
     const entry = clankerPartOwners.get(node), rage = entry.rage;
     // A held grab wins over stepping onto its hunter. An Ooga moving into
@@ -4483,7 +3850,9 @@
       return false;
     }
     const heldHeight = rec.autonomous && !throwing ? rec.safeY : handY;
-    const ceiling = throwing ? ceilingAt(p.x, p.z, heldHeight, cave) : Infinity;
+    // A free arm can swing above a low roof. Find headroom from the
+    // carrier's floor side of that roof before standing the captive upright.
+    const ceiling = throwing ? ceilingAt(p.x, p.z, Math.min(heldHeight, entry.root.position.y + 0.025), cave) : Infinity;
     const height = throwing ? Math.min(heldHeight, ceiling - cave.bodyHeight - Math.max(0, cave.viewLift)) : heldHeight;
     // Keep the roof outside the support query's step allowance.
     const supportY = Math.min(heldHeight, ceiling - STEP_MAX - 1e-6);
@@ -4708,7 +4077,8 @@
     cave.root.rotation.x = -Math.acos(clamp((floor + 0.12 - hand[1]) / headReach, -0.7, 0.3));
     cave.root.rotation.y = entry.heading; cave.root.rotation.z = 0;
     p.x = hand[0]; p.y = hand[1]; p.z = hand[2];
-    parts.legL.rotation.x = 0.25; parts.legR.rotation.x = -0.1;
+    // Keep the free foot level with the held ankle at a low ground grip.
+    parts.legL.rotation.x = parts.legR.rotation.x = -0.1;
     if (cave.weapon.carry !== "hands") {
       parts.armR.quaternion = parts.armL.quaternion = null;
       parts.armR.rotation.x = -1.1; parts.armL.rotation.x = -1.35;
@@ -4735,7 +4105,7 @@
       // Beside a crate the head's floor alone cannot describe the whole body.
       // Keep the ankle attached and raise the body only through checked poses
       // until its limbs clear the prop; lower it again as the route opens up.
-      if (!clear && !rec.throwing) {
+      if (!clear) {
         const angle = cave.root.rotation.x;
         for (let i = 1; i <= 6 && !clear; i++) {
           cave.root.rotation.x = angle * (1 - i / 6); alignDraggedFoot(cave, hand);
@@ -4897,6 +4267,7 @@
     }
     return ceiling;
   };
+  const BED_SWEEP = new Float64Array(14);
   const bedSegmentClear = (x, y, z, toX, toY, toZ, radius, height, all = false) => {
     if (!headquarters) return true;
     const dx = toX - x, dy = toY - y, dz = toZ - z;
@@ -4905,7 +4276,12 @@
         || !all && (!bed.node.visible || bed.node.parent !== root)) continue;
       const lx = (x - bed.x) * bed.cr - (z - bed.z) * bed.sr, lz = (x - bed.x) * bed.sr + (z - bed.z) * bed.cr;
       const vx = dx * bed.cr - dz * bed.sr, vz = dx * bed.sr + dz * bed.cr, boxes = bed.collisionBoxes;
-      for (let i = 0; i < boxes.length; i += 6) if (!terrain.segmentBoxClear(lx, y - bed.y, lz, vx, dy, vz, radius, height, boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3], boxes[i + 4], boxes[i + 5])) return false;
+      const q = BED_SWEEP;
+      q[0] = lx; q[1] = y - bed.y; q[2] = lz; q[3] = vx; q[4] = dy; q[5] = vz; q[6] = radius; q[7] = height;
+      for (let i = 0; i < boxes.length; i += 6) {
+        for (let j = 0; j < 6; j++) q[j + 8] = boxes[i + j];
+        if (!terrain.segmentBoxQueryClear(q)) return false;
+      }
     }
     return true;
   };
@@ -5105,20 +4481,19 @@
     return radius;
   };
   const mirrorActorSegmentClear = (x, y, z, toX, toY, toZ, height, actor, fixedRadius = 0) => {
-    if (!fixedRadius && (!actor || mirrorCave.damage.broken)) return true;
+    if (!fixedRadius && !actor) return true;
     const m = mirrorCave.mouth, sr = matrixCave.sr, cr = matrixCave.cr;
-    const bounds = BL.scene.boundsOf(mirrorCave.node.mirrorCaptureGeometry), radius = fixedRadius || mirrorActorRadius(actor);
+    const bounds = BL.scene.boundsOf(mirrorCave.node.geometry), radius = fixedRadius || mirrorActorRadius(actor);
     const bottom = mirrorCave.node.position.y + bounds.min[1], top = mirrorCave.node.position.y + bounds.max[1];
     if (Math.min(y, toY) >= m.floorY + top || Math.max(y, toY) + height <= m.floorY + bottom) return true;
     const lx = (x - m.x) * cr - (z - m.z) * sr, lz = (x - m.x) * sr + (z - m.z) * cr;
     const dx = (toX - x) * cr - (toZ - z) * sr, dz = (toX - x) * sr + (toZ - z) * cr;
     if (Math.min(lz, lz + dz) > PORTAL_Z + radius || Math.max(lz, lz + dz) < PORTAL_Z - radius) return true;
-    // Partly broken glass still keeps the complete actor outside. The gate
-    // remains a separate barrier after the final pane shatters.
+    // The intact glass keeps the complete actor outside, including headwear.
     return terrain.segmentBoxClear(lx, y - m.floorY, lz, dx, toY - y, dz, radius, height,
       bounds.min[0], bottom, PORTAL_Z, bounds.max[0], top, PORTAL_Z);
   };
-  // A glyph gate is one barrier including the gaps between its bars; sweep the full cylinder.
+  // The mirror gate is one barrier including the gaps between its bars; sweep the full cylinder.
   // Keep separate from camera/terrain clearance: free eyes still pass it.
   const matrixGateSegmentClear = (x, y, z, toX, toY, toZ, radius, height, clankerPass = false, closed = false) => {
     const dx = toX - x, dy = toY - y, dz = toZ - z;
@@ -6072,10 +5447,6 @@
         return `${o.slot.name} · open GitHub repo in a new tab`;
       case "gate":
         return bifrostIsle ? "₿IFRÖST · Bifröst starts here" : `${caves.gate.name} · leads nowhere yet`;
-      case "matrix-button":
-        return matrixCave.unlocked ? "Matrix lever · push up to turn off" : "Matrix lever · pull down to turn on";
-      case "matrix-gate":
-        return "Glyph gate · tap or press Space nearby to open";
       case "room-sign":
         return "Room sign · tap to copy hash";
       case "sphere-key":
@@ -6144,6 +5515,7 @@
     hud.tooltip.show(owner.sequence.label, screen.x, screen.y, null, false, true);
   };
   const showHoverTooltip = (hit, p) => {
+    if (hit && (hit.owner.kind === "cave" || hit.owner.kind === "cave-sign")) BL.deferred.prefetchScene(hit.owner.slot.scene);
     pileHovered = hit?.owner.kind === "pile";
     if (!pileHovered) hud.setPileValueVisible(false);
     poolBlockHovered = hit?.owner.kind === "poolblock" ? hit.owner : null;
@@ -6156,7 +5528,7 @@
   };
   const reticleTarget = (hit) => {
     const o = hit.owner;
-    if (hit.node === mirrorCave.node || o.kind === "cave-sign" || o.kind === "room-sign" || o.kind === "sphere-key" || o.kind === "matrix-button" || o.kind === "matrix-gate"
+    if (hit.node === mirrorCave.node || o.kind === "cave-sign" || o.kind === "room-sign" || o.kind === "sphere-key"
       || o.kind === "lab-link" || o.kind === "piece" || o.kind === "halloween" && o.role === "herald") return "object"; // HALLOWEEN: halloween
     if (o.kind === "cave") return o.slot.status === "open" ? "object" : "none";
     if (o.kind === "prop" && RETICLE_PROPS.has(o.prop)) return "object";
@@ -6226,7 +5598,8 @@
         fx.burst(x, w[13] + 1.4, z, 8, [SPARK], 1.3);
         break;
       case "firepit":
-        if (RENDER_OPTS.torch < 0.5) {
+        // The voxel flame burns by day and night, so the click flares it whenever the lamp is lit.
+        if (!fire || !fire.lit) {
           hud.toast("Cold ashes. Ooga waits for night.");
           break;
         }
@@ -6339,11 +5712,6 @@
         if (Math.abs(lx) < bed.width / 2 && Math.abs(lz) < bed.depth / 2 && Math.abs(floor - bed.y - bed.sleep.surface) < bed.sleep.pillowTop) return bed;
       }
     }
-    if (player) {
-      const gate = nearbyMatrixGate(x, y, z, reach);
-      if (gate) return gate;
-    }
-    if (player && matrixControl && matrixControlNear(x, y, z, reach)) return matrixControl;
     if (player && player.hop < 0.03 && player.hopV <= 0 && headquarters) {
       let nearest = null, distance = Math.min(reach, 1.5) ** 2;
       for (const seat of headquarters.benches) {
@@ -6362,10 +5730,6 @@
     else if (action === STAND_ACTION) crew.standPlayer();
     else if (action.kind === "bench") crew.sitPlayer(action);
     else if (action.sleep) crew.sleepPlayer(action);
-    else if (action.kind === "matrix-gate") {
-      action.localOpen = action.open = action.raising = true;
-      hud.toast("The glyph gate rises.");
-    } else if (action === matrixControl) toggleMatrixControl();
     else if (action === timechainIsland.gate.action) timechainIsland.gate.engage();
     else enterCave(action.slot);
   };
@@ -6439,6 +5803,10 @@
     const p = player.root.position, sr = Math.sin(m.ry), cr = Math.cos(m.ry), shield = BL.factoryModels.SHIELD_Z;
     const along = (p.x - m.x) * sr + (p.z - m.z) * cr, across = (p.x - m.x) * cr - (p.z - m.z) * sr;
     const feet = p.y - player.baseY - m.floorY;
+    if (factoryHeld) {
+      if (along > shield || along < shield - 2 || Math.abs(across) > 2.4 || feet < o.floorY - 0.12 || feet >= o.ceilingY) factoryHeld = false;
+      return;
+    }
     if (w.phase) return factoryGlide(dt, player, along, across, feet);
     // Heading in on its feet down the tunnel's last stretch, the walk takes the Ooga through; a jump (a view preset,
     // a respawn), further than a sprint goes in the frame, is no walk.
@@ -6562,9 +5930,7 @@
     const sr = Math.sin(p.ry), cr = Math.cos(p.ry);
     const along = (at.x - p.x) * sr + (at.z - p.z) * cr, across = (at.x - p.x) * cr - (at.z - p.z) * sr;
     const feet = at.y - player.baseY - p.floorY;
-    if (along > p.fieldZ || along < p.fieldZ - 2 || Math.abs(across) > p.halfW || feet < o.floorY - 0.12 || feet >= o.ceilingY) { bifrostHeld = false; return; }
-    // A crossing the chamber could not be opened for waits until the Ooga has stepped back out of the field.
-    if (bifrostHeld) return;
+    if (along > p.fieldZ || along < p.fieldZ - 2 || Math.abs(across) > p.halfW || feet < o.floorY - 0.12 || feet >= o.ceilingY) return;
     b.phase.ripples.pulse(across, feet + 1, 0);
     entering = bifrostDeparting = true;
     world.pilot = player.traits.name;
@@ -6769,9 +6135,6 @@
       case "gate":
         hud.toast(tooltipFor(hit));
         break;
-      case "matrix-button":
-        toggleMatrixControl(true);
-        break;
       case "room-sign":
         tapRoomSign(o.roomSign);
         break;
@@ -6788,12 +6151,6 @@
       case "lab-link":
         window.open("https://entropylab.online", "_blank", "noopener,noreferrer");
         break;
-      case "matrix-gate": {
-        const player = pilot.player;
-        if (player && nearbyMatrixGate(player.root.position.x, player.root.position.y + 1.1 - player.baseY, player.root.position.z, MATRIX_BUTTON_USE_REACH) === o.gate) useNearbyAction(o.gate);
-        else hud.toast(player ? "Move closer to open this gate." : "Double-tap an Ooga, then move close to open the gate.");
-        break;
-      }
       case "prop":
         useProp(o, p);
         break;
@@ -6904,137 +6261,23 @@
     if (portal.inside === inside) return;
     portal.inside = inside;
     portal.lastCrossingDirection = inside ? "in" : "out";
-    // Occupancy owns the portal view only. The lever owns the world wave.
-    // Exiting an unlatched room closes the glass immediately.
-    if (!inside && !matrixCave.unlocked && !mirrorCave.damage.broken) {
-      matrixCave.mirrorNode.mirrorReveal = 0;
-      matrixCave.mirrorNode.mirrorPortal = false;
-    }
-  };
-  const setMatrixUnlocked = (unlocked, quiet = false) => {
-    if (!matrixCave || !matrixControl || matrixCave.unlocked === unlocked) return false;
-    matrixCave.unlocked = unlocked;
-    MATRIX_WORLD.livingGlobal = unlocked || MATRIX_WORLD.radius > 0 ? 1 : 0;
-    matrixControl.pressed = unlocked;
-    matrixControl.button.glow = unlocked ? 0.65 : 0.45;
-    matrixControl.button.highlight = 0;
-    matrixControl.lights.matrixLiving = unlocked;
-    matrixControl.lights.glow = unlocked ? 1.35 : 0.25;
-    matrixControl.lever.glow = unlocked ? 0.65 : 0.45;
-    matrixControl.grip.matrixLiving = unlocked;
-    matrixControl.grip.glow = unlocked ? 1.4 : 0.25;
-    for (let i = 0; i < matrixGates.length; i++) {
-      const gate = matrixGates[i];
-      // The inside switch explicitly raises the mirror bars even while glass
-      // is intact. The outside nearby release still requires the glass lock.
-      if (gate === mirrorCave.gate) {
-        gate.localOpen = gate.open = gate.raising = unlocked;
-        continue;
-      }
-      gate.open = unlocked && !gate.locked;
-      gate.raising = unlocked && !gate.locked;
-      gate.localOpen = false;
-    }
-    if (unlocked) {
-      MATRIX_WORLD.active = 1;
-      MATRIX_WORLD.direction = MATRIX_WORLD.radius < MATRIX_WORLD.maxRadius ? 1 : 0;
-      matrixCave.mirrorNode.mirrorReveal = 1;
-      matrixCave.mirrorNode.mirrorPortal = true;
-    } else {
-      MATRIX_WORLD.direction = MATRIX_WORLD.radius > 0 ? -1 : 0;
-      MATRIX_WORLD.active = MATRIX_WORLD.radius > 0 ? 1 : 0;
-      if (!matrixCave.portal.inside) {
-        matrixCave.mirrorNode.mirrorReveal = mirrorCave.damage.broken ? 1 : 0;
-        matrixCave.mirrorNode.mirrorPortal = mirrorCave.damage.broken;
-      }
-    }
-    if (!quiet) hud.toast(unlocked && !mirrorCave.gate.open ? "The outer glyph gates rise. The mirror gate stays shut."
-      : unlocked ? "The glyph gates rise. The Matrix spreads." : "The Matrix recedes.");
-    return true;
   };
   const respawnAtPile = () => {
-    setMatrixUnlocked(false, true);
     setMatrixInside(false);
-    // Respawn arrives in the ordinary world immediately, with no retreating wave left in Matrix mode.
-    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.livingGlobal = 0;
     navigate("pile", true);
-  };
-  const matrixControlNear = (x, y, z, reach = MATRIX_BUTTON_REACH) => !!matrixControl && actionWithinReach(x, y, z, matrixControl.x, matrixCave.mouth.floorY + matrixControl.button.position.y, matrixControl.z, reach);
-  const playerNearMatrixControl = () => {
-    const player = pilot.player;
-    return !!player && matrixControlNear(player.root.position.x, player.root.position.y + 1.1 - player.baseY, player.root.position.z, MATRIX_BUTTON_USE_REACH);
-  };
-  const toggleMatrixControl = (explain = false) => {
-    if (playerNearMatrixControl()) return setMatrixUnlocked(!matrixCave.unlocked);
-    if (explain) hud.toast(pilot.player ? "Move closer to use the Matrix control." : "Select an Ooga, then move close to use the Matrix control.");
-    return false;
-  };
-  const nearbyMatrixGate = (x, y, z, reach) => {
-    let nearest = null, distance = reach;
-    for (let i = 0; i < matrixGates.length; i++) {
-      const gate = matrixGates[i], m = gate.mouth;
-      const mirror = gate === mirrorCave.gate;
-      if (gate.locked || gate.localOpen || !mirror && (matrixCave.unlocked || !MATRIX_WORLD.active || MATRIX_WORLD.radius < gate.distance)) continue;
-      const lx = (x - m.x) * gate.cr - (z - m.z) * gate.sr, lz = (x - m.x) * gate.sr + (z - m.z) * gate.cr;
-      // Ordinary gates release from inside. Broken glass exposes the mirror
-      // gate's release on either side, even before the Matrix wave is active.
-      if (!mirror && lz > gate.node.position.z || y < m.floorY + gate.floor || y > m.floorY + gate.ceiling) continue;
-      const across = Math.max(gate.minX, Math.min(gate.maxX, lx)), along = mirror && lz > gate.node.position.z ? gate.maxZ + 0.035 : gate.minZ - 0.035;
-      const tx = m.x + across * gate.cr + along * gate.sr, tz = m.z - across * gate.sr + along * gate.cr;
-      const d = Math.hypot(tx - x, tz - z);
-      if (d >= distance || !actionReachable(x, y, z, tx, y, tz)) continue;
-      distance = d; nearest = gate;
-    }
-    return nearest;
-  };
-  const matrixGateDescent = (gate, nextY) => {
-    const m = gate.mouth, y = gate.node.position.y;
-    gate.held = false;
-    // Never lower a barrier into an existing body.
-    // Hold it just above that head until the footprint clears; the nearby release stays usable.
-    for (let caveIndex = 0; caveIndex < crew.list.length; caveIndex++) {
-      const cave = crew.list[caveIndex];
-      if (!cave.root.visible) continue;
-      const p = cave.root.position, feet = p.y - cave.baseY, head = feet + cave.bodyHeight + Math.max(0, cave.viewLift);
-      if (feet >= m.floorY + gate.ceiling || head <= m.floorY + nextY + gate.bottom) continue;
-      const lx = (p.x - m.x) * gate.cr - (p.z - m.z) * gate.sr, lz = (p.x - m.x) * gate.sr + (p.z - m.z) * gate.cr;
-      const ox = Math.max(gate.minX - lx, 0, lx - gate.maxX), oz = Math.max(gate.minZ - lz, 0, lz - gate.maxZ);
-      if (ox * ox + oz * oz >= PLAYER_RADIUS * PLAYER_RADIUS - 1e-9) continue;
-      const safe = Math.min(y, head - m.floorY - gate.bottom + 0.02);
-      if (safe > nextY) { nextY = safe; gate.held = true; }
-    }
-    return nextY;
   };
   const updateMatrixControl = (dt, player) => {
     if (!matrixControl) return;
-    const gateStep = MATRIX_GATE_SPEED * dt;
-    for (let i = 0; i < matrixGates.length; i++) {
-      const gate = matrixGates[i], y = gate.node.position.y;
-      const mirror = gate === mirrorCave.gate;
-      if (!mirror && !MATRIX_WORLD.active || gate.locked && !(mirror && matrixCave.unlocked)) gate.localOpen = false;
-      gate.open = mirror && matrixCave.unlocked || !gate.locked && (gate.localOpen || !mirror && matrixCave.unlocked);
-      const target = !gate.open && (gate.locked || mirror || MATRIX_WORLD.active && MATRIX_WORLD.radius >= gate.distance) ? gate.floor : MATRIX_GATE_HIDDEN_Y;
-      gate.held = false;
-      gate.node.position.y = y < target ? Math.min(target, y + gateStep) : y > target ? matrixGateDescent(gate, Math.max(target, y - gateStep)) : y;
-      gate.raising = gate.node.position.y < target;
-      // Gates descend from the actual stone lintel.
-      // Their stored overhead sections are clipped in every render pass, including shadows.
-      gate.node.visible = gate.node.position.y + gate.bottom < gate.ceiling && gate.node.position.y + gate.top > gate.floor;
-    }
-    const leverAngle = matrixControl.pressed ? Math.PI - 0.42 : 0.42;
-    matrixControl.lever.rotation.x += (leverAngle - matrixControl.lever.rotation.x) * (1 - Math.exp(-8 * dt));
     const subject = player ? player.root.position : camera.position;
     const action = nearbyAction(subject.x, subject.y + (player ? 1.1 - player.baseY : 0), subject.z, player ? MATRIX_BUTTON_USE_REACH : MATRIX_BUTTON_REACH);
     const equipped = !!(player && player.jet);
     const recovering = !!(player && player.jetRecovering);
-    if (action === matrixControl.promptAction && player === matrixControl.promptPlayer && equipped === matrixControl.promptJet && recovering === matrixControl.promptRecovering && matrixControl.pressed === matrixControl.promptPressed) return;
+    if (action === matrixControl.promptAction && player === matrixControl.promptPlayer && equipped === matrixControl.promptJet && recovering === matrixControl.promptRecovering) return;
     const hadPlayerPrompt = matrixControl.promptAction && matrixControl.promptPlayer;
-    matrixControl.near = action === matrixControl;
     matrixControl.promptAction = action;
     matrixControl.promptPlayer = player;
     matrixControl.promptJet = equipped;
     matrixControl.promptRecovering = recovering;
-    matrixControl.promptPressed = matrixControl.pressed;
     if (action) {
       if (action === WAKE_ACTION) {
         hud.hint(COARSE ? "Tap WAKE UP! to get up" : "Space wakes up · WASD changes sleeping pose");
@@ -7051,13 +6294,6 @@
       } else if (action.sleep) {
         hud.hint(COARSE ? "Tap SLEEP to lie down" : "Press Space to sleep");
         hud.setAct("SLEEP");
-      } else if (action.kind === "matrix-gate") {
-        hud.hint(COARSE ? "Tap OPEN GATE! to open this gate" : "Press Space to open this gate");
-        hud.setAct("OPEN GATE!");
-      } else if (action === matrixControl) {
-        const label = matrixControl.pressed ? "push the lever up to turn off the Matrix" : "pull the lever down to turn on the Matrix";
-        hud.hint(COARSE ? `Tap to ${label}` : `Press Space or tap to ${label}`);
-        if (player) hud.setAct(matrixControl.pressed ? "PUSH UP" : "PULL DOWN");
       } else if (action === timechainIsland.gate.action) {
         hud.hint(COARSE ? "Tap USE KEYPAD to choose a room" : "Space · Use keypad to choose a room");
         hud.setAct("USE KEYPAD");
@@ -7253,8 +6489,8 @@
     if (name === "pile") {
       z = Math.max(5, altar.platformRadius + 1.3);
       setVec(target, 0, ALTAR_HEIGHT + Math.max(0.4, pile.pileEdge() * 0.3), 0);
-      pitch = player ? 0.22 : 0.28;
-      if (!player) dist = Math.max(10, z + 4);
+      pitch = player ? FOLLOW.view.pitch : 0.28;
+      dist = player ? FOLLOW.view.dist : Math.max(10, z + 4);
     } else if (name === "gate") {
       // Eye-level arrivals view the arch from the foot of the steps; a trailing camera pulls back from the landing.
       // Neither arrival puts a standing body across the narrow stair treads.
@@ -7470,6 +6706,7 @@
   // Match the whole eye footprint at the sloping edge of an exterior window floor.
   const headquartersWindowAirAt = (x, y, z) => y < -CAMERA_RADIUS && cameraClearAt(x, y, z) && island.ceilingAt(x, y - CAMERA_RADIUS, z, CAMERA_RADIUS) < Infinity && island.supportAt(x, z, y - CAMERA_RADIUS, 0, ABYSS_FLOOR, CAMERA_RADIUS) > ABYSS_FLOOR;
   // Exact frame contacts can occur between the ordinary terrain substeps.
+  const ENTRANCE_SWEEP = new Float64Array(14);
   const entranceSegmentClear = (x, y, z, toX, toY, toZ, radius = CAMERA_RADIUS) => {
     const dx = toX - x, dy = toY - y, dz = toZ - z, span2 = dx * dx + dz * dz;
     for (let i = 0; i < headquarters.entrances.length; i++) {
@@ -7480,8 +6717,12 @@
       if (ox * ox + oz * oz > reach * reach) continue;
       const lx = (x - node.position.x) * entry.cr - (z - node.position.z) * entry.sr, lz = (x - node.position.x) * entry.sr + (z - node.position.z) * entry.cr;
       const vx = dx * entry.cr - dz * entry.sr, vz = dx * entry.sr + dz * entry.cr, boxes = node.geometry.collisionBoxes, scale = node.scale.x;
+      const q = ENTRANCE_SWEEP;
+      q[0] = lx; q[1] = y - node.position.y - radius; q[2] = lz; q[3] = vx; q[4] = dy; q[5] = vz; q[6] = radius; q[7] = radius * 2;
       for (let j = 0; j < boxes.length; j += 6) {
-        if (!terrain.segmentBoxClear(lx, y - node.position.y - radius, lz, vx, dy, vz, radius, radius * 2, boxes[j] * scale, boxes[j + 1], boxes[j + 2], boxes[j + 3] * scale, boxes[j + 4], boxes[j + 5])) return false;
+        q[8] = boxes[j] * scale; q[9] = boxes[j + 1]; q[10] = boxes[j + 2];
+        q[11] = boxes[j + 3] * scale; q[12] = boxes[j + 4]; q[13] = boxes[j + 5];
+        if (!terrain.segmentBoxQueryClear(q)) return false;
       }
     }
     return true;
@@ -8054,26 +7295,8 @@
     const minutes = Math.max(0, Math.round((Date.now() - changed) / 60000));
     return minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`;
   };
-  // A caveman's "Ooga booga!" in the browser's own speech, deep and slow: only once the visitor has touched the page
-  // (browsers refuse speech before that), never with the island's sound muted, and only in a voice on this device, so
-  // no text leaves it. The deep male voices go first where the device has them.
-  const OOGA_VOICES = ["Ralph", "Fred", "Daniel", "Alex"];
-  const shoutOoga = () => {
-    const speech = window.speechSynthesis;
-    if (!speech || weather.muted || navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
-    const voices = speech.getVoices().filter((v) => v.localService && /^en/i.test(v.lang));
-    const voice = OOGA_VOICES.map((name) => voices.find((v) => v.name.startsWith(name))).find(Boolean) || voices[0];
-    if (!voice) return;
-    const line = new SpeechSynthesisUtterance("Oooga! Boooga!");
-    line.voice = voice;
-    line.pitch = 0.1;
-    line.rate = 0.7;
-    speech.cancel();
-    speech.speak(line);
-  };
   // A merge landing during the visit: the eyes and runes flare, the Oogas awake within TOTEM_CHEER cheer
-  // and shout its word (never the one being driven), a deep
-  // voice shouts "Ooga booga!", and one notice names the repository.
+  // and show its word in speech bubbles (never the one being driven), and one notice names the repository.
   const flareTotem = (i) => {
     const o = totems[i], p = o.owner.node.position, repo = BL.totemFeed.REPOS[i];
     o.flare = 1;
@@ -8084,7 +7307,6 @@
       cave.cheer = 1.6;
       fx.say(cave, fnv1a(`${repo.word}/${cave.traits.name}`) % 2 ? `${repo.word}!` : "OOGA!", 1.8);
     }
-    shoutOoga();
     hud.toast(`${repo.name} just merged · the ${repo.word} totem blazes`);
   };
   const buildTotems = () => {
@@ -8133,7 +7355,6 @@
       const lamp = addLamp({ glow: 0, flare: 0, visible: true }, light, spot.x, L.apex * 0.35, spot.z, true, Infinity, `totem:${i}`);
       totems.push({ owner, runes, rings, features, flames, light, lamp, flare: 0, live: 0, pattern: BL.totemGlow.pattern(feed.REPOS[i].word), eyeTop: Math.max(...L.eyes.map((e) => e[1])) });
     });
-    totemUnsub = feed.subscribe(onTotem);
   };
   const updateTotems = (dt, elapsed) => {
     const at = Date.now(), repos = BL.totemFeed.state.repos;
@@ -8197,8 +7418,66 @@
     const repo = BL.totemFeed.REPOS[o.totem], url = BL.totemFeed.state.repos[o.totem].url;
     window.open(url || `https://github.com/${repo.repo}/pulls?q=is%3Apr+is%3Amerged`, "_blank", "noopener,noreferrer");
   };
+  let prefetchAt = 0;
+  let lazyBedJob = null;
+  const stopLazyBedding = () => {
+    const job = lazyBedJob;
+    lazyBedJob = null;
+    if (!job) return;
+    job.controller.abort();
+    if (job.handle) {
+      if (job.idle) cancelIdleCallback(job.handle);
+      else clearTimeout(job.handle);
+      job.handle = 0;
+    }
+  };
+  const updateLazyBedding = () => {
+    if (!LAZY_BEDDING || lazyBedJob || !headquarters) return;
+    const p = pilot.player ? pilot.player.root.position : camera.position;
+    let selected = null, distance = 18 * 18;
+    for (const item of headquarters.lazyBeds) {
+      if (item.ready || item.failed) continue;
+      const bed = item.bed, dx = p.x - bed.x, dy = p.y - bed.y, dz = p.z - bed.z, d = dx * dx + dy * dy + dz * dz;
+      if (d < distance) { selected = item; distance = d; }
+    }
+    if (!selected) return;
+    const job = lazyBedJob = { item: selected, controller: new AbortController(), owner: headquarters, handle: 0, idle: typeof requestIdleCallback === "function" };
+    const start = () => {
+      job.handle = 0;
+      if (lazyBedJob !== job || job.controller.signal.aborted) return;
+      const steps = headquartersModels.mattressSteps(selected.bed.room, { until: 0, budget: 8, work: 0 });
+      BL.buildTasks.run(steps, "hub", job.controller.signal).then(geometry => {
+        if (lazyBedJob !== job || job.controller.signal.aborted || headquarters !== job.owner) return;
+        const bed = selected.bed, old = bed.node.geometry;
+        bed.node.geometry = geometry;
+        Object.assign(bed, geometry.mattress);
+        selected.ready = true;
+        try { refreshObjectGuides(); }
+        finally { renderer.releaseGeometry(old); }
+      }).catch(() => { if (!job.controller.signal.aborted) selected.failed = true; }).finally(() => {
+        if (lazyBedJob === job) lazyBedJob = null;
+      });
+    };
+    job.handle = job.idle ? requestIdleCallback(start, { timeout: 250 }) : setTimeout(start, 0);
+  };
   const update = (dt, elapsed) => {
     if (ghosts) ghosts.unshake(camera); // HALLOWEEN: last frame's quake comes off before anything reads the camera
+    // Four cheap proximity reads a second, without building a visit or changing its actor/account state.
+    if (elapsed >= prefetchAt) {
+      prefetchAt = elapsed + 0.25;
+      const p = pilot.player ? pilot.player.root.position : camera.position;
+      for (let i = 0; i < caves.slots.length; i++) {
+        const slot = caves.slots[i];
+        if (!slot.scene || slot.status !== "open") continue;
+        for (let j = 0; j < island.mouths.length; j++) {
+          const mouth = island.mouths[j];
+          if (mouth.id !== slot.id) continue;
+          const dx = p.x - mouth.x, dy = p.y - mouth.floorY, dz = p.z - mouth.z;
+          if (dx * dx + dy * dy + dz * dz <= 225) BL.deferred.prefetchScene(slot.scene);
+          break;
+        }
+      }
+    }
     if (lawn && lawn.version !== island.path.version) layLawn();
     if (life) { life.gulls.update(elapsed); life.shore.update(elapsed); life.boats.update(elapsed); }
     now = elapsed;
@@ -8247,6 +7526,16 @@
     }
     updateTotems(dt, elapsed);
     if (coilCharge) updateCoilCharge(elapsed);
+    // A fire rig pauses with the view: its own clock advances only while its pit is near, so a distant pit
+    // freezes its flame and resumes without a catch-up jump.
+    for (let i = 0; i < fireRigs.length; i++) {
+      const rig = fireRigs[i], w = rig.root.world;
+      const near = effectsActiveAt(w[12], w[13] + 1, w[14], rig.near, 24, 32);
+      rig.near = near;
+      if (!near) continue;
+      rig.time = (rig.time || 0) + dt;
+      rig.update(dt, rig.time);
+    }
     updateLamps(dt, elapsed, phase !== null);
     if (jumbotron) {
       jumbotron.update(elapsed, renderer);
@@ -8266,10 +7555,9 @@
       if (clankerPlay.active) clankerPlay.readInput(dt);
       else pilot.readInput(dt);
     }
-    mirrorCave.damage.update(dt, !mirrorCave.gate.open);
-    syncMirrorDamage();
     mirrorCave.ripples.update(dt, elapsed);
     updatePortalEffects(entropyLab.phase, dt);
+    for (const veil of caveVeils) updatePortalEffects(veil.phase, dt);
     if (factoryMouth) factoryShield(dt, elapsed);
     if (bifrostIsle) bifrostGate(dt, elapsed);
     if (bcaMouth) bcaVeil(dt, elapsed);
@@ -8347,7 +7635,7 @@
     shareDrivenActor(dt);
     remotes.update(dt);
     if (ghosts) ghosts.update(dt); // HALLOWEEN
-    else if (GHOSTS_WANTED && !ghostLoading && elapsed > 2) loadGhosts(); // HALLOWEEN
+    else if (ghostEntry) ghostEntry.update(dt); // HALLOWEEN
     if (poolEffectsActive) {
       mempoolIsland.wildlife.update(dt, poolEffectsTime);
       for (const cave of crew.list) if (cave.root.visible) {
@@ -8365,6 +7653,7 @@
     }
     dockStairs.update(dt, pilot.player);
     updateRoomSigns(dt);
+    updateLazyBedding();
     pile.update(dt);
     const player = pilot.player;
     if (player && !pilot.poseHeld && player.root.position.y - player.baseY < ABYSS_RESPAWN_Y && abyssAt(player.root.position.x, player.root.position.z, player.root.position.y - player.baseY)) {
@@ -8436,11 +7725,14 @@
       factoryMouth.roofWindow.update(dt, camera, RENDER_OPTS, factoryMouth.roofEffectsActive);
     }
     if (bifrostIsle) updateBifrostWindow(dt);
-    updateMatrixWorld(dt, elapsed);
     updateMatrixControl(dt, player);
     mirrorCave.body.update(dt);
     entropyLab.phase.body.update(dt);
     entropyLab.phase.body.time = entropyLab.phase.ripples.time;
+    for (const veil of caveVeils) {
+      veil.phase.body.update(dt);
+      veil.phase.body.time = veil.phase.ripples.time;
+    }
     if (bcaMouth) {
       bcaMouth.phase.body.update(dt);
       bcaMouth.phase.body.time = bcaMouth.phase.ripples.time;
@@ -8681,25 +7973,25 @@
       node.rotation.y = elapsed * 0.3 + i;
     }
   };
-  // HALLOWEEN: the ghost hunt arrives after the island is up (data-defer="halloween", ghost-game.js) and works the island
-  // through this one adapter. A load that lands after the visit ended finds a newer `ghostVisit` and attaches nothing;
-  // one that fails waits for the next visit.
-  const loadGhosts = () => {
-    ghostLoading = true;
-    const visit = ghostVisit, loading = BL.deferred.load("halloween");
-    const attach = () => { if (visit === ghostVisit) ghosts = BL.halloween.create(ghostHub()); };
-    if (loading) loading.then(attach, () => {});
-    else attach();
+  const delayGameRing = seconds => { gameRingWait = Math.max(0, seconds); };
+  // HALLOWEEN: the entry owns its pending load and discovery subscriptions for this visit alone.
+  const createGhostEntry = () => {
+    if (!GHOSTS_WANTED) return;
+    ghostEntry = BL.ghostEntry.create({ root, camera, island, npcSync, addTarget, removeTarget, hud, fx,
+      attach: () => (ghosts = BL.halloween.create(ghostHub())) });
   };
   const ghostHub = () => ({
     root, camera, renderer, fx, hud, crew, island, npcSync, coarse: COARSE, closedZones: closedCaveZones, debug: DEBUG, params, guide: islandGuide,
     openMouths: island.mouths.filter((m) => !sealedCaves.some((sealed) => sealed.mouth === m)),
-    addTarget, selectOoga, mayDriveOoga, zoneOf,
+    addTarget, removeTarget, selectOoga, mayDriveOoga, zoneOf, heraldGeometry: ghostEntry && ghostEntry.herald.geometry,
     gorillaActive: () => !!(clankerPlay && clankerPlay.active),
     gameMode: on => setGameMode(on, true),
     // Keep ring timing separate from the event's combat policy.
-    ringDelay: seconds => { gameRingWait = Math.max(0, seconds); },
-    lobbyOpen: (on, restore) => pilot.setMenuOpen(on, restore),
+    ringDelay: delayGameRing,
+    lobbyOpen: (on, restore) => {
+      hud.setPanelsHidden(on || gameMode);
+      pilot.setMenuOpen(on, restore);
+    },
     // The waiting room: the driven Ooga let go of (the free camera to watch from), and at the end the visitor's own
     // Ooga given back.
     spectate: (on) => {
@@ -8899,26 +8191,6 @@
     return island.sightClearAt(x, y, z, toX, toY, toZ) && solids.segmentClear(x, y, z, toX, toY, toZ, 0, 1e-5)
       && bananaCover.segmentClear(x, y, z, toX, toY, toZ);
   };
-  const cameraGlyphCoverage = (x, y, z) => {
-    let caveIndex = 0, resolved = false;
-    if (MATRIX_WORLD.permanentCave) {
-      const plane = MATRIX_WORLD.permanentPlane, aperture = MATRIX_WORLD.permanentAperture, at = (MATRIX_WORLD.permanentCave - 1) * 4;
-      const depth = -(plane[0] * x + plane[1] * y + plane[2] * z + plane[3]), bounds = MATRIX_WORLD.caveBounds, caves = MATRIX_WORLD.caves;
-      if (depth >= -1e-6 && depth <= bounds[at + 3] + aperture[3]) {
-        const across = caves[at + 1] * (x - bounds[at]) - caves[at] * (z - bounds[at + 2]), height = y - bounds[at + 1];
-        const room = depth > aperture[2] + 2.5 - aperture[3], throat = depth <= aperture[2];
-        const half = throat ? aperture[0] : aperture[0] + (room ? 0.5 : 0) + aperture[3], ceiling = aperture[1] + (room && !throat ? 1 : 0);
-        if (Math.abs(across) <= half + 1e-6 && height >= -1e-6 && height <= ceiling + 1e-6) {
-          caveIndex = island.rockCaveAt(x, y, z); resolved = true;
-          if (caveIndex === MATRIX_WORLD.permanentCave) return 1;
-        }
-      }
-    }
-    return MATRIX_WORLD.active ? matrixCoverage(x, z, resolved ? caveIndex : island.rockCaveAt(x, y, z)) : 0;
-  };
-  // Outline contrast is global.
-  // Material within rock follows the same cave ownership and radial front as the rendered stone surfaces.
-  const CAMERA_GLYPHS = { coverageAt: cameraGlyphCoverage, version: 0, time: 0, radius: -1, active: -1, permanentCave: -1 };
   const guideWitness = new Int32Array([-1]);
   const guideSegmentClear = (x, y, z, toX, toY, toZ) => {
     const previous = guideWitness[0];
@@ -8988,15 +8260,18 @@
     || (rockGuides = BL.rockGuides.create({ island, sealed: sealedCaves }));
   const trackMirrorObject = (node, radius, vertexCapacity) => {
     entropyLab?.phase?.body?.track(node, radius, vertexCapacity);
+    for (const veil of caveVeils) veil.phase?.body.track(node, radius, vertexCapacity);
     return mirrorCave?.body?.track(node, radius, vertexCapacity);
   };
   const untrackMirrorObject = (node) => {
     entropyLab?.phase?.body?.untrack(node);
+    for (const veil of caveVeils) veil.phase?.body.untrack(node);
     return mirrorCave?.body?.untrack(node);
   };
   const refreshMirrorObject = (node) => {
     mirrorCave?.body?.refresh(node);
     entropyLab?.phase?.body?.refresh(node);
+    for (const veil of caveVeils) veil.phase?.body.refresh(node);
     if (crew) for (let i = 0; i < crew.list.length; i++) {
       const actor = crew.list[i];
       if (actor.root !== node) continue;
@@ -9121,11 +8396,12 @@
     fromHeading = entry.heading, toHeading = fromHeading) => {
     const radius = CLANKER_CORE_RADIUS, centerY = 0.65, height = 0.12;
     const from = y + centerY, to = toY + centerY;
+    // A center brushing a step behind it may move away; new or inward contact still blocks.
     if (!allowOffLand && !island.onLand(toX, toZ) && !clankerSatelliteLandAt(toX, toY, toZ, radius)
       || crossesSealedCave(x, z, toX, toZ, y)
       || !island.clearAt(toX, to, toZ, radius, height)
       || !island.voxelSegmentClearAt(x, from, z, toX, to, toZ, radius, height)
-      || !solids.segmentClear(x, from, z, toX, to, toZ, radius, height, null, radius, height, true, false, false, entry.rage.active)
+      || !solids.segmentClear(x, from, z, toX, to, toZ, radius, height, null, radius, height, true, false, !entry.drive.airborne && !entry.jump.active, entry.rage.active)
       || !matrixGateSegmentClear(x, from, z, toX, to, toZ, radius, height, true)) return false;
     return clankerFireClear(entry, x, y, z, toX, toY, toZ, fromHeading, toHeading);
   };
@@ -9170,7 +8446,7 @@
     // Check the animated hand and held limbs before committing jump progress.
     // The jump's own sweep already proves the gorilla's arc against scenery.
     const motion = entry.motion, supportOffset = motion.supportOffset;
-    motion.supportOffset = damp(supportOffset, 0, 12, dt);
+    motion.supportOffset = damp(supportOffset, 0, 10, dt);
     try {
       return entry.gorilla.climbPoseClear(dt, x, y, z, entry.heading,
         motion, clankerPeerEmptyStone, clankerCarryPoseTransition, entry, speed,
@@ -9535,7 +8811,8 @@
     for (let i = 0; i < fireHazards.length; i++) {
       const hazard = fireHazards[i];
       if (!hazard.node.visible) continue;
-      const boxes = hazard.node.geometry.fireBoxes, reach = entry.gorilla.bodyRadius + 0.5;
+      const boxes = hazard.boxes;
+      const reach = entry.gorilla.bodyRadius + 0.5;
       for (let s = 0; s <= samples; s++) {
         const k = s / samples, x = lerp(fromX, p.x, k), y = lerp(fromY, p.y, k), z = lerp(fromZ, p.z, k);
         if (Math.hypot(x - hazard.x, z - hazard.z) > reach) continue;
@@ -9611,28 +8888,9 @@
         if (mempoolIsland) floor = Math.max(floor, mempoolIsland.floatAt(x, z, y, step, GORILLA_DRAUGHT));
         if (ALTAR_HEIGHT <= y + step + 1e-7
           && x * x + z * z < altar.platformRadius * altar.platformRadius) floor = Math.max(floor, ALTAR_HEIGHT);
-        if (floor > ABYSS_FLOOR + BL.clankers.PROP_STEP) {
-          const rect = clankerRectangleAt(entry, CLANKER_RECTANGLE);
-          const reach = step >= STEP_MAX - 1e-6 ? Math.max(step, BL.clankers.PROP_STEP) : step;
-          floor = Math.max(floor, solids.gorillaBlendedStepAt(x, z, y, reach, heading, floor,
-            rect.halfForward, rect.halfSide, rect.centerForward));
-        } else floor = Math.max(floor, solids.gorillaStepAt(x, z, y, step));
-      }
-      // At a diagonal roof edge the center can be over lower ground while
-      // the walking pads still stand on the lip. One remaining corner alone
-      // cannot hold the whole body up.
-      if (!entry.drive.airborne && !entry.jump.active && !entry.climb.active && y - floor > STEP_MAX) {
-        const sine = Math.sin(heading), cosine = Math.cos(heading), scale = entry.root.scale.x;
-        let planted = 0;
-        for (let forward = 0; forward < 2; forward++) for (let side = -1; side <= 1; side += 2) {
-          const along = (forward ? 1.35 : 0.05) * scale, across = side * 0.6 * scale;
-          const px = x + sine * along + cosine * across, pz = z + cosine * along - sine * across;
-          if (Math.abs(padSupportAt(px, pz, y, step, props) - y) <= 0.1) planted++;
-        }
-        if (planted >= 2) {
-          const pads = entry.gorilla.walkSupportAt(x, z, y, heading, step, props, padSupportAt);
-          if (Number.isFinite(pads)) floor = Math.max(floor, pads);
-        }
+        // Only the body's support area holds it up; reaching limbs must not
+        // keep the root suspended past a short step or platform edge.
+        floor = Math.max(floor, solids.gorillaStepAt(x, z, y, step));
       }
       return floor;
     }
@@ -9840,6 +9098,29 @@
       if (!clankerCylinderClear(px, y, pz, px, y, pz, 0.85, 2.7, entry, null, false, false, false)) return false;
     }
     return true;
+  };
+  const clankerClimbTorsoClear = (vertices) => {
+    if (!island.hullClearAt(vertices)) return false;
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let i = 0; i < vertices.length; i += 3) {
+      minX = Math.min(minX, vertices[i]); maxX = Math.max(maxX, vertices[i]);
+      minY = Math.min(minY, vertices[i + 1]); maxY = Math.max(maxY, vertices[i + 1]);
+      minZ = Math.min(minZ, vertices[i + 2]); maxZ = Math.max(maxZ, vertices[i + 2]);
+    }
+    for (let i = 0; i < climbMasonry.length; i++) {
+      const row = climbMasonry[i];
+      if (maxX < row.minX || minX > row.maxX || maxY < row.minY || minY > row.maxY
+        || maxZ < row.minZ || minZ > row.maxZ || !solids.isActive(row.node)) continue;
+      for (let j = 0; j < row.boxes.length; j++) if (BL.convex.hullsOverlap(vertices, row.boxes[j])) return false;
+    }
+    return true;
+  };
+  const clankerClimbAreaAt = (x, y, z) => {
+    // Climb geometry belongs to the mainland's cliff belt and underground
+    // walls. The meadow, authored stairs and satellite mesh paths are walks.
+    // This broad phase only admits a search; contact still proves a real wall.
+    const radius2 = x * x + z * z, outer = island.radius + 4, inner = island.meadowRadius - 4;
+    return radius2 <= outer * outer && (y < -0.5 || radius2 >= inner * inner) && !island.stairAt(x, y, z);
   };
   const clankerClimbSolidAt = (x, y, z) => {
     if (island.solidAt(x, y, z)) return true;
@@ -10560,7 +9841,7 @@
     if (!uiGuideObjects) uiGuideObjects = collectViewObjects();
     return !objectGuides.actorVisible(cave, guideSegmentClear);
   };
-  const prepareCoveredView = (overlayCanvas) => {
+  const prepareCoveredView = function* (overlayCanvas, slice) {
     const actor = crew.list.find((cave) => cave.root.visible);
     if (!actor) return;
     // Exercise the first covered-view paths behind the loading curtain. The
@@ -10574,12 +9855,16 @@
     setVec(view.position, p.x, p.y + 8, p.z + 50);
     try {
       preparingGuideActor = actor;
-      const objects = objectGuides.collect(actor, p.x, p.y, p.z, view, aspect);
+      const objects = objectGuides.collect(actor, p.x, p.y, p.z, view, aspect, null, 0, true);
+      while (objects.bakeNext()) yield* pause(slice);
+      objects.ensureContours();
+      yield* pause(slice);
       const guides = sightGuides.update(actor, null, objects, view, aspect, 0.25, true);
       const observer = guides.observer;
       guides.structure = rockGuides.select(p.x, p.y - actor.baseY, p.z, view.position.x, view.position.y, view.position.z);
       guides.structures = rockGuides.updateSurfaces(observer[19], observer[20], observer[21], view, 0.25, actor, objectGuides.perceptionClear, objects.occlusionVersion, objects.perceptionVersion);
       cameraCover.draw(view, actor.root, false, true, cameraRockAt, cameraRockMaterialAt, guides, 0.25);
+      yield* pause(slice);
     } finally {
       preparingGuideActor = null;
       const guides = sightGuides.update(null, null, null, camera, aspect, 0, false);
@@ -10633,15 +9918,20 @@
   // frame becoming 19 ms; 30 Hz spent about 19 ms on every other frame.
   const SIGHT_RECOMPUTE_HZ = 15;
   const overlay = (dt) => {
+    // The eye owns this blackout, including detached and trailing cameras.
+    // Cover all world overlays so no names or outlines reveal the empty room.
+    if (cameraInsideMirror()) {
+      const context = overlayCanvas.getContext("2d");
+      context.save(); context.setTransform(1, 0, 0, 1, 0, 0);
+      context.globalAlpha = 1; context.globalCompositeOperation = "source-over";
+      context.fillStyle = "#000"; context.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      context.restore();
+      return;
+    }
     if (poolBlockHovered) showPoolBlockTooltip();
     else if (pileHovered) showPileTooltip();
     // World-anchored sleeping marks share the guide visibility cadence; their particles still move every frame.
     advanceSleepSight(dt);
-    if (CAMERA_GLYPHS.radius !== MATRIX_WORLD.radius || CAMERA_GLYPHS.active !== MATRIX_WORLD.active || CAMERA_GLYPHS.permanentCave !== MATRIX_WORLD.permanentCave) {
-      CAMERA_GLYPHS.radius = MATRIX_WORLD.radius; CAMERA_GLYPHS.active = MATRIX_WORLD.active; CAMERA_GLYPHS.permanentCave = MATRIX_WORLD.permanentCave;
-      CAMERA_GLYPHS.version++;
-    }
-    CAMERA_GLYPHS.time = MATRIX_WORLD.time;
     const gorilla = clankerPlay.active, player = controlledGuideActor();
     const closeWanted = gorilla ? clankerPlay.firstPerson : pilot.closeWanted, closeMix = gorilla ? (closeWanted ? 1 : 0) : pilot.closeMix;
     const combatBirdsEye = gorilla ? clankerPlay.combat && clankerPlay.birdsEye : !!player && pilot.aiming && pilot.birdsEye;
@@ -10673,7 +9963,7 @@
       return;
     }
     const insideMirror = gorilla ? matrixCave.portal.inside : !!player && playerCaveIndex === matrixCave.caveIndex;
-    mirrorGuides.update(insideMirror, MATRIX_WORLD.time, MATRIX_WORLD.density);
+    mirrorGuides.update(insideMirror);
     const bananaActor = bananaCover.prepare(camera, player, player ? player.root.position.y - (gorilla ? 0 : player.baseY) : 0, gorilla ? player.gorilla.bodyHeight : player?.bodyHeight);
     uiGuideObjects = null; uiGuidesReady = true;
     try { fx.drawOverlay(dt, drawExtra); } finally { uiGuidesReady = false; }
@@ -10729,8 +10019,8 @@
       GUIDE_ACTOR_FORWARD[0] = (t.x - p.x) / length; GUIDE_ACTOR_FORWARD[1] = (t.y - p.y) / length; GUIDE_ACTOR_FORWARD[2] = (t.z - p.z) / length;
     }
     cameraCover.state.opacity = 0.22 * (1 - closeMix);
-    cameraCover.draw(camera, bananaActor ? null : player?.root, touchesRock, occluded, cameraRockAt, cameraRockMaterialAt, cutawayPool && player ? null : guides, dt, MATRIX_WORLD.active ? 1 : 0, CAMERA_GLYPHS, exteriorRamp ? guideActorVisibleAt : null);
-    bananaCover.draw(camera, player, dt, guideActorVisibleAt, bananaGuides.state, CAMERA_GLYPHS);
+    cameraCover.draw(camera, bananaActor ? null : player?.root, touchesRock, occluded, cameraRockAt, cameraRockMaterialAt, cutawayPool && player ? null : guides, dt, 0, null, exteriorRamp ? guideActorVisibleAt : null);
+    bananaCover.draw(camera, player, dt, guideActorVisibleAt, bananaGuides.state, null);
     drawFirstPersonFire(crew.player);
   };
 
@@ -10821,10 +10111,11 @@
   };
   const onTotem = (event) => { if (event.fresh) flareTotem(event.index); };
   const suspendHub = () => {
+    stopLazyBedding();
     // A kept island ends its hunt and its game as a full leave does, and lowers the ring at once.
-    ghostVisit++;
+    if (ghostEntry) { ghostEntry.dispose(); ghostEntry = null; }
     if (ghosts) { ghosts.dispose(); ghosts = null; }
-    ghostLoading = false; ghostSeal = null;
+    ghostSeal = null;
     setGameMode(false);
     gameRingK = gameRingWait = ringPulseWait = 0; gameRing.visible = false;
     // The veils' waves and glyph outlines end with the visit as leave ends them; an outline is made again where a body
@@ -10882,7 +10173,6 @@
     if (factoryMouth?.roofWindow) factoryMouth.roofWindow.suspend();
     hud.dispose();
     BL.net.setBody(null); BL.net.setHub(false); zoneHeld = null;
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     CLANKER_REST_SLOPE.supportEntry = RAGE_WARP_MOTION.supportEntry = null;
     sleepSightSince = Infinity; sleepSightMode = null; sleepSightGorilla = false; sleepSightFrame++;
     CLANKER_HIT.node = CLANKER_HIT.owner = POOL_BLOCK_HIT.node = POOL_BLOCK_HIT.owner = null;
@@ -10900,7 +10190,7 @@
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
     glCanvas = ctx.canvas; overlayCanvas = ctx.overlay;
     heldHub = false;
-    factoryDeparting = bifrostDeparting = bifrostHeld = entering = false;
+    factoryDeparting = bifrostDeparting = factoryHeld = entering = false;
     Object.assign(factoryWalk, { phase: 0, cave: null, seen: false, through: false, beat: 0, grab: false, still: 0, hold: 0, settle: false });
     world.islandKeep = null;
     if (factoryMouth) factoryMouth.snap = false;
@@ -10971,14 +10261,80 @@
       updatePositionDebug(true);
     }
     updatePoolEffectsActivity();
+    createGhostEntry();
   };
-  const enter = (ctx) => {
+  // Prepare only raw character rigs: the published crew, its stable roster order, input, health and NPC/remote
+  // registration are still created together by enter. No partly populated actor registry reaches a live scene.
+  const preparedCharacters = models.scopedMap(), characterLocations = new Map();
+  const rememberCharacterLocations = () => {
+    if (!crew) return;
+    characterLocations.clear();
+    for (const cave of crew.list) {
+      const p = cave.root.position;
+      characterLocations.set(cave.traits.name, { x: p.x, y: p.y, z: p.z });
+    }
+  };
+  // A released hub comes back to an island its departure dropped, and to every hub-scoped model cache with it. The pure
+  // builds run here in slices behind the fade, not in the swap frame (seconds on a phone): the island, the Mempool
+  // island's meshes, the rock guides' walls (BL.rockGuides.prepareSteps) and every Ooga's rig. What is left for enter
+  // is placing the props, the crew and the outline registry. Boot (unless ?lazyhub=1) and a kept hub skip it.
+  const prepareHubSteps = function* (ctx) {
+    if (heldHub || ctx.from === "hub" || !ctx.from && !LAZY_BEDDING) return null;
+    preparedCharacters.clear();
+    const factory = caves.slots.find(slot => slot.status === "open" && slot.scene === "factory");
+    const options = { seed: SEED, roofHole: factory ? { id: factory.id, ...BL.factoryModels.ROOF_TUBE } : null };
+    const slice = { until: 0, budget: BL.buildTasks.SLICE_MS, work: 0 };
+    if (!terrain.hasIsland(options)) yield* terrain.islandSteps(options, slice);
+    yield* poolModels.prepareSteps();
+    yield* BL.rockGuides.prepareSteps(terrain.island(options), slice);
+    // The Mempool island's walked meshes' collision trees, and ₿IFRÖST's islet, each a task of its own.
+    for (const geometry of [poolModels.islet(), poolModels.rampFloor(), poolModels.membrane(), poolModels.crossing(), poolModels.bridge()]) {
+      yield;
+      BL.solidProps.prepare(geometry);
+    }
+    if (BL.scenes.bifrost) yield* BL.bifrostIsle.prepareSteps();
+    const roster = contributors.activeRoster, point = camera ? camera.position : PILE_VIEW.target;
+    const requested = ctx.world.pilot || params.get("character")?.trim().toLowerCase();
+    const distance = contributor => {
+      if (requested && contributor.name.toLowerCase() === requested.toLowerCase()) return -Infinity;
+      const p = characterLocations.get(contributor.name);
+      return p ? (p.x - point.x) ** 2 + (p.y - point.y) ** 2 + (p.z - point.z) ** 2 : Infinity;
+    };
+    // Last-visit positions give an exact nearest-first priority on a rebuild. Cold boot has no placed actors yet;
+    // its requested driver leads, then stable roster order. A cold spatial spawn planner remains a separate step.
+    const nearest = roster.map((contributor, index) => ({ contributor, index, distance: distance(contributor) }))
+      .sort((a, b) => a.distance - b.distance || a.index - b.index).slice(0, 10).map(row => row.contributor);
+    const first = new Set(nearest), ordered = nearest.concat(roster.filter(contributor => !first.has(contributor)));
+    for (const contributor of ordered) {
+      preparedCharacters.set(contributor.name, models.caveman(contributors.traitsFor(contributor.name)));
+      yield;
+    }
+    return null;
+  };
+  const takePreparedCharacter = (name) => {
+    const cave = preparedCharacters.get(name);
+    preparedCharacters.delete(name);
+    return cave || models.caveman(contributors.traitsFor(name));
+  };
+  // Half the construction slice: an enter's steps are coarser than a builder's, and a slice runs to its next pause.
+  const ENTER_SLICE_MS = 20;
+  const pause = function* (slice) {
+    if (performance.now() < slice.until) return;
+    yield;
+    slice.until = performance.now() + ENTER_SLICE_MS;
+  };
+  // The island's whole visit, built in slices when the director lets it (`enterSteps`, a released hub's return) and
+  // in one go otherwise (`enter`: boot, and a kept hub's resume, which never pauses). `pause` gives the frame back once
+  // a slice has run its budget; between slices nothing of the visit runs, and the director holds the canvas's input.
+  const enterSteps = function* (ctx) {
+    const slice = { until: performance.now() + ENTER_SLICE_MS };
+    prefetchAt = 0;
     reuseHub = ctx.hubPolicy === "keep";
     if (heldHub) { resumeHub(ctx); return; }
     ({ renderer, game, world, go, lootEnabled, testBananas } = ctx);
     poolEffectsActive = false; poolEffectsTime = 0;
     glCanvas = ctx.canvas;
-    factoryDeparting = bifrostDeparting = bifrostHeld = false;
+    factoryDeparting = bifrostDeparting = factoryHeld = false;
     Object.assign(factoryWalk, { phase: 0, cave: null, seen: false, through: false, beat: 0, grab: false, still: 0, hold: 0, settle: false });
     world.islandKeep = null;
     overlayCanvas = ctx.overlay;
@@ -10989,9 +10345,6 @@
       get carrier() { return crew && crew.hasMagazine(crew.player) ? crew.player.traits.name : null; }
     };
     magazine = null;
-    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.time = MATRIX_WORLD.permanentCave = 0;
-    MATRIX_WORLD.livingGlobal = 0;
-    MATRIX_WORLD.density = renderer.kind === "canvas2d" ? MATRIX_DENSITY.canvas2d / MATRIX_DENSITY.high : MATRIX_DENSITY[renderer.quality] / MATRIX_DENSITY.high;
     camera = createCamera({ fov: 48, near: 0.5, far: 900 });
     root = createNode();
     positionDebug = document.getElementById("position-debug");
@@ -11023,21 +10376,11 @@
     caveEntryPlayer = null;
     playerCaveIndex = 0;
     CAMERA_OPENINGS.length = 0;
-    MATRIX_WORLD.caveNear = Infinity;
     for (let i = 0; i < island.mouths.length; i++) {
-      const m = island.mouths[i], sr = Math.sin(m.ry), cr = Math.cos(m.ry), offset = i * 4;
+      const m = island.mouths[i], sr = Math.sin(m.ry), cr = Math.cos(m.ry);
       const slot = caves.slots.find((candidate) => candidate.id === m.id);
       const blocked = slot.status === "dark";
       CAMERA_OPENINGS.push({ id: m.id, caveIndex: i + 1, mouth: m, sr, cr, minX: PORTAL_MIN_X, maxX: PORTAL_MAX_X, minY: PORTAL_MIN_Y, maxY: PORTAL_MAX_Y, planeZ: PORTAL_Z, blocked, headquarters: slot.status === "headquarters", ramp: slot.status === "headquarters" ? island.headquarters.ramps.find((entry) => entry.id === m.id) : null, stopZ: blocked ? 0.53 + hubModels.sealedCaveFace(sealedCaveVariant(slot.id)).frontZ : PORTAL_Z, rim: hubModels.caveMouthRim().openingBounds });
-      MATRIX_WORLD.caves[offset] = sr;
-      MATRIX_WORLD.caves[offset + 1] = cr;
-      MATRIX_WORLD.caves[offset + 2] = sr * m.x + cr * m.z + PORTAL_Z;
-      MATRIX_WORLD.caves[offset + 3] = Math.hypot(m.x + sr * PORTAL_Z - MATRIX_WORLD.origin[0], m.z + cr * PORTAL_Z - MATRIX_WORLD.origin[2]);
-      MATRIX_WORLD.caveBounds[offset] = m.x;
-      MATRIX_WORLD.caveBounds[offset + 1] = m.floorY;
-      MATRIX_WORLD.caveBounds[offset + 2] = m.z;
-      MATRIX_WORLD.caveBounds[offset + 3] = 7;
-      MATRIX_WORLD.caveNear = Math.min(MATRIX_WORLD.caveNear, MATRIX_WORLD.caves[offset + 3] - 4);
     }
     mark("island");
     hud = hudMod.create({ signal: ctx.signal, roster: contributors.activeRoster, catalog: models.SWAG, tierColors: models.TIER_COLORS, renderIcon: hudMod.renderIcon, lootEnabled });
@@ -11050,7 +10393,9 @@
       onOpen: () => { pilot.setActive(false); pilot.controls.reset(); input.reset(); hud.tooltip.hide(); },
       onClose: () => { pilot.setActive(true); pilot.controls.reset(); input.reset(); }
     });
+    yield* pause(slice);
     terrainRampRoof = BL.terrainCutaway.createRampRoof(island.cutawaySource, island.geometry, renderer.releaseGeometry);
+    yield* pause(slice);
     debugMovementTerrain = place(terrainRampRoof.baseGeometry, 0, 0, 0, 0);
     addChild(root, terrainRampRoof.node);
     placed.push(terrainRampRoof.node);
@@ -11077,7 +10422,6 @@
     altar = buildAltar();
     const layoutPile = (radius) => {
       altar.setRadius(radius);
-      CAMERA_GLYPHS.version++;
       const changed = island.path.setRadius(altar.platformRadius);
       island.path.apply(pathNode);
       if (changed) { movePilePosts(); clearRingPalms(); reflowScenery(); invalidateRageThrowMap(); }
@@ -11086,10 +10430,10 @@
     // While ₿IFRÖST is open its arch stands over the pass in the old gate's place, at the head of Bifröst; its stone is
     // the gate, and its gold, banners, lanterns and lit name dress it off the outlines.
     const arch = BL.scenes.bifrost ? BL.bifrostGate.landmark() : null;
+    yield* pause(slice);
     const gate = place(arch ? arch.stone : hubModels.gate(), island.gate.x, island.gate.z, island.gate.ry);
     if (arch) gate.depthBias = -0.05; // Canvas also favours the dressed stone where it meets the ridge.
     solids.add(gate);
-    gateRain = arch ? buildGateRain(gate, arch.opening.half - 0.16, arch.opening.spring) : buildGateRain(gate, 0.84, 4);
     // The arch's pick sphere is its stone's own bounds (radius 0), which reach its crystals and lanterns too, and a ray
     // counts only where it meets the arch's shell, so a tap through the opening reaches the bridge and the islet beyond.
     // Where it does meet the stone the arch ranks with the cave mouths, above props' broad spheres (the jumbotron's
@@ -11109,12 +10453,18 @@
     TICKER_AT.y = gate.position.y + (arch ? arch.top + 1 : 6);
     GATE_VIEW.target.y = gate.position.y + (arch ? arch.middle : 2.5);
     const archLamp = arch ? dressArch(gate, arch) : null;
+    fireRigs = [];
+    firePitRig = null;
+    yield* pause(slice);
     headquarters = buildHeadquarters();
+    yield* pause(slice);
     const bedrolls = headquarters.mattresses;
     headquarters.sleepAnchors = bedrolls;
+    yield* pause(slice);
     for (const slot of caves.slots) {
       const m = island.mouths.find((mouth) => mouth.id === slot.id);
       addTarget(buildMouth(slot, m), { kind: "cave", slot, priority: 1 }, { radius: 2.6 });
+      yield* pause(slice);
       claim(m.x, m.z, 3.5);
       if (workCave(slot)) {
         workZones.push({ x: m.x, z: m.z, floor: m.floorY, sr: Math.sin(m.ry), cr: Math.cos(m.ry), active: false, half: 3.4, front: 5.8 });
@@ -11132,10 +10482,12 @@
       return { x, z, ry: Math.atan2(-x, -z) };
     }).filter(Boolean);
     buildRim();
-    mempoolIsland = buildMempoolIsland();
-    timechainIsland = buildTimechainIsland();
-    bifrostIsle = BL.scenes.bifrost ? buildBifrostIsle(archLamp) : null;
+    mempoolIsland = yield* buildMempoolIsland(slice);
+    yield* pause(slice);
+    timechainIsland = yield* buildTimechainIsland(slice);
+    bifrostIsle = BL.scenes.bifrost ? yield* buildBifrostIsle(archLamp, slice) : null;
     const firePos = buildFire();
+    yield* pause(slice);
     fire = lamps[lamps.length - 1];
     fire.centerLight = true;
     // The arch's lanterns pool warm light on its stone, ranked right after the fire so every tier keeps the fires first;
@@ -11165,16 +10517,21 @@
       // walks idled Oogas down to bed).
       oogatronUnsub = oogatronLive.subscribe(onOogatron);
     }
+    yield* pause(slice);
     buildTotems();
+    yield* pause(slice);
     addDressingLights();
     buildPilePosts();
     plantPalms();
     raiseIslets();
+    yield* pause(slice);
     buildLife();
-    scatter();
+    yield* pause(slice);
+    yield* scatter(slice);
     mempoolIsland.claimGround();
     timechainIsland.claimGround();
     if (bifrostIsle) bifrostIsle.claimGround();
+    clearFireBush(firePos);
     buildLawn();
     reflowScenery();
     buildSpots();
@@ -11234,6 +10591,7 @@
     };
     shared.carryCharacter = carryCharacter;
     shared.npcWalkable = npcWalkable;
+    shared.npcYieldAhead = npcYieldAhead;
     shared.prepareNpcRoutes = refreshWorkZones;
     shared.npcDetour = npcWorkDetour;
     shared.npcRouteBlocked = (cave, x, y, z) => npcClosedCaveAt(x, z, y, cave.bodyHeight) || npcWorkZoneAt(cave, x, y, z)
@@ -11272,12 +10630,14 @@
       return (cave === pilot.player ? solids.escapeSegmentClear : solids.segmentClear)(p.x, feet, p.z, x, feet, z, PLAYER_RADIUS, cave.bodyHeight - 1e-5);
     };
     shared.onBodyMove = moveCampBody;
-    mirrorCave.damage = BL.mirrorDamage.create(mirrorCave.node, (geometry) => renderer.releaseGeometry(geometry), (x, z, y) => island.supportAt(x, z, y, 0));
-    mirrorCave.damageStage = mirrorCave.damage.stage;
-    mirrorCave.damageVersion = mirrorCave.damage.version;
-    mirrorCave.shattered = false;
     mirrorCave.ripples = BL.mirrorRipples.create(mirrorCave.node);
     entropyLab.phase = BL.labPhase.create(entropyLab.group, entropyLab.mouth, entropyLab.opening);
+    yield* pause(slice);
+    for (const veil of caveVeils) {
+      veil.phase = BL.labPhase.create(veil.group, veil.mouth, veil.opening, veil.plane, veil.tint);
+      veil.phase.pause(true);
+      yield* pause(slice);
+    }
     // The factory's shield crests in its emitters' cyan, and on WebGL its window into the hall, which shows the page's
     // one factory node: the island ticks it while it is here, as the hall does.
     if (factoryMouth) {
@@ -11292,6 +10652,7 @@
         factoryMouth.hall.debug.roof = factoryMouth.roofWindow.debug;
       }
     }
+    yield* pause(slice);
     // B.C.A.'s veil glows warm, a lamp's amber, over the office the gorillas suit up behind.
     if (bcaMouth) bcaMouth.phase = BL.labPhase.create(bcaMouth.group, bcaMouth.mouth, bcaMouth.opening, BCA_VEIL_Z, BCA_TINT);
     // ₿IFRÖST's field crests in the chamber's blue, and on WebGL shows the chamber through it; Heimdall keeps the bridge.
@@ -11310,19 +10671,12 @@
       || !!(factoryMouth && factoryMouth.phase.absorb(ax, ay, az, point, dt))
       || !!(bcaMouth && bcaMouth.phase.absorb(ax, ay, az, point, dt))
       || !!(bifrostIsle && bifrostIsle.phase.absorb(ax, ay, az, point, dt))
-      || !!(workShot && source && shared.workSites[source.work.site]?.mirrorRoom && !mirrorCave.damage.broken
+      || absorbCaveVeil(ax, ay, az, point, dt)
+      || !!(workShot && source && shared.workSites[source.work.site]?.mirrorRoom
         && mirrorCave.ripples.absorb(ax, ay, az, point));
-    shared.onProjectileMove = (ax, ay, az, bx, by, bz, dt, source, workShot) => {
-      const crossed = mirrorCave.ripples.cross(ax, ay, az, bx, by, bz, dt);
-      if (!crossed || !workShot || !source || !shared.workSites[source.work.site]?.mirrorRoom || mirrorCave.damage.broken) return;
-      const plane = MATRIX_WORLD.permanentPlane;
-      const from = plane[0] * ax + plane[1] * ay + plane[2] * az + plane[3];
-      const to = plane[0] * bx + plane[1] * by + plane[2] * bz + plane[3];
-      const t = from / (from - to);
-      hitMirror(1, lerp(ax, bx, t), lerp(ay, by, t), lerp(az, bz, t), source);
-    };
+    shared.onProjectileMove = (ax, ay, az, bx, by, bz, dt) => mirrorCave.ripples.cross(ax, ay, az, bx, by, bz, dt);
     shared.weaponInteraction = (owner, node) => node === mirrorCave.node
-      || !!ghosts && !ghosts.busy && owner.kind === "halloween" && owner.role === "herald" && owner.active;
+      || (!ghosts && !!ghostEntry || !!ghosts && !ghosts.busy) && owner.kind === "halloween" && owner.role === "herald" && owner.active;
     shared.onWeaponImpact = weaponImpact;
     shared.onMeleeStrike = mirrorCave.ripples.strike;
     shared.aimSurface = mirrorCave.ripples.aimAt;
@@ -11350,8 +10704,9 @@
     shared.refreshMirrorObject = refreshMirrorObject;
     cameraCover = BL.cameraCover.create(ctx.overlay);
     headquarters.cameraCover = cameraCover.state;
-    headquarters.glyphMaterial = CAMERA_GLYPHS;
+    yield* pause(slice);
     ensureRockGuides();
+    yield* pause(slice);
     // Reading the cue builds it, so any view or inspector needing one gets it without waiting on the timer.
     Object.defineProperty(headquarters, "rockGuides", { configurable: true, get: ensureRockGuides });
     mark("rockGuides");
@@ -11369,7 +10724,9 @@
       island, walkable: npcWalkable, pointAllowed: (x, z) => !npcClosedCaveAt(x, z) && !npcRampRoofAt(x, island.surfaceAt(x, z), z),
       surfaceAt: (x, z, y) => island.supportAt(x, z, y, 1e-6, null, PLAYER_RADIUS)
     });
+    yield* pause(slice);
     const sleepNavigation = headquarters.sleepNavigation = BL.headquartersSleep.create({ island, beds: bedrolls, walkable: sleepRouteClear, surfaceRoute: shared.npcPaths.route });
+    yield* pause(slice);
     // Overflow sleepers take the rainforest's fixed anchors in order, searched once a page and only as far as needed.
     // Only scenery belongs in this cached search: a passing Ooga must not permanently change the anchor order.
     const forest = BL.headquartersSleep.outdoor(mempoolIsland,
@@ -11461,26 +10818,19 @@
         }
       };
     });
-    shared.workTarget = (cave, out, sample) => {
-      if (!clankers || !clankers.target(cave, out, sample)) return false;
-      // Scatter shots over intact glass, then aim at surviving panels once
-      // holes appear. Preserve each round's sample throughout its flight.
-      // This hook is also called for rounds already in flight, so a newly made
-      // hole cannot pull the rest of a burst through empty space.
-      if (shared.workSites[cave.work.site]?.mirrorRoom && !mirrorCave.damage.broken) {
-        mirrorCave.damage.aimCenter(out, out.x, out.y, out.z, sample);
-      }
-      return true;
-    };
+    shared.workTarget = (cave, out, sample) => clankers && clankers.target(cave, out, sample);
     shared.workCompanionTarget = (cave, out) => clankers && clankers.companionTarget(cave, out);
     shared.workHit = (cave) => clankers && clankers.hit(cave);
     shared.workPlanned = (cave, site) => clankers && clankers.plan(cave, site);
     mark("pile");
+    shared.residentName = "SaniExp";
     shared.residentPose = (cave, dt) => grabbedOogaPose(cave) || timechainResidentPose(cave, dt);
     shared.releaseGrabbed = (cave) => cave.grabbedBy && finishClankerRider(cave.grabbedBy, false);
     // Signed-in visitors elsewhere, as the Oogas they drive; the crew walks round them.
     shared.outsideActors = () => remotes.actors();
     shared.outsideActorHeight = REMOTE_BODY_HEIGHT;
+    shared.characterModel = takePreparedCharacter;
+    yield* pause(slice);
     crew = shared.crew = crewMod.create(shared);
     remotes = BL.remotePlayers.create({
       root, crew, visible: remoteShown,
@@ -11523,10 +10873,8 @@
     shared.shotGeometry = () => ghosts && ghosts.hunting ? ghosts.shotGeometry() : null; // HALLOWEEN: rifles fire rocks, then lasers, through the hunt
     BL.net.setHub(true);
     for (const cave of crew.list) crew.setJetpackOwnership(cave, true, hubModels.jetpack(), hubModels.jetFlame());
-    // Sani hosts the island on ordinary visits; debug visits keep activity-derived states.
-    const sani = crew.cavemen.get("SaniExp");
-    if (sani && !DEBUG && preloadedCharacter !== "saniexp") sani.override = "chilling";
     mirrorCave.body = BL.mirrorBody.create(mirrorCave.node, crew.cavemen);
+    yield* pause(slice);
     for (const cave of crew.list) entropyLab.phase.body.track(cave.root, cave.traits.height * 2,
       Math.max(cave.headOpen.verts.length, cave.headClosed.verts.length));
     if (factoryMouth) for (const cave of crew.list) factoryMouth.phase.body.track(cave.root, cave.traits.height * 2,
@@ -11534,6 +10882,8 @@
     if (bcaMouth) for (const cave of crew.list) bcaMouth.phase.body.track(cave.root, cave.traits.height * 2,
       Math.max(cave.headOpen.verts.length, cave.headClosed.verts.length));
     if (bifrostIsle) for (const cave of crew.list) bifrostIsle.phase.body.track(cave.root, cave.traits.height * 2,
+      Math.max(cave.headOpen.verts.length, cave.headClosed.verts.length));
+    for (const veil of caveVeils) for (const cave of crew.list) veil.phase.body.track(cave.root, cave.traits.height * 2,
       Math.max(cave.headOpen.verts.length, cave.headClosed.verts.length));
     if (magazine) trackMirrorObject(magazine.node, 1);
     for (let caveIndex = 0; caveIndex < crew.list.length; caveIndex++) {
@@ -11609,6 +10959,7 @@
       });
     }
     const labSiteIndex = shared.workSites.findIndex(site => site.mouth === entropyLab.mouth);
+    yield* pause(slice);
     clankers = BL.clankers.create({
       root, crew, animationInterval, sites: shared.workSites, loungeRoofs, loungeAreas, climbRoofs, chillZones, descentWalls,
       rageLandAt, rageEdgeAt, rageEdgeHeading, rageEdgeGoal, rageApproach, rageWarpRequired, rageWarpTarget, rageWarpPose, rageWarpHome, rageGrab, rageCaptive, rageRelease, rageThrow, rageDragClear, rageCarryClear, rageCaptureEligible, rageJumpPoseClear,
@@ -11620,12 +10971,12 @@
       labInside: entropyLab.phase.inside, labStations: entropyLab.stations,
       offices: bcaMouth ? [bcaOffice()] : [],
       labEquipment: entropyLab.equipment, labPickup: pickUpLabEquipment, labReturn: returnLabEquipment, labRoll: rollLabEquipment,
-      solidAt: island.solidAt, climbSolidAt: clankerClimbSolidAt, climbSurfaceAt: clankerClimbSurfaceAt,
+      solidAt: island.solidAt, climbAreaAt: clankerClimbAreaAt, climbSolidAt: clankerClimbSolidAt, climbSurfaceAt: clankerClimbSurfaceAt, climbTorsoClear: clankerClimbTorsoClear,
       climbClear: clankerClimbClear, climbOpeningClear: clankerOpeningClear, platformEntryAt: clankerPlatformEntryAt,
       climbTransitionClear: clankerClimbTransitionClear, climbPeersClear: clankerPeersClear,
       restPoseClear: clankerRestPoseClear, restFootingClear: clankerRestFootingClear,
       groomClear: clankerGroomClear, restSiteClear: clankerRestSiteClear,
-      groundAt: (x, z, y) => island.supportAt(x, z, y, 0.52), groundPlaneAt: clankerGroundPlaneAt, rectangleAt: clankerRectangleAt, groundHullAt: island.hullClearAt, surfaceAt: island.surfaceAt, stairAt: island.stairAt,
+      groundAt: (x, z, y) => island.supportAt(x, z, y, 0.52), groundPlaneAt: clankerGroundPlaneAt, rectangleAt: clankerRectangleAt, surfaceAt: island.surfaceAt, stairAt: island.stairAt,
       pointSupportAt: (x, z, y, entry = null) => Math.max(island.supportAt(x, z, y, 0.02, -Infinity),
         solids.supportAt(x, z, y, 0.02, 0, null, null, false, null, !!entry?.rage?.active)),
       isGrass: island.isGrassAt, restSurfaceClear: clankerRestSurfaceClear, onLand: island.onLand,
@@ -11636,6 +10987,7 @@
       canSmash: canClankerSmash, supportAt: clankerSupportAt, terrainSupportAt: clankerTerrainSupportAt,
       track: (entry) => trackMirrorObject(entry.root, 3.6, 4248), untrack: (entry) => untrackMirrorObject(entry.root)
     });
+    yield* pause(slice);
     shared.fireThreats = () => clankers.list;
     for (const entry of clankers.list) {
       entry.netBody = BL.net.gorillaBody(entry.owner.traits.name);
@@ -11739,7 +11091,9 @@
       else if (action.startsWith("weapon-") || action === "magazine-swap") pilot.weaponAction(action);
       else if (action === "reset-view") return (clankerPlay.active ? clankerPlay : pilot).resetCamera();
     });
+    yield* pause(slice);
     crew.refreshStates(true);
+    yield* pause(slice);
     unsubscribeActivity = contributors.subscribe(() => crew.refreshStates());
     // Sign-in returns to the bare page; a routed hub place (a shared link, the Sphere's keypad) is still honoured.
     const signedInArrival = ctx.from === null && (!ctx.place || ctx.place === "donate") && !!BL.net.ownCharacter();
@@ -11811,10 +11165,12 @@
       occlusionVersion: () => objectGuides.result.occlusionVersion
     });
     platformGuides = headquarters.platformGuides = BL.pileGuides.create({ pile, altar, platform: true });
-    mirrorGuides = mirrorCave.guides = BL.mirrorGuides.create({ mirror: mirrorCave, stand: matrixControl.button });
+    mirrorGuides = mirrorCave.guides = BL.mirrorGuides.create({ mirror: mirrorCave });
+    yield* pause(slice);
     // Scenery may receive outlines, but only island rock activates the hidden character view.
     // Banana interiors keep their separate covered-view pass.
     objectGuides = headquarters.objectGuides = BL.objectGuides.create({ roots: root.children, crew, actorRoots: clankers.list.map((entry) => entry.root), exclude: [...terrainRampRoof.geometries, pathNode.geometry, mempoolIsland.site.ground.geometry], providers: [pileGuides, platformGuides, mirrorGuides], propsBlockActor: false, perceptionThrough: (actor) => inBananas(actor) ? pile.core : null });
+    yield* pause(slice);
     const guideOptions = { segmentClear: guideSegmentClear, objectClear: objectGuides.cameraClear, actorClear: objectGuides.perceptionClear, eyeAt: guideEyeAt, ownerBoundary: objectGuides.ownerBoundaryAt, ownerPerceived: objectGuides.perceived, ownerConcealed: objectGuides.concealed, ownerDistance: objectGuides.distance, ownerInView: objectGuides.inView, ownerClear: objectGuides.ownerClear, getProvider: objectGuides.getProvider };
     sightGuides = BL.sightGuides.create(guideOptions);
     bananaGuides = BL.sightGuides.create(guideOptions);
@@ -11823,13 +11179,10 @@
     headquarters.sightGuides = sightGuides.state;
     headquarters.bananaGuides = bananaGuides.state;
     mark("guides");
-    hintTimer = window.setTimeout(() => {
-      if (!pilot.player && !clankerPlay.active && !matrixControl.promptAction) hud.hint(COARSE ? "Drag to look · pinch to eye level · sticks to fly · tap a cave" : "Drag to look · scroll to eye level · WASD to fly · tap a cave to enter");
-    }, 1200);
     Object.assign(hubScene, {
       root, camera, input,
       debug: {
-        setGameMode, animationInterval,
+        setGameMode, delayGameRing, animationInterval,
         get gameMode() { return gameMode; },
         selectDebugGorilla,
         get timechainIsland() { return timechainIsland; },
@@ -11854,166 +11207,16 @@
         matrixGate: {
           gates: matrixGates,
           sealed: sealedCaves,
-          get unlocked() { return matrixCave.unlocked; },
-          get pressed() { return matrixControl.pressed; },
-          get near() { return matrixControl.near; },
-          get button() { return matrixControl.button; },
-          get lights() { return matrixControl.lights; },
-          get lever() { return matrixControl.lever; },
-          get grip() { return matrixControl.grip; },
-          get x() { return matrixControl.x; },
-          get z() { return matrixControl.z; },
-          get visibleHeight() { return 0; },
-          get hiddenHeight() { return MATRIX_GATE_HIDDEN_Y; },
           segmentClear: matrixGateSegmentClear,
           ceilingAt: matrixGateCeilingAt,
-          openNear(x, y, z, reach = MATRIX_BUTTON_USE_REACH) {
-            const gate = pilot.player && nearbyMatrixGate(x, y, z, reach);
-            if (!gate) return false;
-            useNearbyAction(gate);
-            return true;
-          },
-          press: () => toggleMatrixControl(),
-          set: (unlocked) => setMatrixUnlocked(!!unlocked, true)
         },
         cameraCave: CAMERA_CAVE_DEBUG,
         matrixCave: {
-          get streamCount() { return matrixCave.streams.length; },
-          get glyphCount() { return matrixCave.glyphCount; },
-          get surfaceSectionCount() { return matrixCave.sections.length; },
-          get surfaceStreamCount() { return matrixCave.streams.length; },
-          get surfaceGlyphCount() { return matrixCave.glyphCount; },
-          get activeGlyphCount() { return matrixCave.activeGlyphCount; },
-          get brightTipCount() { return matrixCave.brightTipCount; },
-          get capacity() { return matrixCave.capacity; },
-          get glyphVersion() { return matrixCave.glyphVersion; },
-          get previousGlyphVersion() { return matrixCave.previousGlyphVersion; },
-          get mutationHash() { return matrixCave.mutationHash; },
-          get glyphCadenceHz() { return MATRIX_GLYPH_HZ; },
-          get bufferCount() { return MATRIX_TYPES; },
-          get bufferBytes() { return matrixCave.bufferBytes; },
-          get registryBytes() { return matrixCave.registryBytes; },
-          get surfaceMetadataBytes() { return matrixCave.surfaceMetadataBytes; },
-          get registryHash() { return matrixCave.registryHash; },
-          get allocationCount() { return matrixCave.allocationCount; },
-          get rebuildCount() { return matrixCave.rebuildCount; },
-          get quality() { return matrixCave.quality; },
-          get qualityDensity() { return matrixCave.densityRankLimit / 8; },
-          get surfacePitch() { return MATRIX_SURFACE_PITCH; },
-          get surfaceGap() { return MATRIX_SURFACE_GAP; },
-          get surfaceCounts() { return matrixCave.surfaceCounts; },
-          get activeSurfaceCounts() { return matrixCave.activeSurfaceCounts; },
-          get terrainFaceCount() { return matrixCave.terrainFaces; },
-          get propFaceCount() { return matrixCave.propFaces; },
-          get geometrySource() { return "carved-terrain"; },
-          get minBrightness() { return matrixCave.minBrightness; },
-          get maxBrightness() { return matrixCave.maxBrightness; },
-          get minTrainLength() { return matrixCave.minTrainLength; },
-          get maxTrainLength() { return matrixCave.maxTrainLength; },
-          get minGapLength() { return matrixCave.minGapLength; },
-          get maxGapLength() { return matrixCave.maxGapLength; },
-          get movingGapCount() { return matrixCave.movingGapCount; },
-          get maxLocalZ() { return matrixCave.maximumLocalZ; },
-          get portalClearance() { return PORTAL_Z - matrixCave.maximumLocalZ; },
-          get mirrorDistance() { return matrixCave.mirrorDistance; },
-          get mirrorHeight() { return MATRIX_MIRROR_HEIGHT; },
-          get mirrorReveal() { return matrixCave.mirrorNode.mirrorReveal; },
-          sampleMotion: (category) => {
-            for (let i = 0; i < matrixCave.sections.length; i++) {
-              const section = matrixCave.sections[i];
-              if (section.category !== category) continue;
-              const stream = matrixCave.streams[section.streamStart];
-              return {
-                surface: category, direction: stream.direction, speed: stream.speed,
-                head: stream.head, gap: stream.gap, flowMin: stream.flowMin, flowMax: stream.flowMax, flowRange: stream.flowRange,
-                trainLength: stream.trainLength, gapLength: stream.gapLength,
-                flowX: section.vx * stream.direction, flowY: section.vy * stream.direction, flowZ: section.vz * stream.direction,
-                leadingGlow: stream.brightness,
-                secondGlow: stream.brightness * (0.48 + 0.52 * (1 - 1 / stream.trainLength)),
-                trailingGlow: stream.brightness * (0.48 + 0.52 / stream.trainLength)
-              };
-            }
-            return null;
-          },
-          get updates() { return matrixCave.updates; },
-          get prewarmCount() { return 0; },
-          get preloaded() { return false; },
-          get drawEnabled() { return matrixCave.drawEnabled; },
-          get drawnGlyphCount() { return matrixCave.drawnGlyphCount; },
-          get batchDrawCount() {
-            let count = 0;
-            for (let glyph = 0; glyph < MATRIX_TYPES; glyph++) count += matrixCave.nodes[glyph].drawInstanceCount;
-            return count;
-          },
-          get preloadDistance() { return 0; },
-          get revealedGlyphCount() { return matrixCave.revealedGlyphCount; },
-          get visible() { return matrixCave.visible; },
-          get inside() { return matrixCave.portal.inside; },
-          get gateRain() { return gateRain; },
           get clouds() { return clouds; },
           advanceClouds: updateClouds,
-          get firstGlyphY() { return matrixCave.firstGlyphY; },
-          world: {
-            get active() { return !!MATRIX_WORLD.active; },
-            get radius() { return MATRIX_WORLD.radius; },
-            get direction() { return MATRIX_WORLD.direction; },
-            get maxRadius() { return MATRIX_WORLD.maxRadius; },
-            get permanentCave() { return MATRIX_WORLD.permanentCave; },
-            get speed() { return MATRIX_WORLD.speed; },
-            get retreatSpeed() { return MATRIX_WORLD.retreatSpeed; },
-            get frontWidth() { return MATRIX_FRONT_WIDTH; },
-            get density() { return MATRIX_WORLD.density; },
-            get streamPitch() { return MATRIX_SURFACE_PITCH; },
-            get glyphGap() { return MATRIX_SURFACE_GAP; },
-            get pixelPitch() { return MATRIX_PIXEL_PITCH; },
-            get pixelSize() { return MATRIX_PIXEL_SIZE; },
-            get glyphCadenceHz() { return MATRIX_GLYPH_HZ; },
-            get minimumStreamSpeed() { return MATRIX_STREAM_SPEED_MIN; },
-            get maximumStreamSpeed() { return MATRIX_STREAM_SPEED_MIN + MATRIX_STREAM_SPEED_RANGE; },
-            get minimumTrainLength() { return MATRIX_TRAIN_MIN; },
-            get maximumTrainLength() { return MATRIX_TRAIN_MIN + MATRIX_TRAIN_RANGE - 1; },
-            get minimumGapLength() { return MATRIX_TRAIN_GAP_MIN; },
-            get maximumGapLength() { return MATRIX_TRAIN_GAP_MIN + MATRIX_TRAIN_GAP_RANGE - 1; },
-            get palette() { return "#46ff70|#18dc4a"; },
-            get leadingTipColor() { return "#d6ffe3"; },
-            get voxelFaceShading() { return true; },
-            get antialiasedGlyphEdges() { return true; },
-            get caveEmissiveLighting() { return true; },
-            get sharedEmissionCurve() { return true; },
-            get lightingIndependentBrightness() { return true; },
-            get emissionFloor() { return 0.78; },
-            get emissionCeiling() { return 1.15; },
-            get viewDependentPixelSides() { return true; },
-            get opaqueGlyphFaces() { return true; },
-            get brightClasses() { return "cavemen|trees|banana-pile|flying-bees|cave-sign-letters|fireflies|fires"; },
-            get referenceCaveLayerIsolated() { return matrixCave.sections.every((section) => section.supports ? section.supports.every((support) => support.face.matrixCave === matrixCave.caveIndex) : section.face.matrixCave === matrixCave.caveIndex); },
-            get coordinateSystem() { return "pile-centered-world-space"; },
-            get caveRestartCount() { return 0; },
-            get wallFlowDirection() { return "down"; },
-            get radialBaseStreamCount() { return 32; },
-            get radialMaximumStreamCount() { return 2048; },
-            origin: MATRIX_WORLD.origin,
-            caves: MATRIX_WORLD.caves,
-            caveBounds: MATRIX_WORLD.caveBounds,
-            get caveNear() { return MATRIX_WORLD.caveNear; },
-            travelDistance: matrixTravelDistance,
-            coverage: matrixCoverage,
-            flowDistance: (x, z) => Math.hypot(x - MATRIX_WORLD.origin[0], z - MATRIX_WORLD.origin[2]),
-            covered: (x, z) => !!MATRIX_WORLD.active && Math.hypot(x - MATRIX_WORLD.origin[0], z - MATRIX_WORLD.origin[2]) <= MATRIX_WORLD.radius,
-            radialStreamCountAt: (radius) => 32 * 2 ** Math.max(0, Math.min(6, Math.ceil(Math.log2(Math.max(radius, 0.75) / 0.75)))),
-            radialSpacingAt: (radius) => Math.PI * 2 * radius / (32 * 2 ** Math.max(0, Math.min(6, Math.ceil(Math.log2(Math.max(radius, 0.75) / 0.75))))),
-            radialLinePoint: (stream, radius) => ({ x: Math.cos(-Math.PI + stream / 2048 * Math.PI * 2) * radius, z: Math.sin(-Math.PI + stream / 2048 * Math.PI * 2) * radius }),
-            sampleStream: (stream = 0, time = MATRIX_WORLD.time) => matrixWorldStreamSample(stream, time, false),
-            sampleWallStream: (stream = 0, time = MATRIX_WORLD.time) => matrixWorldStreamSample(stream, time, true)
-          },
-          portal: {
-            get inside() { return matrixCave.portal.inside; },
-            get lastCrossingDirection() { return matrixCave.portal.lastCrossingDirection; },
-            plane: matrixCave.portal.plane,
-            opening: matrixCave.portal.opening,
-            rejected: matrixCave.portal.rejected
-          },
+          portal: matrixCave.portal,
           contains: inMatrixCave,
+          cameraInside: cameraInsideMirror,
           overlayVisible: matrixOverlayVisible,
           viewApproach: viewMatrixApproach,
           viewInside: viewInsideMatrix
@@ -12049,11 +11252,6 @@
         }
       }
     });
-    Object.defineProperty(hubScene.debug.matrixCave, "caves", { value: matrixInteriors });
-    if (world.mirrorBroken) {
-      mirrorCave.damage.restore();
-      syncMirrorDamage(true);
-    }
     pilot.update(0);
     if (ctx.from === null && !signedInArrival && !initialGorilla && !pilot.loginViewRestored) restorePositionDebug();
     if (initialGorilla) {
@@ -12072,6 +11270,7 @@
     if (POSITION_DEBUG) updatePositionDebug(true);
     updatePoolEffectsActivity();
     if (DEBUG_POOL_BLOCK) mempoolIsland.preview.block();
+    yield* pause(slice);
     // Tess greets a newcomer once a page and shows them round; nothing she does starts while the island is busy. She
     // greets only a visit that lands on the island's own view, not one sent to a place or walked back out of a cave.
     islandGuide = BL.hubGuide.create({
@@ -12081,28 +11280,44 @@
       // What her beam sweeps across on the totems' line: their eyes, west to east.
       targets: { totems: totems.map((t) => { const p = t.owner.node.position; return { x: p.x, y: p.y + t.eyeTop, z: p.z }; }).sort((a, b) => a.x - b.x) }
     });
+    yield* pause(slice);
     hubScene.debug.tess = islandGuide;
-    Object.defineProperty(hubScene.debug, "halloween", { get: () => ghosts && ghosts.debug, enumerable: true }); // HALLOWEEN
+    // Tess wears every tier of her detail in her first frames, so each is on the GPU before she comes close: build
+    // them here, a mesh a slice, rather than in her first frame.
+    const tessTiers = new Set();
+    islandGuide.liveGeometry(tessTiers);
+    for (const geometry of tessTiers) { renderer.prepareGeometry(geometry); yield* pause(slice); }
+    Object.defineProperty(hubScene.debug, "halloween", { get: () => ghosts ? ghosts.debug : ghostEntry && ghostEntry.debug, enumerable: true }); // HALLOWEEN
     mark("visibility-start");
     fx.warmVisibility(crew);
     fx.warmBlockers();
     mark("visibility");
     mark("covered-view-start");
-    prepareCoveredView(ctx.overlay);
+    yield* prepareCoveredView(ctx.overlay, slice);
     mark("covered-view");
+    // Remote hunt callbacks may attach the full game; subscribe only once every construction slice is complete.
+    createGhostEntry();
+    totemUnsub = BL.totemFeed.subscribe(onTotem);
+    hintTimer = window.setTimeout(() => {
+      if (!pilot.player && !clankerPlay.active && !matrixControl.promptAction) hud.hint(COARSE ? "Drag to look · pinch to eye level · sticks to fly · tap a cave" : "Drag to look · scroll to eye level · WASD to fly · tap a cave to enter");
+    }, 1200);
     if (DEBUG_GORILLA_MOVE) hud.toast("Gorilla movement debug · click a gorilla, then a destination");
   };
+  const enter = (ctx) => { const steps = enterSteps(ctx); while (!steps.next().done); };
   // The scene a departure was heading for could not be prepared (its deferred code did not arrive): the visitor stays on
   // the island, driving again, and nothing is photographed for a crossing that did not happen.
   const stay = () => {
-    bifrostHeld = bifrostDeparting;
+    factoryHeld = factoryDeparting;
     entering = factoryDeparting = bifrostDeparting = false;
-    factoryWalk.through = factoryWalk.grab = false; factoryWalk.still = 0;
+    factoryWalk.phase = 0; factoryWalk.seen = factoryWalk.through = factoryWalk.grab = false; factoryWalk.still = factoryWalk.hold = 0;
+    world.factoryCrossing = world.islandKeep = null;
     if (factoryMouth) factoryMouth.snap = false;
     if (bifrostIsle) bifrostIsle.snap = false;
     pilot.controls.reset(); input.reset(); pilot.setActive(true);
   };
   const leave = (destroy = false) => {
+    rememberCharacterLocations();
+    stopLazyBedding();
     if (reuseHub && !destroy) return suspendHub();
     heldHub = false; heldDebug = null;
     actorTransition.sourceRoot = actorTransition.sourceHead = null;
@@ -12116,10 +11331,9 @@
     selectDebugGorilla(null);
     islandGuide.dispose();
     islandGuide = null;
-    // HALLOWEEN: the hunt goes before the crew, fx and targets it uses; a load still under way finds a newer visit.
-    ghostVisit++;
+    // HALLOWEEN: the entry cancels its handoff before the hunt and the crew, fx and targets they use leave.
+    if (ghostEntry) { ghostEntry.dispose(); ghostEntry = null; }
     if (ghosts) { ghosts.dispose(); ghosts = null; }
-    ghostLoading = false;
     ghostSeal = null;
     // GAME MODE ends with the visit; the island comes back built afresh.
     gameMode = gameCombatOnly = false;
@@ -12215,10 +11429,11 @@
     pileGuides.dispose();
     platformGuides.dispose();
     mirrorGuides.dispose();
-    mirrorCave.damage.dispose();
     mirrorCave.ripples.dispose();
     entropyLab.phase.dispose();
     entropyLab = null;
+    for (const veil of caveVeils) veil.phase.dispose();
+    caveVeils.length = 0;
     if (factoryMouth) {
       if (factoryMouth.hall) factoryMouth.hall.dispose();
       if (factoryMouth.roofWindow) factoryMouth.roofWindow.dispose();
@@ -12242,7 +11457,6 @@
       totemUnsub();
       totemUnsub = null;
     }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     totems.length = 0;
     if (jumbotron) {
       jumbotron.dispose(renderer);
@@ -12250,17 +11464,18 @@
     }
     for (const node of targets) input.remove(node);
     for (const node of placed) removeChild(root, node);
-    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixInteriors.length = matrixGates.length = sealedCaves.length = clouds.length = lamps.length = pilePosts.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
+    targets.length = placed.length = claimed.length = scenery.length = sceneryClaims.length = matrixGates.length = sealedCaves.length = clouds.length = lamps.length = pilePosts.length = fireSeats.length = sleepers.length = labels.length = signDetails.length = spots.length = chillSpots.length = headquartersRimLintels.length = climbMasonry.length = props.length = meadowPalms.length = 0;
     fireHazards.length = 0;
+    fireRigs = null;
+    firePitRig = null;
     clankerFireReachable = null;
     workZones.length = entranceZones.length = 0;
     closedCaveZones.length = 0;
-    RENDER_OPTS.lightCount = 0;
+    RENDER_OPTS.lightCount = lampLights = 0;
     // The next visit's first frame rebuilds the lamp selection and resamples the clock.
     lampSelValid = false;
     sampledDay = 0;
     RENDER_OPTS.cutawayMaxY = 1e6;
-    MATRIX_WORLD.active = MATRIX_WORLD.direction = MATRIX_WORLD.radius = MATRIX_WORLD.permanentCave = MATRIX_WORLD.livingGlobal = 0;
     cameraCaveIndex = 0;
     cameraEntranceIndex = 0;
     cameraPreviousValid = false;
@@ -12288,11 +11503,11 @@
     CLANKER_HIT.node = CLANKER_HIT.owner = null;
     viewPoseActor = grabSupportEntry = clankerSupportActor = clankerPassingEntry = preparingGuideActor = null;
     // Drop every per-visit ref but the cached island.
-    terrainRampRoof = pathNode = altar = lawn = life = hud = hooks = input = pilot = fx = cameraCover = bananaCover = solids = rockGuides = objectGuides = sightGuides = bananaGuides = pileGuides = platformGuides = mirrorGuides = pile = crew = crates = critters = clock = presets = mirrorCave = matrixCave = matrixControl = gateRain = fire = headquarters = positionDebug = dockStairs = overlayCanvas = null;
+    terrainRampRoof = pathNode = altar = lawn = life = hud = hooks = input = pilot = fx = cameraCover = bananaCover = solids = rockGuides = objectGuides = sightGuides = bananaGuides = pileGuides = platformGuides = mirrorGuides = pile = crew = crates = critters = clock = presets = mirrorCave = matrixCave = matrixControl = fire = headquarters = positionDebug = dockStairs = overlayCanvas = null;
     beasts.clear();
     magazine = magazineState = weather = footsteps = mempoolIsland = timechainIsland = clankers = clankerPlay = null;
     hubScene.input = hubScene.debug = null;
-    island = chalkboardDressing = null;
+    island = chalkboardDressing = chalkboardClearance = null;
     guideSegmentClear.boxGrid = POOL_SEAMS[0].boxGrid = POOL_SEAMS[1].boxGrid = null;
     return { targets: count };
   };
@@ -12302,23 +11517,24 @@
     if (!reuseHub) return null;
     const kept = new Set(), walk = (node) => { if (node.geometry) kept.add(node.geometry); for (const child of node.children) walk(child); };
     walk(root);
-    islandGeometry(kept);
+    hubScene.islandGeometry(kept);
     if (world.factoryKeep) for (const geometry of world.factoryKeep) kept.delete(geometry);
     return kept;
   };
   const liveGeometry = (set) => {
     // The Lightning Factory's meshes stay on the GPU while the island runs, so walking back in uploads nothing.
     if (world && world.factoryKeep) for (const geometry of world.factoryKeep) set.add(geometry);
-    islandGeometry(set);
+    hubScene.islandGeometry(set);
   };
   const islandGeometry = (set) => {
     if (islandGuide) islandGuide.liveGeometry(set);
     if (ghosts) ghosts.liveGeometry(set); // HALLOWEEN
+    else if (ghostEntry) ghostEntry.liveGeometry(set); // HALLOWEEN
     mempoolIsland.water.liveGeometry(set);
     pile.liveGeometry(set);
-    mirrorCave.damage.liveGeometry(set);
     clankers.liveGeometry(set);
     entropyLab.phase.liveGeometry(set);
+    for (const veil of caveVeils) veil.phase.liveGeometry(set);
     if (factoryMouth) factoryMouth.phase.liveGeometry(set);
     if (bcaMouth) bcaMouth.phase.liveGeometry(set);
     if (bifrostIsle) bifrostIsle.phase.liveGeometry(set);
@@ -12342,7 +11558,7 @@
     // The island reports its own zone as soon as an Ooga is driven (see `zoneOf`); until then it is nowhere.
     voiceZone: "none",
     micKey: true,
-    id: "hub", enter, update, overlay, onDonation, previewDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry, cachedGeometry,
+    id: "hub", enter, enterSteps, update, overlay, onDonation, previewDonation, onKey, onLootCleared, renderOpts: RENDER_OPTS, stay, leave, stats, liveGeometry, cachedGeometry, islandGeometry,
     get retained() { return heldHub; }, get elapsed() { return now; },
     get retainedRoot() { return heldHub ? root : null; },
     // The Lightning Factory's builders stay warm while the island runs, since its shield walks straight in.
@@ -12354,14 +11570,18 @@
       if (timechainIsland && timechainIsland.gate.busy) return true;
       if (factoryWalk.phase || factoryWalk.still > 0) return true;
       if (ghosts && ghosts.inMotion) return true; // HALLOWEEN
-      if (pile.inMotion || fx.inMotion || poolEffectsActive && (weather.active || mempoolIsland.water.active) || magazine && magazine.revealed || MATRIX_WORLD.active || mirrorGuides.state.doorway || mirrorCave.damage.active || mirrorCave.ripples.active || mirrorCave.body.active) return true;
+      if (pile.inMotion || fx.inMotion || poolEffectsActive && (weather.active || mempoolIsland.water.active) || magazine && magazine.revealed || mirrorCave.ripples.active || mirrorCave.body.active) return true;
       if (!entropyLab.phase.paused && (entropyLab.phase.ripples.active || entropyLab.phase.body.contacts || entropyLab.phase.body.active)) return true;
+      for (const veil of caveVeils) {
+        const phase = veil.phase;
+        if (!phase.paused && (phase.ripples.active || phase.body.contacts || phase.body.active)) return true;
+      }
       if (bcaMouth && !bcaMouth.phase.paused && (bcaMouth.phase.ripples.active || bcaMouth.phase.body.contacts || bcaMouth.phase.body.active)) return true;
       for (const sign of headquarters.roomSigns) if (sign.velocity || sign.node.rotation.x) return true;
-      for (let i = 0; i < matrixGates.length; i++) if (matrixCave && (matrixGates[i].raising || matrixCave.unlocked && matrixGates[i].node.position.y !== MATRIX_GATE_HIDDEN_Y)) return true;
       return false;
     }
   };
   BL.scenes = BL.scenes || {};
+  hubScene.buildSteps = prepareHubSteps;
   BL.scenes.hub = hubScene;
 })();

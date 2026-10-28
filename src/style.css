@@ -375,9 +375,9 @@ body[data-active-scene="hub"] .home-link {
 .sheet {
   --sheet-chat-top: 207px;
   --sheet-chat-left: 216px;
-  position: absolute;
+  position: fixed;
   top: calc(52px + var(--safe-top));
-  right: calc(16px + var(--safe-right));
+  right: 0;
   height: var(--sheet-height, 520px);
   max-height: calc(100% - 90px - var(--safe-top) - var(--safe-bottom));
   width: 380px;
@@ -403,18 +403,24 @@ body[data-active-scene="hub"] .home-link {
   border-radius: inherit;
   box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35);
   padding-bottom: 14px;
+  transition: visibility 0s;
+  overflow: auto;
 }
 
 .sheet-content {
   flex: 1;
-  min-height: 0;
+  min-height: 96px;
   display: flex;
   flex-direction: column;
 }
 
 .sheet[data-open="false"] {
-  transform: translateX(calc(100% + 16px + var(--safe-right)));
+  transform: translateX(100%);
+  pointer-events: none;
 }
+.sheet[data-dock="left"][data-open="false"] { transform: translateX(-100%); }
+.sheet[data-open="false"] .sheet-body { visibility: hidden; transition-delay: 0.28s; }
+.sheet[data-open="false"] .sheet-toggle { pointer-events: auto; }
 
 /* Scrolling game panels keep a thin wooden scrollbar instead of the platform's grey one. */
 .garage,
@@ -659,13 +665,14 @@ body[data-active-scene="arcade"] .magazine-hud {
   z-index: 0;
   top: 71px;
   left: -41px;
-  width: 44px;
+  width: 41px;
   height: 64px;
   margin-top: 0;
   padding: 0;
   border: 0;
   background: none;
   outline: none;
+  touch-action: none;
 }
 
 /* Keep the whole tab clickable while its face slides behind the panel body. */
@@ -708,34 +715,33 @@ body[data-active-scene="arcade"] .magazine-hud {
 .sheet-toggle:focus-visible .sheet-tab-face { outline: 2px solid var(--accent); outline-offset: -3px; }
 .sheet-toggle .tab-count { position: absolute; bottom: 3px; right: 3px; margin: 0; }
 
-.sheet-resize {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -3px;
-  height: 16px;
-  cursor: ns-resize;
-  touch-action: none;
-  user-select: none;
+.sheet-drag, .sheet-corner, .sheet-edge {
+  margin: 0; padding: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--paper); touch-action: none; user-select: none;
 }
+.sheet-drag { position: absolute; z-index: 3; top: 6px; left: 16px; right: 16px; height: 12px; cursor: grab; }
+.sheet-drag:active { cursor: grabbing; }
+.sheet-edge { position: absolute; z-index: 3; }
+.sheet-edge-n, .sheet-edge-s { left: 16px; right: 16px; height: 6px; cursor: ns-resize; }
+.sheet-edge-n { top: 0; }
+.sheet-edge-s { bottom: 0; }
+.sheet-edge-w, .sheet-edge-e { top: 16px; bottom: 16px; width: 6px; cursor: ew-resize; }
+.sheet-edge-w { left: 0; }
+.sheet-edge-e { right: 0; }
+.sheet-corner { position: absolute; z-index: 3; width: 16px; height: 16px; }
+.sheet-corner-nw { left: 0; top: 0; cursor: nwse-resize; }
+.sheet-corner-ne { right: 0; top: 0; cursor: nesw-resize; }
+.sheet-corner-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.sheet-corner-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.sheet-corner::after { content: ""; position: absolute; inset: 4px; border-color: var(--muted); border-style: solid; border-width: 0; }
+.sheet-corner-nw::after { border-left-width: 2px; border-top-width: 2px; }
+.sheet-corner-ne::after { border-right-width: 2px; border-top-width: 2px; }
+.sheet-corner-sw::after { border-left-width: 2px; border-bottom-width: 2px; }
+.sheet-corner-se::after { border-right-width: 2px; border-bottom-width: 2px; }
+.sheet-drag:focus-visible, .sheet-corner:focus-visible, .sheet-edge:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.sheet[data-open="false"] :is(.sheet-drag, .sheet-corner, .sheet-edge) { display: none; }
 
-/* Two carved grooves for a grip, warming to amber under the pointer or the keyboard. */
-.sheet-resize::after {
-  content: "";
-  display: block;
-  width: 44px;
-  height: 6px;
-  margin: 5px auto;
-  background: linear-gradient(var(--wood-edge) 0 2px, transparent 2px 4px, var(--wood-edge) 4px 6px);
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.15));
-}
-
-.sheet-resize:hover::after,
-.sheet-resize:focus-visible::after { background: linear-gradient(var(--accent-text) 0 2px, transparent 2px 4px, var(--accent-text) 4px 6px); }
-.sheet-resize:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
-.sheet[data-open="false"] .sheet-resize { display: none; }
-
-/* Docking follows three 380px panel widths; two widths fit Bananas and Oogas together. */
+/* Untouched panels dock at the bottom on smaller screens. */
 .sheet[data-dock="bottom"] {
   top: auto;
   left: 0;
@@ -756,7 +762,6 @@ body[data-active-scene="arcade"] .magazine-hud {
 }
 
 .sheet[data-dock="bottom"][data-open="false"] { transform: translateY(100%); }
-.sheet[data-dock="bottom"] .sheet-resize { top: 3px; bottom: auto; }
 .sheet[data-dock="bottom"][data-open="true"]:not([hidden])~.joysticks,
 .sheet[data-dock="bottom"][data-open="true"]:not([hidden])~.bottom-hud>.act { display: none; }
 
@@ -764,7 +769,7 @@ body[data-active-scene="arcade"] .magazine-hud {
   top: -39px;
   left: 72px;
   width: 64px;
-  height: 42px;
+  height: 39px;
 }
 
 .sheet[data-dock="bottom"] .sheet-tab-face {
@@ -780,18 +785,31 @@ body[data-active-scene="arcade"] .magazine-hud {
 .sheet[data-dock="bottom"] .sheet-toggle-bananas .sheet-tab-face { padding: 4px 18px 0; }
 .sheet[data-dock="bottom"] .sheet-toggle-loot { left: 144px; }
 .sheet[data-dock="bottom"] .sheet-toggle-chat { left: var(--sheet-chat-left); }
-.sheet[data-dock="bottom"][data-open="false"] .sheet-toggle { top: calc(-45px - var(--safe-bottom)); }
 
-.sheet[data-paired="true"] .sheet-content {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
+/* Every panel touches an edge; its tabs face inward and fit with its body. */
+.sheet:is([data-dock="left"], [data-dock="right"]) .sheet-toggle { top: calc(7px + var(--sheet-tab-index, 0) * 64px); height: 56px; }
+.sheet[data-dock="bottom"] .sheet-toggle { left: calc(var(--sheet-tab-index, 0) * 72px); }
+.sheet[data-dock="left"] .sheet-toggle { left: auto; right: -41px; }
+.sheet[data-dock="left"] .sheet-tab-face {
+  border-left: 0; border-right: 3px solid var(--wood-edge); border-radius: 0 8px 8px 0;
+  transform: translateX(calc(-1 * var(--sheet-tab-slide, 0px)));
 }
-
-.sheet[data-paired="true"] #bananas-panel { grid-column: 1; grid-row: 1; }
-.sheet[data-paired="true"] #roster-panel { grid-column: 2; grid-row: 1; border-left: 2px solid var(--wood-edge); }
-.sheet[data-paired="true"] #roster-panel > .feed-open { display: none; }
-.sheet[data-paired="true"] .panel { min-width: 0; }
+.sheet[data-sized="true"] {
+  position: fixed; right: auto; bottom: auto; max-width: none; max-height: none;
+}
+.sheet[data-sized="true"]:not([data-dock="bottom"]) .sheet-toggle {
+  top: calc(7px + var(--sheet-tab-index, 0) * var(--sheet-tab-step, 64px));
+  height: calc(var(--sheet-tab-step, 64px) - 8px);
+}
+.sheet[data-sized="true"][data-dock="bottom"] .sheet-toggle {
+  left: calc(var(--sheet-tab-index, 0) * var(--sheet-tab-step, 72px));
+  width: min(64px, var(--sheet-tab-step, 72px));
+}
+.sheet[data-sized="true"] .sheet-toggle svg { max-height: 100%; }
+.sheet.sheet-moving { transition: none; }
+.sheet.sheet-tab-drag { opacity: 0.7; }
+.sheet-merge-target .sheet-body,
+.sheet-merge-target .sheet-tab-face { outline: 2px solid var(--accent-text); outline-offset: -2px; }
 
 /* Open: hidden at rest, fully out on panel or fixed tab-area hover.
    Closed panels and touch devices keep the whole tab. */
@@ -804,6 +822,7 @@ body[data-active-scene="arcade"] .magazine-hud {
 
 @media (prefers-reduced-motion: reduce) {
   .sheet,
+  .sheet-body,
   .sheet-tab-face { transition: none !important; }
 }
 
@@ -920,7 +939,7 @@ body[data-active-scene="arcade"] .magazine-hud {
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.6));
 }
 
-.panel > .feed-open { flex: none; margin-top: 0; }
+.sheet-foot > .feed-open { flex: none; margin: 0 0 4px; }
 
 .roster-hint:not(:has(> :not([hidden]))) { display: none; }
 
@@ -2235,6 +2254,10 @@ body[data-active-scene="arcade"] .magazine-hud {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
+.toast[data-reload] {
+  pointer-events: auto;
+}
+
 .toast.show,
 .hint.show {
   opacity: 1;
@@ -2372,6 +2395,401 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
   }
 }
 
+/* The hunters' scoreboard, fixed to the top centre through the hunt (under the title on a narrow screen): each one's
+   face in a circle with their points under it, the leader's circle glowing green. */
+.ghost-scores {
+  position: fixed;
+  left: 50%;
+  top: calc(6px + var(--safe-top, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+  z-index: 4;
+}
+
+@media (max-width: 720px) {
+  .ghost-scores {
+    top: calc(62px + var(--safe-top, 0px));
+  }
+}
+
+.ghost-scores[hidden] {
+  display: none;
+}
+
+.ghost-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.ghost-score canvas {
+  width: 38px;
+  height: 38px;
+  padding: 2px;
+  background: var(--tablet);
+  border: 2px solid var(--wood-edge);
+  border-radius: 50%;
+  box-shadow: var(--tablet-shadow);
+}
+
+.ghost-score b {
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+.ghost-score[data-lead] canvas {
+  border-color: #3dff66;
+  box-shadow: 0 0 10px 2px rgba(61, 255, 102, 0.75), 0 0 22px rgba(61, 255, 102, 0.45);
+}
+
+.ghost-score[data-lead] b {
+  color: #8dffa6;
+}
+
+/* While a Halving Hourglass stands: a notice under the scoreboard that every rifle does half damage. */
+.ghost-halving {
+  position: fixed;
+  left: 50%;
+  top: calc(66px + var(--safe-top, 0px));
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 3px 10px;
+  background: rgba(20, 10, 2, 0.75);
+  border: 2px solid #f7931a;
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(247, 147, 26, 0.55);
+  color: #ffc163;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+  animation: ghost-halving 1.2s ease-in-out infinite;
+}
+
+.ghost-halving[hidden] {
+  display: none;
+}
+
+@keyframes ghost-halving {
+  50% { box-shadow: 0 0 18px rgba(247, 147, 26, 0.9); }
+}
+
+@media (max-width: 720px) {
+  .ghost-halving {
+    top: calc(122px + var(--safe-top, 0px));
+  }
+}
+
+/* A won hunt's banner: green, smaller and higher, over its results card (the podium and every hunter's tally). */
+.ghost-banner[data-win] {
+  top: 13%;
+}
+
+.ghost-banner[data-win] strong {
+  font-size: clamp(34px, 7vw, 84px);
+  color: #2fe05a;
+  text-shadow: 0 0 28px rgba(40, 255, 90, 0.55), 0 0 6px rgba(0, 90, 20, 0.9), 0 5px 0 rgba(0, 0, 0, 0.75);
+}
+
+.ghost-banner span:empty {
+  display: none;
+}
+
+.ghost-banner[data-win] span {
+  color: #6dff8e;
+  text-shadow: 0 0 16px rgba(40, 255, 90, 0.45), 0 3px 0 rgba(0, 0, 0, 0.75);
+}
+
+.ghost-results {
+  top: 60%;
+  z-index: 6;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 100vmax rgba(8, 6, 4, 0.3);
+}
+
+.ghost-results[hidden] {
+  display: none;
+}
+
+.ghost-results .game-intro-goal {
+  margin: 0 0 6px;
+}
+
+.ghost-podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+/* A place nobody took keeps its block, with no one and nothing on it. */
+.ghost-podium-step[data-empty] canvas,
+.ghost-podium-step[data-empty] figcaption {
+  visibility: hidden;
+}
+
+/* The winner floats a little over the top step. */
+.ghost-podium-step[data-place="1"]:not([data-empty]) canvas {
+  animation: ghost-levitate 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 10px 6px rgba(0, 0, 0, 0.45));
+}
+
+@keyframes ghost-results-in {
+  from { opacity: 0; transform: translate(-50%, 4%) scale(0.94); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes ghost-levitate {
+  0%, 100% { transform: translateY(-6px); }
+  50% { transform: translateY(-16px); }
+}
+
+.ghost-results .ghost-results-players {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ghost-results-players li {
+  grid-template-columns: 22px 1fr;
+}
+
+/* On a narrow screen the card stands on the foot of the screen, under the banner, its tallies still two to a row. */
+@media (max-width: 720px) {
+  .ghost-results {
+    top: auto;
+    bottom: calc(12px + var(--safe-bottom, 0px));
+    transform: translateX(-50%);
+    padding: 12px 12px 10px;
+    animation-name: ghost-results-in;
+  }
+
+  .ghost-banner[data-win] {
+    top: 19%;
+  }
+
+  .ghost-podium-step {
+    width: min(110px, 23vw);
+  }
+}
+
+.ghost-results-place {
+  grid-row: span 2;
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ghost-results-players b {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* A round's new-enemy card (ghost-hud.js `intro`), through the countdown of a round that brings one in: the enemy
+   hovering on it over what it does, the round's banner raised over it (`data-high`). It takes no clicks, so the
+   hunters can still look round and move. */
+.game-intro.ghost-intro {
+  top: 58%;
+  z-index: 6;
+  width: min(460px, calc(100vw - 32px));
+  pointer-events: none;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35), 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 100vmax rgba(8, 6, 4, 0.3);
+}
+
+.ghost-intro[hidden] {
+  display: none;
+}
+
+.game-intro.ghost-intro .game-intro-title {
+  font-size: 34px;
+}
+
+.ghost-intro-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  height: 165px;
+  margin: 4px 0 10px;
+}
+
+.ghost-intro-art canvas {
+  width: 72px;
+  height: 90px;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.6));
+  animation: ghost-hover 2.6s ease-in-out infinite;
+}
+
+.ghost-intro-art canvas:nth-child(2) {
+  width: 96px;
+  height: 120px;
+  margin-bottom: 14px;
+  animation-delay: -0.9s;
+}
+
+.ghost-intro-art canvas:nth-child(3) {
+  animation-delay: -1.7s;
+}
+
+/* One enemy alone, large: a ghost hovering ("float"), or a model playing its own loop ("clip"). */
+.ghost-intro-art .ghost-intro-solo {
+  display: none;
+  width: 240px;
+  height: 165px;
+  animation: none;
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.45));
+}
+
+.ghost-intro:not([data-art="trio"]) .ghost-intro-art canvas {
+  display: none;
+}
+
+.ghost-intro:not([data-art="trio"]) .ghost-intro-art .ghost-intro-solo {
+  display: block;
+}
+
+.ghost-intro[data-art="float"] .ghost-intro-art .ghost-intro-solo {
+  animation: ghost-hover 2.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.6));
+}
+
+.ghost-intro[data-enemy="boss"] .ghost-intro-art .ghost-intro-solo {
+  filter: drop-shadow(0 0 16px rgba(255, 40, 30, 0.85));
+}
+
+@keyframes ghost-hover {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-14px) rotate(3deg); }
+}
+
+.ghost-banner[data-high] {
+  top: 13%;
+}
+
+.ghost-banner[data-high] strong {
+  font-size: clamp(34px, 7vw, 84px);
+}
+
+.ghost-banner[data-high] span {
+  font-size: clamp(20px, 3.5vw, 40px);
+}
+
+/* On a narrow screen the card stands on the foot of the screen, as the results card does. */
+@media (max-width: 720px) {
+  .game-intro.ghost-intro {
+    top: auto;
+    bottom: calc(12px + var(--safe-bottom, 0px));
+    transform: translateX(-50%);
+    padding: 12px 12px 10px;
+    animation-name: ghost-results-in;
+  }
+
+  .ghost-intro-art {
+    height: 110px;
+  }
+
+  .ghost-intro-art .ghost-intro-solo {
+    width: 160px;
+    height: 110px;
+  }
+
+  .ghost-intro-art canvas {
+    width: 56px;
+    height: 70px;
+  }
+
+  .ghost-intro-art canvas:nth-child(2) {
+    width: 76px;
+    height: 95px;
+    margin-bottom: 10px;
+  }
+
+  .ghost-banner[data-high] {
+    top: 19%;
+  }
+}
+
+.ghost-podium-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(120px, 26vw);
+  margin: 0;
+}
+
+.ghost-podium-step canvas {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+}
+
+.ghost-podium-step figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin: 2px 0 4px;
+  color: var(--paper);
+  text-align: center;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8);
+}
+
+.ghost-podium-step b {
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ghost-podium-step small {
+  color: #8dffa6;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghost-podium-block {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  padding-top: 6px;
+  background: var(--planks);
+  border: 3px solid var(--wood-edge);
+  border-radius: 6px 6px 0 0;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+  color: var(--accent-text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ghost-podium-step[data-place="1"] .ghost-podium-block {
+  height: 92px;
+  border-color: #c9a227;
+}
+
+.ghost-podium-step[data-place="2"] .ghost-podium-block {
+  height: 62px;
+  border-color: #b8bcc4;
+}
+
+.ghost-podium-step[data-place="3"] .ghost-podium-block {
+  height: 44px;
+  border-color: #b07a45;
+}
+
 /* The hunt's spectator menu, bottom centre while the visitor is down (above the thumb sticks on a touch screen): the
    three views to watch from, and the hunter watched with a step on to the next. */
 .ghost-spectate {
@@ -2450,6 +2868,85 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
   .ghost-spectate-next {
     min-height: 32px;
   }
+}
+
+/* The hangar's sound panel under its Sound button: on or off, the level and the pad's vibration, on the planks. */
+.hangar-sound {
+  position: absolute;
+  top: calc(58px + var(--safe-top));
+  right: calc(16px + var(--safe-right, 0px));
+  width: min(240px, calc(100vw - 32px));
+  padding: 9px 11px 10px;
+  background: var(--planks);
+  border: 3px solid var(--wood-edge);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.35);
+  color: var(--paper);
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.hangar-sound[hidden] {
+  display: none;
+}
+
+.hangar-sound-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hangar-sound-head h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+.hangar-sound-toggle {
+  flex: none;
+  padding: 4px 9px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 6px;
+  background: linear-gradient(#f0b05a, var(--accent));
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hangar-sound-toggle[aria-pressed="false"] {
+  background: var(--wood-edge);
+  color: var(--paper);
+}
+
+.hangar-sound-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.hangar-sound-row input[type="range"] {
+  width: 100%;
+  margin: 0;
+  height: 26px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.hangar-sound-note {
+  margin: 4px 0 0;
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--accent-text);
+  white-space: nowrap;
 }
 
 /* The hunt's mini player, bottom right: what is playing and the music switch, on the lobby card's planks. */
@@ -3308,7 +3805,8 @@ body.game-mode .weapon-equipment-row > :not(.weapon-hud) {
   .equipment-hud { left: calc(8px + var(--safe-left)); }
   .weapon-equipment-row { gap: 4px; }
 }
-.joysticks {
+.joysticks,
+.bottom-hud>.act {
   display: none;
 }
 
@@ -4262,6 +4760,28 @@ body.tess-touring #joy-look {
 }
 
 .board-note[hidden] {
+  display: none;
+}
+
+.board-links {
+  margin: 10px 0 0;
+}
+
+.board-links[hidden] {
+  display: none;
+}
+
+.board-link {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.board-link[hidden] {
   display: none;
 }
 
@@ -5718,7 +6238,8 @@ body.orbit-dragging #tooltip {
     display: none;
   }
 
-  .joysticks {
+  .joysticks,
+  .bottom-hud>.act {
     display: block;
   }
 
@@ -5815,7 +6336,7 @@ body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-b
   transition-delay: 0s;
 }
 
-body[data-active-scene="hub"] .sheet[data-dock="side"] { top: calc(72px + var(--safe-top)); }
+body[data-active-scene="hub"] .sheet[data-dock="right"][data-sized="false"] { top: calc(72px + var(--safe-top)); }
 body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(72px + var(--safe-top))); }
 
 @media (max-width: 720px) {
@@ -6062,19 +6583,19 @@ body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(
 }
 
 @media (min-width: 620px) and (max-width: 720px) {
-  .panel[data-panel="roster"] > .roster,
-  .panel[data-panel="loot"] > .loot {
+  .sheet[data-dock="bottom"] .panel[data-panel="roster"] > .roster,
+  .sheet[data-dock="bottom"] .panel[data-panel="loot"] > .loot {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 16px;
   }
 
-  .panel[data-panel="roster"] > .roster li {
+  .sheet[data-dock="bottom"] .panel[data-panel="roster"] > .roster li {
     grid-column: auto;
     grid-template-columns: 8px minmax(0, 1fr) 26px max-content 6.5ch;
   }
 
-  .panel[data-panel="roster"] > .roster li.roster-away {
+  .sheet[data-dock="bottom"] .panel[data-panel="roster"] > .roster li.roster-away {
     grid-column: 1 / -1;
   }
 
@@ -8496,7 +9017,7 @@ body[data-active-scene="stacker"] .joysticks {
 }
 
 /* Ember Den: a walkable room, a readable lobby, and a focused table. */
-body[data-active-scene="poker"] #sheet,
+body[data-active-scene="poker"] .sheet,
 body[data-active-scene="poker"] .world-block,
 body[data-active-scene="poker"] .world-clock { display: none; }
 #poker {
@@ -9100,6 +9621,21 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .svrn-content { padding: 14px; }
 }
 
+.studio-session { width:min(42rem,calc(100vw - 2rem)); max-height:85vh; overflow:auto; background:#211b25; color:var(--fg); border:1px solid #aa8054; border-radius:.75rem; padding:1.2rem; }
+.studio-session::backdrop { background:rgba(0,0,0,.65); }
+.studio-session header,.studio-controls { display:flex; align-items:center; justify-content:space-between; gap:.6rem; flex-wrap:wrap; }
+.studio-session video { display:block; width:100%; aspect-ratio:2/1; background:#080809; }
+.studio-session button,.studio-session select { padding:.55rem .7rem; margin:.2rem; }
+.studio-session label { display:block; margin:.65rem 0; }
+.studio-session input[type=range] { width:100%; }
+.studio-session [data-error] { color:#ffc878; }
+.studio-session details { margin:.8rem 0; padding:.65rem; border:1px solid var(--border); border-radius:.4rem; }
+.studio-session summary { cursor:pointer; }
+.studio-session meter { display:block; width:100%; height:1rem; }
+.studio-session [data-audio],.studio-session [data-mic-reason],.studio-session [data-playback] { font-size:.9rem; }
+.studio-session [data-transcript] { line-height:1.5; }
+.studio-session select { max-width:100%; }
+
 .sphere-mode {
   align-self: center;
   padding: 0 10px;
@@ -9387,7 +9923,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   position: absolute;
   z-index: 11;
   right: calc(12px + var(--safe-right, 0px));
-  top: 96px;
+  top: 160px;
   width: 88px;
   height: 148px;
   border: 2px solid var(--wood-edge);
@@ -9400,7 +9936,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   position: absolute;
   z-index: 11;
   left: calc(12px + var(--safe-left, 0px));
-  top: 96px;
+  top: 160px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -9433,7 +9969,7 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
 
 @media (max-width: 520px) {
   .block-map {
-    top: 84px;
+    top: 226px;
     width: 66px;
     height: 111px;
   }
@@ -9441,4 +9977,68 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .block-feed li {
     font-size: 10px;
   }
+}
+
+/* On a wide screen Block Frenzy's board sits on the left, leaving the right for the Ooga on show, with its name
+   under it. */
+@media (min-width: 760px) {
+  #block-board {
+    left: calc(20px + var(--safe-left, 0px));
+    transform: translateY(-50%);
+    width: min(560px, 54vw);
+  }
+
+  #block-board .garage-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.block-preview-name {
+  position: absolute;
+  z-index: 11;
+  right: 9vw;
+  bottom: 9%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px 10px;
+  border: 2px solid var(--wood-edge);
+  border-radius: 8px;
+  background: rgba(30, 20, 12, 0.82);
+  color: #f3e6cc;
+}
+
+.block-preview-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  margin-top: 4px;
+  min-width: 220px;
+}
+
+.block-preview-pick label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.block-preview-name b {
+  font-size: 16px;
+}
+
+.block-preview-name span {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+#block-board[hidden] ~ .block-preview-name {
+  display: none;
+}
+
+/* Block Frenzy's jetpack fuel, beside the sprint gauge, in flame orange. */
+.block-jet .block-sprint-bar i {
+  background: #ff8a2a;
 }

@@ -21,8 +21,8 @@
     }
     const voices = [];
     let voiceNext = 0;
-    const layers = { wind: null, windFilter: null, rain: null, zip: null, zipFilter: null, splat: null, splatFilter: null, boom: null, boomFilter: null };
-    const state = { wind: 0, rain: 0, zip: 0 };
+    const layers = { wind: null, windFilter: null, rain: null, jet: null, zip: null, zipFilter: null, splat: null, splatFilter: null, boom: null, boomFilter: null };
+    const state = { wind: 0, rain: 0, zip: 0, jet: 0 };
     const init = () => {
       if (ctx || typeof AudioContext === "undefined") return;
       ctx = new AudioContext();
@@ -67,6 +67,7 @@
       tap("bandpass", 420, 0.6, "wind", "windFilter");
       tap("highpass", 3200, 0.4, "rain");
       tap("bandpass", 900, 6, "zip", "zipFilter");
+      tap("lowpass", 520, 1.2, "jet");
       tap("bandpass", 1300, 1.2, "splat", "splatFilter");
       tap("lowpass", 260, 0.8, "boom", "boomFilter");
       noise.start();
@@ -158,7 +159,12 @@
       block: () => { chord([12, 7, 12, 19], 0.11, "square", 0.08, 0.2); boomNoise(0.35, 1.2); },
       power: () => chord([0, 7, 12, 19, 24], 0.04, "square", 0.04, 0.16),
       slip: (k = 1) => { blip("sine", 1200, 180, 0.005, 0.05, 0.6, 0.22 * k); blip("triangle", 300, 600, 0.005, 0.05, 0.15, 0.1 * k, 0.45); },
-      burn: (k = 1) => { burst("splat", "splatFilter", 0.5 * k, 0.005, 0.6, 4000, 1500); blip("square", 880, 1320, 0.005, 0.08, 0.1, 0.16 * k); }
+      burn: (k = 1) => { burst("splat", "splatFilter", 0.5 * k, 0.005, 0.6, 4000, 1500); blip("square", 880, 1320, 0.005, 0.08, 0.1, 0.16 * k); },
+      // A gorilla: a low growling roar as it grabs, a grunt each struggle, a yelp when it's painted.
+      roar: (k = 1) => { blip("sawtooth", 140, 70, 0.04, 0.35, 0.4, 0.26 * k); blip("sawtooth", 95, 55, 0.05, 0.3, 0.4, 0.2 * k, 0.05); boomNoise(0.4 * k, 0.8); },
+      grunt: (k = 1) => blip("sawtooth", 180, 110, 0.01, 0.05, 0.1, 0.14 * k),
+      yelp: (k = 1) => blip("square", 500, 220, 0.005, 0.06, 0.2, 0.16 * k),
+      free: () => chord([0, 7, 12], 0.05, "triangle", 0.05, 0.18)
     };
     // The held layers follow `state` each frame: wind and rain from the weather (0 to 1), the whir from the zipline.
     const update = () => {
@@ -168,12 +174,13 @@
       layers.windFilter.frequency.setTargetAtTime(300 + clamp(state.wind, 0, 1) * 600, now, 0.4);
       layers.rain.gain.setTargetAtTime(clamp(state.rain, 0, 1) * 0.05, now, 0.4);
       layers.zip.gain.setTargetAtTime(clamp(state.zip, 0, 1) * 0.12, now, 0.08);
+      layers.jet.gain.setTargetAtTime(clamp(state.jet, 0, 1) * 0.22, now, 0.05);
       layers.zipFilter.frequency.setTargetAtTime(700 + clamp(state.zip, 0, 1) * 900, now, 0.1);
     };
     const quiet = () => {
       if (!ready) return;
       const now = ctx.currentTime;
-      for (const k of ["wind", "rain", "zip", "splat", "boom"]) {
+      for (const k of ["wind", "rain", "zip", "jet", "splat", "boom"]) {
         layers[k].gain.cancelScheduledValues(now);
         layers[k].gain.setTargetAtTime(0, now, 0.05);
       }

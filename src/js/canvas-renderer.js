@@ -472,6 +472,13 @@
     // Reject a complete static bounding box before walking its faces. The
     // mixed perspective/orthographic side planes are linear in view space.
     // Dynamic surfaces and Matrix receiver planes keep their existing path.
+    const compactCursors = new WeakMap();
+    const readFace = (geometry, index) => {
+      if (!geometry.compactGeometry) return geometry.faces[index];
+      let cursor = compactCursors.get(geometry);
+      if (!cursor) { cursor = BL.compactGeometry.createCursor(geometry); compactCursors.set(geometry, cursor); }
+      return BL.compactGeometry.readFace(geometry, index, cursor);
+    };
     const matrixReceiverCache = new WeakMap();
     const hasMatrixReceiver = (node) => {
       const g = node.geometry;
@@ -481,7 +488,8 @@
       let entry = matrixReceiverCache.get(g);
       if (entry && entry.faces === g.faces) return entry.receiver;
       let receiver = false;
-      if (g.faces) for (const face of g.faces) {
+      if (g.faces) for (let index = 0; index < g.faces.length; index++) {
+        const face = readFace(g, index);
         if (face.matrixCave || face.matrixPermanentFallback || face.matrixLocalGlyphSurface || face.matrixWorldGlyphSurface || face.color?.[3] < 0) { receiver = true; break; }
       }
       matrixReceiverCache.set(g, { faces: g.faces, receiver });
@@ -553,8 +561,8 @@
       const clipMaximumY = Math.min(preserved ? Infinity : cutawayMaxY, node.geometry.clipMaxY ?? Infinity);
       let shardDrawn = false;
       if (faces) {
-        for (const face of faces) {
-          const idx = face.i;
+        for (let index = 0; index < faces.length; index++) {
+          const face = readFace(node.geometry, index), idx = face.i;
           const count = idx.length;
           if (liquid) {
             // Portal faces are radial strips. Skip those beyond the reveal,
@@ -1823,7 +1831,9 @@
     };
     const drawImageSurface = (node) => {
       const surface = node.geometry.imageSurface, asset = surface.asset, image = asset.load();
-      if (!image.complete || !image.naturalWidth) return;
+      const dynamic = surface.dynamic === true;
+      if (dynamic ? image.readyState < 2 || image.seeking || !image.videoWidth || !image.videoHeight : !image.complete || !image.naturalWidth) return;
+      const imageWidth = dynamic ? image.videoWidth : asset.width, imageHeight = dynamic ? image.videoHeight : asset.height;
       mat4.multiply(imageView, view, node.world);
       const rect = surface.rect, z = node.geometry.verts[2], m = imageView;
       // Front-on screens are exactly affine; oblique screens use at most
@@ -1835,16 +1845,16 @@
         imageVertices[at] = m[0] * px + m[4] * py + m[8] * z + m[12];
         imageVertices[at + 1] = m[1] * px + m[5] * py + m[9] * z + m[13];
         imageVertices[at + 2] = m[2] * px + m[6] * py + m[10] * z + m[14];
-        imageVertices[at + 3] = asset.width * x / columns;
-        imageVertices[at + 4] = asset.height * y / rows;
+        imageVertices[at + 3] = imageWidth * x / columns;
+        imageVertices[at + 4] = imageHeight * y / rows;
       }
       ctx.save(); ctx.clip();
       if (!oblique && imageVertices[2] < -near && imageVertices[7] < -near && imageVertices[12] < -near && imageVertices[17] < -near) {
         const scale = lastF / projectedDepth(-imageVertices[2]), x = width / 2 + imageVertices[0] * scale, y = height / 2 - imageVertices[1] * scale;
-        ctx.transform((imageVertices[5] - imageVertices[0]) * scale / asset.width,
-          -(imageVertices[6] - imageVertices[1]) * scale / asset.width,
-          (imageVertices[10] - imageVertices[0]) * scale / asset.height,
-          -(imageVertices[11] - imageVertices[1]) * scale / asset.height, x, y);
+        ctx.transform((imageVertices[5] - imageVertices[0]) * scale / imageWidth,
+          -(imageVertices[6] - imageVertices[1]) * scale / imageWidth,
+          (imageVertices[10] - imageVertices[0]) * scale / imageHeight,
+          -(imageVertices[11] - imageVertices[1]) * scale / imageHeight, x, y);
         ctx.drawImage(image, 0, 0);
         ctx.restore();
         return;
@@ -2150,6 +2160,9 @@
       releaseGeometry: () => { },
       prepareScene: () => { },
       prepareGeometry: () => true,
+      prepareSteps: function* () { },
+      // Canvas has no resident GPU geometry records.
+      geometryRecords: function* () { },
       createRig: () => null,
       releaseUnused: (live) => { BL.models.addLods(live); canvasShades.release(live); if (environment.source && !live.has(environment.source.geometry)) destroyEnvironment(); return 0; },
       dispose: () => {

@@ -75,12 +75,6 @@
   // roster after this file loads.
   const cup = { active: false, round: 0, done: false, points: null };
   const nearestTorches = new Float32Array(LIGHT_CAPACITY * 2);
-  const raceScene = {
-    id: "race", renderOpts: null, root: null, camera: null, input: null, debug: null, agent: null, agentControls: null,
-    get inMotion() {
-      return phase === "countdown" || phase === "racing" || fx.inMotion;
-    }
-  };
 
   const buildTrack = (id) => {
     if (track) {
@@ -862,7 +856,7 @@
     for (const cave of contributors.activeRoster) hud.setRosterRow(cave.name, contributors.stateFor(cave), contributors.ageLabel(cave));
     if (lootEnabled) renderLocker();
     hud.setStats(game.state);
-    hud.el.sheet.dataset.open = "false";
+    hud.foldPanels();
     rhud.el.joyLook.hidden = true;
     rhud.el.help.textContent = COARSE ? "Drag to look round the garage · left stick steers · hold Drift · tap Throw" : "Drag to look round the garage · W A S D or arrows drive · hold Space to drift, tap to hop · E throws · Q looks back · Escape pauses";
     phase = "garage";
@@ -964,7 +958,13 @@
     const all = (n) => 1 + n.children.reduce((sum, c) => sum + all(c), 0);
     return { visibleNodes: nodes, allNodes: all(root), tweens: tweenCount(), targets: input.targetCount, ...fx.stats(), ...racers.stats(), ...items.stats(), sectors: track.sectors.length, phase };
   };
-  Object.assign(raceScene, { enter, update, overlay, onDonation, onKey, onLootCleared, leave, stats, liveGeometry });
+  const raceScene = BL.deferred.scene("race", {
+    id: "race", renderOpts: null, root: null, camera: null, input: null, debug: null, agent: null, agentControls: null,
+    enter, update, overlay, onDonation, onKey, onLootCleared, leave, stats, liveGeometry,
+    get inMotion() {
+      return phase === "countdown" || phase === "racing" || fx.inMotion;
+    }
+  });
   BL.scenes = BL.scenes || {};
   BL.scenes.race = raceScene;
 })();

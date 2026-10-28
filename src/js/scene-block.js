@@ -52,9 +52,9 @@
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
   const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
-  const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net", 5: "sniper" };
+  const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net", 5: "sniper", 6: "gold", 7: "ak" };
   // Each tool's gun (`BM.gun` takes the gun's index times two plus the team's); Lift shows none.
-  const GUN_OF = { paint: 0, grenade: 1, rocket: 2, net: 3, sniper: 4, crate: 0, grab: -1 };
+  const GUN_OF = { paint: 0, grenade: 1, rocket: 2, net: 3, sniper: 4, gold: 5, ak: 6, crate: 0, grab: -1 };
   const WEATHER_WORDS = { clear: "Clear", breeze: "Windy", storm: "Storm" };
   const RAIN = 140;
   // Sky, light and haze from the island's clock, as the drop's.
@@ -93,7 +93,7 @@
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
   let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
-  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null;
+  let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null, catapults = null, catNear = false;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
   // The live Bitcoin network's say: the next block's median fee sets the weather (a busy mempool is a storm), and a
@@ -116,7 +116,7 @@
   // when it is so near that the Ooga would fill the view.
   const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false };
   const EYE = { x: 0, y: 0, z: 0 };
-  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0, face: 0 };
+  const move = { x: 0, z: 0, sprint: 0, jump: 0, jet: 0, crouch: 0, face: 0 };
   let jumpWas = false;
   const el = {};
   const blockScene = {
@@ -150,7 +150,14 @@
       const netted = createNode({ geometry: BM.draped(), visible: false });
       const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
       const trolley = createNode({ geometry: BM.trolley(), position: { x: 0, y: C.ZIP_HANG + 0.15, z: 0 }, visible: false });
-      addChild(body, ring, blob, bubble, netted, held, trolley);
+      const chute = createNode({ geometry: BM.chute(0), visible: false });
+      // The jetpack on the back, its flames lit while it thrusts.
+      const jet = createNode({ geometry: BM.jetpack(0), position: { x: 0, y: 0.78, z: -0.3 } });
+      const jetFlame = createNode({ geometry: BM.jetFlames(), visible: false });
+      addChild(jet, jetFlame);
+      // The monkeys at the hips, shown while the power-up lasts.
+      const monkeys = [-1, 1].map((side) => createNode({ geometry: BM.monkey(), position: { x: side * 0.62, y: 0.82, z: 0.08 }, scale: { x: 0.9, y: 0.9, z: 0.9 }, visible: false }));
+      addChild(body, ring, blob, bubble, netted, held, trolley, chute, jet, ...monkeys);
       // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
       let gun = null;
       if (cave) {
@@ -170,7 +177,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, trolley, gun, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -193,12 +200,14 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
   };
   // Team colours go on once a side is chosen.
   const paintTeams = () => {
     for (let i = 0; i < actors.length; i++) {
       const t = sim.actors[i].team, a = actors[i];
       a.ring.geometry = BM.ring(TEAM_INDEX[t]);
+      a.jet.geometry = BM.jetpack(TEAM_INDEX[t]);
       a.blob.geometry = BM.splat(TEAM_INDEX[SIM.other(t)] + 2 * (i % 3));
     }
   };
@@ -421,6 +430,7 @@
     const powers = [];
     if (me.boots > 0) powers.push(`Boots ${Math.ceil(me.boots)}`);
     if (me.laser > 0) powers.push(`Lasers ${Math.ceil(me.laser)}`);
+    if (me.monkeys > 0) powers.push(`Monkeys ${Math.ceil(me.monkeys)}`);
     if (sim.halving[sim.team] > 0) powers.push(`Halving ${Math.ceil(sim.halving[sim.team])}`);
     if (sim.cold[sim.team] > 0) powers.push(`Cold ${Math.ceil(sim.cold[sim.team])}`);
     el.power.hidden = !powers.length;
@@ -449,6 +459,10 @@
     else if (t === "go") c.go();
     else if (t === "burn") c.burn(me ? 1 : k);
     else if (t === "slip") c.slip(me ? 1 : k);
+    else if (t === "grab") c.roar(me ? 1 : k);
+    else if (t === "struggle" && me) c.grunt();
+    else if (t === "breakfree" && me) c.free();
+    else if (t === "gorillahit") c.yelp(k);
     else if (me && t === "trap") c.trap();
     else if (me && (t === "refill" || t === "cache")) c.refill();
     else if (me && t === "rifle") c.rifle();
@@ -479,11 +493,17 @@
     else if (t === "pickup") feed(`${who} grabbed the ${TEAM_NAME[e.team]} block`, sim.actors[e.actor].team);
     else if (t === "rescue") feed(`${who} rescued the ${TEAM_NAME[e.team]} block`, e.team);
     else if (t === "capture") feed(`${who} mined a block! ${TEAM_NAME[e.team]} ${sim.score[e.team]}`, e.team);
-    else if (t === "power") feed(`${who} got ${({ boots: "lightning boots", halving: "the halving", cold: "cold storage", laser: "laser eyes" })[SIM.POWERS[e.y]]}`, e.team);
+    else if (t === "power") feed(`${who} got ${({ boots: "lightning boots", halving: "the halving", cold: "cold storage", laser: "laser eyes", monkeys: "the monkeys" })[SIM.POWERS[e.y]]}`, e.team);
     else if (t === "zip") feed(`${who} took the zipline`, e.team);
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
+    else if (t === "grab") feed(`A gorilla grabbed ${e.actor === 0 ? "you" : who}!`, e.team);
+    else if (t === "breakfree") feed(`${who} wriggled free of a gorilla`, e.team);
+    else if (t === "gorillahit" && e.actor >= 0) feed(`${nameOf(e.actor)} stunned a gorilla`, sim.actors[e.actor].team);
+    else if (t === "gold") feed(`${who} won a Golden AK!`, e.team);
+    else if (t === "launch") feed(`${who} catapulted toward the ${TEAM_NAME[SIM.other(e.team)]} fort!`, e.team);
+    else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden AK!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
@@ -527,9 +547,11 @@
       g.fillStyle = BM.TEAM[t].paint;
       g.fillRect(mapX(f.x) - 2, mapY(f.z) - 2, 4, 4);
     }
+    g.fillStyle = "#3a2a1c";
+    for (const go of sim.gorillas) g.fillRect(mapX(go.x) - 3, mapY(go.z) - 3, 6, 6);
     for (let i = sim.actors.length - 1; i >= 0; i--) {
       const a = sim.actors[i];
-      g.fillStyle = i === 0 ? "#ffffff" : BM.TEAM[a.team].light;
+      g.fillStyle = a.gold ? "#f2c230" : i === 0 ? "#ffffff" : BM.TEAM[a.team].light;
       const r = i === 0 ? 3 : 2;
       g.fillRect(mapX(a.x) - r, mapY(a.z) - r, r * 2, r * 2);
     }
@@ -548,7 +570,8 @@
       } else if (e.type === "pickup") {
         fx.burst(e.x, 1.2, e.z, 14, ORANGE_BITS, 2);
         if (me) { center("GOT THE BLOCK!", 1100); notice(COARSE ? "Run it home · Drop hands it off" : "Run it home to your stand · G drops it", 4000); }
-        else if (mine) notice("Teammate has the block! Cover them!", 2500);
+        // The block's side is the event's team; whose side picked it up is the carrier's.
+        else if (sim.actors[e.actor].team === sim.team) notice("Teammate has the block! Cover them!", 2500);
         else { notice("They took your block! Paint the carrier!", 2500); say(1, LINES.lost); }
         say(e.actor, LINES.pickup);
       } else if (e.type === "capture") {
@@ -582,8 +605,9 @@
         if (me) { center("NETTED!", 900); notice("Tangled! Slow and no jumping for a few seconds", 2200); }
         say(e.actor, LINES.net, 1.4);
       } else if (e.type === "netmiss") fx.burst(e.x, e.y, e.z, 6, NET_BITS, 1.2);
-      else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets and nets", 1600); updateTools(); } }
+      else if (e.type === "refill") { if (me) { notice("Refilled: grenades, rockets, nets and crates", 1600); updateTools(); } }
       else if (e.type === "throw") { if (e.actor === 0) updateTools(); }
+      else if (e.type === "fire") { if (me && tool === "ak") updateTools(); }
       else if (e.type === "rifle") {
         if (me) {
           // Up the tower: the rifle comes up in a scope view.
@@ -610,7 +634,7 @@
       else if (e.type === "boing") {
         fx.burst(e.x, 0.3, e.z, 6, ORANGE_BITS, 1.4);
         if (me && !trampSeen) { trampSeen = true; notice("BOING! Jump again at the top to go even higher", 2400); }
-      } else if (e.type === "cache") { fx.burst(e.x, e.y + 0.5, e.z, 10, ORANGE_BITS, 1.6); if (me) { notice("Ammo cache! Grenades, rockets and nets refilled", 1800); updateTools(); } }
+      } else if (e.type === "cache") { fx.burst(e.x, e.y + 0.5, e.z, 10, ORANGE_BITS, 1.6); if (me) { notice("Ammo cache! Grenades, rockets, nets and crates refilled", 1800); updateTools(); } }
       else if (e.type === "climbed") { if (me) updateTools(); }
       else if (e.type === "zip") { if (me) { center("ZIP!", 700); notice("Space lets go early", 1600); } }
       else if (e.type === "unzip") { if (me) updateTools(); }
@@ -643,15 +667,54 @@
           boots: me ? "LIGHTNING BOOTS! Run!" : `${who} grabbed lightning boots`,
           halving: mine ? "THE HALVING! Our splats last half as long" : "They halved their splats for a while",
           cold: mine ? "COLD STORAGE! Our block is frozen on its stand" : "Their block is in cold storage · it can't be taken for a bit",
-          laser: me ? "LASER EYES! Rapid paint for five seconds" : `${who} got laser eyes`
+          laser: me ? "LASER EYES! Rapid paint for five seconds" : `${who} got laser eyes`,
+          monkeys: me ? "MONKEYS! One at each hip, shooting with you" : `${who} got the monkeys`
         };
-        if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : "HALVING!", 900);
+        if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : kind === "monkeys" ? "MONKEYS!" : "HALVING!", 900);
         notice(words[kind], 2600);
         updateStrip();
+      } else if (e.type === "launch") {
+        for (const c of catapults) if (c.team === e.team) c.at = sceneTime;
+        fx.burst(e.x, 1, e.z, 14, WOOD_BITS, 2.4);
+        audio.cues.boom(me ? 0.6 : 0.3);
+        if (me) { center("LAUNCH!", 900); }
+      } else if (e.type === "chute") {
+        audio.cues.zipOn();
+        if (me) notice("Parachute open · steer with W A S D · shoot on the way down", 2600);
+      } else if (e.type === "touchdown") { if (me) notice("Touchdown in their fort!", 1400); }
+      else if (e.type === "gold") {
+        fx.burst(e.x, e.y + 1.4, e.z, 24, ORANGE_BITS, 3);
+        audio.cues.power();
+        if (me) {
+          center("GOLDEN AK!", 1200);
+          notice(COARSE ? "Semi-auto paint! Pick Gold AK · get netted and it's theirs" : "Semi-auto paint! It's in your hands (6) · get netted and it's theirs", 4000);
+          chooseTool("gold");
+        } else notice(mine ? "Teammate won a Golden AK!" : "They won a Golden AK · net them to steal it", 2600);
+        updateTools();
+      } else if (e.type === "goldsteal") {
+        fx.burst(e.x, e.y, e.z, 18, ORANGE_BITS, 2.6);
+        if (me) { center("STOLEN!", 1000); notice("You netted the Golden AK! It's yours (6)", 3000); audio.cues.rescue(); chooseTool("gold"); }
+        else if (e.by === 0) { center("AK STOLEN!", 1000); notice("They netted you and took your Golden AK", 2600); if (tool === "gold") chooseTool("paint"); }
+        updateTools();
+      } else if (e.type === "reload") {
+        if (me) { notice("Reloading…", 1000); audio.cues.crate(0.6); updateTools(); }
+      } else if (e.type === "reloaded") {
+        if (me) { audio.cues.rifle(); updateTools(); }
       } else if (e.type === "slip") {
         fx.burst(e.x, 0.3, e.z, 8, ORANGE_BITS, 1.6);
         if (me) { center("SLIP!", 900); notice("Banana peel! Spinning…", 1500); }
-      } else if (e.type === "steady") { if (me) notice("Back on your feet", 900); }
+      } else if (e.type === "grab") {
+        fx.burst(e.x, 1.6, e.z, 12, WOOD_BITS, 2.2);
+        gorillaPoke(e.actor);
+        if (me) {
+          center("GRABBED!", 1000);
+          notice(COARSE ? "A gorilla has you! Tap Jump 5 times to wriggle free" : "A gorilla has you! Mash Space 5 times to wriggle free", 3000);
+        } else say(e.actor, LINES.bonk, 1.3);
+      } else if (e.type === "struggle") { if (me) notice(`Wriggle! ${sim.actors[0].grabHits} more`, 700); }
+      else if (e.type === "breakfree") { fx.burst(e.x, e.y + 0.8, e.z, 10, STAR_BITS, 2); if (me) { center("FREE!", 800); notice("Run before it grabs you again!", 1500); } }
+      else if (e.type === "letgo") { if (me) notice("The gorilla got bored and dropped you", 1500); }
+      else if (e.type === "gorillahit") fx.burst(e.x, e.y, e.z, 10, STAR_BITS, 2);
+      else if (e.type === "steady") { if (me) notice("Back on your feet", 900); }
       else if (e.type === "burn") {
         fx.burst(e.x, 0.4, e.z, 14, ORANGE_BITS, 2.4);
         if (me) {
@@ -716,12 +779,13 @@
       return thrown;
     }
     const dx = q.x - a.x, dz = q.z - a.z, flat = Math.hypot(dx, dz) || 1;
-    const lob = tool === "grenade" ? 0.3 : tool === "rocket" || tool === "sniper" ? 0 : tool === "net" ? -0.12 : -0.09;
+    const lob = tool === "grenade" ? 0.3 : tool === "rocket" || tool === "sniper" ? 0 : tool === "net" ? -0.12 : tool === "gold" || tool === "ak" ? -0.06 : -0.09;
     const pitch = clamp(Math.atan2(q.y - oy, flat) + lob, -0.9, 0.9);
     const ok = SIM.fire(sim, 0, Math.atan2(dx, dz), pitch, tool);
     // Say why a throw didn't go, so the tools never seem locked: paint on you, a quiz bubble, or an empty tool.
     if (!ok && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
     else if (!ok && a.trapped > 0) notice("Answer the question to get out first", 1100);
+    else if (!ok && tool === "gold" && !a.gold) notice("Mine a block to win a Golden AK, or net someone who has one", 1800);
     else if (!ok && tool === "sniper" && a.sniper <= 0) notice("The sniper rifle stays in the towers · climb one to use it", 1600);
     else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your stand or an ammo cache`, 1400);
     return ok;
@@ -737,16 +801,18 @@
   };
   // The next tool along (or back), skipping any that are empty, then Lift for the crates; a right click or R steps
   // through them.
-  const ORDER = ["paint", "grenade", "rocket", "net", "sniper", "grab"];
+  const ORDER = ["paint", "ak", "grenade", "rocket", "net", "gold", "sniper", "grab"];
   const cycleTool = (dir = 1) => {
     const a = sim.actors[0];
     let i = ORDER.indexOf(tool);
     for (let n = 0; n < ORDER.length; n++) {
       i = (i + dir + ORDER.length) % ORDER.length;
-      if (ORDER[i] === "paint" || ORDER[i] === "grab" || a[ORDER[i]] > 0) break;
+      if (ORDER[i] === "paint" || ORDER[i] === "ak" || ORDER[i] === "grab" || a[ORDER[i]] > 0) break;
     }
     chooseTool(ORDER[i]);
     if (ORDER[i] === "grab") notice("Lift · click lifts a crate, click or Tab throws it, F sets it down", 1400);
+    else if (ORDER[i] === "gold") notice("Golden AK", 900);
+    else if (ORDER[i] === "ak") notice("Ooga AK · hold to fire on full auto", 900);
     else notice(`${ORDER[i][0].toUpperCase()}${ORDER[i].slice(1)}${ORDER[i] === "paint" || ORDER[i] === "sniper" ? "" : ` · ${a[ORDER[i]]} left`}`, 900);
   };
   const onRightDown = (e) => {
@@ -757,9 +823,14 @@
   const noMenu = (e) => { if (phase === "play") e.preventDefault(); };
   const buildCrate = () => {
     if (phase !== "play") return false;
-    if (SIM.build(sim, 0, cam.face)) return true;
+    if (SIM.build(sim, 0, cam.face)) {
+      const n = sim.actors[0].crates;
+      notice(`Crate down! ${n ? `${n} left` : "That was your last · your stand or a cache gives you more"}`, 1200);
+      return true;
+    }
     const a = sim.actors[0];
-    notice(a.crates <= 0 ? "No crates left" : "Can't put a crate there · your own half, clear ground", 1200);
+    const ownHalf = (a.team === "blue" ? a.z : -a.z) >= 2;
+    notice(a.crates <= 0 ? "No crates left · your stand or an ammo cache gives you 3 more" : !a.grounded ? "Land first, then drop a crate" : !ownHalf ? "Crates only go down on your own half" : "No room there · face open ground and try again", 1600);
     return false;
   };
   const updateTools = () => {
@@ -769,9 +840,10 @@
       const k = b.dataset.tool;
       b.setAttribute("aria-pressed", String(k === tool));
       const n = b.querySelector("b");
-      if (n) n.textContent = k === "paint" ? "∞" : k === "sniper" ? (a.sniper ? "∞" : "tower") : k === "crate" ? String(a.crates) : String(a[k]);
+      if (n) n.textContent = k === "paint" ? "∞" : k === "sniper" ? (a.sniper ? "∞" : "tower") : k === "gold" ? (a.gold ? "∞" : "—") : k === "ak" ? (a.akReload > 0 ? "…" : String(a.akMag)) : k === "crate" ? String(a.crates) : String(a[k]);
+      if (k === "gold") b.disabled = !a.gold;
       if (k === "pass") b.disabled = !a.carrying && !a.holding;
-      if (k === "zip") b.disabled = !SIM.nearZip(sim, a);
+      if (k === "zip") b.disabled = !SIM.nearZip(sim, a) && !SIM.nearCatapult(sim, a);
       if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
@@ -805,9 +877,13 @@
   const onLockedDown = (e) => {
     audio.unlock();
     if (phase !== "play" || e.button !== 0 || quiz.open) return;
+    trigger = true;
     paint();
     lockMouse();
   };
+  // The trigger is held from the press until the button comes up anywhere; with the AK it fires on full auto.
+  let trigger = false;
+  const onTriggerUp = (e) => { if (e.button === 0 || e.type === "pointerup" || e.type === "pointercancel" || e.type === "blur") trigger = false; };
   // Tab passes in play, wherever the focus is: caught first, before the page's own key routing (which leaves Tab on a
   // focused button to the browser) and before the browser moves the focus.
   const onTabKey = (e) => {
@@ -816,6 +892,27 @@
     e.stopImmediatePropagation();
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     if (!e.repeat) passBlock();
+  };
+  // B places a crate. The page keeps B for itself outside debug (test bananas), so it is heard here directly.
+  // Caught first, as Tab is: a menu control left focused (the Ooga picker, a button) would otherwise take the key, and
+  // only a text field keeps it.
+  const onBuildKey = (e) => {
+    if ((e.key !== "b" && e.key !== "B" && e.code !== "KeyB") || phase !== "play" || quiz.open || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || (t.closest && t.closest("input, textarea")))) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    if (!e.repeat) buildCrate();
+  };
+  // A number key picks its tool; one you don't have says where to get it instead.
+  const keyTool = (k) => {
+    const a = sim.actors[0];
+    if (k === "gold" && !a.gold) { notice("No Golden AK yet · mine a block to win one, or net whoever has it", 1800); return; }
+    if (k === "sniper" && !a.sniper) { notice("The sniper rifle stays up the towers · climb a ladder", 1600); return; }
+    chooseTool(k);
+    const max = SIM.TOOLS[k].max;
+    notice(k === "gold" ? "Golden AK" : `${k[0].toUpperCase()}${k.slice(1)}${max ? (a[k] > 0 ? ` · ${a[k]} left` : " · empty · refill on your stand or an ammo cache") : ""}`, 900);
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   // Pick up the crate in front, or set the held one down (stacking it on a crate there).
@@ -838,6 +935,7 @@
   // Ride your tower's zipline down into the rival fort, from the platform by its gap.
   const zipNow = () => {
     if (phase !== "play") return false;
+    if (SIM.launch(sim, 0)) return true;
     if (SIM.zip(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
     notice(sim.prep > 0 ? "The zipline opens when the round starts" : a.holding ? "Put the crate down first (F)" : "Climb a sniper tower's ladder and stand by the cable to ride", 1600);
@@ -866,6 +964,8 @@
     const up = a.up > 0;
     // A new press waits for the sim to use it (it clears `jump`), however many substeps this frame runs, even none.
     if (up && !jumpWas) move.jump = 1;
+    // Space held is the jetpack's throttle.
+    move.jet = up ? 1 : 0;
     jumpWas = up;
   };
   // Each pet heads for a spot a little behind and beside its Ooga, trots there at up to sprint pace with a hop in its
@@ -900,7 +1000,8 @@
       setVec(a.body.position, s.x, s.y, s.z);
       // Lightning boots leave a trail of sparks.
       if (s.boots > 0 && s.moving > 1 && Math.random() < dt * 14) fx.burst(s.x, s.y + 0.2, s.z, 2, ORANGE_BITS, 0.8);
-      a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play");
+      // On the board only the Ooga on show stands in view.
+      a.body.visible = !(i === 0 && (cam.first || cam.close) && phase === "play") && !(phase === "board" && preview.wide && i > 0);
       a.body.scale.y = s.crouch ? 0.66 : 1;
       a.body.rotation.y = damp(a.body.rotation.y, a.body.rotation.y + wrap(s.heading - a.body.rotation.y), 14, dt);
       a.ring.visible = s.grounded;
@@ -909,9 +1010,20 @@
       a.held.visible = s.holding && !(i === 0 && cam.first);
       if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
       a.trolley.visible = s.riding;
+      a.chute.visible = s.flight === 2;
+      a.jetFlame.visible = s.jetting;
+      if (s.jetting) {
+        a.jetFlame.scale.y = 0.8 + Math.random() * 0.5;
+        if (Math.random() < dt * 30) fx.burst(s.x, s.y + 0.3, s.z, 1, ORANGE_BITS, 0.8);
+      }
+      for (let m = 0; m < 2; m++) {
+        a.monkeys[m].visible = s.monkeys > 0 && !(i === 0 && cam.first);
+        if (s.monkeys > 0) a.monkeys[m].position.y = 0.82 + Math.abs(Math.sin(elapsed * 6 + m * 1.7)) * 0.08;
+      }
+      if (a.chute.visible) a.chute.geometry = BM.chute(TEAM_INDEX[s.team]);
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
+      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -936,6 +1048,13 @@
         p.legL.rotation.x = p.legR.rotation.x = 0;
         continue;
       }
+      if (s.grabbed) {
+        // Held up by a gorilla: kicking and flailing.
+        const w = Math.sin(elapsed * 16 + i);
+        p.armL.rotation.x = -2.6 + w * 0.6; p.armR.rotation.x = -2.6 - w * 0.6;
+        p.legL.rotation.x = -0.7 * w; p.legR.rotation.x = 0.7 * w;
+        continue;
+      }
       if (s.slip > 0) {
         // Slipping: arms flung out, one leg up.
         p.armL.rotation.x = p.armR.rotation.x = -1.6;
@@ -949,7 +1068,13 @@
         p.legL.rotation.x = -0.9 * Math.max(0, w); p.legR.rotation.x = -0.9 * Math.max(0, -w);
         continue;
       }
-      if (s.riding || s.climbing) {
+      if (s.flight === 1) {
+        // Flung: tucked up, arms in.
+        p.armL.rotation.x = p.armR.rotation.x = -0.6;
+        p.legL.rotation.x = p.legR.rotation.x = -1.2;
+        continue;
+      }
+      if (s.riding || s.climbing || s.flight === 2) {
         // Hanging from the trolley, or hand over hand up a ladder.
         const k = s.climbing ? Math.sin(elapsed * 9) * 0.4 : 0;
         p.armL.rotation.x = -2.9 + k; p.armR.rotation.x = -2.9 - k;
@@ -1008,9 +1133,11 @@
     }
   };
   const poseCrates = () => {
+    // On the board the crates stand aside, so nothing hides the Ooga on show; they're back when the round starts.
+    const showing = phase === "board" && preview.wide;
     for (let i = 0; i < crates.length; i++) {
       const c = sim.crates[i], n = crates[i];
-      n.visible = c.live;
+      n.visible = c.live && !showing;
       if (!c.live) continue;
       setVec(n.position, c.x, c.y, c.z);
       n.geometry = BM.crate(TEAM_INDEX[c.team]);
@@ -1052,7 +1179,8 @@
   };
   // The sprint gauge: full, draining while Shift is held, orange while it refills after running dry.
   const poseStamina = () => {
-    const a = sim.actors[0], k = Math.round(a.stamina / C.SPRINT_S * 100);
+    const a = sim.actors[0], k = Math.round(a.stamina / C.SPRINT_S * 100), f = Math.round(a.fuel / C.JET_FUEL * 100);
+    if (f !== el.fuelK) { el.fuelK = f; el.fuel.style.width = `${f}%`; }
     if (k === el.staminaK && a.tired === el.staminaTired) return;
     el.staminaK = k; el.staminaTired = a.tired;
     el.stamina.style.width = `${k}%`;
@@ -1079,6 +1207,17 @@
     }
     // An ammo cache glows while it's ready and goes grey while it rests.
     for (let i = 0; i < caches.length; i++) caches[i].geometry = BM.cache(sim.caches[i].dark > 0 ? 1 : 0);
+    // A catapult's arm whips over when it throws, then winds back down.
+    for (const c of catapults) {
+      const t = elapsed - c.at, up = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 1.4);
+      c.arm.rotation.x = -0.25 + up * 1.9;
+    }
+    const onPad = phase === "play" && SIM.nearCatapult(sim, sim.actors[0]);
+    if (onPad !== catNear) {
+      catNear = onPad;
+      updateTools();
+      if (onPad) notice(`${COARSE ? "Ride" : "E"} fires the catapult · parachute into their fort`, 2400);
+    }
     // The zipline button wakes as the visitor reaches the cable, with a word the first time.
     const near = phase === "play" && !!SIM.nearZip(sim, sim.actors[0]);
     if (near !== zipNear) {
@@ -1097,7 +1236,7 @@
       if (!s.live) continue;
       setVec(n.position, s.x, s.y, s.z);
       const t = TEAM_INDEX[s.team];
-      n.geometry = s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
+      n.geometry = s.kind === "gold" ? BM.goldBall() : s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
       n.rotation.y = Math.atan2(s.vx, s.vz);
       n.rotation.x = s.kind === "rocket" ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
     }
@@ -1167,12 +1306,38 @@
     return CAM.dist;
   };
   // The board shows the whole fort from above its gate, slowly turning.
-  const boardView = (elapsed) => {
-    const t = selection.team, s = SIM.ARENA.stands[t], a = elapsed * 0.12;
+  // On a wide screen the board sits on the left and the chosen Ooga stands on the right inside its fort's gate,
+  // turning slowly all the way round (a drag turns it faster); on a narrow one the board fills the screen and the
+  // view circles the fort.
+  const preview = { spin: 0, wide: false };
+  const PREVIEW_MIN_W = 760;
+  const boardView = (elapsed, dt) => {
+    const t = selection.team, s = SIM.ARENA.stands[t], sign = t === "blue" ? 1 : -1;
     camera.fov = 58 * Math.PI / 180;
     if (fpGun) fpGun.visible = false;
-    setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
-    setVec(camera.target, s.x, 1, s.z * 0.8);
+    preview.wide = window.innerWidth >= PREVIEW_MIN_W;
+    el.previewName.hidden = !preview.wide;
+    // The Ooga picker sits under the Ooga on show when there is one, else in the board.
+    const home = preview.wide ? el.previewPick : el.oogaSlot;
+    if (el.oogaPick.parentNode !== home) {
+      home.append(el.oogaPick);
+      el.oogaHead.hidden = preview.wide;
+    }
+    if (!preview.wide) {
+      const a = elapsed * 0.12;
+      setVec(camera.position, s.x + Math.sin(a) * 16, 11, s.z * 0.55 + Math.cos(a) * 16);
+      setVec(camera.target, s.x, 1, s.z * 0.8);
+      return;
+    }
+    // The visitor's Ooga on its showcase spot, a step inside the gate, turning.
+    const me = sim.actors[0], x = s.x, z = s.z - sign * 2.5;
+    preview.spin = wrap(preview.spin + dt * 0.7);
+    me.x = x; me.z = z; me.y = 0; me.grounded = true; me.moving = 0;
+    me.carrying = null; me.holding = false; me.splat = me.trapped = me.burnt = me.slip = 0;
+    me.heading = preview.spin;
+    // The camera out past the gate at chest height, looking a little to the Ooga's left so it stands right of the board.
+    setVec(camera.position, x, 1.45, z - sign * 3.7);
+    setVec(camera.target, x + sign * 1.25, 1.0, z);
   };
 
   const update = (dt, elapsed) => {
@@ -1181,6 +1346,8 @@
     RENDER_OPTS.time = elapsed;
     if (phase === "play") {
       readInput(dt);
+      // Full auto: with the AK and the trigger held, a round goes each time the shot clock allows.
+      if (trigger && tool === "ak" && !quiz.open && sim.actors[0].cooldown <= 0) paint();
       // The live feed, folded in before the step: fees to weather, a new block to its reset.
       SIM.setLive(sim, feeWeather(live.fee));
       if (live.block) { SIM.newBlock(sim, live.block); live.block = 0; }
@@ -1201,8 +1368,9 @@
     poseStamina();
     posePads(elapsed);
     poseFire(elapsed);
+    poseGorillas(dt, elapsed);
     poseShots();
-    if (phase === "board") boardView(elapsed);
+    if (phase === "board") boardView(elapsed, dt);
     else updateCamera(dt);
     poseWeather(dt);
     if (phase === "play") drawMap(dt, elapsed);
@@ -1211,6 +1379,7 @@
       audio.state.wind = phase === "play" ? sim.weather.strength / C.WIND.storm : 0;
       audio.state.rain = phase === "play" && sim.weather.kind === "storm" ? 1 : 0;
       audio.state.zip = phase === "play" && sim.actors[0].riding ? 1 : 0;
+      audio.state.jet = phase === "play" && sim.actors[0].jetting ? 1 : 0;
     }
     audio.update();
     fx.update(dt);
@@ -1242,10 +1411,9 @@
       if (e.key >= "1" && e.key <= "4") answer(Number(e.key) - 1);
       return;
     }
-    if (TOOL_KEYS[e.key]) chooseTool(TOOL_KEYS[e.key]);
+    if (TOOL_KEYS[e.key]) keyTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
     if (e.key === "r" || e.key === "R") cycleTool(1);
-    if (e.key === "b" || e.key === "B") buildCrate();
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
     if (e.key === "e" || e.key === "E") zipNow();
@@ -1275,6 +1443,7 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
   };
   const chooseMap = (id) => {
     for (const b of el.maps) b.setAttribute("aria-pressed", String(b.dataset.map === id));
@@ -1302,6 +1471,14 @@
     powerNodes = A.powers.map(([x, z]) => add(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
     trampNodes = A.tramps.map(([x, z]) => add(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
     caches = A.caches.map(([x, y, z]) => add(createNode({ geometry: BM.cache(0), position: { x, y, z } })));
+    // Each side's catapult, aimed at the other end; its arm swings when it throws.
+    catapults = SIM.TEAMS.map((t) => {
+      const [x, z] = A.catapults[t][0], [tx, tz] = A.drops[t], i = TEAM_INDEX[t], turn = Math.atan2(tx - x, tz - z);
+      const node = add(createNode({ geometry: BM.catapult(i), position: { x: x + Math.sin(turn) * 1.6, y: 0, z: z + Math.cos(turn) * 1.6 }, rotation: { x: 0, y: turn, z: 0 } }));
+      const arm = createNode({ geometry: BM.catapultArm(i), position: { x: 0, y: 0.45, z: 0.25 }, rotation: { x: -0.25, y: 0, z: 0 } });
+      addChild(node, arm);
+      return { team: t, arm, at: -10 };
+    });
     const [fx, fz] = A.fire;
     add(createNode({ geometry: BM.firePit(), position: { x: fx, y: 0, z: fz } }));
     fireNode = add(createNode({ geometry: BM.flames(), position: { x: fx, y: 0.05, z: fz } }));
@@ -1316,6 +1493,36 @@
       return { body, armL, armR, k };
     });
     peelNodes = A.peels.map(([x, z], i) => add(createNode({ geometry: BM.peel(), position: { x, y: 0.01, z }, rotation: { x: 0, y: i * 1.7, z: 0 } })));
+    // Gorilla Jungle: the cargo nets up to the tree forts, and the gorillas themselves.
+    for (const n of A.nets || []) {
+      const [x0, x1, z0, z1] = n.zone, w = n.dx ? z1 - z0 : x1 - x0;
+      const key = `${Math.round(Math.max(w, 1.2) * 10)}:${Math.round(n.top * 10)}`;
+      add(createNode({ geometry: BM.net2(key), position: { x: (x0 + x1) / 2, y: 0, z: (z0 + z1) / 2 }, rotation: { x: 0.08, y: n.dx ? Math.PI / 2 : 0, z: 0 } }));
+    }
+    disposeGorillas();
+    gorillaRigs = A.gorillas.map(([x, z]) => {
+      const rig = BL.agent.create({ managed: true, groundAt: () => 0, x, z, scale: GORILLA_SCALE });
+      add(rig.root);
+      return rig;
+    });
+  };
+  // The gorillas follow the sim: walking or charging, standing still holding an Ooga up, or dazed when painted.
+  const GORILLA_SCALE = 1.35;
+  let gorillaRigs = [];
+  const disposeGorillas = () => { for (const rig of gorillaRigs) rig.dispose(); gorillaRigs = []; };
+  const gorillaPoke = (actor) => {
+    if (!sim) return;
+    const i = sim.gorillas.findIndex((g) => g.holding === actor), rig = gorillaRigs[i];
+    if (rig && rig.pound) rig.pound(false, 1);
+  };
+  const poseGorillas = (dt, elapsed) => {
+    if (!sim || !gorillaRigs.length) return;
+    for (let i = 0; i < gorillaRigs.length; i++) {
+      const g = sim.gorillas[i], rig = gorillaRigs[i];
+      if (!g || !rig) continue;
+      const stunned = g.state === 4, wob = stunned ? Math.sin(elapsed * 14) * 0.25 : 0;
+      rig.poseManaged(dt, g.x, 0, g.z, g.heading + wob, stunned ? 0 : Math.hypot(g.vx, g.vz), false);
+    }
   };
   // The fire flickers and spits embers; the potato Oogas dance round it, hopping and waving.
   const poseFire = (elapsed) => {
@@ -1343,6 +1550,17 @@
   const chooseTeam = (team) => {
     selection.team = team;
     for (const b of el.teams) b.setAttribute("aria-pressed", String(b.dataset.team === team));
+    // The Ooga on show changes colour with its side.
+    if (sim) {
+      sim.team = team; sim.rival = SIM.other(team);
+      for (let i = 0; i < sim.actors.length; i++) sim.actors[i].team = i < sim.size ? sim.team : sim.rival;
+      paintTeams();
+    }
+  };
+  // The name under the Ooga on show.
+  const nameShowcase = () => {
+    const n = actors && actors[0] ? actors[0].name : null;
+    el.previewName.firstChild.textContent = n ? contributors.traitsFor(n).display || n : "";
   };
 
   const enter = (ctx) => {
@@ -1389,6 +1607,13 @@
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
+    el.fuel = document.getElementById("block-fuel");
+    el.fuelK = -1;
+    el.previewName = document.getElementById("block-preview-name");
+    el.previewPick = document.getElementById("block-preview-pick");
+    el.oogaSlot = document.getElementById("block-ooga-slot");
+    el.oogaHead = el.oogaSlot.querySelector("h3");
+    el.previewName.hidden = true;
     el.map = document.getElementById("block-map");
     el.mapCtx = el.map.getContext("2d");
     el.feed = document.getElementById("block-feed");
@@ -1410,9 +1635,14 @@
     el.canvas.addEventListener("mousedown", onRightDown);
     el.canvas.addEventListener("contextmenu", noMenu);
     window.addEventListener("keydown", onCrouchKey);
+    window.addEventListener("keydown", onBuildKey, true);
     window.addEventListener("keydown", onTabKey, true);
     window.addEventListener("keyup", onCrouchKey);
-    el.onPaint = (e) => { e.preventDefault(); if (phase === "play") paint(); };
+    el.onPaint = (e) => { e.preventDefault(); if (phase === "play") { trigger = true; paint(); } };
+    window.addEventListener("mouseup", onTriggerUp);
+    window.addEventListener("pointerup", onTriggerUp);
+    window.addEventListener("pointercancel", onTriggerUp);
+    window.addEventListener("blur", onTriggerUp);
     el.paintBtn.addEventListener("pointerdown", el.onPaint);
     el.oogaPick = document.getElementById("block-ooga");
     el.onOoga = () => { chooseOoga(el.oogaPick.value); el.oogaPick.blur(); };
@@ -1463,6 +1693,7 @@
     buildActors(castNames());
     for (let i = 0; i < actors.length; i++) sim.actors[i].name = actors[i].name;
     paintTeams();
+    nameShowcase();
     // The board's Ooga picker: the roster by the name shown, held to their own Ooga for a signed-in visitor.
     el.oogaPick.textContent = "";
     // In alphabetical order by the name shown, so anyone can find theirs in a long roster.
@@ -1487,6 +1718,8 @@
       // A mouse throws on press (`onLockedDown`); a tap on a touch screen throws here.
       onTap: () => { if (phase === "play" && COARSE) paint(); },
       onOrbit: (dx, dy) => {
+        // On the board a drag turns the Ooga on show.
+        if (phase === "board") { preview.spin = wrap(preview.spin + dx * 8e-3); return; }
         if (phase !== "play") return;
         cam.face = wrap(cam.face - dx * 5e-3);
         cam.pitch = clamp(cam.pitch + dy * 3.5e-3, CAM.pitch[0], CAM.pitch[1]);
@@ -1515,7 +1748,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · W into a ladder climbs · E zipline · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden AK · 7 AK (hold to fire) · hold Space in the air for the jetpack · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -1565,6 +1798,11 @@
     for (const b of el.maps) b.removeEventListener("click", el.onMap);
     for (const b of el.skills) b.removeEventListener("click", el.onSkill);
     el.paintBtn.removeEventListener("pointerdown", el.onPaint);
+    window.removeEventListener("mouseup", onTriggerUp);
+    window.removeEventListener("pointerup", onTriggerUp);
+    window.removeEventListener("pointercancel", onTriggerUp);
+    window.removeEventListener("blur", onTriggerUp);
+    trigger = false;
     el.toolBar.hidden = true;
     for (const b of el.tools) b.removeEventListener("click", el.onTool);
     document.removeEventListener("mousemove", onLockedMove);
@@ -1572,6 +1810,7 @@
     el.canvas.removeEventListener("mousedown", onRightDown);
     el.canvas.removeEventListener("contextmenu", noMenu);
     window.removeEventListener("keydown", onCrouchKey);
+    window.removeEventListener("keydown", onBuildKey, true);
     window.removeEventListener("keydown", onTabKey, true);
     window.removeEventListener("keyup", onCrouchKey);
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
@@ -1583,6 +1822,7 @@
     for (const b of el.answers) b.removeEventListener("click", onAnswer);
     closeQuiz();
     disposeActors();
+    disposeGorillas();
     fx.dispose();
     controls.dispose();
     hud.el.act.hidden = true;
@@ -1594,7 +1834,8 @@
     hud.dispose();
     phase = "board";
     sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
-    mapRoot = fireNode = dancers = peelNodes = null;
+    mapRoot = fireNode = dancers = peelNodes = catapults = null;
+    catNear = false;
     for (const t of SIM.TEAMS) iceNodes[t] = null;
     zipNear = false;
     hud = hooks = input = fx = controls = clock = null;

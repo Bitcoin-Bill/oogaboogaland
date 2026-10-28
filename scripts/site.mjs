@@ -6,12 +6,16 @@
 // (/OogaRally/) to its address and anything else home; sitemap.xml and robots.txt list the routes, and
 // cards/ holds the card images from `npm run cards`; a route without an `image` uses home's. Modules tagged
 // `data-defer` move out of the pages into js/<group>-<hash>.js (scripts/distribution-modules.mjs), fetched when needed.
+// `--audio-assets` and `--image-assets` write the DSB entrance recordings and the DSB rooms' pictures as same-origin
+// files under audio/ and art/; `npm run build:site` and `npm run serve` pass both, GitHub Pages (`pages.yml`) only
+// `--audio-assets`, and the portable page stays whole.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { externalizeAudio } from "./distribution-audio.mjs";
-import { externalizeModules } from "./distribution-modules.mjs";
+import { PICTURE_MODULES, externalizeModules, externalizePictures } from "./distribution-modules.mjs";
+import { writeTerrainWorker } from "./distribution-terrain.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = resolve(root, process.argv[2] || "untracked/site");
@@ -24,6 +28,16 @@ const { site, name, list } = routes;
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(join(out, "cards"), { recursive: true });
+mkdirSync(join(out, "media"), { recursive: true });
+// Stage only catalogue-reviewed assets; never proxy or fetch a supplied media URL.
+const mediaContext = {};
+vm.runInNewContext(readFileSync(join(root, "src/js/studio-catalogue.js"), "utf8"), mediaContext);
+const mediaFiles = new Set();
+for (const source of mediaContext.BL.studioMedia.sources) for (const path of [source.url, source.captions, source.transcript]) {
+  if (!/^\/media\/[a-z0-9][a-z0-9._-]*\.(mp4|webm|vtt|txt)$/.test(path)) throw new Error("Invalid reviewed Studio asset path");
+  mediaFiles.add(path.slice(7));
+}
+for (const file of mediaFiles) copyFileSync(join(root, "src/media", file), join(out, "media", file));
 
 let shell = readFileSync(join(root, "oogaboogaland.html"), "utf8");
 if (process.argv.includes("--worker-page")) {
@@ -32,7 +46,9 @@ if (process.argv.includes("--worker-page")) {
   shell = shell.replace(tag, '<html lang="en" data-worker-page="1">');
 }
 if (process.argv.includes("--audio-assets")) shell = externalizeAudio(shell, root, out);
-shell = externalizeModules(shell, out, deferred, block);
+const pictures = process.argv.includes("--image-assets");
+if (pictures) for (const src of PICTURE_MODULES) if (![...deferred.values()].some((sources) => sources.includes(src))) throw new Error(`${src}: --image-assets needs it in a data-defer group`);
+shell = externalizeModules(shell, out, deferred, block, writeTerrainWorker(root, out), pictures ? (src, text) => PICTURE_MODULES.includes(src) ? externalizePictures(src, text, out) : text : undefined);
 if (shell.split("</title>").length !== 2 || shell.split("</head>").length !== 2) throw new Error("oogaboogaland.html: expected one <title> and one </head>");
 
 const esc = (text) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
