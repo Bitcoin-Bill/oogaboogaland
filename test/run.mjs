@@ -19722,6 +19722,7 @@ const rescueChecks = BL => {
 // The own dog on ground of its own making: dry land at 0.5 m, a house (walls round a 6 x 6 m footprint, its roof at
 // 4 m), the sea beyond (the water at 0, its bed at -3), and the dog's floor, wall and flight checks as DSB Land answers
 // them. The Ooga walks round the house, flies over it and the sea and lands on the far shore, then on the roof.
+// At cruising speed the dog flies next to it: level with it, out to its side, not trailing behind.
 const rescueFlightChecks = BL => {
   const D=BL.rescueDogs,S=BL.scene,noop=()=>{},STEP=.6,ROOF=4,toasts=[];
   const house=(x,z)=>x>10&&x<16&&z>-3&&z<3,sea=x=>x>26&&x<40,terrain=(x,z)=>sea(x)?-3:.5;
@@ -19733,7 +19734,7 @@ const rescueFlightChecks = BL => {
   const camera={position:{x:0,y:30,z:-40},target:{x:20,y:0,z:0}},store={poops:[],scooped:0};
   const sys=D.create({root,crew:{player:cave},fx:{say:noop,sayAt:noop,burst:noop},hud:{toast:t=>toasts.push(t)},pile:{eat:()=>true},yard:BL.rescueRoom.YARD,door:[0,0],ground,standable,flyClear,
     addTarget:noop,removeTarget:noop,pickGeometry:BL.rescueRoom.PICK,strays:{homes:new Float32Array(0),renderer:{quality:"high"},clearSegment},camera,store,onRelease:noop});
-  const T=sys.debug,p=cave.root.position,feet=()=>p.y-cave.baseY,bad=[];let flew=false,jetShown=false;
+  const T=sys.debug,p=cave.root.position,feet=()=>p.y-cave.baseY,bad=[],abreast={along:0,across:[Infinity,-Infinity],up:0};let flew=false,jetShown=false;
   // One tenth of a second: the Ooga moved by `move` (its feet put on what lies under them unless it flies), the dog's
   // whereabouts checked: never inside the house, never under the water, on the ground never up on the roof.
   const tick=(move,label)=>{move();sys.update(.1,0,1,D.CHORA);const d=T.dog(),onGround=["follow","sit","eat","poop","sleep"].includes(d.state);
@@ -19749,7 +19750,10 @@ const rescueFlightChecks = BL => {
   // Up, over the house and the sea at 6.4 m/s, down on the far shore.
   Object.assign(p,{x:2,z:0,y:terrain(2,0)+cave.baseY});cave.root.rotation.y=Math.PI/2;for(let i=0;i<30;i++)tick(()=>{},"before");
   cave.jet.thrust=true;for(let i=0;i<12;i++)tick(()=>{p.y+=.5;},"climb");
-  for(let i=0;i<75;i++)tick(()=>{p.x+=.64;if(i===50)T.poop();},"flight");
+  for(let i=0;i<75;i++){tick(()=>{p.x+=.64;if(i===50)T.poop();},"flight");
+    // Heading +x: along the flight is x, across it z. Measured once the dog has caught up with the climb.
+    if(i>=20){const d=T.dog(),across=Math.abs(d.z-p.z);abreast.along=Math.max(abreast.along,Math.abs(d.x-p.x));abreast.across=[Math.min(abreast.across[0],across),Math.max(abreast.across[1],across)];abreast.up=Math.max(abreast.up,Math.abs(d.y-feet()-D.FLY_UP));}}
+  const alongside=abreast.along<.5&&abreast.across[0]>D.FLY_SIDE-.3&&abreast.across[1]<D.FLY_SIDE+.3&&abreast.up<.3;
   const aloft=T.dog(),after=T.stats().poops;cave.jet.thrust=false;
   for(let i=0;i<40&&feet()>terrain(p.x,p.z);i++)tick(()=>{p.y=Math.max(terrain(p.x,p.z)+cave.baseY,p.y-.6);},"descent");
   for(let i=0;i<60;i++)tick(()=>{},"landed");
@@ -19759,8 +19763,8 @@ const rescueFlightChecks = BL => {
   for(let i=0;i<60;i++)tick(()=>{},"roof");
   const below=T.dog(),waits=below.state==="follow"&&!house(below.x,below.z)&&below.y===terrain(below.x,below.z)&&Math.hypot(below.x-p.x,below.z-p.z)<6;
   sys.dispose();
-  record("Rescue flight: the own dog walks round a house, flies after its jetpacked Ooga over it and the sea without passing through a wall or under the water, poops nothing in the air, lands beside it on dry ground, and waits on the ground under an Ooga on a roof",
-    !bad.length&&beside&&flew&&jetShown&&aloft.state==="fly"&&aloft.x>26&&after===0&&down&&waits,JSON.stringify({bad:bad.slice(0,4),beside,round,flew,jetShown,aloft,after,landed,below,p}));
+  record("Rescue flight: the own dog walks round a house, flies next to its jetpacked Ooga over it and the sea without passing through a wall or under the water, poops nothing in the air, lands beside it on dry ground, and waits on the ground under an Ooga on a roof",
+    !bad.length&&beside&&flew&&jetShown&&alongside&&aloft.state==="fly"&&aloft.x>26&&after===0&&down&&waits,JSON.stringify({bad:bad.slice(0,4),beside,round,flew,jetShown,abreast,aloft,after,landed,below,p}));
 };
 // The adoption dialog through a minimal DOM: six portraits, the visitor's own Ooga named, no one else's to choose, Enter adopts the sanitized name, Escape and dispose leave nothing.
 const rescueMenuChecks = BL => {

@@ -4,9 +4,9 @@
 // dog's height plus a step, never its Ooga's, so it climbs no roof and wades onto no seabed, and every step it takes
 // is a clear one (`strays.clearSegment`, the strays' own check). A step it can not take leaves it waiting; it turns up
 // beside its Ooga only when that Ooga is out of reach behind a wall or was moved (a door, the deep-water return).
-// When its Ooga flies, the dog flies too: a small jetpack of the Ooga's own look lights on its back and it keeps a
-// little way behind, as fast and as steep as a jetpack goes (`BL.crew.JET_SPEED`, `JET_RISE`), climbing over whatever
-// stands in its way (`flyClear`) and never through it. Once its Ooga is down, it lands on dry open ground near it
+// When its Ooga flies, the dog flies too: a small jetpack of the Ooga's own look lights on its back and it flies next
+// to its Ooga, as fast and as steep as a jetpack goes (`BL.crew.JET_SPEED`, `JET_RISE`), climbing over whatever stands
+// in its way (`flyClear`) and never through it. Once its Ooga is down, it lands on dry open ground near it
 // (`standable`) and walks on. It grows hungry over scene time (`HUNGER_SECONDS` from full to empty), sits and whines
 // once it passes `HUNGRY`, eats a banana from the shared pile when tapped, and while fed poops in the Chora on a
 // jittered timer, on the ground only. Left empty for `STARVE_SECONDS` it goes back to the rescue (`onRelease`).
@@ -47,12 +47,14 @@
   // A dog stopped by a wall further than LEFT_BEHIND from its Ooga, or whose Ooga moved more than MOVED in one frame
   // (a door, the deep-water return), turns up beside it; a hungry one trots after an Ooga further off than TROT.
   const WALK = 2.2, RUN = 4.6, LEFT_BEHIND = 2.5, MOVED = 3, TROT = 4;
-  // Flight: the dog takes off once its Ooga thrusts off the ground or is LIFT above what lies under it, keeps FLY_BACK
-  // behind and FLY_LOW under its feet at up to CATCH_UP times a jetpack's speed, and turns up behind it beyond FLY_FAR.
+  // Flight: the dog takes off once its Ooga thrusts off the ground or is LIFT above what lies under it and flies next to
+  // it, FLY_SIDE out on its own side and FLY_UP over its feet, at up to CATCH_UP times a jetpack's speed (`flyTo` closes
+  // FLY_GAIN times the gap a second, so to keep abreast at speed it aims a second's FLY_GAIN-th of its Ooga's way ahead,
+  // less the step it takes this frame); it turns up there beyond FLY_FAR.
   // Its Ooga down, it lands within LAND_REACH of it on dry open ground; the jetpack sits on its back at JET_SCALE.
   // Held up in the air longer than HELD_UP with no way on (a canopy over it, a wall ahead), it turns up where it is
   // going.
-  const LIFT = 1.2, FLY_BACK = 1.7, FLY_LOW = 0.3, CATCH_UP = 1.35, FLY_FAR = 30, LAND_REACH = 14, JET_SCALE = 0.55, HELD_UP = 1.5, CLIMB_OVER = 8;
+  const LIFT = 1.2, FLY_SIDE = 1.2, FLY_UP = 0.4, FLY_GAIN = 3, CATCH_UP = 1.35, FLY_FAR = 30, LAND_REACH = 14, JET_SCALE = 0.55, HELD_UP = 1.5, CLIMB_OVER = 8;
   const FREE = 0, KENNEL = 1, FOLLOW = 2, SIT = 3, EAT = 4, SQUAT = 5, NAP = 6, HOME = 7, STRAY = 8, FLY = 9, LAND = 10;
   const STATE_NAMES = ["free", "kennel", "follow", "sit", "eat", "poop", "sleep", "home", "stray", "fly", "land"];
   // Where a dog is: the Chora, the rescue's yard, or with its Ooga. `update` takes the visitor's as CHORA, YARD or ROOM
@@ -332,9 +334,9 @@
     let poopCount = 0, stepCooldown = 0, version = 0, changes = 0, held = false, here = CHORA, frame = 0;
     let strayCount = 0, strayDue = STRAY_RESPAWN, strayBorn = 0, homeNext = 0;
     let drawnCount = 0, picksShown = 0, poopsDrawn = 0, flyCount = 0, redraw = true, poopX = 0, poopY = 0, poopZ = 0;
-    // The own dog's slot (-1 for none), where its Ooga stood last frame, whether its head is up to an Ooga above it,
+    // The own dog's slot (-1 for none), where its Ooga was last frame, whether its head is up to an Ooga above it,
     // the ground it is landing on, and the next spark under its jetpack.
-    let own = -1, ownX = 0, ownZ = 0, lookUp = false, landX = 0, landY = 0, landZ = 0, spark = 0;
+    let own = -1, ownX = 0, ownY = 0, ownZ = 0, lookUp = false, landX = 0, landY = 0, landZ = 0, spark = 0;
     const cursor = new Int32Array(BREEDS.length * 2);
     // Pick targets, made once a visit: one for each dog drawn, handed to whichever dog is drawn in its turn each frame,
     // and one a poop, each shown only while in use and in view.
@@ -385,7 +387,7 @@
       state[i] = FOLLOW; space[i] = WITH; owners[i] = cave; entries[i] = entry; spotOf[i] = -1; stuck[i] = 0;
       breedOf[i] = entry.breed; side[i] = fnv1a(entry.name) & 1 ? 0.55 : -0.55;
       poopTimer[i] = POOP_MIN * 0.5 + Math.random() * POOP_SPAN; starve[i] = 0; grow[i] = 1;
-      own = i; ownX = cave.root.position.x; ownZ = cave.root.position.z;
+      own = i; ownX = cave.root.position.x; ownY = cave.root.position.y; ownZ = cave.root.position.z;
     };
     // Dry open ground near (x, z) for a dog to land on or turn up at, behind `heading` first: ground looked up from
     // `feet`, with nothing over it up to `from`, the height the dog comes down from. Writes landX, landY, landZ.
@@ -602,10 +604,10 @@
     // it is there.
     const flyTo = (i, tx, ty, tz, dt) => {
       const dx = tx - px[i], dz = tz - pz[i], d = Math.sqrt(dx * dx + dz * dz);
-      const want = Math.min(JET_SPEED * CATCH_UP, d * 3);
+      const want = Math.min(JET_SPEED * CATCH_UP, d * FLY_GAIN);
       speed[i] += (want - speed[i]) * Math.min(1, dt * 4);
       if (d > 0.1) turn(i, Math.atan2(dx, dz), dt * 6);
-      let rise = Math.max(-JET_RISE, Math.min(JET_RISE, (ty - py[i]) * 3));
+      let rise = Math.max(-JET_RISE, Math.min(JET_RISE, (ty - py[i]) * FLY_GAIN));
       if (d > 0.02 && speed[i] > 0.01) {
         const go = Math.min(speed[i] * dt, d), nx = px[i] + dx / d * go, nz = pz[i] + dz / d * go;
         if (flyClear(px[i], pz[i], nx, nz, py[i])) { px[i] = nx; pz[i] = nz; }
@@ -632,12 +634,13 @@
         return;
       }
       const p = cave.root.position, feet = p.y - cave.baseY, h = cave.root.rotation.y, sh = Math.sin(h), ch = Math.cos(h);
-      const moved = Math.abs(p.x - ownX) + Math.abs(p.z - ownZ) > MOVED;
-      ownX = p.x; ownZ = p.z; lookUp = false;
+      const moved = Math.abs(p.x - ownX) + Math.abs(p.z - ownZ) > MOVED, ahead = moved || !(dt > 0) ? 0 : Math.max(0, 1 / (FLY_GAIN * dt) - 1);
+      const leadX = (p.x - ownX) * ahead, leadY = (p.y - ownY) * ahead, leadZ = (p.z - ownZ) * ahead;
+      ownX = p.x; ownY = p.y; ownZ = p.z; lookUp = false;
       if (state[i] === NAP) state[i] = FOLLOW;
       e.hunger = hungerAfter(e.hunger, dt);
       if (e.hunger >= 1 && (starve[i] += dt) >= STARVE_SECONDS) { giveUp(i); return; }
-      const up = here === CHORA && airborne(cave, p, feet), tx = p.x - sh * FLY_BACK + ch * side[i], tz = p.z - ch * FLY_BACK - sh * side[i];
+      const up = here === CHORA && airborne(cave, p, feet), across = side[i] < 0 ? -FLY_SIDE : FLY_SIDE, tx = p.x + ch * across, tz = p.z - sh * across;
       if (moved && !up) {
         beside(i, p, feet, h);
         if (state[i] === FLY || state[i] === LAND) state[i] = FOLLOW;
@@ -649,11 +652,12 @@
       }
       if (up || state[i] === FLY) {
         if (state[i] !== FLY) { state[i] = FLY; stuck[i] = 0; }
-        // Left far behind, its Ooga moved, or held up a while with no way on: it catches up in the air behind it,
+        // Left far behind, its Ooga moved, or held up a while with no way on: it catches up in the air next to it,
         // where its Ooga could fly.
         const far = Math.hypot(tx - px[i], tz - pz[i]);
         if ((moved || far > FLY_FAR || (lag[i] += dt) > HELD_UP) && flyClear(p.x, p.z, tx, tz, feet)) { px[i] = tx; pz[i] = tz; py[i] = feet; speed[i] = 0; lag[i] = 0; }
-        flyTo(i, tx, feet + (up ? -FLY_LOW : 0.6), tz, dt);
+        if (up) flyTo(i, tx + leadX, feet + FLY_UP + leadY, tz + leadZ, dt);
+        else flyTo(i, tx, feet + 0.6, tz, dt);
         if (far < 4 || Math.hypot(tx - px[i], tz - pz[i]) < far - dt) lag[i] = 0;
         return;
       }
@@ -1052,5 +1056,5 @@
     };
     return { update, drawOverlay, adopt, setOwn, tap, feed, feedOwn, scoop, writeStore, stats, dispose, debug, get own() { return own >= 0 ? entries[own] : null; }, get changes() { return changes; } };
   };
-  BL.rescueDogs = { create, homesAcross, DOG_CAP, DRAWN_CAP, SHADOW_CAP, SHADOW_NEAR, POOP_CAP, FLY_PILES, STRAY_CAP, STRAY_TIER, DRAW, DRAWN, POOP_DRAW, POOPS_DRAWN, HOME_GAP, NEAR_HOMES, HUNGER_SECONDS, HUNGRY, STARVE_SECONDS, BREEDS, FACES, FACE_INK, CHORA, YARD, ROOM, hungerAfter, breedFor, nameFor };
+  BL.rescueDogs = { create, homesAcross, DOG_CAP, DRAWN_CAP, SHADOW_CAP, SHADOW_NEAR, POOP_CAP, FLY_PILES, FLY_SIDE, FLY_UP, STRAY_CAP, STRAY_TIER, DRAW, DRAWN, POOP_DRAW, POOPS_DRAWN, HOME_GAP, NEAR_HOMES, HUNGER_SECONDS, HUNGRY, STARVE_SECONDS, BREEDS, FACES, FACE_INK, CHORA, YARD, ROOM, hungerAfter, breedFor, nameFor };
 })();
