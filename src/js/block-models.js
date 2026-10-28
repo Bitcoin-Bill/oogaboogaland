@@ -320,7 +320,7 @@
   // The guns, each in its own frame with the grip at the origin and the muzzle along +z, in team colours (variants by
   // team): a paintball marker with a hopper, a chunky grenade launcher with a drum, a big shoulder rocket launcher, a
   // net gun with a flared mouth and a long sniper rifle with a scope.
-  const GUNS = ["paint", "grenade", "rocket", "net", "sniper", "gold"];
+  const GUNS = ["paint", "grenade", "rocket", "net", "sniper", "gold", "ak"];
   const GOLD = "#f2c230", GOLD_DK = "#b8901c";
   const METAL = "#3a3a40", DARK = "#24242a";
   const gun = variants((i) => {
@@ -352,6 +352,16 @@
       parts.push(box({ w: 0.3, h: 0.3, d: 0.08, color: "#7fe08a", emissive: 0.5, offset: { y: 0.04, z: 0.32 } }));
       parts.push(box({ w: 0.2, h: 0.2, d: 0.1, color: "#5a8a52", offset: { y: 0.04, z: 0.26 } }));
       for (const [x, y] of [[-0.13, -0.09], [0.13, -0.09], [-0.13, 0.17], [0.13, 0.17]]) parts.push(box({ w: 0.04, h: 0.04, d: 0.04, color: "#c9b48a", offset: { x, y, z: 0.37 } }));
+    } else if (kind === "ak") {
+      // The Ooga AK: a wooden stock and grip, a dark receiver, a long barrel with a front sight, and a curved banana
+      // magazine in the team's colour.
+      grip();
+      parts.push(bevelBox({ w: 0.09, h: 0.12, d: 0.36, color: "#7a4e2a", offset: { y: 0.0, z: -0.3 } }));
+      parts.push(bevelBox({ w: 0.1, h: 0.13, d: 0.42, color: METAL, offset: { y: 0.04, z: 0.08 } }));
+      parts.push(box({ w: 0.08, h: 0.06, d: 0.2, color: "#7a4e2a", offset: { y: 0.0, z: 0.36 } }));
+      parts.push(box({ w: 0.04, h: 0.04, d: 0.42, color: DARK, offset: { y: 0.06, z: 0.62 } }));
+      parts.push(box({ w: 0.03, h: 0.07, d: 0.03, color: DARK, offset: { y: 0.12, z: 0.8 } }));
+      for (let k = 0; k < 3; k++) parts.push(box({ w: 0.07, h: 0.1, d: 0.08, color: k ? c.paint : "#ffd23a", emissive: 0.3, offset: { y: -0.08 - k * 0.09, z: 0.18 + k * 0.045 } }));
     } else if (kind === "gold") {
       // The Golden AK: a gold receiver and stock, a curved magazine, a long barrel with a front sight, and a hopper
       // of gold paint on top. It shines.
@@ -433,6 +443,8 @@
     } else if (i === 2) {
       parts.push(bevelBox({ w: 0.5, h: 0.5, d: 0.5, color: "#bfe8ff", emissive: 0.7, offset: { y } }));
       parts.push(box({ w: 0.3, h: 0.06, d: 0.52, color: "#ffffff", emissive: 1, offset: { y: y + 0.1 } }));
+    } else if (i === 4) {
+      parts.push(moved(monkey(), 0, y - 0.35, 0));
     } else {
       parts.push(box({ w: 0.6, h: 0.18, d: 0.14, color: "#24242a", offset: { y } }));
       for (const x of [-0.15, 0.15]) parts.push(box({ w: 0.14, h: 0.1, d: 0.16, color: "#ff2a1a", emissive: 1, offset: { x, y } }));
@@ -515,5 +527,19 @@
     geo.castShadow = false;
     return geo;
   });
-  BL.blockModels = { catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // A monkey that rides at an Ooga's hip and fires with it (the ghost hunt's drop): a brown body and head, a tan face
+  // with dark eyes, round ears, a curled tail and a little orange blaster.
+  const monkey = cached(() => merge(
+    bevelBox({ w: 0.26, h: 0.3, d: 0.22, color: "#6a4128", offset: { y: 0.15 } }),
+    bevelBox({ w: 0.24, h: 0.22, d: 0.22, color: "#6a4128", offset: { y: 0.42 } }),
+    box({ w: 0.16, h: 0.13, d: 0.04, color: "#d8a878", offset: { y: 0.4, z: 0.11 } }),
+    box({ w: 0.04, h: 0.04, d: 0.02, color: "#140c08", offset: { x: -0.05, y: 0.44, z: 0.13 } }),
+    box({ w: 0.04, h: 0.04, d: 0.02, color: "#140c08", offset: { x: 0.05, y: 0.44, z: 0.13 } }),
+    box({ w: 0.08, h: 0.08, d: 0.04, color: "#a8704a", offset: { x: -0.15, y: 0.46 } }),
+    box({ w: 0.08, h: 0.08, d: 0.04, color: "#a8704a", offset: { x: 0.15, y: 0.46 } }),
+    box({ w: 0.05, h: 0.05, d: 0.26, color: "#6a4128", offset: { y: 0.12, z: -0.2 } }),
+    box({ w: 0.05, h: 0.18, d: 0.05, color: "#6a4128", offset: { y: 0.22, z: -0.33 } }),
+    box({ w: 0.07, h: 0.07, d: 0.24, color: ORANGE, emissive: 0.5, offset: { x: 0.1, y: 0.22, z: 0.18 } })
+  ));
+  BL.blockModels = { monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

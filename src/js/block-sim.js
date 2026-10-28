@@ -49,7 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
-    GOLD_GUNS: 2, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
+    GOLD_GUNS: 2, AK_MAG: 30, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -65,7 +65,10 @@
     sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 },
     // The Golden AK: semi-automatic paint, one ball a click with almost no wait, never empty. There are `GOLD_GUNS` a
     // round: mining a block wins one while any are left, and netting whoever holds one takes it.
-    gold: { speed: 34, lift: 1.4, gravity: 7, life: 1.2, r: 0.5, blast: 0, cool: 0.11, max: 0 }
+    gold: { speed: 34, lift: 1.4, gravity: 7, life: 1.2, r: 0.5, blast: 0, cool: 0.11, max: 0 },
+    // The Ooga AK, the island's rifle: a tap fires one round, a held trigger fires on full auto every `cool` (the island
+    // AK's 0.09 s), from a `AK_MAG`-round magazine that reloads itself in `AK_RELOAD` when it runs dry.
+    ak: { speed: 38, lift: 1.0, gravity: 6, life: 1.0, r: 0.42, blast: 0, cool: 0.09, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // The maps. A map is its blocks, each [x0, x1, z0, z1, top, bottom] (bottom 0 unless it floats: a floor, a roof or
@@ -234,7 +237,8 @@
   const MAPS = Object.keys(ARENAS);
   // The power-ups: lightning boots (a burst of speed), the halving (your side's splats last half as long), cold
   // storage (your block can't be lifted off its stand) and laser eyes (rapid paint).
-  const POWERS = ["boots", "halving", "cold", "laser"];
+  // The monkeys (the ghost hunt's drop): one at each hip, firing with every shot you take.
+  const POWERS = ["boots", "halving", "cold", "laser", "monkeys"];
   const other = (team) => team === "blue" ? "red" : "blue";
   // The bots' skill: easy bots aim wider, wait longer before throwing, throw less often, run slower and see less far;
   // hard ones the other way. "normal" is the CONFIG values.
@@ -368,7 +372,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false,
+      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -437,7 +441,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
     }
@@ -699,7 +703,7 @@
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || (kind === "gold" && !a.gold)) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || (kind === "gold" && !a.gold) || (kind === "ak" && (a.akMag <= 0 || a.akReload > 0))) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -712,7 +716,20 @@
     a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? Math.max(tool.cool, sim.bots.cool) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
-    emit(sim, kind === "paint" || kind === "gold" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
+    emit(sim, kind === "paint" || kind === "gold" || kind === "ak" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
+    // A round from the AK; an empty magazine starts its reload.
+    if (kind === "ak" && --a.akMag <= 0) { a.akReload = CONFIG.AK_RELOAD; emit(sim, "reload", a.team, id, a.x, a.y, a.z); }
+    // The monkeys fire with you: one more of the same from each hip, the same way.
+    if (a.monkeys > 0 && (kind === "paint" || kind === "ak" || kind === "gold")) {
+      for (const side of [-1, 1]) {
+        let m = null;
+        for (let i = 0; i < sim.shots.length && !m; i++) if (!sim.shots[i].live) m = sim.shots[i];
+        if (!m) break;
+        const ox = Math.cos(yaw) * side * CONFIG.MONKEY_SIDE, oz = -Math.sin(yaw) * side * CONFIG.MONKEY_SIDE;
+        m.live = true; m.kind = kind; m.team = a.team; m.owner = id; m.t = 0; m.ox = a.x; m.oz = a.z;
+        m.x = s.x + ox; m.y = s.y - 0.35; m.z = s.z + oz; m.vx = s.vx; m.vy = s.vy; m.vz = s.vz;
+      }
+    }
     return true;
   };
   // `s` is the shot that did it, if any: its thrower is credited with the hit, and a sniper's range is kept.
@@ -906,6 +923,7 @@
       const kind = POWERS[p.kind];
       if (kind === "boots") a.boots = CONFIG.BOOTS_S;
       else if (kind === "laser") a.laser = CONFIG.LASER_S;
+      else if (kind === "monkeys") a.monkeys = CONFIG.MONKEYS_S;
       else if (kind === "halving") sim.halving[a.team] = CONFIG.HALVING_S;
       else sim.cold[a.team] = CONFIG.COLD_S;
       p.dark = CONFIG.POWER_RESPAWN;
@@ -1047,6 +1065,8 @@
       if (a.cooldown > 0) a.cooldown -= dt;
       if (a.boots > 0) a.boots = Math.max(0, a.boots - dt);
       if (a.laser > 0) a.laser = Math.max(0, a.laser - dt);
+      if (a.monkeys > 0) a.monkeys = Math.max(0, a.monkeys - dt);
+      if (a.akReload > 0 && (a.akReload -= dt) <= 0) { a.akReload = 0; a.akMag = CONFIG.AK_MAG; emit(sim, "reloaded", a.team, a.id, a.x, a.y, a.z); }
       if (a.netted > 0) { a.netted -= dt; if (a.netted <= 0) { a.netted = 0; emit(sim, "unnet", a.team, a.id, a.x, a.y, a.z); } }
       if (a.splat > 0) {
         a.splat -= dt;
