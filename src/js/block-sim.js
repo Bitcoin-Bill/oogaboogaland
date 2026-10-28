@@ -50,6 +50,8 @@
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
     JET_FUEL: 2.6, JET_REFILL: 3, JET_ACCEL: 27, JET_RISE: 6, JET_CEILING: 15,
+    GORILLA_SPEED: 3.2, GORILLA_CHARGE: 6.4, GORILLA_SIGHT: 7, GORILLA_LEASH: 11, GORILLA_WANDER: 5, GORILLA_R: 0.75,
+    GORILLA_GRAB_R: 1.05, GRAB_HITS: 5, GRAB_MAX_S: 6, GORILLA_REST: 3, GORILLA_STUN: 1.6,
     GOLD_GUNS: 2, AK_MAG: 30, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
@@ -212,7 +214,64 @@
       catapults: both([[-6, 29]])
     };
   };
-  const ARENAS = { fort: fortChaos(), town: oogaTown() };
+  // Gorilla Jungle: stone forts at the ends as on Fort Chaos, and between them jungle: trees, a two-storey tree fort
+  // in each corner of each half (climbed by a cargo net), a rope bridge joining each half's pair across the middle,
+  // a giant tree in the centre with a ring platform round its trunk and a net up each side, and angry gorillas.
+  const gorillaJungle = () => {
+    const half = [], nets = [], decor = [], steps = [];
+    // The forts, as Fort Chaos has them, with a crate in the alley behind.
+    half.push([-8, 8, 32, 33, 2.4, 0], [-8, -7, 23, 32, 2.4, 0], [7, 8, 23, 32, 2.4, 0], [-8, -2.6, 23, 24, 2.4, 0], [2.6, 8, 23, 24, 2.4, 0], at(0, 34.6, 2, 1.2, 1.1));
+    // A tree: a trunk to stand under, solid to its top, and leaves above it (decor, not a block, so nothing hides in them).
+    const tree = (x, z, top = 6, w = 0.9) => { half.push(at(x, z, w, w, top)); decor.push({ kind: "canopy", x, z, y: top, r: 1.6 + w }); };
+    // The tree forts: trees at four corners, a floor at 3 m, rails round it with a gap over the net and one where the
+    // rope bridge comes in.
+    for (const s of [-1, 1]) {
+      const x0 = s > 0 ? 8.5 : -15.5, x1 = s > 0 ? 15.5 : -8.5, xm = (x0 + x1) / 2, inner = s > 0 ? x0 : x1, outer = s > 0 ? x1 : x0;
+      for (const [x, z] of [[x0 + 0.6, 10.1], [x1 - 0.6, 10.1], [x0 + 0.6, 14.9], [x1 - 0.6, 14.9]]) tree(x, z, 6.2, 0.8);
+      half.push([x0, x1, 9.5, 15.5, 3, 2.7]);
+      half.push([x0, x1, 15.3, 15.5, 3.8, 3]);
+      half.push([x0, xm - 0.6, 9.5, 9.7, 3.8, 3], [xm + 0.6, x1, 9.5, 9.7, 3.8, 3]);
+      half.push([Math.min(outer, outer - 0.2 * s), Math.max(outer, outer - 0.2 * s), 9.5, 15.5, 3.8, 3]);
+      half.push([Math.min(inner, inner + 0.2 * s), Math.max(inner, inner + 0.2 * s), 9.5, 12, 3.8, 3], [Math.min(inner, inner + 0.2 * s), Math.max(inner, inner + 0.2 * s), 13.2, 15.5, 3.8, 3]);
+      // The cargo net up its middle-facing side: climb it by pushing into it.
+      nets.push({ zone: [xm - 0.6, xm + 0.6, 8.8, 9.5], dx: 0, dz: 1, top: 3 });
+    }
+    // The rope bridge between the pair, with a rope on each side.
+    half.push([-8.5, 8.5, 12, 13.2, 3, 2.85], [-8.5, 8.5, 11.9, 12, 3.7, 3], [-8.5, 8.5, 13.2, 13.3, 3.7, 3]);
+    // More trees, bushes for low cover before the gate, and rocks at the side.
+    tree(-4.5, 8.5); tree(5, 17); tree(-18, 20, 6.5); tree(14, 4.5, 5.5); tree(-13, 21, 5.5);
+    half.push(at(-5, 19.5, 3, 1.2, 1.1), at(5, 19.5, 3, 1.2, 1.1), [-20, -18, 5, 8, 1.6, 0]);
+    // The giant tree in the middle and its ring platform, put in once: its rails leave a gap north and south for the nets.
+    const middle = [at(0, 0, 1.6, 1.6, 7.5), [-3.5, 3.5, -3.5, 3.5, 3.6, 3.3]];
+    for (const s of [-1, 1]) {
+      const z0 = s > 0 ? 3.3 : -3.5, z1 = s > 0 ? 3.5 : -3.3;
+      middle.push([-3.5, -0.6, z0, z1, 4.4, 3.6], [0.6, 3.5, z0, z1, 4.4, 3.6]);
+      middle.push([s > 0 ? 3.3 : -3.5, s > 0 ? 3.5 : -3.3, -3.5, 3.5, 4.4, 3.6]);
+    }
+    decor.push({ kind: "canopy", x: 0, z: 0, y: 7.5, r: 4.2, middle: true });
+    const midNets = [{ zone: [-0.6, 0.6, 3.5, 4.2], dx: 0, dz: -1, top: 3.6 }, { zone: [-0.6, 0.6, -4.2, -3.5], dx: 0, dz: 1, top: 3.6 }];
+    const { BLOCKS, steps: stepSet } = turnedMap(half, middle, steps);
+    const turnNet = (n) => ({ zone: [-n.zone[1], -n.zone[0], -n.zone[3], -n.zone[2]], dx: -n.dx, dz: -n.dz, top: n.top });
+    const allDecor = [];
+    for (const d of decor) { allDecor.push(d); if (!d.middle) allDecor.push({ ...d, x: -d.x, z: -d.z }); }
+    return {
+      id: "jungle", name: "Gorilla Jungle", BLOCKS, steps: stepSet, decor: allDecor,
+      nets: [...nets, ...nets.map(turnNet), ...midNets],
+      guard: { blue: { x: 0, z: 17.2 }, red: { x: 0, z: -17.2 } },
+      traps: [[-12, 4], [12, -4], [12, 19], [-12, -19], [-5, 13], [5, -13], [-15, 6], [15, -6]],
+      crates: both([[-4.6, 21], [4.6, 21], [-1.6, 29.6], [1.6, 29.6]]),
+      plug: both([[0, 21.4], [-1.3, 22.6], [1.3, 22.6]]),
+      alley: both([[-3, 35.6], [3, 35.6], [0, 31.1]]),
+      caches: [[-12, 3, 13.5], [12, 3, 13.5], [12, 3, -13.5], [-12, 3, -13.5], [2.4, 3.6, 0]],
+      tramps: [[-15, 19], [15, -19], [8, 4], [-8, -4]],
+      powers: [[-6, 18], [6, -18], [17, 11], [-17, -11], [0, 7], [0, -7]],
+      fire: [-20, 0],
+      catapults: both([[-5, 29.5]]),
+      // Where the gorillas live: each roams round its home and charges any Ooga that comes close.
+      gorillas: [[-6, 5], [6, -5], [10, 6], [-10, -6]]
+    };
+  };
+  const ARENAS = { fort: fortChaos(), town: oogaTown(), jungle: gorillaJungle() };
   // What every map shares: its size, the stands, the towers with their ladders and ziplines.
   // The banana peels the potato Oogas drop round their fire, offsets from it toward the field.
   const PEELS = [[3, 1.5], [2.2, -2.6], [0.6, 3.2], [0.8, -3.3]];
@@ -225,7 +284,11 @@
     // Each tower's footprint [x0, x1, z0, z1] and the ladder up its inward side: a zone [x0, x1, z0, z1] to climb in,
     // and the way into the tower (dx, dz) a climber pushes toward.
     A.towers = { blue: TOWER, red: turned([...TOWER, 0, 0]).slice(0, 4) };
-    A.ladders = { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0 }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0 } };
+    A.ladders = { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0, top: TOP }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0, top: TOP } };
+    // Everything climbable: the towers' ladders and the map's own nets.
+    A.climbs = [A.ladders.blue, A.ladders.red, ...(A.nets || [])];
+    A.gorillas = A.gorillas || [];
+    A.decor = A.decor || [];
     // A team's zipline: from its tower's gap (where the hands hang, `ZIP_HANG` over the feet) down into the other end.
     A.zips = {
       blue: { ax: -16.6, ay: TOP + CONFIG.ZIP_HANG, az: 26, bx: -3.5, by: 3.1, bz: -28.5 },
@@ -373,7 +436,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
+      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -384,9 +447,10 @@
     const caches = A.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
     const powers = A.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
     const peels = A.peels.map(([x, z]) => ({ x, z, dark: 0 }));
+    const gorillas = A.gorillas.map(([x, z]) => ({ hx: x, hz: z, x, y: 0, z, vx: 0, vz: 0, heading: 0, state: 0, t: 0, holding: -1, held: 0, wx: x, wz: z }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { goldLeft: CONFIG.GOLD_GUNS, map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { goldLeft: CONFIG.GOLD_GUNS, map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, gorillas, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -442,7 +506,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
-      a.fuel = CONFIG.JET_FUEL; a.jetting = false;
+      a.fuel = CONFIG.JET_FUEL; a.jetting = false; a.grabbed = a.grabHits = 0;
       a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -460,6 +524,7 @@
     for (const t of sim.traps) t.dark = 0;
     for (const c of sim.caches) c.dark = 0;
     for (const p of sim.peels) p.dark = 0;
+    for (const g of sim.gorillas) { g.x = g.wx = g.hx; g.z = g.wz = g.hz; g.vx = g.vz = 0; g.state = G_ROAM; g.t = 0; g.holding = -1; g.held = 0; }
     sim.goldLeft = CONFIG.GOLD_GUNS;
     // Each pair of spots starts with the same power (boots, laser eyes, then the halving or cold storage by the seed);
     // after that each draws from the seed, so a seed replays the round's power-ups too.
@@ -693,11 +758,11 @@
     }
     return false;
   };
-  // The ladder zone of whichever tower actor `a` stands at, or null.
+  // The climb (a tower's ladder, a jungle net) actor `a` stands at and is still below the top of, or null.
   const ladderAt = (a) => {
-    for (const t of TEAMS) {
-      const l = ARENA.ladders[t], [x0, x1, z0, z1] = l.zone;
-      if (a.x >= x0 - 0.1 && a.x <= x1 + 0.1 && a.z >= z0 && a.z <= z1) return l;
+    for (const l of ARENA.climbs) {
+      const [x0, x1, z0, z1] = l.zone;
+      if (a.y < l.top && a.x >= x0 - 0.1 && a.x <= x1 + 0.1 && a.z >= z0 - 0.1 && a.z <= z1 + 0.1) return l;
     }
     return null;
   };
@@ -705,7 +770,7 @@
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
     const a = sim.actors[id], tool = TOOLS[kind];
-    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || (kind === "gold" && !a.gold) || (kind === "ak" && (a.akMag <= 0 || a.akReload > 0))) return false;
+    if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || a.grabbed || (kind === "gold" && !a.gold) || (kind === "ak" && (a.akMag <= 0 || a.akReload > 0))) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
     if (!s) return false;
@@ -755,9 +820,86 @@
   };
   const open = (a) => a.splat <= 0 && a.guard <= 0 && a.trapped <= 0;
   // A grenade or rocket bursts: every open rival within its radius is splatted.
+  // The gorillas (Gorilla Jungle's): each roams round its home; an Ooga that comes within `GORILLA_SIGHT` (and not
+  // too far from the gorilla's home) is charged and grabbed, held up off the ground, any block in its hands dropped.
+  // `GRAB_HITS` jump presses break free (a bot struggles on its own), or the gorilla lets go after `GRAB_MAX_S`; either
+  // way it rests a while. Paint or a burst stuns a gorilla, which drops whoever it holds.
+  const G_ROAM = 0, G_CHASE = 1, G_HOLD = 2, G_REST = 3, G_STUN = 4;
+  const letGo = (sim, g, a, broke) => {
+    if (a && a.grabbed) {
+      a.grabbed = 0;
+      a.vx = Math.sin(g.heading) * 4.5; a.vz = Math.cos(g.heading) * 4.5; a.vy = 4;
+      a.grounded = false; a.guard = Math.max(a.guard, 1.2);
+      emit(sim, broke ? "breakfree" : "letgo", a.team, a.id, a.x, a.y, a.z);
+    }
+    g.holding = -1;
+    if (g.state === G_HOLD) { g.state = G_REST; g.t = CONFIG.GORILLA_REST; }
+  };
+  const stunGorilla = (sim, g, by) => {
+    if (g.state === G_HOLD) letGo(sim, g, sim.actors[g.holding], false);
+    g.state = G_STUN; g.t = CONFIG.GORILLA_STUN; g.vx = g.vz = 0;
+    emit(sim, "gorillahit", null, by, g.x, 1.6, g.z);
+  };
+  const stepGorillas = (sim, dt) => {
+    for (let i = 0; i < sim.gorillas.length; i++) {
+      const g = sim.gorillas[i];
+      if (g.t > 0) g.t -= dt;
+      if (g.state === G_HOLD) {
+        const a = sim.actors[g.holding];
+        g.held += dt;
+        if (!a || a.grabbed !== i + 1) { g.holding = -1; g.state = G_REST; g.t = CONFIG.GORILLA_REST; continue; }
+        a.x = g.x + Math.sin(g.heading) * 0.85; a.z = g.z + Math.cos(g.heading) * 0.85; a.y = 1.1;
+        a.vx = a.vz = a.vy = 0; a.grounded = false;
+        if (g.held > CONFIG.GRAB_MAX_S) letGo(sim, g, a, false);
+        continue;
+      }
+      if (g.state === G_REST || g.state === G_STUN) {
+        if (g.t > 0) { g.vx = g.vz = 0; continue; }
+        g.state = G_ROAM;
+      }
+      // The nearest Ooga in reach on the ground, not too far from home.
+      let best = null, bd = CONFIG.GORILLA_SIGHT * CONFIG.GORILLA_SIGHT;
+      for (const a of sim.actors) {
+        if (a.splat > 0 || a.trapped > 0 || a.grabbed || a.guard > 0 || a.y > 1.4 || a.riding || a.flight || a.climbing) continue;
+        if ((a.x - g.hx) ** 2 + (a.z - g.hz) ** 2 > CONFIG.GORILLA_LEASH * CONFIG.GORILLA_LEASH) continue;
+        const d = (a.x - g.x) ** 2 + (a.z - g.z) ** 2;
+        if (d < bd) { bd = d; best = a; }
+      }
+      let tx, tz, speed;
+      if (best) {
+        g.state = G_CHASE; tx = best.x; tz = best.z; speed = CONFIG.GORILLA_CHARGE;
+        if (bd < CONFIG.GORILLA_GRAB_R * CONFIG.GORILLA_GRAB_R) {
+          // Grabbed: up off the ground, block and crate let fall.
+          g.state = G_HOLD; g.holding = best.id; g.held = 0; g.vx = g.vz = 0;
+          best.grabbed = i + 1; best.grabHits = CONFIG.GRAB_HITS;
+          best.climbing = best.jetting = false;
+          if (best.holding) { best.holding = false; emit(sim, "smash", best.team, best.id, best.x, best.y + 2, best.z); }
+          emit(sim, "grab", best.team, best.id, best.x, 1.4, best.z);
+          dropFlag(sim, best, "knock");
+          continue;
+        }
+      } else {
+        g.state = G_ROAM; speed = CONFIG.GORILLA_SPEED;
+        if ((g.wx - g.x) ** 2 + (g.wz - g.z) ** 2 < 0.5) {
+          const ang = sim.rng() * Math.PI * 2, r = sim.rng() * CONFIG.GORILLA_WANDER;
+          g.wx = g.hx + Math.sin(ang) * r; g.wz = g.hz + Math.cos(ang) * r;
+        }
+        tx = g.wx; tz = g.wz;
+      }
+      const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz) || 1;
+      g.vx = dx / d * speed; g.vz = dz / d * speed;
+      const ox = g.x, oz = g.z;
+      g.x += g.vx * dt; g.z += g.vz * dt;
+      resolve(g, CONFIG.GORILLA_R);
+      // Stuck on something while wandering: pick somewhere else.
+      if (g.state === G_ROAM && Math.hypot(g.x - ox, g.z - oz) < speed * dt * 0.3) { g.wx = g.x; g.wz = g.z; }
+      g.heading = Math.atan2(g.vx, g.vz);
+    }
+  };
   const burst = (sim, s) => {
     const r = TOOLS[s.kind].blast;
     emit(sim, s.kind === "rocket" ? "boom" : "pop", s.team, s.owner, s.x, Math.max(0.05, s.y), s.z);
+    for (const g of sim.gorillas) if (g.state !== G_STUN && (g.x - s.x) ** 2 + (g.z - s.z) ** 2 < r * r) stunGorilla(sim, g, s.owner);
     for (const a of sim.actors) {
       if (a.team === s.team || !open(a)) continue;
       const dy = s.y - (a.y + 0.9);
@@ -1089,6 +1231,18 @@
         a.vx *= k; a.vz *= k;
         if (a.slip === 0) emit(sim, "steady", a.team, a.id, a.x, a.y, a.z);
       }
+      // Held by a gorilla: no moving or throwing, only struggling (a jump press each), until free.
+      if (a.grabbed) {
+        let push = false;
+        if (a.bot) push = sim.rng() < dt * 3.5;
+        else { push = !!input.jump; input.jump = 0; }
+        if (push) {
+          if (--a.grabHits <= 0) letGo(sim, sim.gorillas[a.grabbed - 1], a, true);
+          else emit(sim, "struggle", a.team, a.id, a.x, a.y, a.z);
+        }
+        a.moving = 0;
+        if (a.grabbed) continue;
+      }
       const free = a.splat <= 0 && a.trapped <= 0;
       let jump = false;
       if (a.slip > 0 || a.flight === 1) {
@@ -1180,17 +1334,18 @@
       if (a.jetting) a.fuel = Math.max(0, a.fuel - dt);
       else if (a.grounded && a.fuel < CONFIG.JET_FUEL) a.fuel = Math.min(CONFIG.JET_FUEL, a.fuel + dt * CONFIG.JET_FUEL / CONFIG.JET_REFILL);
       // A ladder: pushing into a tower's ladder climbs it, and at the top steps onto the platform.
-      const ladder = !a.bot && free && a.netted <= 0 && !a.holding && a.y < CONFIG.TOWER_TOP ? ladderAt(a) : null;
+      const ladder = !a.bot && free && a.netted <= 0 && !a.holding && !a.grabbed ? ladderAt(a) : null;
       a.climbing = !!ladder && input.x * ladder.dx + input.z * ladder.dz > 0.3;
       // Height: fall onto whatever is underneath, and stop at a floor overhead.
       const ground = groundAt(a.x, a.z, a.y + (stepUp > 0.05 ? stepUp : 0));
       if (a.climbing) {
-        a.x = (ladder.zone[0] + ladder.zone[1]) / 2;
+        // Held to the climb's line across, free along it.
+        if (ladder.dx) a.x = (ladder.zone[0] + ladder.zone[1]) / 2; else a.z = (ladder.zone[2] + ladder.zone[3]) / 2;
         a.vx = a.vz = a.vy = 0;
-        a.y = Math.min(CONFIG.TOWER_TOP, a.y + CONFIG.CLIMB * dt);
+        a.y = Math.min(ladder.top, a.y + CONFIG.CLIMB * dt);
         a.grounded = false;
         a.jumps = 0;
-        if (a.y >= CONFIG.TOWER_TOP) {
+        if (a.y >= ladder.top) {
           a.x += ladder.dx * 0.9; a.z += ladder.dz * 0.9;
           a.grounded = true; a.climbing = false;
           emit(sim, "climbed", a.team, a.id, a.x, a.y, a.z);
@@ -1242,6 +1397,7 @@
     }
     for (let n = 0; n < N; n++) touchFlags(sim, sim.actors[sim.flip ? N - 1 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
+    if (sim.gorillas.length) stepGorillas(sim, dt);
     for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
     for (const p of sim.powers) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
     for (const p of sim.peels) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
@@ -1266,6 +1422,16 @@
         // A crate is big: it counts a little over the head and under the feet.
         const dy = s.y - a.y, slack = s.kind === "crate" ? 0.45 : 0.15;
         if (dy > -slack && dy < heightOf(a) + slack && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
+      }
+      // A gorilla in the way takes it, stunned.
+      if (!hit && s.kind !== "net" && s.kind !== "crate") {
+        let gHit = null;
+        for (const g of sim.gorillas) if (g.state !== G_STUN && s.y < 2.3 && (s.x - g.x) ** 2 + (s.z - g.z) ** 2 < 0.95) { gHit = g; break; }
+        if (gHit) {
+          s.live = false;
+          if (tool.blast) burst(sim, s); else stunGorilla(sim, gHit, s.owner);
+          continue;
+        }
       }
       const solid = !hit && solidAt(s.x, s.y, s.z), spent = s.t > tool.life;
       if (!hit && !solid && !spent) continue;

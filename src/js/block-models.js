@@ -30,7 +30,7 @@
   // wall block in stone with a team-coloured cap near its fort, timber crates for the field's low cover, and the
   // centre tower in dark stone with an orange band.
   const arena = variants((mapIndex) => {
-    const M = SIM.ARENAS[SIM.MAPS[mapIndex]], town = M.id === "town", parts = [];
+    const M = SIM.ARENAS[SIM.MAPS[mapIndex]], town = M.id === "town", jungle = M.id === "jungle", parts = [];
     parts.push(box({ w: A.W * 2 + 4, h: 1, d: A.L * 2 + 4, color: "#6b5a3e", offset: { y: -0.5 } }));
     parts.push(box({ w: A.W * 2, h: 0.04, d: A.L * 2, color: "#c9a96b", offset: { y: 0.02 } }));
     parts.push(box({ w: A.W * 2, h: 0.05, d: 0.6, color: ORANGE, emissive: 0.25, offset: { y: 0.03 } }));
@@ -47,6 +47,20 @@
     for (const s of [-1, 1]) {
       parts.push(bevelBox({ w: 0.6, h: 0.8, d: A.L * 2 + 0.6, color: "#7d7468", offset: { x: s * (A.W + 0.3), y: 0.4 } }));
       parts.push(bevelBox({ w: A.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (A.L + 0.3), y: 0.4 } }));
+    }
+    if (jungle) {
+      // Jungle floor: moss over the sand, darker patches, and the leaves of every tree (decor: nothing stops in them).
+      parts.push(box({ w: A.W * 2, h: 0.045, d: A.L * 2 - 26, color: "#5f7a3a", offset: { y: 0.03 } }));
+      const r = (k) => ((Math.sin(k * 12.9898) * 43758.5453) % 1 + 1) % 1;
+      for (let k = 0; k < 40; k++) parts.push(box({ w: 1 + r(k) * 2.5, h: 0.05, d: 1 + r(k + 50) * 2.5, color: k % 2 ? "#4c6a2e" : "#6e8a44", offset: { x: (r(k + 100) - 0.5) * A.W * 1.9, y: 0.035, z: (r(k + 150) - 0.5) * (A.L * 2 - 28) } }));
+      for (const d of M.decor) {
+        if (d.kind !== "canopy") continue;
+        for (let k = 0; k < 6; k++) {
+          const a = k / 6 * Math.PI * 2 + d.x, rr = d.r * (k % 2 ? 0.55 : 0.75);
+          parts.push(bevelBox({ w: d.r * 0.9, h: 0.9, d: d.r * 0.9, color: k % 3 ? "#2f6a2a" : "#3f8a34", offset: { x: d.x + Math.sin(a) * rr, y: d.y + 0.3 + (k % 2) * 0.4, z: d.z + Math.cos(a) * rr } }));
+        }
+        parts.push(bevelBox({ w: d.r * 1.1, h: 1.1, d: d.r * 1.1, color: "#3a7a30", offset: { x: d.x, y: d.y + 0.9, z: d.z } }));
+      }
     }
     if (town) {
       // Cobbled streets: a darker band down the middle and across the square.
@@ -67,6 +81,25 @@
         parts.push(bevelBox({ w, h, d, color: "#c4a676", offset: { x, y, z } }));
         parts.push(box({ w: w + 0.03, h: 0.5, d: d + 0.03, color: "#8a7350", offset: { x, y: 0.25, z } }));
         parts.push(box({ w: w + 0.04, h: 0.2, d: d + 0.04, color: bank ? TEAM[z > 0 ? "blue" : "red"].paint : "#7a5a3a", emissive: bank ? 0.15 : 0, offset: { x, y: b[4] - 0.25, z } }));
+        continue;
+      }
+      if (jungle && w <= 1.7 && d <= 1.7 && h >= 5) {
+        // A tree trunk: bark with paler rings and a vine.
+        parts.push(bevelBox({ w, h, d, color: "#5a3e26", offset: { x, y, z } }));
+        for (let k = 1; k < h; k += 1.3) parts.push(box({ w: w + 0.04, h: 0.08, d: d + 0.04, color: "#6e4e30", offset: { x, y: k, z } }));
+        parts.push(box({ w: 0.08, h: h * 0.8, d: 0.08, color: "#3f8a34", offset: { x: x + w / 2, y: h * 0.45, z: z + d / 4 } }));
+        continue;
+      }
+      if (jungle && bottom > 2.6 && h < 0.4 && Math.min(w, d) <= 1.3) {
+        // The rope bridge: planks on ropes.
+        parts.push(box({ w, h: 0.1, d, color: "#8a6440", offset: { x, y: b[4] - 0.05, z } }));
+        for (let k = b[0]; k < b[1]; k += 0.5) parts.push(box({ w: 0.06, h: 0.11, d: d + 0.02, color: "#5a3a22", offset: { x: k, y: b[4] - 0.04, z } }));
+        continue;
+      }
+      if (jungle && bottom >= 3 && h < 1 && Math.min(w, d) <= 0.25) {
+        // A rope rail.
+        parts.push(box({ w, h: 0.07, d, color: "#c9a96b", offset: { x, y: b[4] - 0.05, z } }));
+        parts.push(box({ w, h: 0.05, d, color: "#a8884e", offset: { x, y: bottom + 0.35, z } }));
         continue;
       }
       const fort = Math.abs(z) > 22 && Math.abs(z) < 34, team = z > 0 ? "blue" : "red";
@@ -561,5 +594,12 @@
     geo.castShadow = false;
     return geo;
   });
-  BL.blockModels = { jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // A cargo net hung on a climb's face: rope squares from the ground to its top, `w` wide, in its own frame facing +z.
+  const net2 = variants((key) => {
+    const [w10, top10] = key.split(":").map(Number), w = w10 / 10, top = top10 / 10, parts = [];
+    for (let x = -w / 2; x <= w / 2 + 0.01; x += 0.3) parts.push(box({ w: 0.05, h: top, d: 0.05, color: "#c9a96b", offset: { x, y: top / 2 } }));
+    for (let y = 0.15; y <= top; y += 0.3) parts.push(box({ w, h: 0.05, d: 0.05, color: "#b0905a", offset: { y } }));
+    return merge(...parts);
+  });
+  BL.blockModels = { net2, jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

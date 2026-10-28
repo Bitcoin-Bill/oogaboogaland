@@ -459,6 +459,10 @@
     else if (t === "go") c.go();
     else if (t === "burn") c.burn(me ? 1 : k);
     else if (t === "slip") c.slip(me ? 1 : k);
+    else if (t === "grab") c.roar(me ? 1 : k);
+    else if (t === "struggle" && me) c.grunt();
+    else if (t === "breakfree" && me) c.free();
+    else if (t === "gorillahit") c.yelp(k);
     else if (me && t === "trap") c.trap();
     else if (me && (t === "refill" || t === "cache")) c.refill();
     else if (me && t === "rifle") c.rifle();
@@ -494,6 +498,9 @@
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
+    else if (t === "grab") feed(`A gorilla grabbed ${e.actor === 0 ? "you" : who}!`, e.team);
+    else if (t === "breakfree") feed(`${who} wriggled free of a gorilla`, e.team);
+    else if (t === "gorillahit" && e.actor >= 0) feed(`${nameOf(e.actor)} stunned a gorilla`, sim.actors[e.actor].team);
     else if (t === "gold") feed(`${who} won a Golden AK!`, e.team);
     else if (t === "launch") feed(`${who} catapulted toward the ${TEAM_NAME[SIM.other(e.team)]} fort!`, e.team);
     else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden AK!`, e.team);
@@ -540,6 +547,8 @@
       g.fillStyle = BM.TEAM[t].paint;
       g.fillRect(mapX(f.x) - 2, mapY(f.z) - 2, 4, 4);
     }
+    g.fillStyle = "#3a2a1c";
+    for (const go of sim.gorillas) g.fillRect(mapX(go.x) - 3, mapY(go.z) - 3, 6, 6);
     for (let i = sim.actors.length - 1; i >= 0; i--) {
       const a = sim.actors[i];
       g.fillStyle = a.gold ? "#f2c230" : i === 0 ? "#ffffff" : BM.TEAM[a.team].light;
@@ -694,7 +703,18 @@
       } else if (e.type === "slip") {
         fx.burst(e.x, 0.3, e.z, 8, ORANGE_BITS, 1.6);
         if (me) { center("SLIP!", 900); notice("Banana peel! Spinning…", 1500); }
-      } else if (e.type === "steady") { if (me) notice("Back on your feet", 900); }
+      } else if (e.type === "grab") {
+        fx.burst(e.x, 1.6, e.z, 12, WOOD_BITS, 2.2);
+        gorillaPoke(e.actor);
+        if (me) {
+          center("GRABBED!", 1000);
+          notice(COARSE ? "A gorilla has you! Tap Jump 5 times to wriggle free" : "A gorilla has you! Mash Space 5 times to wriggle free", 3000);
+        } else say(e.actor, LINES.bonk, 1.3);
+      } else if (e.type === "struggle") { if (me) notice(`Wriggle! ${sim.actors[0].grabHits} more`, 700); }
+      else if (e.type === "breakfree") { fx.burst(e.x, e.y + 0.8, e.z, 10, STAR_BITS, 2); if (me) { center("FREE!", 800); notice("Run before it grabs you again!", 1500); } }
+      else if (e.type === "letgo") { if (me) notice("The gorilla got bored and dropped you", 1500); }
+      else if (e.type === "gorillahit") fx.burst(e.x, e.y, e.z, 10, STAR_BITS, 2);
+      else if (e.type === "steady") { if (me) notice("Back on your feet", 900); }
       else if (e.type === "burn") {
         fx.burst(e.x, 0.4, e.z, 14, ORANGE_BITS, 2.4);
         if (me) {
@@ -1028,6 +1048,13 @@
         p.legL.rotation.x = p.legR.rotation.x = 0;
         continue;
       }
+      if (s.grabbed) {
+        // Held up by a gorilla: kicking and flailing.
+        const w = Math.sin(elapsed * 16 + i);
+        p.armL.rotation.x = -2.6 + w * 0.6; p.armR.rotation.x = -2.6 - w * 0.6;
+        p.legL.rotation.x = -0.7 * w; p.legR.rotation.x = 0.7 * w;
+        continue;
+      }
       if (s.slip > 0) {
         // Slipping: arms flung out, one leg up.
         p.armL.rotation.x = p.armR.rotation.x = -1.6;
@@ -1341,6 +1368,7 @@
     poseStamina();
     posePads(elapsed);
     poseFire(elapsed);
+    poseGorillas(dt, elapsed);
     poseShots();
     if (phase === "board") boardView(elapsed, dt);
     else updateCamera(dt);
@@ -1465,6 +1493,36 @@
       return { body, armL, armR, k };
     });
     peelNodes = A.peels.map(([x, z], i) => add(createNode({ geometry: BM.peel(), position: { x, y: 0.01, z }, rotation: { x: 0, y: i * 1.7, z: 0 } })));
+    // Gorilla Jungle: the cargo nets up to the tree forts, and the gorillas themselves.
+    for (const n of A.nets || []) {
+      const [x0, x1, z0, z1] = n.zone, w = n.dx ? z1 - z0 : x1 - x0;
+      const key = `${Math.round(Math.max(w, 1.2) * 10)}:${Math.round(n.top * 10)}`;
+      add(createNode({ geometry: BM.net2(key), position: { x: (x0 + x1) / 2, y: 0, z: (z0 + z1) / 2 }, rotation: { x: 0.08, y: n.dx ? Math.PI / 2 : 0, z: 0 } }));
+    }
+    disposeGorillas();
+    gorillaRigs = A.gorillas.map(([x, z]) => {
+      const rig = BL.agent.create({ managed: true, groundAt: () => 0, x, z, scale: GORILLA_SCALE });
+      add(rig.root);
+      return rig;
+    });
+  };
+  // The gorillas follow the sim: walking or charging, standing still holding an Ooga up, or dazed when painted.
+  const GORILLA_SCALE = 1.35;
+  let gorillaRigs = [];
+  const disposeGorillas = () => { for (const rig of gorillaRigs) rig.dispose(); gorillaRigs = []; };
+  const gorillaPoke = (actor) => {
+    if (!sim) return;
+    const i = sim.gorillas.findIndex((g) => g.holding === actor), rig = gorillaRigs[i];
+    if (rig && rig.pound) rig.pound(false, 1);
+  };
+  const poseGorillas = (dt, elapsed) => {
+    if (!sim || !gorillaRigs.length) return;
+    for (let i = 0; i < gorillaRigs.length; i++) {
+      const g = sim.gorillas[i], rig = gorillaRigs[i];
+      if (!g || !rig) continue;
+      const stunned = g.state === 4, wob = stunned ? Math.sin(elapsed * 14) * 0.25 : 0;
+      rig.poseManaged(dt, g.x, 0, g.z, g.heading + wob, stunned ? 0 : Math.hypot(g.vx, g.vz), false);
+    }
   };
   // The fire flickers and spits embers; the potato Oogas dance round it, hopping and waving.
   const poseFire = (elapsed) => {
@@ -1764,6 +1822,7 @@
     for (const b of el.answers) b.removeEventListener("click", onAnswer);
     closeQuiz();
     disposeActors();
+    disposeGorillas();
     fx.dispose();
     controls.dispose();
     hud.el.act.hidden = true;

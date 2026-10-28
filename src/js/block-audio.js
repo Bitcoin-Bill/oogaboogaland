@@ -159,7 +159,12 @@
       block: () => { chord([12, 7, 12, 19], 0.11, "square", 0.08, 0.2); boomNoise(0.35, 1.2); },
       power: () => chord([0, 7, 12, 19, 24], 0.04, "square", 0.04, 0.16),
       slip: (k = 1) => { blip("sine", 1200, 180, 0.005, 0.05, 0.6, 0.22 * k); blip("triangle", 300, 600, 0.005, 0.05, 0.15, 0.1 * k, 0.45); },
-      burn: (k = 1) => { burst("splat", "splatFilter", 0.5 * k, 0.005, 0.6, 4000, 1500); blip("square", 880, 1320, 0.005, 0.08, 0.1, 0.16 * k); }
+      burn: (k = 1) => { burst("splat", "splatFilter", 0.5 * k, 0.005, 0.6, 4000, 1500); blip("square", 880, 1320, 0.005, 0.08, 0.1, 0.16 * k); },
+      // A gorilla: a low growling roar as it grabs, a grunt each struggle, a yelp when it's painted.
+      roar: (k = 1) => { blip("sawtooth", 140, 70, 0.04, 0.35, 0.4, 0.26 * k); blip("sawtooth", 95, 55, 0.05, 0.3, 0.4, 0.2 * k, 0.05); boomNoise(0.4 * k, 0.8); },
+      grunt: (k = 1) => blip("sawtooth", 180, 110, 0.01, 0.05, 0.1, 0.14 * k),
+      yelp: (k = 1) => blip("square", 500, 220, 0.005, 0.06, 0.2, 0.16 * k),
+      free: () => chord([0, 7, 12], 0.05, "triangle", 0.05, 0.18)
     };
     // The held layers follow `state` each frame: wind and rain from the weather (0 to 1), the whir from the zipline.
     const update = () => {
