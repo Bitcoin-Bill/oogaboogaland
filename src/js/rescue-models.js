@@ -75,14 +75,14 @@
       b("#8a5a32",0,.16,0,1.8,.06,.42);for(const x of [-.82,.82])b("#6a4426",x,.08,0,.08,.16,.38);
       for(let i=0;i<4;i++)piece("bowl",i&1,-.63+i*.42,.19,0);
     }else if(kind==="pen"){
-      // A puppy pen: eight wire panels round an octagon about two metres across.
-      for(let i=0;i<8;i++){
-        const a=(i+.5)/8*Math.PI*2,g=[];
-        g.push(M.box({color:steel,w:.82,h:.04,d:.04,offset:{y:.6}}),M.box({color:steel,w:.82,h:.04,d:.04,offset:{y:.04}}));
-        for(let k=0;k<7;k++)g.push(M.box({color:"#c9ced6",w:.02,h:.56,d:.02,offset:{x:-.36+k*.12,y:.32}}));
-        g.push(M.box({color:"#5c6168",w:.05,h:.66,d:.05,offset:{x:.41,y:.33}}));
-        parts.push(M.moved(M.turnedY(M.merge(...g),a+Math.PI/2),Math.cos(a)*.99,0,Math.sin(a)*.99));
+      // Four joined wire panels and corner posts make a closed square within the room's 2.1 m footprint.
+      for(let i=0;i<4;i++){
+        const g=[];
+        for(const y of [.04,.6])g.push(M.box({color:steel,w:2.05,h:.04,d:.04,offset:{y,z:1.025}}));
+        for(let k=0;k<17;k++)g.push(M.box({color:"#c9ced6",w:.02,h:.56,d:.02,offset:{x:-.96+k*.12,y:.32,z:1.025}}));
+        parts.push(M.turnedY(M.merge(...g),i*Math.PI/2));
       }
+      for(const x of [-1.025,1.025])for(const z of [-1.025,1.025])b("#5c6168",x,.33,z,.05,.66,.05);
     }else if(kind==="fence"){
       // A low picket fence `variant` metres long about x: two rails and pointed pickets.
       for(const y of [.18,.48])b("#e9e1d0",0,y,0,variant,.06,.05);

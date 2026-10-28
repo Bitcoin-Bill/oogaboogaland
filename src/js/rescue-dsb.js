@@ -96,7 +96,7 @@
     // The rescue's venue for the scene's menu zones and Space.
     const venue={open:route=>open(route),get isOpen(){return menu.isOpen;}};
     // Follow the account's own Ooga, or the signed-out debug visitor's driven Ooga, when either changes.
-    let me,player;
+    let me,player,sleepTimer=0,sleepIndex=0;
     const follow=()=>{
       const who=login(),cave=ownOoga(),out=cave&&who&&store.dogs[who]?who:null;
       if(out!==shownFor){shownFor=out;dogs.setOwn(cave,out&&store.dogs[out]);}
@@ -106,13 +106,19 @@
       if(BL.net.state.me!==me||DEBUG&&crew.player!==player){me=BL.net.state.me;player=crew.player;follow();}
       const now=room();
       if(now!==inRoom){
-        inRoom=now;if(pick){input.remove(pick.screen);pick=null;}
+        inRoom=now;sleepTimer=0;sleepIndex=0;if(pick){input.remove(pick.screen);pick=null;}
         if(now){pick=now;input.add(now.screen,{kind:"rescue-desk"});lastLine=null;line();}
       }
       if(DEBUG&&!reviewed&&now&&!interiors.transitioning){
         reviewed=true;const view=params.get("view");
         if(now.reviews[view])pilot.navigate(now.reviews[view]);
         if(view==="rescue-adopt"){pilot.navigate(now.reviews["rescue-kennels"]);open();}
+      }
+      // The four scenery puppies sleep all day; stagger their rising Zs like the outdoor strays'.
+      if(now&&!interiors.transitioning&&(sleepTimer-=dt)<=0){
+        const heads=now.sleepHeads,k=sleepIndex*3;
+        fx.zzzAt(heads[k],heads[k+1],heads[k+2]);
+        sleepIndex=(sleepIndex+1)%(heads.length/3);sleepTimer=1.6/(heads.length/3);
       }
       dogs.update(dt,time,day,!interiors.active?D.CHORA:now?D.YARD:D.ROOM);
       button.update();

@@ -19654,7 +19654,7 @@ const rescueChecks = BL => {
     for(let i=0;i<homeCount;i++){clearAll&&=homeClear(homes[i*3],homes[i*3+1],homes[i*3+2]);for(let j=0;j<i;j++)spread&&=Math.hypot(homes[i*3]-homes[j*3],homes[i*3+2]-homes[j*3+2])>=D.HOME_GAP;if(i<D.STRAY_TIER.low)quarters.add((homes[i*3]>0?1:0)+(homes[i*3+2]>0?2:0));}
     for(let i=0;i<D.NEAR_HOMES;i++)for(let j=D.NEAR_HOMES;j<homeCount;j++)nearest&&=fromDoor(i)<=fromDoor(j);
     record("Rescue strays: 300 seeded homes across DSB Land, clear, three metres apart, the four nearest the rescue first, the low tier's sixty already in every quarter of the island, the same on every page",homeCount===D.STRAY_CAP&&homes.every((n,i)=>n===twice[i])&&spread&&nearest&&clearAll&&quarters.size===4,JSON.stringify({homeCount,spread,nearest,clearAll,quarters:[...quarters]}));
-    const renderer={quality:"high"},world={level:3},fx={say:noop,sayAt:noop,burst:noop,puff:noop},camera=W.camera,owned=new Map(),released=[];
+    const renderer={quality:"high"},world={level:3},fx={say:noop,sayAt:noop,burst:noop,puff:noop,zzzAt:noop},camera=W.camera,owned=new Map(),released=[];
     const look=(x,y,z,tx,ty,tz)=>{Object.assign(camera.position,{x,y,z});Object.assign(camera.target,{x:tx,y:ty,z:tz});};
     const ground=(x,z,feet)=>I.active?I.groundAt(x,z):Math.max(land.groundAt(x,z),W.ground(x,z));
     const standable=(x,y,z)=>dry(x,z)&&(!!I.active||y-land.groundAt(x,z)<.9)&&(I.active?I.walkable(x,z,x,z,y,.6,DOG):W.walkable(x,z,x,z,y,.6,DOG));

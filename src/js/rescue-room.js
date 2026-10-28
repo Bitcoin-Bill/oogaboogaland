@@ -35,7 +35,7 @@
     // The adoption desk by the door, its sign hung over it.
     const desk=S.createNode({position:{x:5.6,y:0,z:4.2}});S.addChild(root,desk);
     block(desk,C.wood,0,.5,0,3.2,1,1.1);block(desk,C.cream,0,1.04,0,3.36,.08,1.24);block(desk,C.trim,0,.5,.56,3,.18,.02);
-    for(const x of [-1.5,1.5])block(desk,C.wood,x,2.6,0,.08,2,.08);const screen=block(desk,C.trim,0,3.25,0,3.1,.62,.1);label(desk,"ADOPT A PUPPY",0,3.12,.07,.3,C.cream);
+    for(const x of [-1.5,1.5])block(desk,C.wood,x,2.08,0,.08,2,.08);const screen=block(desk,C.trim,0,2.73,0,3.1,.62,.1);label(desk,"ADOPT A PUPPY",0,2.6,.07,.3,C.cream);
     solid(5.6,4.2,3.2,1.1);fixtures.push({node:desk,floor:0,kind:"desk"});
     // Travel crates and a bench along the left wall, planters by the door.
     for(const z of [1.2,3])prop(root,"crate",-8.1,0,z,0,Math.PI/2);solid(-8.1,2.1,.8,3);
@@ -47,13 +47,18 @@
     // The puppies' pen, two of them asleep in it with a ball; beds and a basket by the wall, one more asleep in each
     // of two. Sleepers are scenery: the dogs that wait to be adopted stand at the dog houses.
     prop(root,"pen",-4.8,0,2);solid(-4.8,2,2.1,2.1);
-    const sleepers=[[-5.15,1.75,0,.5],[-4.35,2.35,3,-2.2]];
-    for(const [x,z,k,a] of sleepers)prop(root,"sleeper",x,0,z,k,a);prop(root,"ball",-4.35,0,1.5,1);
+    const sleepHeads=[];
+    const sleeper=(x,y,z,k,a)=>{
+      prop(root,"sleeper",x,y,z,k,a);
+      sleepHeads.push(x+Math.cos(a)*.3,y+.36,z-Math.sin(a)*.3);
+    };
+    sleeper(-5.15,0,1.75,0,.5);sleeper(-4.35,0,2.35,3,-2.2);prop(root,"ball",-4.35,0,1.5,1);
     for(const [kind,x,z,v,pup] of [["bed",-6.7,0,0,5],["bed",-2.6,4.8,1,-1],["basket",-6.4,6.5,2,1],["bed",3.9,-2.6,3,-1]]){
-      prop(root,kind,x,0,z,v);solid(x,z,.9,.9);
-      if(pup>=0){sleepers.push([x,z,pup]);prop(root,"sleeper",x+.04,kind==="bed"?.12:.1,z,pup,.8);}
+      // Broader cushions fit the whole curled puppy, nose included, at the same resting height.
+      const bed=prop(root,kind,x,0,z,v),diameter=(kind==="bed"?.94:.9)*1.75;
+      bed.scale.x=bed.scale.z=1.75;solid(x,z,diameter,diameter);
+      if(pup>=0)sleeper(x+.04,kind==="bed"?.12:.1,z,pup,.8);
     }
-    for(const [x,z,v] of sleepers)label(root,"z Z",x,.62,z,.1,C.cream);
     // Toys about the floor.
     for(const [kind,x,z,v,a] of [["ball",-1.7,-2.9,0,0],["ball",3.6,-6.6,2,0],["ball",-3.4,6.4,3,0],["rope",1.9,-2.5,1,.6],["rope",-2.2,2.6,2,-.4],["bone",5.6,-2.4,0,1.2]])prop(root,kind,x,0,z,v,a);
     // Food: sacks of kibble in the corner by the desk and a row of bowls along the front wall.
@@ -80,7 +85,7 @@
     };
     const lighting={clear:[.06,.05,.04],sky:[.62,.58,.5],ground:[.42,.36,.28],direct:[1,.92,.78],directStrength:.42,ambientFloor:.5,sun:{x:.3,y:.9,z:.25},shadowCenter:{x:0,y:2.5,z:0},shadowExtent:15,shadowStrength:.16,bloomStrength:.2,fog:[.06,.05,.04],fogNear:40,fogFar:80,lights:new Float32Array([0,4.4,-6.5,11,1,.86,.62,0,-6,4.4,0,9,1,.84,.6,0,6,4.4,0,9,1,.84,.6,0,5.6,4.2,4.2,8,1,.8,.55,0,0,4.4,7.5,9,1,.86,.64,0]),lightCount:5};
     const setLine=text=>{line.geometry=BL.dsbModels.text(text,C.gold);};
-    return {id:"puppy-rescue",root,lighting,exitDoor,screen,line,setLine,solids,seats:[],reviews,menuZones,fixtures,yard:YARD,counts:{kennels:KENNELS.length,bowls:BOWLS.length,lights:5,beds:4,sleepers:4},dimensions:{width:18,depth:20,height:5},groundAt:()=>0,ceiling:4.93,spawnYaw:0,followDistance:3,spawn:{x:0,y:0,z:7.6},exit:{x:0,y:0,z:9},bounds:{minX:-8.7,maxX:8.7,minZ:-9.7,maxZ:9.7},browseGoals:Object.values(reviews).map(r=>r.position)};
+    return {id:"puppy-rescue",root,lighting,exitDoor,screen,line,setLine,solids,seats:[],reviews,menuZones,fixtures,sleepHeads:new Float32Array(sleepHeads),yard:YARD,counts:{kennels:KENNELS.length,bowls:BOWLS.length,lights:5,beds:4,sleepers:4},dimensions:{width:18,depth:20,height:5},groundAt:()=>0,ceiling:4.93,spawnYaw:0,followDistance:3,spawn:{x:0,y:0,z:7.6},exit:{x:0,y:0,z:9},bounds:{minX:-8.7,maxX:8.7,minZ:-9.7,maxZ:9.7},browseGoals:Object.values(reviews).map(r=>r.position)};
   };
   // Outside: the lower Chora's lane where the strays nearest the rescue have their homes, and the Chora from above with
   // the strays all over it.

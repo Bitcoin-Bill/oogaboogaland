@@ -43,7 +43,7 @@
   const HUNGER_SECONDS = 600, HUNGRY = 0.7, STARVE_SECONDS = 90;
   // Seconds between two poops of a fed dog, jittered by a throwaway roll; a stray goes half as often.
   const POOP_MIN = 120, POOP_SPAN = 120, STRAY_POOP_MIN = 240, STRAY_POOP_SPAN = 240;
-  const EAT_SECONDS = 2.6, SQUAT_SECONDS = 1.4, RESTOCK_SECONDS = 4;
+  const EAT_SECONDS = 2.6, FOOD_DROP_SECONDS = 0.4, SQUAT_SECONDS = 1.4, RESTOCK_SECONDS = 4;
   // A dog stopped by a wall further than LEFT_BEHIND from its Ooga, or whose Ooga moved more than MOVED in one frame
   // (a door, the deep-water return), turns up beside it; a hungry one trots after an Ooga further off than TROT.
   const WALK = 2.2, RUN = 4.6, LEFT_BEHIND = 2.5, MOVED = 3, TROT = 4;
@@ -390,6 +390,8 @@
     // Only the adopted dog wears a tag; its cached breed geometry follows the body's pose.
     const tag = createNode({ visible: false }), tags = BREEDS.map((b, i) => geometryOf(i, "tag"));
     addChild(root, tag);
+    const food = createNode({ geometry: BL.models.bananaGeometry(), visible: false });
+    addChild(root, food);
     const layouts = BREEDS.map(layoutOf);
     const DUST = [BL.models.particleGeometry("#8a5a32", 0.06, 0), BL.models.particleGeometry("#c9b28a", 0.05, 0)];
     const HEARTS = [BL.models.particleGeometry("#ff6b8a", 0.07, 0.8), BL.models.particleGeometry("#ffd0dc", 0.05, 0.8)];
@@ -398,6 +400,7 @@
     const px = new Float32Array(DOG_CAP), py = new Float32Array(DOG_CAP), pz = new Float32Array(DOG_CAP);
     const yaw = new Float32Array(DOG_CAP), speed = new Float32Array(DOG_CAP), phase = new Float32Array(DOG_CAP);
     const timer = new Float32Array(DOG_CAP), poopTimer = new Float32Array(DOG_CAP), starve = new Float32Array(DOG_CAP);
+    const sleepMark = new Float32Array(DOG_CAP);
     const grow = new Float32Array(DOG_CAP), side = new Float32Array(DOG_CAP), wagT = new Float32Array(DOG_CAP);
     const goalX = new Float32Array(DOG_CAP), goalZ = new Float32Array(DOG_CAP), spotOf = new Int16Array(DOG_CAP).fill(-1);
     const owners = new Array(DOG_CAP).fill(null), entries = new Array(DOG_CAP).fill(null);
@@ -418,6 +421,7 @@
     // the ground it is landing on, and the next spark under its jetpack.
     let own = -1, ownX = 0, ownY = 0, ownZ = 0, lookUp = false, landX = 0, landY = 0, landZ = 0, spark = 0;
     let fallSpeed = 0, landingHover = false;
+    let mealQueued = false, foodY = 0;
     const cursor = new Int32Array(BREEDS.length * 2);
     // Pick targets, made once a visit: one for each dog drawn, handed to whichever dog is drawn in its turn each frame,
     // and one a poop, each shown only while in use and in view.
@@ -507,6 +511,7 @@
       homeNext = (homeNext + 1) % homeCount;
       state[i] = STRAY; space[i] = CHORA; mood[i] = REST; homeOf[i] = h; homeDog[h] = i; breedOf[i] = strayBorn++ % BREEDS.length; tagged[i] = null;
       owners[i] = entries[i] = null; spotOf[i] = -1; grow[i] = grown ? 1 : 0; wagT[i] = 0; lag[i] = 0; stuck[i] = 0;
+      sleepMark[i] = (i * 0.61803398875 % 1) * 1.6;
       place(i, homes[h * 3], homes[h * 3 + 2], (h * 2.39996) % 6.28, homes[h * 3 + 1]);
       side[i] = h & 1 ? 0.6 : -0.6; timer[i] = 1 + Math.random() * 3; look[i] = Math.random() * 3;
       poopTimer[i] = Math.random() * (STRAY_POOP_MIN + STRAY_POOP_SPAN);
@@ -588,7 +593,9 @@
       }
       e.hunger = 0;
       starve[i] = 0;
-      state[i] = EAT; timer[i] = EAT_SECONDS; wagT[i] = EAT_SECONDS + 2;
+      if (state[i] !== FLY && state[i] !== LAND) state[i] = EAT;
+      timer[i] = EAT_SECONDS; wagT[i] = EAT_SECONDS + 2;
+      mealQueued = true;
       fx.burst(px[i], py[i] + 0.45, pz[i], 7, HEARTS, 1.1);
       hud.toast(`${e.name} ate a banana · thank you!`);
       return true;
@@ -608,7 +615,7 @@
     // The own dog leaves the visit (signed out, or another login); `entry` and its Ooga `cave`, when given, bring one
     // in at that Ooga's side.
     const setOwn = (cave, entry) => {
-      tag.visible = false;
+      tag.visible = food.visible = false; mealQueued = false;
       if (own >= 0) { state[own] = FREE; owners[own] = entries[own] = null; own = -1; }
       if (!cave || !entry) return;
       const i = freeSlot();
@@ -637,7 +644,7 @@
     const giveUp = (i, hungry = true) => {
       const e = entries[i];
       hud.toast(hungry ? `${e.name} was hungry too long and went back to Free Puppies Rescue.` : `${e.name} went back to Free Puppies Rescue.`);
-      owners[i] = entries[i] = null; own = -1; tag.visible = false;
+      owners[i] = entries[i] = null; own = -1; tag.visible = food.visible = false; mealQueued = false;
       state[i] = here === ROOM ? FREE : HOME;
       space[i] = here === CHORA ? CHORA : YARD;
       goalX[i] = here === CHORA ? door[0] : yard.x; goalZ[i] = here === CHORA ? door[1] : yard.z;
@@ -730,6 +737,7 @@
       if (e.hunger >= 1 && (starve[i] += dt) >= STARVE_SECONDS) { giveUp(i); return; }
       const up = here === CHORA && airborne(cave, p, feet), across = side[i] < 0 ? -FLY_SIDE : FLY_SIDE, tx = p.x + ch * across, tz = p.z - sh * across;
       if (moved && !up) {
+        if (state[i] === EAT) mealQueued = true;
         beside(i, p, feet, h);
         if (state[i] === FLY || state[i] === LAND) state[i] = FOLLOW;
       }
@@ -739,6 +747,7 @@
         fallSpeed = Math.min(0, cave.hopV || 0); landingHover = false;
       }
       if (flying) {
+        if (state[i] === EAT) mealQueued = true;
         if (state[i] !== FLY) { state[i] = FLY; stuck[i] = 0; fallSpeed = 0; landingHover = false; }
         // Left far behind, its Ooga moved, or held up a while with no way on: it catches up in the air next to it,
         // where its Ooga could fly.
@@ -780,6 +789,15 @@
         else if ((lag[i] += dt) > HELD_UP) { px[i] = landX; pz[i] = landZ; py[i] = landY; lag[i] = 0; }
         if (Math.hypot(landX - px[i], landZ - pz[i]) < 0.15 && py[i] - landY < 0.2) { py[i] = landY; state[i] = FOLLOW; speed[i] = 0; stuck[i] = 0; }
         return;
+      }
+      // A feed offered in flight waits for landing. One retained banana drops just ahead of the muzzle.
+      if (mealQueued) {
+        const L = layouts[breedOf[i]], ahead = (L.headFront + BREEDS[breedOf[i]].snout[2] + 1) * U + 0.06;
+        food.position.x = px[i] + Math.sin(yaw[i]) * ahead;
+        food.position.z = pz[i] + Math.cos(yaw[i]) * ahead;
+        foodY = py[i] + 0.045;
+        food.rotation.x = Math.PI / 2; food.rotation.y = yaw[i];
+        state[i] = EAT; timer[i] = EAT_SECONDS; mealQueued = false;
       }
       if (state[i] === EAT) {
         speed[i] = 0;
@@ -931,7 +949,7 @@
     const shown = (i) => state[i] !== FREE && state[i] !== NAP && (space[i] === WITH || space[i] === here);
     // Legs swing in diagonal pairs while walking; sitting folds the hind legs, napping lays all four flat, flying
     // stretches them fore and aft under the jetpack. `near` is whether its shadow is worth drawing.
-    const draw = (i, elapsed, near) => {
+    const draw = (i, elapsed, near, dt) => {
       const b = breedOf[i], L = layouts[b], s = (spotOf[i] >= 0 || state[i] === HOME ? 0.88 : state[i] === STRAY ? 0.94 : 1) * (0.2 + 0.8 * grow[i]);
       const st = state[i] === STRAY ? MOOD_POSE[mood[i]] : state[i], hunger = entries[i] ? entries[i].hunger : 0, aloft = st === FLY || st === LAND, powered = st === FLY || st === LAND && landingHover;
       let pitch = 0, lift = 0, front = 0, hind = 0;
@@ -939,13 +957,22 @@
       let y = py[i] + Math.abs(Math.cos(phase[i])) * 0.018 * walk;
       if (st === SIT) { pitch = -0.42; front = 0.42; hind = -1.25; y += L.leg * U * 0.1; }
       else if (st === NAP && speed[i] < 0.05) { lift = -L.leg * U * 0.92; front = -1.5; hind = 1.5; }
-      else if (st === EAT) { pitch = 0.32 + Math.sin(elapsed * 14) * 0.05; front = -0.32; hind = -0.32; }
+      else if (st === EAT && (i !== own || timer[i] < EAT_SECONDS - FOOD_DROP_SECONDS)) { pitch = 0.32 + Math.sin(elapsed * 14) * 0.05; front = -0.32; hind = -0.32; }
       else if (st === SQUAT) { pitch = -0.22; front = 0.22; hind = -0.75; lift = -0.035; }
       else if (st === KENNEL && speed[i] < 0.05 && (i & 1)) { pitch = -0.42; front = 0.42; hind = -1.25; y += L.leg * U * 0.1; }
       else if (st === LAND && !landingHover) { front = -0.2; hind = 0.2; }
       else if (aloft) { pitch = Math.sin(phase[i]) * 0.04; front = -1.05; hind = 1.1; y += Math.sin(elapsed * 3 + i) * 0.03; }
       else if (i === own && lookUp && speed[i] < 0.05) pitch = -0.3;
       y += lift * s;
+      // Nearby strays emit the same rising Z as sleeping Oogas, only once settled at home.
+      if (near && st === NAP && speed[i] < 0.05 && homeOf[i] >= 0) {
+        const h = homeOf[i];
+        if (Math.hypot(px[i] - homes[h * 3], pz[i] - homes[h * 3 + 2]) < 0.3 && (sleepMark[i] -= dt) <= 0) {
+          sleepMark[i] = 1.6;
+          const headZ = (L.headBack + L.hl * 0.5) * U * s;
+          fx.zzzAt(px[i] + Math.sin(yaw[i]) * headZ, y + (L.headTop + 2) * U * s, pz[i] + Math.cos(yaw[i]) * headZ);
+        }
+      }
       const cy = Math.cos(yaw[i]), sy = Math.sin(yaw[i]), cp = Math.cos(pitch), sp = Math.sin(pitch);
       const hipY = L.bottom * U, x0 = px[i], z0 = pz[i];
       let k = b;
@@ -973,6 +1000,13 @@
         tag.position.x = x0; tag.position.y = y; tag.position.z = z0;
         tag.rotation.x = pitch; tag.rotation.y = yaw[i];
         tag.scale.x = tag.scale.y = tag.scale.z = s;
+        if (st === EAT && !mealQueued) {
+          const drop = Math.min(1, (EAT_SECONDS - timer[i]) / FOOD_DROP_SECONDS);
+          // Fall first, then disappear in small bites as the dog chews.
+          const bite = Math.min(1, Math.ceil(timer[i] / 0.45) / 4);
+          food.visible = true; food.position.y = foodY + 0.65 * (1 - drop * drop);
+          food.scale.x = food.scale.y = food.scale.z = 0.45 * bite;
+        }
       }
       // The pack follows its Ooga's equipment, lying along the back with its flame lit only in flight.
       if (i === own && owners[i].jet) {
@@ -1015,7 +1049,7 @@
       frame++;
       cursor.fill(0);
       drawnCount = 0;
-      tag.visible = jet.visible = flame.visible = false;
+      food.visible = tag.visible = jet.visible = flame.visible = false;
       let straysDrawn = 0;
       for (let i = 0; i < DOG_CAP; i++) {
         drawnAt[i] = 0;
@@ -1032,7 +1066,7 @@
         if (!shown(i) || d2 > reach * reach || dx * fwdX + dy * fwdY + dz * fwdZ < VIEW_CONE * Math.sqrt(d2) - 1.5) continue;
         if (state[i] === STRAY && straysDrawn++ >= cap) continue;
         drawnAt[i] = 1;
-        draw(i, elapsed, state[i] !== STRAY || d2 < SHADOW_NEAR * SHADOW_NEAR);
+        draw(i, elapsed, state[i] !== STRAY || d2 < SHADOW_NEAR * SHADOW_NEAR, dt);
       }
       for (let k = drawnCount; k < picksShown; k++) dogPicks[k].visible = false;
       picksShown = drawnCount;
@@ -1100,6 +1134,7 @@
       for (const node of batches) removeChild(root, node);
       removeChild(root, jet);
       removeChild(root, tag);
+      removeChild(root, food);
       for (const node of dogPicks) removeTarget(node);
       for (const node of poopPicks) removeTarget(node);
       state.fill(FREE);
