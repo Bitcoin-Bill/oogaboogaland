@@ -10037,3 +10037,8 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
 #block-board[hidden] ~ .block-preview-name {
   display: none;
 }
+
+/* Block Frenzy's jetpack fuel, beside the sprint gauge, in flame orange. */
+.block-jet .block-sprint-bar i {
+  background: #ff8a2a;
+}

@@ -49,6 +49,7 @@
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
     WIND: { clear: 0.4, breeze: 1.8, storm: 3.8 }, WEATHER_S: [24, 42], GROUND_WIND: 0.3, AIR_WIND: 0.85, SHOT_WIND: 0.7,
     TRAMP_R: 1.0, BOUNCE: 13.5, STEP_UP: 0.45, FIRE_R: 0.95, BURN_HOPS: 3, BURN_SLOW: 0.25,
+    JET_FUEL: 2.6, JET_REFILL: 3, JET_ACCEL: 27, JET_RISE: 6, JET_CEILING: 15,
     GOLD_GUNS: 2, AK_MAG: 30, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
@@ -372,7 +373,7 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
+      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -441,6 +442,7 @@
       a.lastD = Infinity;
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
+      a.fuel = CONFIG.JET_FUEL; a.jetting = false;
       a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
       refill(a);
       a.crates = CONFIG.CRATE_STOCK;
@@ -1171,6 +1173,12 @@
       // On foot, a stair (a box no higher than `STEP_UP`) is walked up rather than walked into.
       const stepUp = a.grounded ? CONFIG.STEP_UP : 0.05;
       resolve(a, CONFIG.BODY_R, stepUp);
+      // The jetpack, every Ooga's as on the island: Space held in the air, once the jump has lost its lift, thrusts up on
+      // the fuel; standing, the tank refills.
+      a.jetting = !a.bot && free && !!input.jet && !a.grounded && !a.flight && !a.riding && a.netted <= 0 && a.burnt <= 0 && a.slip <= 0
+        && a.fuel > 0 && a.vy < 1.5 && a.y < CONFIG.JET_CEILING;
+      if (a.jetting) a.fuel = Math.max(0, a.fuel - dt);
+      else if (a.grounded && a.fuel < CONFIG.JET_FUEL) a.fuel = Math.min(CONFIG.JET_FUEL, a.fuel + dt * CONFIG.JET_FUEL / CONFIG.JET_REFILL);
       // A ladder: pushing into a tower's ladder climbs it, and at the top steps onto the platform.
       const ladder = !a.bot && free && a.netted <= 0 && !a.holding && a.y < CONFIG.TOWER_TOP ? ladderAt(a) : null;
       a.climbing = !!ladder && input.x * ladder.dx + input.z * ladder.dz > 0.3;
@@ -1190,6 +1198,7 @@
       } else if (a.vy !== 0 || a.y > ground) {
         // Under a parachute the fall is a steady drift.
         if (a.flight === 2) a.vy = -CONFIG.CHUTE_FALL; else a.vy -= CONFIG.FALL * dt;
+        if (a.jetting) a.vy = Math.min(CONFIG.JET_RISE, a.vy + CONFIG.JET_ACCEL * dt);
         a.y += a.vy * dt;
         const ceiling = ceilingAt(a.x, a.z, a.y - a.vy * dt);
         if (a.vy > 0 && a.y + heightOf(a) > ceiling) { a.y = ceiling - heightOf(a); a.vy = 0; }

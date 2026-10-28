@@ -541,5 +541,25 @@
     box({ w: 0.05, h: 0.18, d: 0.05, color: "#6a4128", offset: { y: 0.22, z: -0.33 } }),
     box({ w: 0.07, h: 0.07, d: 0.24, color: ORANGE, emissive: 0.5, offset: { x: 0.1, y: 0.22, z: 0.18 } })
   ));
-  BL.blockModels = { monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  // The jetpack every Ooga wears, in its own frame on the Ooga's back (+z forward): two team-banded tanks with a
+  // strap between and a nozzle under each, and the flames that burn under the nozzles while it thrusts.
+  const jetpack = variants((i) => {
+    const c = TEAM[SIM.TEAMS[i]], parts = [];
+    for (const x of [-0.13, 0.13]) {
+      parts.push(bevelBox({ w: 0.2, h: 0.5, d: 0.2, color: "#8a8e96", offset: { x, y: 0.25 } }));
+      parts.push(box({ w: 0.21, h: 0.08, d: 0.21, color: c.paint, emissive: 0.3, offset: { x, y: 0.36 } }));
+      parts.push(box({ w: 0.12, h: 0.1, d: 0.12, color: "#3a3a40", offset: { x, y: -0.04 } }));
+    }
+    parts.push(box({ w: 0.12, h: 0.32, d: 0.08, color: "#5a3a22", offset: { y: 0.28, z: 0.1 } }));
+    return merge(...parts);
+  });
+  const jetFlames = cached(() => {
+    const geo = merge(...[-0.13, 0.13].map((x) => merge(
+      moved(lathe({ profile: [[0, 0], [0.1, -0.08], [0.06, -0.3], [0, -0.5]], segments: 6, color: "#ff8a2a", emissive: 1 }), x, -0.08, 0),
+      moved(lathe({ profile: [[0, 0], [0.06, -0.06], [0.03, -0.2], [0, -0.3]], segments: 6, color: "#fff3a0", emissive: 1 }), x, -0.08, 0)
+    )));
+    geo.castShadow = false;
+    return geo;
+  });
+  BL.blockModels = { jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();

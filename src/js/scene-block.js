@@ -116,7 +116,7 @@
   // when it is so near that the Ooga would fill the view.
   const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false };
   const EYE = { x: 0, y: 0, z: 0 };
-  const move = { x: 0, z: 0, sprint: 0, jump: 0, crouch: 0, face: 0 };
+  const move = { x: 0, z: 0, sprint: 0, jump: 0, jet: 0, crouch: 0, face: 0 };
   let jumpWas = false;
   const el = {};
   const blockScene = {
@@ -151,9 +151,13 @@
       const held = createNode({ geometry: BM.crate(0), position: { x: 0, y: 1.95, z: 0.1 }, visible: false });
       const trolley = createNode({ geometry: BM.trolley(), position: { x: 0, y: C.ZIP_HANG + 0.15, z: 0 }, visible: false });
       const chute = createNode({ geometry: BM.chute(0), visible: false });
+      // The jetpack on the back, its flames lit while it thrusts.
+      const jet = createNode({ geometry: BM.jetpack(0), position: { x: 0, y: 0.78, z: -0.3 } });
+      const jetFlame = createNode({ geometry: BM.jetFlames(), visible: false });
+      addChild(jet, jetFlame);
       // The monkeys at the hips, shown while the power-up lasts.
       const monkeys = [-1, 1].map((side) => createNode({ geometry: BM.monkey(), position: { x: side * 0.62, y: 0.82, z: 0.08 }, scale: { x: 0.9, y: 0.9, z: 0.9 }, visible: false }));
-      addChild(body, ring, blob, bubble, netted, held, trolley, chute, ...monkeys);
+      addChild(body, ring, blob, bubble, netted, held, trolley, chute, jet, ...monkeys);
       // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
       let gun = null;
       if (cave) {
@@ -173,7 +177,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, gun, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -203,6 +207,7 @@
     for (let i = 0; i < actors.length; i++) {
       const t = sim.actors[i].team, a = actors[i];
       a.ring.geometry = BM.ring(TEAM_INDEX[t]);
+      a.jet.geometry = BM.jetpack(TEAM_INDEX[t]);
       a.blob.geometry = BM.splat(TEAM_INDEX[SIM.other(t)] + 2 * (i % 3));
     }
   };
@@ -939,6 +944,8 @@
     const up = a.up > 0;
     // A new press waits for the sim to use it (it clears `jump`), however many substeps this frame runs, even none.
     if (up && !jumpWas) move.jump = 1;
+    // Space held is the jetpack's throttle.
+    move.jet = up ? 1 : 0;
     jumpWas = up;
   };
   // Each pet heads for a spot a little behind and beside its Ooga, trots there at up to sprint pace with a hop in its
@@ -984,6 +991,11 @@
       if (s.holding) a.held.geometry = BM.crate(TEAM_INDEX[s.team]);
       a.trolley.visible = s.riding;
       a.chute.visible = s.flight === 2;
+      a.jetFlame.visible = s.jetting;
+      if (s.jetting) {
+        a.jetFlame.scale.y = 0.8 + Math.random() * 0.5;
+        if (Math.random() < dt * 30) fx.burst(s.x, s.y + 0.3, s.z, 1, ORANGE_BITS, 0.8);
+      }
       for (let m = 0; m < 2; m++) {
         a.monkeys[m].visible = s.monkeys > 0 && !(i === 0 && cam.first);
         if (s.monkeys > 0) a.monkeys[m].position.y = 0.82 + Math.abs(Math.sin(elapsed * 6 + m * 1.7)) * 0.08;
@@ -1140,7 +1152,8 @@
   };
   // The sprint gauge: full, draining while Shift is held, orange while it refills after running dry.
   const poseStamina = () => {
-    const a = sim.actors[0], k = Math.round(a.stamina / C.SPRINT_S * 100);
+    const a = sim.actors[0], k = Math.round(a.stamina / C.SPRINT_S * 100), f = Math.round(a.fuel / C.JET_FUEL * 100);
+    if (f !== el.fuelK) { el.fuelK = f; el.fuel.style.width = `${f}%`; }
     if (k === el.staminaK && a.tired === el.staminaTired) return;
     el.staminaK = k; el.staminaTired = a.tired;
     el.stamina.style.width = `${k}%`;
@@ -1338,6 +1351,7 @@
       audio.state.wind = phase === "play" ? sim.weather.strength / C.WIND.storm : 0;
       audio.state.rain = phase === "play" && sim.weather.kind === "storm" ? 1 : 0;
       audio.state.zip = phase === "play" && sim.actors[0].riding ? 1 : 0;
+      audio.state.jet = phase === "play" && sim.actors[0].jetting ? 1 : 0;
     }
     audio.update();
     fx.update(dt);
@@ -1535,6 +1549,8 @@
     el.onTool = (e) => { const k = e.currentTarget.dataset.tool; e.currentTarget.blur(); if (k === "crate") buildCrate(); else if (k === "grab") grabCrate(); else if (k === "pass") passBlock(); else if (k === "zip") zipNow(); else chooseTool(k); };
     for (const b of el.tools) b.addEventListener("click", el.onTool);
     el.stamina = document.getElementById("block-stamina");
+    el.fuel = document.getElementById("block-fuel");
+    el.fuelK = -1;
     el.previewName = document.getElementById("block-preview-name");
     el.previewPick = document.getElementById("block-preview-pick");
     el.oogaSlot = document.getElementById("block-ooga-slot");
@@ -1674,7 +1690,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden AK · 7 AK (hold to fire) · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden AK · 7 AK (hold to fire) · hold Space in the air for the jetpack · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);

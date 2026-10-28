@@ -21,8 +21,8 @@
     }
     const voices = [];
     let voiceNext = 0;
-    const layers = { wind: null, windFilter: null, rain: null, zip: null, zipFilter: null, splat: null, splatFilter: null, boom: null, boomFilter: null };
-    const state = { wind: 0, rain: 0, zip: 0 };
+    const layers = { wind: null, windFilter: null, rain: null, jet: null, zip: null, zipFilter: null, splat: null, splatFilter: null, boom: null, boomFilter: null };
+    const state = { wind: 0, rain: 0, zip: 0, jet: 0 };
     const init = () => {
       if (ctx || typeof AudioContext === "undefined") return;
       ctx = new AudioContext();
@@ -67,6 +67,7 @@
       tap("bandpass", 420, 0.6, "wind", "windFilter");
       tap("highpass", 3200, 0.4, "rain");
       tap("bandpass", 900, 6, "zip", "zipFilter");
+      tap("lowpass", 520, 1.2, "jet");
       tap("bandpass", 1300, 1.2, "splat", "splatFilter");
       tap("lowpass", 260, 0.8, "boom", "boomFilter");
       noise.start();
@@ -168,12 +169,13 @@
       layers.windFilter.frequency.setTargetAtTime(300 + clamp(state.wind, 0, 1) * 600, now, 0.4);
       layers.rain.gain.setTargetAtTime(clamp(state.rain, 0, 1) * 0.05, now, 0.4);
       layers.zip.gain.setTargetAtTime(clamp(state.zip, 0, 1) * 0.12, now, 0.08);
+      layers.jet.gain.setTargetAtTime(clamp(state.jet, 0, 1) * 0.22, now, 0.05);
       layers.zipFilter.frequency.setTargetAtTime(700 + clamp(state.zip, 0, 1) * 900, now, 0.1);
     };
     const quiet = () => {
       if (!ready) return;
       const now = ctx.currentTime;
-      for (const k of ["wind", "rain", "zip", "splat", "boom"]) {
+      for (const k of ["wind", "rain", "zip", "jet", "splat", "boom"]) {
         layers[k].gain.cancelScheduledValues(now);
         layers[k].gain.setTargetAtTime(0, now, 0.05);
       }
