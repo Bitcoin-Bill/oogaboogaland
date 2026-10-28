@@ -16,8 +16,8 @@
     const minX = bounds.min[0], minY = bounds.min[1], plane = bounds.min[2];
     const dx = (bounds.max[0] - minX) / SIZE, dy = (bounds.max[1] - minY) / SIZE, diagonal = Math.hypot(dx, dy);
     const mask = new Uint8Array(count), union = new Uint8Array(count), lastUnion = new Uint8Array(count);
-    const parity = new Uint8Array(count), rowParity = new Uint8Array(SIZE), distance = new Float32Array(count), glass = new Uint8Array(count);
-    const actors = [], records = new WeakMap();
+    const parity = new Uint8Array(count), rowParity = new Uint8Array(SIZE), distance = new Float32Array(count);
+    const actors = [], records = new WeakMap(), faceCursors = new WeakMap();
     let vertices = new Float64Array(0), alive = true, paused = false;
     // Registration follows the scene's bounded actor and object pools. Only
     // model changes walk a subtree or resize scratch; sampling never scans the scene.
@@ -69,7 +69,7 @@
     while (root.parent) root = root.parent;
     BL.scene.updateWorld(root);
     mat4.invert(inverse, node.world);
-    let next = 0, sampleTime = INTERVAL, bottom = minY, blocked = false, glassVersion = -1;
+    let next = 0, sampleTime = INTERVAL, bottom = minY, blocked = false;
     const state = { width: SIZE, height: SIZE, layers: CAPACITY + 1, pixels, version: 0,
       contacts: 0, active: 0, hits: 0, waves, time: 0, track, untrack, refresh, pause, update, dispose,
       get tracked() { return actors.length; } };
@@ -112,8 +112,13 @@
         vertices[i] = point[0]; vertices[i + 1] = point[1]; vertices[i + 2] = point[2] - cut;
       }
       parity.fill(0); rowParity.fill(0);
-      for (const face of geometry.faces) {
-        const indices = face.i;
+      let cursor = null;
+      if (geometry.compactGeometry) {
+        cursor = faceCursors.get(geometry);
+        if (!cursor) { cursor = BL.compactGeometry.createCursor(geometry); faceCursors.set(geometry, cursor); }
+      }
+      for (let index = 0; index < geometry.faces.length; index++) {
+        const indices = (cursor ? BL.compactGeometry.readFace(geometry, index, cursor) : geometry.faces[index]).i;
         let found = false, ax = 0, ay = 0, bx = 0, by = 0, farthest = 0;
         for (let i = 0; i < indices.length; i++) {
           const ai = indices[i] * 3, bi = indices[(i + 1) % indices.length] * 3;
@@ -143,12 +148,6 @@
         for (let col = firstCol, i = row * SIZE + col; col < endCol; col++, i++) {
           inside ^= parity[i];
           if (!inside || mask[i]) continue;
-          if (node.mirrorDamage?.stage) {
-            // Test only touched texels, once per immutable fracture version.
-            // Repeated held contacts never rescan the pane polygons.
-            if (!glass[i]) glass[i] = node.mirrorDamage.contains(minX + (col + 0.5) * dx, minY + (row + 0.5) * dy) ? 2 : 1;
-            if (glass[i] === 1) continue;
-          }
           mask[i] = 1;
         }
       }
@@ -237,8 +236,6 @@
     }
     function sample(elapsed) {
       union.fill(0);
-      const version = node.mirrorDamage ? node.mirrorDamage.version : -1;
-      if (version !== glassVersion) { glass.fill(0); glassVersion = version; }
       bottom = minY + (bounds.max[1] - minY) * (node.mirrorReveal || 0);
       let contacts = 0;
       for (const actor of actors) {

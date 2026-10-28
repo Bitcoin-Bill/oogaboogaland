@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import * as protocol from "../src/protocol.js";
+import * as studioPolicy from "../src/studio-policy.js";
 import { sha256Hex } from "../src/crypto.js";
 import { getPlayer } from "../src/db.js";
 
@@ -30,10 +31,10 @@ const host = () => {
     .replace(/import\s+[\s\S]*?from\s+"[^"]+";/g, "")
     .replace("export class Room", "class Room") + "\nglobalThis.Room = Room;";
   const context = {
-    ...protocol, sha256Hex, getPlayer, sfuClient: () => null,
+    ...protocol, ...studioPolicy, sha256Hex, getPlayer, sfuClient: () => null,
     CAST_ROWS: [{ handle: "a", github_login: "a" }, { handle: "b", github_login: "b" }, { handle: "c", github_login: "c" }],
     DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } },
-    WebSocketPair, Response, WebSocketRequestResponsePair: class {}, URL, Date: Clock, Map, Set, setTimeout, clearTimeout, console,
+    WebSocketPair, Response, WebSocketRequestResponsePair: class {}, URL, crypto, Date: Clock, Map, Set, setTimeout, clearTimeout, console,
   };
   runInNewContext(source, context);
   const stored = new Map();
@@ -41,7 +42,8 @@ const host = () => {
     setWebSocketAutoResponse() {}, blockConcurrencyWhile: (fn) => fn(), acceptWebSocket: (ws) => accepted.push(ws),
     getWebSockets: () => accepted.filter((ws) => !ws.closed), getWebSocketAutoResponseTimestamp: () => null,
     storage: {
-      get: async (key) => Array.isArray(key) ? Object.fromEntries(key.filter((k) => stored.has(k)).map((k) => [k, stored.get(k)])) : stored.get(key),
+      // As Cloudflare's storage: an array of keys answers a Map of those found.
+      get: async (key) => Array.isArray(key) ? new Map(key.filter((k) => stored.has(k)).map((k) => [k, stored.get(k)])) : stored.get(key),
       put: async (key, value) => stored.set(key, value), getAlarm: async () => alarms.length ? alarms.at(-1) : null,
       setAlarm: async (at) => alarms.push(at),
     },
@@ -112,6 +114,20 @@ test("a cancelled door alarm does not pull the ordinary account sweep forward", 
   assert.equal(r.sweepAt, sweepAt);
 });
 
+test("a woken room keeps the pile loop's phase and the account sweep it stored", async () => {
+  const settle = () => new Promise(setImmediate);
+  const h = host(), r = h.room();
+  await settle();
+  const born = r.loopEpoch;
+  assert.ok(born > 0);
+  assert.equal(r.sweepAt, born + protocol.SWEEP_MS);
+  h.advance(30000);
+  const woken = h.room();
+  await settle();
+  assert.equal(woken.loopEpoch, born, "every page keeps hearing the same crackle");
+  assert.equal(woken.sweepAt, born + protocol.SWEEP_MS, "a wake does not push the sweep out");
+});
+
 test("a hibernated room reconstructs its active lease and in-flight room transit", async () => {
   const h = host(), r = h.room();
   const a = await h.join(r, 1, "a"), b = await h.join(r, 2, "b");
@@ -139,9 +155,9 @@ test("a voice pull is closed if its room membership changes while the SFU answer
   const closed = [];
   r.sfu = {
     newTracks: async () => { began(); return ready; },
-    closeTracks: async (session, mids) => closed.push({ session, mids }),
+    closeTracks: async (session, mids) => { closed.push({ session, mids }); return { tracks: mids.map((mid) => ({ mid })) }; },
   };
-  const pending = r.voiceRequest("pull", { headers: new Headers({ "x-player-id": "1" }), json: async () => ({ ids: [2] }) });
+  const pending = r.voiceRequest("pull", { headers: new Headers({ "x-player-id": "1", "x-room-token": pa.connectionToken }), json: async () => ({ ids: [2] }) });
   await started;
   await h.send(r, a, { t: "zone", name: "sphere-2" });
   answer({ tracks: [{ sessionId: "pub-b", mid: "7" }], sessionDescription: { type: "answer", sdp: "x" } });

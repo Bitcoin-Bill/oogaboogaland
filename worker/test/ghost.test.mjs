@@ -7,6 +7,7 @@ import { runInNewContext } from "node:vm";
 import * as protocol from "../src/protocol.js";
 import { sha256Hex } from "../src/crypto.js";
 import { getPlayer } from "../src/db.js";
+import * as studioPolicy from "../src/studio-policy.js";
 
 test("a ghost start, pause or hit within bounds is read; anything else is ignored, not fatal", () => {
   const { parseClientMessage } = protocol;
@@ -45,17 +46,17 @@ const harness = () => {
     .replace(/import\s+[\s\S]*?from\s+"[^"]+";/g, "")
     .replace("export class Room", "class Room") + "\nglobalThis.Room = Room;";
   const context = {
-    ...protocol, sha256Hex, getPlayer, sfuClient: () => null,
+    ...protocol, ...studioPolicy, sha256Hex, getPlayer, sfuClient: () => null,
     CAST_ROWS: [{ handle: "a", github_login: "a" }, { handle: "b", github_login: "b" }, { handle: "c", github_login: "c" }],
     DurableObject: class { constructor(ctx, env) { this.ctx = ctx; this.env = env; } },
-    WebSocketPair, Response, WebSocketRequestResponsePair: class {}, URL, Date: Clock, Map, Set, setTimeout, clearTimeout, console,
+    WebSocketPair, Response, WebSocketRequestResponsePair: class {}, URL, crypto, Date: Clock, Map, Set, setTimeout, clearTimeout, console,
   };
   runInNewContext(source, context);
   const stored = new Map();
   const ctx = {
     setWebSocketAutoResponse() {}, blockConcurrencyWhile: (fn) => fn(), acceptWebSocket: (ws) => accepted.push(ws),
     getWebSockets: () => accepted.filter((ws) => !ws.closed), getWebSocketAutoResponseTimestamp: () => null,
-    storage: { get: async (key) => stored.get(key), put: async (key, value) => stored.set(key, value), getAlarm: async () => null, setAlarm: async () => {} },
+    storage: { get: async (key) => Array.isArray(key) ? new Map(key.filter((k) => stored.has(k)).map((k) => [k, stored.get(k)])) : stored.get(key), put: async (key, value) => stored.set(key, value), getAlarm: async () => null, setAlarm: async () => {} },
   };
   const room = new context.Room(ctx, {});
   const join = async (id, login) => {
