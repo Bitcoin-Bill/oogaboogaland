@@ -3,14 +3,24 @@
 (() => {
   "use strict";
   const BL=window.BL,M=BL.models,S=BL.scene,cache=new Map(),scoped=M.track(()=>cache.clear());
+  const VENDOR_STOCK=[1,0,2,3,4,5];
+  // The baked stock and its live screen overlay share exactly the same fit and placement.
+  const vendorLayout=index=>{
+    const v=BL.walletBombs.geometryOf(VENDOR_STOCK[index]).verts;
+    let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+    for(let k=0;k<v.length;k+=3){minX=Math.min(minX,v[k]);maxX=Math.max(maxX,v[k]);minZ=Math.min(minZ,v[k+2]);maxZ=Math.max(maxZ,v[k+2]);}
+    return {x:-.48+(index%2)*.6,y:2.25-Math.floor(index/2)*.49,z:.59,cx:(minX+maxX)/2,cz:(minZ+maxZ)/2,scale:Math.min(.48/(maxX-minX),.38/(maxZ-minZ))};
+  };
   const geometry=(kind,variant=0)=>{
     scoped.use();const key=kind+":"+variant;if(cache.has(key))return cache.get(key);
     const parts=[],b=(c,x,y,z,w,h,d,e=0)=>parts.push(M.box({color:c,w,h,d,emissive:e,offset:{x,y,z}}));
     const dark="#17191c",steel="#9aa3ab",orange="#ff8a1f",cream="#f6f1e4",card="#c49a6c",tape="#e0cfa4",red="#c8352a";
     // A taped shipping carton standing on (x, y, z), turned by a, with a red handling mark on its front.
     const carton=(x,y,z,w,h,d,a,tone=card)=>{
-      const g=M.merge(M.box({color:tone,w,h,d,offset:{y:h/2}}),M.box({color:tape,w:w+.01,h:.012,d:.1,offset:{y:h+.002}}),M.box({color:tape,w:.1,h:h*.5,d:d+.01,offset:{y:h*.75}}),
-        M.box({color:red,w:w*.3,h:h*.16,d:.01,offset:{x:-w*.22,y:h*.4,z:d/2+.004}}),M.box({color:dark,w:.05,h:h*.2,d:.01,offset:{x:w*.26,y:h*.4,z:d/2+.004}}));
+      // Thin strips on the outside, rather than a solid band whose top coincides with the cardboard.
+      const g=M.merge(M.box({color:tone,w,h,d,offset:{y:h/2}}),M.box({color:tape,w:w+.012,h:.008,d:.1,offset:{y:h+.008}}),M.box({color:tape,w:.1,h:.008,d:d+.012,offset:{y:h+.02}}),
+        ...[-1,1].map(side=>M.box({color:tape,w:.1,h:h*.5,d:.006,offset:{y:h*.75,z:side*(d/2+.006)}})),
+        M.box({color:red,w:w*.3,h:h*.16,d:.006,offset:{x:-w*.22,y:h*.4,z:d/2+.009}}),M.box({color:dark,w:.05,h:h*.2,d:.006,offset:{x:w*.26,y:h*.4,z:d/2+.009}}));
       parts.push(M.moved(M.turnedY(g,a),x,y,z));
     };
     // A boxed device: an orange or cream product shot on the front.
@@ -19,7 +29,11 @@
       // A red machine on a plinth: a glowing window of devices in rows, the tray they drop into and a coin slot.
       b("#3a3d42",0,.08,0,2,.16,1.2);b("#c8352a",0,1.45,0,1.9,2.6,1.1);b("#a32a21",0,2.8,0,1.96,.1,1.16);
       b(dark,-.18,1.75,.556,1.3,1.6,.02);b("#2a4a5c",-.18,1.75,.562,1.22,1.52,.01,.35);
-      for(let r=0;r<4;r++){b(steel,-.18,1.12+r*.38,.57,1.2,.03,.03);for(let c=0;c<4;c++){const x=-.6+c*.28,y=1.2+r*.38,card=(r+c)&1;b(card?cream:orange,x,y,.575,card?.16:.2,card?.12:.06,.02,.5);b(card?"#ff2a2a":"#46ff72",x+(card?0:.05),y+(card?0:.01),.588,.035,.035,.01,1);}}
+      for(let r=0;r<3;r++){b(steel,-.18,2.02-r*.49,.57,1.2,.03,.03);for(let c=0;c<2;c++){
+        const index=r*2+c,{x,y,z,cx,cz,scale}=vendorLayout(index),g=M.merge(BL.walletBombs.geometryOf(VENDOR_STOCK[index]));
+        for(let k=0;k<g.verts.length;k+=3){g.verts[k]=(g.verts[k]-cx)*scale;g.verts[k+1]*=scale;g.verts[k+2]=(g.verts[k+2]-cz)*scale;}
+        parts.push(M.moved(M.turnedX(g,Math.PI/2),x,y,z));
+      }}
       b(dark,.68,1.95,.556,.32,.5,.02);b("#ffd66b",.68,2.05,.57,.18,.06,.01,1);b(steel,.68,1.75,.57,.08,.16,.02);
       b(dark,-.18,.62,.556,1.1,.34,.04);b("#2b2d31",-.18,.55,.5,1,.2,.1);
     }else if(kind==="crate"){
@@ -30,13 +44,13 @@
       else for(let i=0;i<9;i++){const x=-.32+(i%3)*.32,z=-.24+Math.floor(i/3)*.24,card=(i+variant)&1;b(card?cream:orange,x,.68,z,card?.16:.22,.05,card?.2:.07);if(!card)b("#121416",x-.02,.71,z,.12,.01,.05);}
     }else if(kind==="shelf"){
       // A wall shelf of boxed devices, each box a printed product shot.
-      for(const y of [.6,1.3,2])b("#694b34",0,y,0,2.4,.06,.5);for(const x of [-1.16,1.16])b("#4b3424",x,1.15,0,.08,2.3,.5);
+      for(const y of [.6,1.3,2])b("#694b34",0,y,0,2.4,.06,.5);for(const x of [-1.18,1.18])b("#4b3424",x,1.15,0,.08,2.3,.54);
       for(const y of [.6,1.3,2])for(let i=0;i<5;i++){const x=-.9+i*.45,card=(i+variant+Math.round(y*10))&1;b(card?"#f2efe8":"#ffb46a",x,y+.17,0,.34,.28,.3);b(card?"#ff2a2a":"#121416",x,y+.19,.153,.14,.1,.01,card?.6:0);}
       // Overstock squeezed on top.
       carton(-.6,2.03,0,.7,.36,.42,.06);carton(.35,2.03,0,.6,.3,.4,-.1);boxed(.9,2.03,0,.3,.24,.26,variant);
     }else if(kind==="rack"){
       // A steel stock rack against the back wall, every level packed with cartons and loose boxes.
-      for(const x of [-1.16,1.16])for(const z of [-.26,.26])b("#5c6168",x,1.3,z,.06,2.6,.06);
+      for(const x of [-1.16,1.16])for(const z of [-.28,.28])b("#5c6168",x,1.3,z,.06,2.6,.06);
       for(const y of [.12,.82,1.52,2.22])b("#7d838a",0,y,0,2.36,.05,.58);
       [[.12,0],[.82,1],[1.52,2],[2.22,3]].forEach(([y,k])=>{
         let x=-1.02;for(let i=0;x<.95;i++){const w=.34+((i*7+k*3)%4)*.08,h=.28+((i*5+k)%3)*.1;if(x+w>1.1)break;
@@ -44,7 +58,7 @@
       });
     }else if(kind==="gondola"){
       // A double-sided island shelf, long along z, stocked on both faces, a red topper on each end.
-      b("#3c6e9c",0,.08,0,.9,.16,2.6);b("#694b34",0,.8,0,.12,1.44,2.6);
+      b("#3c6e9c",0,.08,0,.9,.16,2.6);b("#694b34",0,.8,0,.12,1.44,2.5);
       for(const y of [.18,.64,1.1])b("#8a6a4a",0,y,0,.88,.04,2.56);
       for(const side of [-1,1])for(const [y,k] of [[.2,0],[.66,1],[1.12,2]])for(let i=0;i<6;i++){
         const z=-1.06+i*.42,x=side*.24;if((i+k+variant)%4===3)carton(x,y,z,.32,.3,.36,(i%3-1)*.08);else{const a=(i+k)&1;b(a?"#f2efe8":"#ffb46a",x,y+.14,z,.3,.28,.34);b(a?"#ff2a2a":"#121416",x+side*.153,y+.16,z,.01,.1,.14,a?.6:0);}
@@ -65,32 +79,48 @@
     }else if(kind==="reader"){
       // A card reader that has seen things: a dark slab on a stand, one red light.
       b("#2b2d31",0,.03,0,.16,.06,.16);const g=M.box({color:"#3a3d42",w:.12,h:.2,d:.03,offset:{y:.1}});M.turnedX(g,-.35);parts.push(M.moved(g,0,.04,0));b("#ff3b2f",0,.17,.055,.02,.02,.01,1);
+    }else if(kind==="blacklight-switch"){
+      parts.push(M.bevelBox({color:dark,w:.36,h:.28,d:.035,bevel:.012}));
+      const ring=M.lathe({profile:[[0,0],[.10,0],[.10,.035],[0,.035]],segments:16,color:steel});
+      const button=M.lathe({profile:[[0,.03],[.078,.03],[.078,.055],[.067,.064],[0,.064]],segments:16,color:"#7645ff",emissive:1});
+      parts.push(M.moved(M.turnedX(ring,Math.PI/2),0,0,.018),M.moved(M.turnedX(button,Math.PI/2),0,0,.018));
     }else if(kind==="vitrine"){
       // A display case: a timber plinth with a gold rim, a lit top and four slim posts; its glass is "vitrine-glass".
-      b("#2b2d31",0,.45,0,.8,.9,.8);b("#d9a63a",0,.9,0,.84,.04,.84);b("#fff4df",0,.93,0,.62,.02,.62,.6);
-      for(const x of [-.38,.38])for(const z of [-.38,.38])b("#d9a63a",x,1.25,z,.03,.66,.03);b("#d9a63a",0,1.58,0,.8,.04,.8);
-      b("#6a1f1a",0,.99,0,.3,.1,.24);
+      b("#2b2d31",0,.304,0,.96,.608,.96);b("#d9a63a",0,.608,0,1.008,.04,1.008);b("#fff4df",0,.638,0,.744,.02,.744,.6);
+      for(const x of [-.456,.456])for(const z of [-.456,.456])b("#d9a63a",x,1.104,z,.03,.952,.03);b("#d9a63a",0,1.58,0,.96,.04,.96);
+    }else if(kind==="display-row"){
+      // The plinth labels stay still while the room spins the devices above them.
+      BL.walletBombs.LOOKS.forEach((look,i)=>{
+        const name=M.merge(BL.dsbModels.text(look.name.toUpperCase(),"#f2c14e")),size=look.name.length>10?.09:.12;
+        for(let k=0;k<name.verts.length;k++)name.verts[k]*=size;
+        parts.push(M.moved(M.turnedY(name,Math.PI/2),.49,.38,i*1.8));
+      });
     }else if(kind==="device"){
-      // A display copy of one of the machine's two devices (`walletBombs`' own looks), apart from their batches.
+      // A display copy of one of the machine's devices (`walletBombs`' own looks), apart from their batches.
       parts.push(BL.walletBombs.geometryOf(variant));
     }else if(kind==="vitrine-glass"){
-      b("#d5ece8",0,1.25,0,.76,.62,.76);
-      const g=M.merge(...parts);g.glass=.22;M.noShadow(g);cache.set(key,g);return g;
+      b("#d5ece8",0,1.104,0,.912,.912,.912);
+      // Only the four glass walls: a glass floor would coincide with the lit top at y=.648,
+      // and a glass lid with the underside of the opaque cap at y=1.56.
+      const g=M.merge(...parts);g.faces=g.faces.filter(f=>!f.i.every(i=>g.verts[i*3+1]===g.verts[f.i[0]*3+1]));
+      g.glass=.22;M.noShadow(g);cache.set(key,g);return g;
     }else if(kind==="neon"){
       // The neon's tube outline and its dark backing board; the word itself is a sign in the same pink.
       b("#141218",0,0,-.03,2.1,.9,.04);
       for(const y of [-.38,.38])b("#ff4fd8",0,y,0,1.96,.04,.04,1);for(const x of [-.98,.98])b("#ff4fd8",x,0,0,.04,.8,.04,1);
       for(const x of [-.7,.7])b("#5c6168",x,.5,-.02,.02,.14,.02);
-    }else if(kind==="cctv"){
-      // A security camera on a wall arm, aimed down the room (+z); its light is "cctv-led".
+    }else if(kind==="cctv-mount"){
+      // Fixed wall bracket; the camera head pans and tilts separately.
       b("#d8d6cf",0,0,-.12,.18,.24,.06);b("#bdbab1",0,-.02,0,.05,.05,.24);
-      const body=M.merge(M.box({color:"#ece9e1",w:.2,h:.18,d:.44,offset:{z:.14}}),M.box({color:"#ece9e1",w:.26,h:.04,d:.5,offset:{y:.11,z:.14}}),M.box({color:dark,w:.13,h:.11,d:.02,offset:{z:.37}}),M.box({color:"#2a4a5c",w:.07,h:.07,d:.01,offset:{z:.382},emissive:.3}));
-      parts.push(M.moved(M.turnedX(body,.42),0,-.08,.12));
+    }else if(kind==="cctv"){
+      // Neutral head looks along +z so its node can aim the lens directly at the player.
+      b("#ece9e1",0,0,.14,.2,.18,.44);b("#ece9e1",0,.11,.14,.26,.04,.5);
+      b(dark,0,0,.37,.13,.11,.02);b("#2a4a5c",0,0,.382,.07,.07,.01,.3);
     }else if(kind==="cctv-led"){
       b("#ff2a2a",0,0,0,.035,.035,.035,1);
     }else if(kind==="sticker"){
       // A starburst discount sticker, two squares crossed at 45 degrees on a red rim, face +z.
-      for(const [c,s,z] of [[red,.74,0],["#ffd23a",.66,.006]])for(const a of [0,Math.PI/4]){const g=M.box({color:c,w:s,h:s,d:.01,emissive:c===red?0:.25,offset:{z}});M.turnedZ(g,a);parts.push(g);}
+      for(const [c,s,z] of [[red,.74,0],["#ffd23a",.66,.012]])for(const [a,dz] of [[0,0],[Math.PI/4,.004]]){const g=M.box({color:c,w:s,h:s,d:.006,emissive:c===red?0:.25,offset:{z:z+dz}});M.turnedZ(g,a);parts.push(g);}
     }else if(kind==="tape"){
       // Caution tape, one metre of yellow and black, about x; the room stretches it by scale.x.
       for(let i=0;i<10;i++)b(i&1?"#1d1b1a":"#ffd23a",-.45+i*.1,0,0,.1,.08,.006,i&1?0:.2);
@@ -99,7 +129,7 @@
       b("#2b2d31",0,.03,0,.34,.06,.34);for(let i=0;i<4;i++)b(i&1?"#f2efe8":red,0,.12+i*.22,0,.06,.22,.06);b("#2b2d31",0,1.0,0,.09,.06,.09);
     }else if(kind==="soot"){
       // A scorch on the floor where something free went off.
-      const rand=BL.math.mulberry32(2121);for(let i=0;i<14;i++){const a=rand()*6.28,r=rand()*.7,s=.18+rand()*.32;b(i<5?"#0f0e0d":"#2b2420",Math.cos(a)*r,.004+i*.0004,Math.sin(a)*r,s,.004,s*(.6+rand()*.6));}
+      const rand=BL.math.mulberry32(2121);for(let i=0;i<14;i++){const a=rand()*6.28,r=rand()*.7,s=.18+rand()*.32;b(i<5?"#0f0e0d":"#2b2420",Math.cos(a)*r,.004+i*.003,Math.sin(a)*r,s,.004,s*(.6+rand()*.6));}
     }else if(kind==="door"){
       // A staff door: dark panels, a steel handle and a kick plate.
       b("#4b3424",0,1.05,0,1.04,2.1,.06);for(const y of [.6,1.5])b("#3a2a1c",0,y,.035,.8,.7,.01);b(steel,.38,1.05,.05,.04,.18,.04);b(steel,0,.12,.035,.96,.2,.01);
@@ -107,5 +137,5 @@
     const g=M.merge(...parts);cache.set(key,g);return g;
   };
   const prop=(p,kind,x,y,z,variant=0,yaw=0)=>{const n=S.createNode({geometry:geometry(kind,variant),position:{x,y,z},rotation:{x:0,y:yaw,z:0}});S.addChild(p,n);return n;};
-  BL.walletsModels={geometry,prop};
+  BL.walletsModels={geometry,prop,vendorLayout};
 })();

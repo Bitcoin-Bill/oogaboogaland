@@ -221,7 +221,7 @@ Inside: a river boat and the **Bitcoin coaster** (ride on the live price), the *
 
 In the Chora's lower row, **Free Puppies Rescue** (VAC 1) has six puppies waiting to be adopted by signed-in visitors for their own Ooga, one dog a login: **Space** at the dog houses or a tap on a puppy, or on any of the hundreds of strays roaming DSB Land, opens the adoption. The dog follows its Ooga everywhere, flies along on a jetpack of its own when its Ooga does, eats a banana from the pile when tapped hungry, and poop, its own or the strays', is scooped with a tap.
 
-On the beach in the Chora's lower row, **Free Hardware Wallets** (VAC 2) gives away a ClownCard or a Rektdger from its vending machine (**Space** at it, or a tap). Click or tap the ground to set a carried one down, **Y** or the **Throw** button to throw it.
+On the beach in the Chora's lower row, **Free Hardware Wallets** (VAC 2) gives away ClownCard, Rektdger, BrickBox02, Passpoor, Jaded and SeedSnitcher devices from its vending machine (**Space** at it, or a tap). Click or tap the ground to set a carried one down, **Y** or the **Throw** button to throw it.
 
 ### Zuzu
 

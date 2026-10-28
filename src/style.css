@@ -9713,26 +9713,41 @@ body.dsb-menu-open :is(.bottom-hud,.top-hud,#joy-move,#joy-look,#act,.weapon-hud
   .rescue-menu .field input { min-height: 44px; font-size: 16px; }
 }
 
-/* Free Hardware Wallets' machine: two devices as pictures and names, in the shared DSB shell. */
-.wallets-menu { color: #2a1d17; background: #f6efe1; border: 2px solid #c8352a; border-radius: 6px; }
-.wallets-menu header { display: flex; justify-content: space-between; align-items: center; gap: 16px; color: #fff4df; background: #c8352a; border-bottom: 3px solid #f2c14e; }
-.wallets-menu h2 { font-size: clamp(20px,3vw,28px); margin: 3px 0; letter-spacing: .06em; }
-.wallets-menu small { color: #ffd66b; }
-.wallets-menu button { font: inherit; color: #2a1d17; background: #fff9ee; border: 2px solid #d8b9a0; border-radius: 4px; padding: 8px 12px; cursor: pointer; }
-.wallets-menu header button { color: #fff4df; background: #a32a21; border-color: #f2c14e; }
-.wallets-menu button:hover,.wallets-menu button[aria-pressed="true"] { background: #fde7b0; border-color: #d8892b; }
-.wallets-menu :focus-visible { outline: 3px solid #d8892b; outline-offset: 2px; }
-.wallets-content { padding: 18px 20px 20px; }
-.wallets-picks { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 14px; }
-.wallets-pick { display: grid; justify-items: center; align-content: start; gap: 8px; min-width: 0; padding: 14px 8px 12px; }
-.wallets-pick canvas { max-width: 100%; height: 72px; image-rendering: pixelated; }
-.wallets-pick b { font-size: 15px; letter-spacing: .06em; }
-.wallets-menu .wallets-take { width: 100%; color: #fff4df; background: #c8352a; border-color: #a32a21; font-weight: 600; letter-spacing: .08em; }
-.wallets-menu .wallets-take:hover { background: #a32a21; }
-@media (max-width:600px) {
-  .wallets-menu header button { flex: none; }
-  .wallets-content { padding: 14px; }
+/* The island panel's frame, slab and controls, painted in the wallet shop's red and white. */
+.wallets-menu {
+  --menu-width: 560px;
+  --menu-font: 13px/1.4 var(--mono);
+  --paper: #fff4ef;
+  --ink: #4b1b17;
+  --wood-edge: #75231e;
+  --nail: #471814;
+  --accent: #bb3027;
+  --accent-text: #fff4ef;
+  --stone-dk: #c7b0a4;
+  --tablet: linear-gradient(160deg,#fffaf4,#eee2d8 55%,#dcc9bd);
+  color: var(--paper);
+  background: linear-gradient(#cf3b30e0,#a52b24e0),var(--planks);
+  border-radius: var(--radius);
 }
+.wallets-menu:not([open]) { display: none; }
+.wallets-menu .panel-title h2 { min-width: 0; }
+.wallets-menu .panel-title .sign { max-width: 100%; }
+.wallets-menu .panel-title .foot-button { flex: none; }
+.wallets-menu .help { color: var(--paper); }
+.wallets-menu .foot-button { color: var(--ink); background: linear-gradient(#fffaf4,#e8d8ce); text-shadow: none; }
+.wallets-menu .foot-button:hover,.wallets-menu .foot-button:focus-visible { background: linear-gradient(#fff,#f3e7df); }
+.wallets-menu .foot-button:focus-visible { box-shadow: 0 2px 0 var(--nail),0 0 0 2px var(--paper); }
+.wallets-content { display: flex; flex-direction: column; gap: 12px; }
+.wallets-picks { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; padding: 12px; }
+.wallets-pick { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-width: 0; padding: 16px 8px; }
+.wallets-pick canvas { max-width: 100%; width: auto; height: 64px; object-fit: contain; image-rendering: pixelated; }
+.wallets-pick b { font-size: 11px; max-width: 100%; overflow-wrap: anywhere; }
+.wallets-menu .wallets-pick[aria-pressed="true"] { color: var(--paper); background: linear-gradient(#d6493b,var(--accent)); border-color: var(--wood-edge); }
+.wallets-pick[aria-pressed="true"] b { text-decoration: underline; text-underline-offset: 3px; }
+.wallets-menu .wallets-take { color: var(--paper); background: linear-gradient(#d6493b,var(--accent)); }
+.wallets-menu .wallets-take:hover,.wallets-menu .wallets-take:focus-visible { background: linear-gradient(#e25748,#c8352a); }
+@media (pointer:coarse) { .wallets-menu .foot-button { min-height: 44px; } }
+@media (max-width: 520px) { .wallets-picks { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 /* The line over the view while a device is carried, with the Throw button beside it. */
 .wallet-carry { position: fixed; left: 50%; top: calc(64px + var(--safe-top)); transform: translateX(-50%); z-index: 15; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; max-width: calc(100vw - 32px); margin: 0; padding: 6px 8px 6px 12px; color: #fff4df; background: #2a1d17e6; border: 2px solid #f2c14e; border-radius: 6px; font: 12px system-ui; letter-spacing: .03em; text-align: center; }
 .wallet-carry[hidden] { display: none; }

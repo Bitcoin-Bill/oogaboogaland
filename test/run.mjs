@@ -19886,6 +19886,14 @@ const walletsChecks = BL => {
   const I=BL.dsbInteriors.create({root:Wd.root,exterior,land,weather,relocate:noop,lock:noop,onChange:noop}),e=I.registry.get("free-wallets");
   record("Wallets address: occupied VAC 2 keeps VACANT 20 at 26/60 with its 4 x 4 m facade, beside SVRN at VAC 7",v.status==="occupied"&&v.occupant==="Free Hardware Wallets"&&v.interiorId==="free-wallets"&&e.building.name===v.buildingId&&e.building.x===26&&e.building.z===60&&e.building.w===4&&e.building.d===4&&e.label==="Free Hardware Wallets"&&BL.dsbVacancies.REGISTRY.filter(p=>p.status==="vacant").length===32,JSON.stringify({v,building:e.building}));
   I.review("free-wallets",true);I.update(.4);const Rm=I.active.room;
+  // Regression: flat footprint blockers prevented jumping over furniture and never supplied a landing surface.
+  const counterTop=I.groundAt(4.2,4.6,1.2,1.2,A),caseTop=I.groundAt(-4.4,-4.5,1.7,1.7,A);
+  record("Wallets furniture: counter and glass-case tops support landings, airborne travel clears the counter, walking off loses support, and floor-level bodies still collide",
+    Math.abs(counterTop-1.08)<1e-6&&Math.abs(caseTop-1.6)<1e-6
+    &&!I.walkable(3.2,4.6,5.2,4.6,0,A.bodyHeight,A)
+    &&Rm.flyable(3.2,4.6,5.2,4.6,1.2,A.bodyHeight,A)
+    &&I.walkable(4.2,4.6,3,4.6,counterTop,A.bodyHeight,A)&&I.groundAt(3,4.6,counterTop,counterTop,A)===0
+    &&Math.abs(Rm.ceilingAt(0,0,0,A)-4.29)<1e-6&&!Rm.flyable(6,4,7,4,2,A.bodyHeight,A),JSON.stringify({counterTop,caseTop}));
   const clear=(ax,az,bx=ax,bz=az)=>I.walkable(ax,az,bx,bz,0,A.bodyHeight,A),step=.25,minX=-6.5,minZ=-7.5,w=53,h=61,seen=new Uint8Array(w*h),queue=[];
   const index=(x,z)=>Math.round((z-minZ)/step)*w+Math.round((x-minX)/step),start=index(Rm.spawn.x,Rm.spawn.z);seen[start]=1;queue.push(start);
   for(let head=0;head<queue.length;head++){const k=queue[head],ix=k%w,iz=Math.floor(k/w),x=minX+ix*step,z=minZ+iz*step;
@@ -19893,10 +19901,20 @@ const walletsChecks = BL => {
   const reachable=p=>{const i=index(p.x,p.z),ix=i%w,iz=Math.floor(i/w);for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){const nx=ix+dx,nz=iz+dz;if(nx>=0&&nx<w&&nz>=0&&nz<h&&seen[nz*w+nx]&&clear(minX+nx*step,minZ+nz*step,p.x,p.z))return true;}return false;};
   const goals=[Rm.exit,Rm.machine,...Rm.browseGoals];
   record("Wallets navigation: Yellow reaches the machine, the small print, every review area and the exit",clear(Rm.spawn.x,Rm.spawn.z)&&goals.every(reachable),JSON.stringify({unreachable:goals.filter(p=>!reachable(p))}));
-  record("Wallets zones: the machine and anywhere else in the store open the free wallets",BL.dsbMenuZones.resolve(Rm,Rm.machine).route==="machine"&&BL.dsbMenuZones.resolve(Rm,{x:0,z:4}).route==="machine"&&BL.dsbMenuZones.resolve(Rm,Rm.machine).label==="Free wallets");
+  record("Wallets zones: only the vending machine approach offers free wallets",BL.dsbMenuZones.resolve(Rm,Rm.machine)?.route==="machine"&&BL.dsbMenuZones.resolve(Rm,{x:0,z:-5})?.label==="Free wallets"&&[{x:0,z:4},{x:2,z:-5.6},{x:0,z:-4}].every(p=>BL.dsbMenuZones.resolve(Rm,p)===null));
   let nodes=0,finite=true;const geometry=new Set(),walk=k=>{nodes++;if(k.geometry){geometry.add(k.geometry);finite&&=k.geometry.verts.every(Number.isFinite);}k.children.forEach(walk);};walk(Rm.root);
   let flickerOk=true;for(let t=0;t<30;t+=.05){Rm.flicker(t);flickerOk&&=Rm.lighting.lightCount===5&&Rm.lighting.lights.every(Number.isFinite);}
-  record("Wallets budget: finite shared meshes, two device cases, two cameras, five lamps (one flickering with the neon) and one slot kept for a blast's flash",finite&&flickerOk&&nodes<700&&geometry.size<60&&Rm.counts.cases===2&&Rm.counts.cameras===2&&Rm.lighting.lightCount===5&&Rm.lamps===5&&Rm.lighting.lights.length>=48,JSON.stringify({nodes,geometries:geometry.size}));
+  record("Wallets budget: finite shared meshes, six device cases, four cameras, five lamps (one flickering with the neon) and one slot kept for a blast's flash",finite&&flickerOk&&nodes<700&&geometry.size<60&&W.LOOKS.length===6&&Rm.counts.cases===W.LOOKS.length&&Rm.fixtures.filter(f=>f.kind==="vitrine").every(f=>f.node.position.z-.42>=Rm.bounds.minZ&&f.node.position.z+.42<=Rm.bounds.maxZ)&&Rm.counts.cameras===4&&Rm.lighting.lightCount===5&&Rm.lamps===5&&Rm.lighting.lights.length>=48,JSON.stringify({nodes,geometries:geometry.size}));
+  let tracking=true,blinking=true;
+  for(const target of [{x:-6,y:0,z:-7},{x:6,y:0,z:7},{x:0,y:2.5,z:0},{x:6,y:0,z:-7},{x:-6,y:0,z:7}]){
+    Rm.flicker(0,target,1.2);
+    for(const {head,led} of Rm.cameras){
+      const dx=target.x-head.position.x,dy=target.y+1.2-head.position.y,dz=target.z-head.position.z,length=Math.hypot(dx,dy,dz),pitch=head.rotation.x,yaw=head.rotation.y;
+      tracking&&=Math.abs(Math.sin(yaw)*Math.cos(pitch)-dx/length)<1e-10&&Math.abs(-Math.sin(pitch)-dy/length)<1e-10&&Math.abs(Math.cos(yaw)*Math.cos(pitch)-dz/length)<1e-10&&led.parent===head;
+    }
+  }
+  for(let i=0;i<Rm.cameras.length;i++){Rm.flicker(1.6-i*.23);blinking&&=Rm.cameras[i].led.glow===1;Rm.flicker(2.4-i*.23);blinking&&=Rm.cameras[i].led.glow===.05;}
+  record("Wallets CCTV: four corner heads track the player's height across the room, with attached blinking lights",Rm.cameras.length===4&&new Set(Rm.cameras.map(({head})=>Math.sign(head.position.x)+":"+Math.sign(head.position.z))).size===4&&tracking&&blinking,JSON.stringify({tracking,blinking}));
   // The devices in the real Chora and the store, through the driven Ooga's own hands.
   const fx={say:noop,sayAt:noop,burst:noop,puff:noop},children=Wd.root.children.length;let space=0;
   const ground=(x,z,feet)=>I.active?I.groundAt(x,z):Math.max(land.groundAt(x,z),Wd.ground(x,z));
@@ -19946,12 +19964,13 @@ const walletsChecks = BL => {
   document.addEventListener=(k,f)=>{if(k==="visibilitychange")heard=f;};document.removeEventListener=(k,f)=>{if(k==="visibilitychange"&&f===heard)unheard=f;};document.hidden=false;
   try{
     const sound=W.create({root:Wd.root,crew:Wd.crew,fx,hud:{toast:noop},groundAt:ground,bounds:()=>null,addTarget:noop,removeTarget:noop,pickGeometry:BL.walletsRoom.PICK,muted:()=>mute}),S2=sound.debug,go=sec=>{for(let t=0;t<sec;t+=.05)sound.update(.05,t,0);};
-    sound.take(0);go(.1);const playing=S2.stats().walletAudio===1&&S2.stats().walletAudible===1;
+    mute=true;sound.take(0);go(.1);const startedMuted=S2.stats().walletAudio===0&&S2.stats().walletAudible===0;
+    mute=false;go(.1);const playing=S2.stats().walletAudio===1&&S2.stats().walletAudible===1;
     mute=true;go(.1);const muted=S2.stats().walletAudible===0&&calls.at(-1)==="suspend";mute=false;go(.1);const unmuted=S2.stats().walletAudible===1&&calls.at(-1)==="resume";
     document.hidden=true;heard();const hiddenOff=S2.stats().walletAudible===0&&calls.at(-1)==="suspend";go(.1);const stays=calls.at(-1)==="suspend";document.hidden=false;heard();const shown=calls.at(-1)==="resume";
     S2.detonate();go(.5);const ringing=S2.stats().walletAudible===1;go(3);const idle2=S2.stats().wallets===0&&S2.stats().walletAudible===0&&calls.at(-1)==="suspend";
     sound.dispose();const closed=calls.at(-1)==="close"&&unheard===heard;
-    record("Wallets sound: the context runs only while a device is out or a boom rings on, the sound is on and the tab is shown, and leaving closes it and its visibility handler",playing&&muted&&unmuted&&hiddenOff&&stays&&shown&&ringing&&idle2&&closed,JSON.stringify({playing,muted,unmuted,hiddenOff,stays,shown,ringing,idle2,closed,calls}));
+    record("Wallets sound: the context runs only while a device is out or a boom rings on, the sound is on and the tab is shown, and leaving closes it and its visibility handler, including a first device taken while muted",startedMuted&&playing&&muted&&unmuted&&hiddenOff&&stays&&shown&&ringing&&idle2&&closed,JSON.stringify({startedMuted,playing,muted,unmuted,hiddenOff,stays,shown,ringing,idle2,closed,calls}));
   }finally{globalThis.AudioContext=saved.AudioContext;document.addEventListener=saved.add;document.removeEventListener=saved.remove;document.hidden=saved.hidden;}
   sys.dispose();const left=Wd.root.children.length;I.dispose();Wd.dispose();
   record("Wallets disposal: every batch and pick target leaves with the visit",targets.size===0&&left===children,JSON.stringify({targets:targets.size,left,children}));
@@ -19962,25 +19981,28 @@ const walletsChecks = BL => {
   record("Wallets caches: the kit's and the devices' meshes are shared within a visit and dropped when DSB Land is left",cratesShared&&cratesRebuilt);
   walletsMenuChecks(BL);
 };
-// The machine through a minimal DOM: ClownCard and Rektdger as pictures and names alone, Take hands over the chosen one.
+// The machine through a minimal DOM: all six wallets as pictures and names alone, Take hands over the chosen one.
 const walletsMenuChecks = BL => {
-  const keys=["document","innerWidth","innerHeight"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]])),elements=[];
+  const keys=["document","innerWidth","innerHeight"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]])),elements=[],hud=BL.hud;
   const element=tag=>{const e={tag,children:[],dataset:{},attributes:{},style:{setProperty(){}},classList:{add(){},remove(){},contains:()=>false},open:false,parentElement:null,textContent:"",listeners:new Map(),
     setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];},appendChild(c){c.parentElement=this;this.children.push(c);return c;},append(...v){v.forEach(x=>typeof x==="string"?0:this.appendChild(x));},replaceChildren(){this.children=[];},
     closest(q){return q==="button"?(this.tag==="button"?this:this.parentElement?.closest(q)):null;},querySelector:()=>null,querySelectorAll:()=>[],focus(){},getClientRects:()=>[{}],showModal(){this.open=true;},close(){this.open=false;},
     remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);this.parentElement=null;},addEventListener(k,f){this.listeners.set(k,f);},removeEventListener(k){this.listeners.delete(k);},
     getContext:()=>({fillRect(){}}),get isConnected(){return !!this.parentElement;}};elements.push(e);return e;};
   const body=element("body");globalThis.document={body,createElement:element,activeElement:body,addEventListener(){},removeEventListener(){}};globalThis.innerWidth=1440;globalThis.innerHeight=900;
+  BL.hud={...hud,signLettering:text=>{const svg=element("svg");svg.textContent=text;return svg;}};
   try{
     let taken=-1;const M=BL.walletsMenu.create({onTake:look=>{taken=look;}});M.open();
-    const dialog=body.children.find(n=>n.tag==="dialog"),content=dialog.children[1],text=[],visit=n=>{if(n.textContent)text.push(n.textContent);n.children.forEach(visit);};visit(content);
+    const dialog=body.children.find(n=>n.tag==="dialog"),panel=dialog.children[0],content=panel.children[2],text=[],visit=n=>{if(n.textContent)text.push(n.textContent);n.children.forEach(visit);};visit(content);
     const picks=content.children[0].children,names=picks.map(b=>b.children[1].textContent);
-    const shown=M.isOpen&&names.join()==="ClownCard,Rektdger"&&picks.every(b=>b.children[0].tag==="canvas")&&JSON.stringify(text)===JSON.stringify(["ClownCard","Rektdger","Take"])&&!/explo|second|bomb|beep|fuse|tick/i.test(text.join(" "));
+    const shown=M.isOpen&&dialog.className==="sheet-body wallets-menu"&&panel.className==="panel"&&panel.children[0].className==="panel-title"&&content.children[0].className==="slab wallets-picks"&&content.children[1].className==="chat-send wallets-take"&&names.join()==="ClownCard,Rektdger,BrickBox02,Passpoor,Jaded,SeedSnitcher"&&picks.every(b=>b.children[0].tag==="canvas")&&JSON.stringify(text)===JSON.stringify(["ClownCard","Rektdger","BrickBox02","Passpoor","Jaded","SeedSnitcher","Take"])&&!/explo|second|bomb|beep|fuse|tick/i.test(text.join(" "));
     dialog.listeners.get("click")({target:picks[1]});dialog.listeners.get("click")({target:content.children[1]});const took=taken===0&&!M.isOpen;
-    M.open();dialog.listeners.get("keydown")({type:"keydown",key:"Escape",target:dialog,preventDefault(){},stopPropagation(){}});const escaped=!M.isOpen&&taken===0;
+    let allTaken=true;
+    for(const b of picks){M.open();dialog.listeners.get("click")({target:b});allTaken&&=b.attributes["aria-pressed"]==="true"&&picks.filter(p=>p.attributes["aria-pressed"]==="true").length===1;dialog.listeners.get("click")({target:content.children[1]});allTaken&&=taken===Number(b.dataset.wallet)&&!M.isOpen;}
+    const lastTaken=taken;M.open();dialog.listeners.get("keydown")({type:"keydown",key:"Escape",target:dialog,preventDefault(){},stopPropagation(){}});const escaped=!M.isOpen&&taken===lastTaken;
     M.dispose();
-    record("Wallets machine: ClownCard and Rektdger as pictures and names alone with Take, nothing said about what they do; Take hands over the chosen one, Escape closes, disposal leaves nothing",shown&&took&&escaped&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({names,text,took,escaped}));
-  }finally{for(const [k,v] of Object.entries(saved))globalThis[k]=v;}
+    record("Wallets machine: all six wallets as pictures and names alone with Take, nothing said about what they do; Take hands over every chosen variant, Escape closes, disposal leaves nothing",shown&&took&&allTaken&&escaped&&!body.children.length&&elements.every(e=>!e.listeners.size)&&BL.dsbMenuShell.count===0,JSON.stringify({names,text,took,allTaken,escaped}));
+  }finally{BL.hud=hud;for(const [k,v] of Object.entries(saved))globalThis[k]=v;}
 };
 const menuShellChecks = BL => {
   const keys=["document","innerWidth","innerHeight","visualViewport","addEventListener","removeEventListener"],saved=Object.fromEntries(keys.map(k=>[k,globalThis[k]]));
@@ -22716,15 +22738,15 @@ const WALLETS_SPOT=`(()=>{const D=__ooga.dsb,I=D.interiors,p=D.avatar.root.posit
     if(I.active?I.walkable(x,z,x,z,0,1,{bodyRadius:.7}):D.land.clearAt(x,z,.7))return {x,y,z};}
   return null;})()`;
 const walletsUntil=(b,cond)=>b.evaluate(`(()=>{for(let i=0;i<40&&!(${cond});i++)for(let k=0;k<2;k++)BL.scenes.dsb.update(1/20,k/20);return !!(${cond});})()`);
-scene("dsb",{label:"wallets",query:"&view=wallets-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets",why:"playthrough: VAC 2's real door enters Free Hardware Wallets, Space at the machine offers ClownCard and Rektdger by picture and name alone, Take hands one over with its countdown line and the keys, a floor click sets it down exactly there, Y throws the next; out in the Chora a carried device stays in hand, a ground click sets it down, devices together go off as one bigger blast and one left in the store goes off unseen; carried into the Studio's and Maxis's seats it rests on the lap and its blast leaves the Ooga seated",run:async b=>{
+scene("dsb",{label:"wallets",query:"&view=wallets-door&weather=clear&time=1200",opts:{w:640,h:400},steps:[{name:"dsb wallets",why:"playthrough: VAC 2's real door enters Free Hardware Wallets, Space at the machine offers all six wallets by picture and name alone, Take hands one over with its countdown line and the keys, a floor click sets it down exactly there, Y throws the next; out in the Chora a carried device stays in hand, a ground click sets it down, devices together go off as one bigger blast and one left in the store goes off unseen; carried into the Studio's and Maxis's seats it rests on the lap and its blast leaves the Ooga seated",run:async b=>{
   await walletsStep(b);await b.key(" ");await walletsStep(b);
   const entry=await b.evaluate('(()=>{const D=__ooga.dsb,V=D.vacancies.resolve(2);return {id:D.interiors.active?.room.id,text:V.text,status:V.address.status,exterior:D.exterior.visible};})()');
   record("Wallets browser: Space at VAC 2's door enters Free Hardware Wallets",entry.id==="free-wallets"&&entry.text==="Free Hardware Wallets"&&entry.status==="occupied"&&!entry.exterior,JSON.stringify(entry));
   await b.evaluate('__ooga.pilot.navigate(__ooga.dsb.interiors.active.room.reviews["wallets-machine"])');await walletsStep(b);await b.key(" ");await walletsStep(b);
-  const dialog=await b.evaluate('(()=>{const p=document.querySelector(".wallets-menu");return {open:__ooga.dsb.walletsMenu.isOpen,engaged:p.classList.contains("dsb-menu-engaged"),names:[...p.querySelectorAll(".wallets-pick b")].map(n=>n.textContent).join(),said:p.querySelector(".wallets-content").innerText.replace(/\\s+/g," ").trim()};})()');
+  const dialog=await b.evaluate('(()=>{const p=document.querySelector(".wallets-menu");return {open:__ooga.dsb.walletsMenu.isOpen,engaged:p.classList.contains("dsb-menu-engaged"),names:[...p.querySelectorAll(".wallets-pick b")].map(n=>n.textContent).join(),said:p.querySelector(".wallets-content").innerText.replace(/\\s+/g," ").trim().toLowerCase()};})()');
   await walletsClick(b,'.wallets-pick[data-wallet="0"]');await walletsClick(b,".wallets-take");await walletsStep(b,6);
   const taken=await b.evaluate('(()=>{const D=__ooga.dsb,t=document.getElementById("toast");return {open:D.walletsMenu.isOpen,list:D.wallets.list().map(d=>d.look+":"+d.state).join(),line:D.walletLine,shown:!document.querySelector(".wallet-carry").hidden,toast:t&&!t.hidden?t.textContent:null};})()');
-  record("Wallets browser: Space at the machine offers ClownCard and Rektdger by picture and name alone; Take hands over the Rektdger with its countdown line and, on a desktop, Y and the ground",dialog.open&&dialog.engaged&&dialog.names==="ClownCard,Rektdger"&&dialog.said==="ClownCard Rektdger Take"&&!taken.open&&taken.list==="rektdger:carried"&&taken.line==="Carrying Rektdger · 21 s · Click the ground to place ·"&&taken.shown&&taken.toast==="Press Y to throw · Click the ground to place",JSON.stringify({dialog,taken}));
+  record("Wallets browser: Space at the machine offers all six wallets by picture and name alone; Take hands over the Rektdger with its countdown line and, on a desktop, Y and the ground",dialog.open&&dialog.engaged&&dialog.names==="ClownCard,Rektdger,BrickBox02,Passpoor,Jaded,SeedSnitcher"&&dialog.said==="clowncard rektdger brickbox02 passpoor jaded seedsnitcher take"&&!taken.open&&taken.list==="rektdger:carried"&&taken.line==="Carrying Rektdger · 21 s · Click the ground to place ·"&&taken.shown&&taken.toast==="Press Y to throw · Click the ground to place",JSON.stringify({dialog,taken}));
   await b.evaluate('__ooga.pilot.navigate(__ooga.dsb.interiors.active.room.reviews["wallets-wide"])');await walletsStep(b);
   const spot=await b.evaluate(WALLETS_SPOT);await walletsTap(b,spot.x,spot.y,spot.z);const walked=await walletsUntil(b,"!__ooga.dsb.walletWalk");
   const placed=await b.evaluate(`(()=>{const D=__ooga.dsb,d=D.wallets.list()[0];return {state:d.state,off:Math.hypot(d.x-(${spot.x}),d.z-(${spot.z})),y:d.y,line:D.walletLine};})()`);
@@ -22798,7 +22820,7 @@ const walletsPhoneCarrying={name:"wallets phone carrying",why:"rule: every scene
   await walletsClick(b,".wallet-carry .wallet-throw");const thrown=await b.evaluate('__ooga.dsb.wallets.list().some(d=>d.state==="flying")');
   record("wallets phone carrying: the carry line and its Throw button sit on screen under a thumb beside the sticks, nothing clipped, and a tap on Throw throws",bad.length===0&&thrown,JSON.stringify({bad,thrown}));
 }};
-scene("dsb",{label:"wallets phone",query:"&interior=free-wallets&view=wallets-dialog&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[phone("wallets",{play:'__ooga.dsb.walletsMenu.isOpen||__ooga.dsb.walletsMenu.open()',required:['.wallets-pick[data-wallet="1"]','.wallets-pick[data-wallet="0"]',".wallets-take"]}),walletsPhoneCarrying]});
+scene("dsb",{label:"wallets phone",query:"&interior=free-wallets&view=wallets-dialog&weather=clear&time=1200",opts:{w:390,h:844,mobile:true},steps:[phone("wallets",{play:'__ooga.dsb.walletsMenu.isOpen||__ooga.dsb.walletsMenu.open()',required:['.wallets-pick[data-wallet="1"]','.wallets-pick[data-wallet="0"]','.wallets-pick[data-wallet="2"]','.wallets-pick[data-wallet="3"]','.wallets-pick[data-wallet="4"]','.wallets-pick[data-wallet="5"]',".wallets-take"]}),walletsPhoneCarrying]});
 // Review measures settled WebGL views, not the opening curtain's CSS animation.
 // Keep the driver's reduced-motion default: software compositing can delay the
 // full curtain past readiness even on the approved pre-merge build.
