@@ -19673,7 +19673,8 @@ const rescueChecks = BL => {
     look(10,38,22,14,0,46);const homeStart=T.strays().map(e=>[e.x,e.z]);run(20,D.CHORA);
     const roamed=T.strays(),cam=camera.position,reach=D.DRAW.high,thinkFar=(reach+12)**2,moved=roamed.filter((e,k)=>(e.x-cam.x)**2+(e.y-cam.y)**2+(e.z-cam.z)**2>thinkFar&&Math.hypot(e.x-homeStart[k][0],e.z-homeStart[k][1])>.3).length;
     const me0=A.root.position,atHome=roamed.every(e=>Math.hypot(e.x-e.home[0],e.z-e.home[2])<=3.6||Math.hypot(e.x-me0.x,e.z-me0.z)<22),drawnStrays=roamed.filter(e=>e.shown),wide=T.stats();
-    const inReach=drawnStrays.every(e=>(e.x-cam.x)**2+(e.y-cam.y)**2+(e.z-cam.z)**2<=reach*reach),dogPicks=[...owned].filter(([n,o])=>o.kind==="dog"&&n.visible);
+    // A dog is measured before it moves in a frame and drawn after, so one at the edge may be drawn a step past it.
+    const inReach=drawnStrays.every(e=>(e.x-cam.x)**2+(e.y-cam.y)**2+(e.z-cam.z)**2<=(reach+.5)**2),dogPicks=[...owned].filter(([n,o])=>o.kind==="dog"&&n.visible);
     const fixed=batches.length===D.BREEDS.length*6+2&&batches.every(b=>b.fixedInstanceCapacity&&b.instanceCount*20<=b.instanceData.length)&&batches.slice(0,6).every(b=>b.instanceData.length===D.SHADOW_CAP*20&&b.geometry.castShadow!==false)&&batches.slice(6,12).every(b=>b.instanceData.length===D.DRAWN_CAP*20&&b.geometry.castShadow===false)&&!!jet&&!jet.visible;
     const sets=T.shadows(),cast=sets.reduce((n,s)=>n+s[0],0),flat=sets.reduce((n,s)=>n+s[1],0),far=drawnStrays.filter(e=>(e.x-cam.x)**2+(e.y-cam.y)**2+(e.z-cam.z)**2>=D.SHADOW_NEAR**2).length;
     record("Rescue stray capacity: 300 strays in fixed slots and batches, at most 128 drawn and only within reach, a pick on each dog drawn, shadows only from those near the camera, the far ones still roaming near home",wide.strays===D.STRAY_CAP&&wide.dogs<=D.DOG_CAP&&drawnStrays.length>0&&drawnStrays.length<=D.DRAWN.high&&inReach&&dogPicks.length===wide.dogsDrawn&&dogPicks.every(([n,o])=>T.strays().some(e=>e.slot===o.dog&&e.shown))&&moved>20&&atHome&&fixed&&cast+flat===wide.dogsDrawn&&far>0&&flat>=far&&cast<=wide.dogsDrawn-far,JSON.stringify({wide,drawn:drawnStrays.length,moved,atHome,fixed,picks:dogPicks.length,cast,flat,far}));
@@ -19695,16 +19696,16 @@ const rescueChecks = BL => {
     run(.2,D.YARD);T.poop();run(1.6,D.YARD);const indoors=T.stats().poops===before;run(.2,D.CHORA);
     const now=T.stats().poops,scoop=sys.scoop(0)&&T.stats().poops===now-1&&kept2.scooped===1;
     record("Rescue poop: a fed dog poops in the Chora, never in a room, and a tap scoops it",pooped&&indoors&&scoop,JSON.stringify({before,pooped,indoors,scoop,poops:T.stats().poops}));
-    // The ring: every stray poops on cue until 512 piles lie all over DSB Land; then the oldest goes first, the saved
-    // ring keeps step, and over the Chora at most POOPS_DRAWN are drawn within reach, a pick shown on each and flies
-    // over at most FLY_PILES of them.
+    // The ring: every stray poops on cue until 512 piles lie all over DSB Land (over 40 m from end to end in x); then
+    // the oldest goes first, the saved ring keeps step, and over the Chora at most POOPS_DRAWN are drawn within reach,
+    // a pick shown on each and flies over at most FLY_PILES of them.
     for(let k=0;k<4&&T.stats().poops<D.POOP_CAP;k++){for(const e of T.strays())T.strayPoop(e.slot);run(24,D.CHORA);}
     // The strays still due drop theirs first, so the dog's is the one pile that comes next.
-    run(30,D.CHORA);const ringFull=T.stats().poops,second=T.poopAt(1),spanX=[0,1,2,3].map(k=>T.poopAt(k*100)?.x);T.poop();run(1.6,D.CHORA);sys.writeStore();
+    run(30,D.CHORA);const ringFull=T.stats().poops,second=T.poopAt(1),spanX=[Infinity,-Infinity];for(let k=0;k<D.POOP_CAP;k++){const x=T.poopAt(k).x;spanX[0]=Math.min(spanX[0],x);spanX[1]=Math.max(spanX[1],x);}T.poop();run(1.6,D.CHORA);sys.writeStore();
     const shifted=T.stats().poops===D.POOP_CAP&&T.poopAt(0).x===second.x&&T.poopAt(0).z===second.z&&kept2.poops.length===D.POOP_CAP*3&&kept2.poops[0]===Math.round(second.x*100)/100;
     look(10,14,32,16,3,46);run(.2,D.CHORA);const piles=T.stats(),poopPicks=[...owned].filter(([n,o])=>o.kind==="poop"&&n.visible).length;
     let pilesInReach=0;for(let k=0;k<D.POOP_CAP;k++){const q=T.poopAt(k);if((q.x-camera.position.x)**2+(q.y-camera.position.y)**2+(q.z-camera.position.z)**2<D.POOP_DRAW.high**2)pilesInReach++;}
-    record("Rescue poop ring: 512 piles all over DSB Land, the oldest goes first and the save keeps step; at most 160 drawn within reach with a pick each, flies over at most 48",ringFull===D.POOP_CAP&&shifted&&new Set(spanX.map(x=>Math.round(x/40))).size>1&&piles.poopsDrawn===Math.min(pilesInReach,D.POOPS_DRAWN.high)&&poopPicks===piles.poopsDrawn&&piles.flies<=D.FLY_PILES*2&&piles.flies>0,JSON.stringify({ringFull,shifted,spanX,piles,poopPicks,pilesInReach}));
+    record("Rescue poop ring: 512 piles all over DSB Land, the oldest goes first and the save keeps step; at most 160 drawn within reach with a pick each, flies over at most 48",ringFull===D.POOP_CAP&&shifted&&spanX[1]-spanX[0]>40&&piles.poopsDrawn===Math.min(pilesInReach,D.POOPS_DRAWN.high)&&poopPicks===piles.poopsDrawn&&piles.flies<=D.FLY_PILES*2&&piles.flies>0,JSON.stringify({ringFull,shifted,spanX,piles,poopPicks,pilesInReach}));
     run(1,D.CHORA,.1);const asleep=T.strays().filter(e=>e.mood!=="sleep").length;run(30,D.CHORA,.1);const home=T.strays().every(e=>e.mood==="sleep"&&Math.hypot(e.x-e.home[0],e.z-e.home[2])<.5);run(4,D.CHORA);
     record("Rescue strays: by night every stray sleeps at its home and wakes with the day",asleep===0&&home&&T.strays().every(e=>e.mood!=="sleep"));
     T.hunger(1);run(D.STARVE_SECONDS+1,D.CHORA);
@@ -22390,12 +22391,17 @@ scene("dsb",{label:"SVRN checkpoint",query:"&view=svrn-door&weather=storm&time=1
 }}]});
 // Free Puppies Rescue at VAC 1, played with real keys and clicks: kept short so a session stays well inside its two minutes.
 // Each step is 0.6 s of play in twelve updates: a DSB update costs tens of milliseconds on a software renderer.
-const rescueStep=b=>b.evaluate('for(let i=0;i<12;i++)BL.scenes.dsb.update(1/20,i/20)');
+// It ends on one whole frame, so `project` and a click's pick use the camera just navigated to, not the last one drawn,
+// and then two of the page's, as a visitor's next key would: a dialog control a key or click closed keeps focus until
+// one is drawn.
+const rescueStep=async b=>{await b.evaluate('for(let i=0;i<12;i++)BL.scenes.dsb.update(1/20,i/20);__ooga.advance(1/60)');await b.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');};
 // A dialog control the way a visitor reaches it: scrolled into view first, then clicked where it shows.
 const rescueClick=async(b,sel)=>{const r=await b.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);await b.click(r.x,r.y);};
 const rescueTap=async(b,x,y,z)=>{const p=await b.evaluate(`__ooga.project(${x},${y},${z},{})`);await b.click(p.x,p.y);};
 // Stands the Ooga just beyond (x, z) from the view, so what lies there is in front of it on screen.
-const RESCUE_LOOK='const look=(x,z)=>{const D=__ooga.dsb,yaw=.6,ax=x-Math.sin(yaw)*1.6,az=z-Math.cos(yaw)*1.6;__ooga.pilot.navigate({position:{x:ax,y:D.groundAt(ax,az),z:az},yaw,pitch:.5,dist:4.5});};';
+// The Ooga stands 1.6 m to the side of what is looked at, not before it, so that shows at mid-height: where the
+// window's own chrome takes the bottom of the view (headless Chrome on a Mac), a point low in it can not be clicked.
+const RESCUE_LOOK='const look=(x,z)=>{const D=__ooga.dsb,yaw=.6,ax=x-Math.cos(yaw)*1.6,az=z+Math.sin(yaw)*1.6;__ooga.pilot.navigate({position:{x:ax,y:D.groundAt(ax,az),z:az},yaw,pitch:.5,dist:4.5});};';
 // The visitor signed in as the Ooga walking DSB Land (no Worker on the test page, so only `state.me` says so).
 const RESCUE_SIGN_IN='(()=>{const c=BL.characters.get(__ooga.dsb.avatar.traits.name);BL.net.state.me={id:1,login:c.github||c.handle};})()';
 const RESCUE_SIGN_IN_WORDS="Sign in to adopt a puppy.";
@@ -22425,6 +22431,9 @@ scene("dsb",{label:"rescue checkpoint",query:"&view=rescue-door&weather=clear&ti
   record("Rescue browser: back out through the door the dog follows its walking Ooga into the Chora, where the strays roam and the yard's puppies are not drawn",!outside.inside&&outside.walked>.5&&outside.shown&&outside.near<3&&outside.strays>=3&&outside.drawn===outside.strays+1,JSON.stringify(outside));
   const snapshot=()=>b.evaluate('(()=>{let nodes=0;const visit=n=>{nodes++;n.children.forEach(visit);};visit(BL.scenes.dsb.root);return {nodes,targets:BL.scenes.dsb.input.targetCount,rooms:__ooga.dsb.interiors.rooms.size,panels:document.querySelectorAll(".rescue-menu").length,dogs:__ooga.dsb.rescue.dogs.stats().dogs};})()');
   const door='(()=>{const D=__ooga.dsb,r=D.interiors.registry.get("puppy-rescue");__ooga.pilot.navigate({position:r.entry,yaw:r.building.yaw,pitch:.12,dist:4});})()';
+  // The yard restocks the adopted puppy's spot RESTOCK_SECONDS after the adoption; counted before it has, the trips
+  // would see one dog more.
+  await b.evaluate('for(let i=0;i<60&&__ooga.dsb.rescue.dogs.stats().dogsWaiting<6;i++)BL.scenes.dsb.update(1/10,i/10)');
   const base=await snapshot();let trips=true;
   for(let i=0;i<2;i++){await b.evaluate(door);await rescueStep(b);await b.key(" ");await rescueStep(b);trips&&=await b.evaluate('__ooga.dsb.interiors.active?.room.id==="puppy-rescue"&&__ooga.dsb.rescue.dogs.dog().shown');await b.key(" ");await rescueStep(b);trips&&=await b.evaluate('!__ooga.dsb.interiors.active&&__ooga.dsb.avatar===window.__rescueAvatar&&__ooga.dsb.rescue.dogs.dog().shown');}
   const after=await snapshot();
