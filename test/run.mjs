@@ -20487,7 +20487,9 @@ const raceRigChecks = async () => {
     // The fragment shader, re-baselined on purpose: 487d99ac909f added uObjectSlab2 for the Factory roof bore
     // (b82d02f4 to f5f71f79), ab4ebcd sampled retained canvas surfaces (to c98cc70d) and e32e91e sampled the
     // foliage LOD atlas (to fb12fd53). Removing those additions would not restore b82d02f4 alone.
-    "fb12fd53216aa902750f5bf315e44a6334c9b24fb58afb12f28a4f5e85233677",
+    // The wallet store adds opt-in blacklight fluorescence and distance falloff (to 7db01487).
+    // uBlacklight.w is zero outside that effect; the vertex and shadow programs remain unchanged.
+    "7db01487f3d0ffd35e232946cbca13238e1346cdb56a10baaeb818f835c86abb",
     "37030f053de422aa157f017ceedef0812ed57a17c9e1b2af4aab017c0b645364"
   ];
   record("race rig strategy: ordinary mesh, fragment and shadow shader bytes retain the pre-rig fast path", ordinaryHashes.every((hash, i) => hash === expectedOrdinaryHashes[i]), JSON.stringify(ordinaryHashes));
