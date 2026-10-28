@@ -46,7 +46,7 @@
   const EAT_SECONDS = 2.6, FOOD_DROP_SECONDS = 0.4, SQUAT_SECONDS = 1.4, RESTOCK_SECONDS = 4;
   // A dog stopped by a wall further than LEFT_BEHIND from its Ooga, or whose Ooga moved more than MOVED in one frame
   // (a door, the deep-water return), turns up beside it; a hungry one trots after an Ooga further off than TROT.
-  const WALK = 2.2, RUN = 4.6, LEFT_BEHIND = 2.5, MOVED = 3, TROT = 4;
+  const WALK = 2.2, RUN = 4.6, FED_RUN = 6.9, LEFT_BEHIND = 2.5, MOVED = 3, TROT = 4;
   // Flight: the dog takes off once its Ooga thrusts off the ground or is LIFT above what lies under it and flies next to
   // it, FLY_SIDE out on its own side and FLY_UP over its feet, at up to CATCH_UP times a jetpack's speed (`flyTo` closes
   // FLY_GAIN times the gap a second, so to keep abreast at speed it aims a second's FLY_GAIN-th of its Ooga's way ahead,
@@ -714,10 +714,12 @@
       phase[i] += dt * 4;
       return d < 0.15 && Math.abs(ty - py[i]) < 0.15;
     };
-    // Whether the Ooga is in the air: thrusting off what it stands on, or well above it.
+    // Horizontal steering burns fuel too; Space is only the upward part of a powered flight.
+    const jetting = (cave) => !!cave.jet && !cave.jetRecovering && cave.jetFuel > 0 && (cave.jet.power > 0 || cave.jet.thrust);
+    // Whether the Ooga is in the air: jetting above what it stands on, or well above it.
     const airborne = (cave, p, feet) => {
       const gap = feet - ground(p.x, p.z, feet);
-      return gap > LIFT || !!cave.jet && cave.jet.thrust && gap > 0.02;
+      return gap > LIFT || jetting(cave) && gap > 0.02;
     };
     // The own dog: FOLLOW a step behind on the ground, FLY after its Ooga in the air, LAND near it once it is down.
     const thinkOwn = (i, dt) => {
@@ -728,9 +730,11 @@
       }
       const p = cave.root.position, feet = p.y - cave.baseY, h = cave.root.rotation.y, sh = Math.sin(h), ch = Math.cos(h);
       const moved = Math.abs(p.x - ownX) + Math.abs(p.z - ownZ) > MOVED, ahead = moved || !(dt > 0) ? 0 : Math.max(0, 1 / (FLY_GAIN * dt) - 1);
+      const driftX = moved ? 0 : p.x - ownX, driftZ = moved ? 0 : p.z - ownZ;
       const leadX = (p.x - ownX) * ahead, leadY = (p.y - ownY) * ahead, leadZ = (p.z - ownZ) * ahead;
-      const descending = !cave.jet?.thrust && (cave.hopV < -0.05 || p.y < ownY - 0.0001);
-      const rising = cave.jet?.thrust || p.y > ownY + 0.0001;
+      const powered = jetting(cave);
+      const descending = !powered && (cave.hopV < -0.05 || p.y < ownY - 0.0001);
+      const rising = powered || p.y > ownY + 0.0001;
       ownX = p.x; ownY = p.y; ownZ = p.z; lookUp = false;
       if (state[i] === NAP) state[i] = FOLLOW;
       e.hunger = hungerAfter(e.hunger, dt);
@@ -758,13 +762,26 @@
         return;
       }
       if (state[i] === LAND) {
-        // Fall where it is, with the same gravity as an Ooga, then follow on foot. Only a roof, water or
+        // Share the airborne Ooga's horizontal drift while falling under gravity, then follow on foot. Only a roof, water or
         // other unsafe floor calls for a powered approach to dry ground beside its Ooga.
-        const floor = ground(px[i], pz[i], py[i] - 0.65), ownerFloor = ground(p.x, p.z, feet);
-        landingHover = floor < -100 || !standable(px[i], floor, pz[i]) || !standable(p.x, ownerFloor, p.z);
+        let floor = ground(px[i], pz[i], py[i] - 0.65);
+        const ownerFloor = ground(p.x, p.z, feet);
+        const ownerFalling = feet > ownerFloor + 0.02;
+        if (ownerFalling && (driftX || driftZ)) {
+          const nx = px[i] + driftX, nz = pz[i] + driftZ, nextFloor = ground(nx, nz, py[i] - 0.65);
+          if (flyClear(px[i], pz[i], nx, nz, py[i])) {
+            px[i] = nx; pz[i] = nz; floor = nextFloor;
+            turn(i, Math.atan2(driftX, driftZ), dt * 6);
+          }
+        }
+        const fallY = py[i] + fallSpeed * dt - 0.5 * BL.pilot.WALK.gravity * dt * dt;
+        // Crossing a roof in mid-fall is not a landing. Keep falling above it; divert only as the dog reaches it,
+        // or once its Ooga actually stands on a surface where the dog cannot land.
+        landingHover = floor < -100 || !standable(px[i], floor, pz[i]) && fallY <= floor + 0.65
+          || !ownerFalling && !standable(p.x, ownerFloor, p.z);
         if (!landingHover) {
           speed[i] = 0; stuck[i] = 0;
-          const nextY = Math.max(floor, py[i] + fallSpeed * dt - 0.5 * BL.pilot.WALK.gravity * dt * dt);
+          const nextY = Math.max(floor, fallY);
           fallSpeed -= BL.pilot.WALK.gravity * dt;
           let clear = true;
           // Sample the vertical sweep so a long frame cannot fall through a wall or overhang.
@@ -778,6 +795,12 @@
           return;
         }
         fallSpeed = 0;
+        if (ownerFalling) {
+          // Clear an obstacle alongside the falling Ooga instead of peeling away to a ground landing spot.
+          flyTo(i, tx, feet + FLY_UP, tz, dt);
+          stuck[i] = lag[i] = 0;
+          return;
+        }
         if ((stuck[i] -= dt) <= 0) {
           if (!groundNear(p.x, p.z, feet, h, py[i])) { flyTo(i, tx, Math.max(py[i], feet + 0.6), tz, dt); return; }
           stuck[i] = 0.5;
@@ -828,7 +851,7 @@
         return;
       }
       state[i] = FOLLOW;
-      const step = walkTo(i, p.x - sh * 0.95 + ch * side[i], p.z - ch * 0.95 - sh * side[i], hungry ? WALK : RUN, dt);
+      const step = walkTo(i, p.x - sh * 0.95 + ch * side[i], p.z - ch * 0.95 - sh * side[i], hungry ? WALK : FED_RUN, dt);
       // Stopped by a wall with its Ooga out of reach on its own level, it turns up beside it; an Ooga up on a roof
       // it waits under, looking up.
       if (step === BLOCKED) {

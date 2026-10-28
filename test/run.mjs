@@ -19734,7 +19734,7 @@ const rescueFlightChecks = BL => {
   const standable=(x,y,z)=>!sea(x)&&!house(x,z)&&y-terrain(x,z)<.9;
   let blockedDescent=false;
   const flyClear=(ax,az,bx,bz,y)=>!(house(bx,bz)&&y<ROOF)&&y>=terrain(bx,bz)&&(!sea(bx)||y>.25)&&!(blockedDescent&&y>terrain(bx,bz)+.05&&y<ROOF+1);
-  const root=S.createNode(),cave={root:{position:{x:0,y:1.1,z:-5},rotation:{x:0,y:Math.PI/2,z:0},visible:true},baseY:.6,jet:{thrust:false},traits:{name:"tester",display:"Tester"}};
+  const root=S.createNode(),cave={root:{position:{x:0,y:1.1,z:-5},rotation:{x:0,y:Math.PI/2,z:0},visible:true},baseY:.6,jetFuel:1,jet:{thrust:false},traits:{name:"tester",display:"Tester"}};
   const camera={position:{x:0,y:30,z:-40},target:{x:20,y:0,z:0}},store={poops:[],scooped:0};
   const sys=D.create({root,crew:{player:cave},fx:{say:noop,sayAt:noop,burst:noop},hud:{toast:t=>toasts.push(t)},pile:{eat:()=>true},yard:BL.rescueRoom.YARD,door:[0,0],ground,standable,flyClear,
     addTarget:noop,removeTarget:noop,pickGeometry:BL.rescueRoom.PICK,strays:{homes:new Float32Array(0),renderer:{quality:"high"},clearSegment},camera,store,onRelease:noop});
@@ -19761,7 +19761,14 @@ const rescueFlightChecks = BL => {
     // Heading +x: along the flight is x, across it z. Measured once the dog has caught up with the climb.
     if(i>=20){const d=T.dog(),across=Math.abs(d.z-p.z);abreast.along=Math.max(abreast.along,Math.abs(d.x-p.x));abreast.across=[Math.min(abreast.across[0],across),Math.max(abreast.across[1],across)];abreast.up=Math.max(abreast.up,Math.abs(d.y-feet()-D.FLY_UP));}}
   const alongside=abreast.along<.5&&abreast.across[0]>D.FLY_SIDE-.3&&abreast.across[1]<D.FLY_SIDE+.3&&abreast.up<.3;
-  const aloft=T.dog(),after=T.stats().poops;cave.jet.thrust=false;
+  // WASD still powers the pack after Space is released, even while the Ooga loses height.
+  cave.jet.thrust=false;cave.jet.power=1;
+  for(let i=0;i<5;i++)tick(()=>{p.x+=.32;p.y-=.06;},"steering descent");
+  const steered=T.dog();cave.jetFuel=0;
+  tick(()=>{p.x+=.32;p.z+=.16;p.y-=.06;},"empty tank");const exhausted=T.dog();
+  cave.jetFuel=1;tick(()=>{p.x+=.32;p.y-=.06;},"resume steering");const resumed=T.dog();
+  record("Rescue jet steering: WASD keeps the dog flying without upward thrust; empty fuel preserves horizontal drift while falling and powered steering resumes flight",steered.state==="fly"&&steered.flame&&exhausted.state==="land"&&!exhausted.flame&&exhausted.y<steered.y&&Math.abs(exhausted.x-steered.x-.32)<.001&&Math.abs(exhausted.z-steered.z-.16)<.001&&resumed.state==="fly"&&resumed.flame,JSON.stringify({steered,exhausted,resumed}));
+  const aloft=T.dog(),after=T.stats().poops;cave.jet.power=0;
   const falling=[];
   for(let i=0;i<40&&feet()>terrain(p.x,p.z);i++){
     tick(()=>{p.y=Math.max(terrain(p.x,p.z)+cave.baseY,p.y-.6);},"descent");
@@ -19790,6 +19797,24 @@ const rescueFlightChecks = BL => {
   for(let i=0;i<60;i++)tick(()=>{p.y=Math.max(1.1,p.y-.6);},"jump landing");
   const jumpLanded=T.dog();
   record("Rescue jump: a dog drops without a jetpack and resumes following on the ground",jumpTop.state==="fly"&&jumpFall.state==="land"&&jumpFall.y<jumpTop.y&&!jumpFall.jet&&jumpLanded.state==="follow"&&Math.hypot(jumpLanded.x-p.x,jumpLanded.z-p.z)<3,JSON.stringify({jumpTop,jumpFall,jumpLanded}));
+  // An empty-tank fall crosses the whole roof footprint without landing on it. Neither its owner's floor query
+  // nor the dog's may divert the dog to ground level while both are still high above the building.
+  Object.assign(p,{x:8,z:0,y:1.1});cave.jet={thrust:true};cave.jetFuel=1;
+  for(let i=0;i<20;i++)tick(()=>{},"roof crossing start");
+  for(let i=0;i<40;i++)tick(()=>{p.y+=.5;},"roof crossing climb");
+  const crossingTop=T.dog();cave.jet.thrust=false;cave.jetFuel=0;
+  let crossing=true,crossedRoof=false,previous=crossingTop;
+  for(let i=0;i<15;i++){
+    tick(()=>{p.x+=.64;p.y-=.3;},"fall across roof");const d=T.dog();
+    crossedRoof||=house(d.x,d.z);
+    crossing&&=d.state==="land"&&!d.flame&&d.y<previous.y&&d.y>ROOF+.65
+      &&Math.abs(d.x-previous.x-.64)<.001&&Math.abs(d.z-previous.z)<.001;
+    previous=d;
+  }
+  const crossingEnd=T.dog();
+  for(let i=0;i<80;i++)tick(()=>{p.y=Math.max(1.1,p.y-.6);},"roof crossing landing");
+  const crossingLanded=T.dog();
+  record("Rescue falling roof crossing: an empty-tank dog keeps horizontal pace and gravity above a roof, clears its footprint and lands beside its Ooga",crossing&&crossedRoof&&!house(crossingEnd.x,crossingEnd.z)&&crossingLanded.state==="follow"&&standable(crossingLanded.x,crossingLanded.y,crossingLanded.z)&&Math.hypot(crossingLanded.x-p.x,crossingLanded.z-p.z)<3,JSON.stringify({crossingTop,crossingEnd,crossingLanded,crossedRoof}));
   sys.dispose();
   record("Rescue flight: the own dog walks round a house, flies next to its jetpacked Ooga over it and the sea without passing through a wall or under the water, poops nothing in the air, lands beside it on dry ground, and waits on the ground under an Ooga on a roof",
     worn&&removed&&equipped&&!bad.length&&beside&&flew&&jetShown&&alongside&&aloft.state==="fly"&&aloft.x>26&&after===0&&down&&waits,JSON.stringify({worn,removed,equipped,bad:bad.slice(0,4),beside,round,flew,jetShown,abreast,aloft,after,landed,below,p}));
