@@ -43,7 +43,7 @@
     CAPTURES: 3, SPLAT_S: 2, GUARD_S: 2.5, PICK_R: 1.3, STAND_R: 1.7, BODY_R: 0.45, HEIGHT: 1.7,
     SPEED: 6.2, SPRINT: 1.55, CARRY: 0.88, SPRINT_S: 4, SPRINT_REST: 0.8, SPRINT_REFILL: 5, SPRINT_MIN: 0.3, BOT_SPEED: 5.5, ACCEL: 30,
     SHOT_Y: 1.3, BOT_COOLDOWN: 1.4, BOT_RANGE: 12, BOT_SPREAD: 0.2, BOT_AIM: 0.6, GUARD_RANGE: 10,
-    MAX_SHOTS: 48, MAX_EVENTS: 48, STEP: 1 / 120,
+    MAX_SHOTS: 96, MAX_EVENTS: 48, STEP: 1 / 120,
     TRAP_R: 0.95, TRAP_MAX_S: 25, TRAP_REARM_S: 8, BOT_THINK: [3.5, 8], MAX_SIDE: 5,
     PREP_S: 20, CRATE_HALF: 0.6, CRATE_H: 1.1, MAX_CRATES: 32, CRATE_STOCK: 3, PUSH: 0.55, STAND_CLEAR: 2.4,
     NET_S: 4, NET_SLOW: 0.4, PASS_SPEED: 13, PASS_LIFT: 5, PASS_GRAVITY: 13, PASS_SAFE: 0.45, CATCH_R: 1.5,
@@ -52,7 +52,7 @@
     JET_FUEL: 2.6, JET_REFILL: 3, JET_ACCEL: 27, JET_RISE: 6, JET_CEILING: 15,
     GORILLA_SPEED: 3.2, GORILLA_CHARGE: 6.4, GORILLA_SIGHT: 7, GORILLA_LEASH: 11, GORILLA_WANDER: 5, GORILLA_R: 0.75,
     GORILLA_GRAB_R: 1.05, GRAB_HITS: 5, GRAB_MAX_S: 6, GORILLA_REST: 3, GORILLA_STUN: 1.6,
-    GOLD_GUNS: 2, AK_MAG: 30, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
+    GOLD_GUNS: 2, AK_MAG: 30, GOLD_SIDE: 0.3, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -66,9 +66,10 @@
     crate: { speed: 12, lift: 2.5, gravity: 14, life: 2.5, r: 0.9, blast: 0, cool: 0.6, max: 0 },
     // The sniper rifle: it stays in the sniper towers, so it fires only from a tower's platform; fast, flat and long.
     sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 },
-    // The Golden AK: semi-automatic paint, one ball a click with almost no wait, never empty. There are `GOLD_GUNS` a
-    // round: mining a block wins one while any are left, and netting whoever holds one takes it.
-    gold: { speed: 34, lift: 1.4, gravity: 7, life: 1.2, r: 0.5, blast: 0, cool: 0.11, max: 0 },
+    // The Golden Dual AKs: one in each hand, full auto, both firing every round (two balls `GOLD_SIDE` either side of
+    // the Ooga), never empty. There are `GOLD_GUNS` pairs a round: mining a block wins a pair while any are left, and
+    // netting whoever holds them takes them.
+    gold: { speed: 36, lift: 1.2, gravity: 6.5, life: 1.1, r: 0.48, blast: 0, cool: 0.08, max: 0 },
     // The Ooga AK, the island's rifle: a tap fires one round, a held trigger fires on full auto every `cool` (the island
     // AK's 0.09 s), from a `AK_MAG`-round magazine that reloads itself in `AK_RELOAD` when it runs dry.
     ak: { speed: 38, lift: 1.0, gravity: 6, life: 1.0, r: 0.42, blast: 0, cool: 0.09, max: 0 }
@@ -784,6 +785,17 @@
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" || kind === "gold" || kind === "ak" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
+    // The golden pair: one AK in each hand, both firing every round, so a second shot goes out from the left.
+    if (kind === "gold") {
+      const ox = Math.cos(yaw) * CONFIG.GOLD_SIDE, oz = -Math.sin(yaw) * CONFIG.GOLD_SIDE;
+      s.x += ox; s.z += oz;
+      let t = null;
+      for (let i = 0; i < sim.shots.length && !t; i++) if (!sim.shots[i].live) t = sim.shots[i];
+      if (t) {
+        t.live = true; t.kind = kind; t.team = a.team; t.owner = id; t.t = 0; t.ox = a.x; t.oz = a.z;
+        t.x = s.x - 2 * ox; t.y = s.y; t.z = s.z - 2 * oz; t.vx = s.vx; t.vy = s.vy; t.vz = s.vz;
+      }
+    }
     // A round from the AK; an empty magazine starts its reload.
     if (kind === "ak" && --a.akMag <= 0) { a.akReload = CONFIG.AK_RELOAD; emit(sim, "reload", a.team, id, a.x, a.y, a.z); }
     // The monkeys fire with you: one more of the same from each hip, the same way.

@@ -92,7 +92,7 @@
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
-  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
+  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, fpGunL = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
   let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null, catapults = null, catNear = false;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
@@ -159,11 +159,14 @@
       const monkeys = [-1, 1].map((side) => createNode({ geometry: BM.monkey(), position: { x: side * 0.62, y: 0.82, z: 0.08 }, scale: { x: 0.9, y: 0.9, z: 0.9 }, visible: false }));
       addChild(body, ring, blob, bubble, netted, held, trolley, chute, jet, ...monkeys);
       // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
-      let gun = null;
+      let gun = null, gunL = null;
       if (cave) {
         const h = cave.headOffset / 1.1, u = h / 16;
         gun = createNode({ geometry: BM.gun(0), position: { x: 0, y: -10 * u, z: 0.03 }, rotation: { x: Math.PI / 2, y: 0, z: 0 }, scale: { x: h / 1.5, y: h / 1.5, z: h / 1.5 }, visible: false });
         addChild(cave.parts.armR, gun);
+        // The left hand's golden AK, shown only with the pair.
+        gunL = createNode({ geometry: BM.gun(0), position: { x: 0, y: -10 * u, z: 0.03 }, rotation: { x: Math.PI / 2, y: 0, z: 0 }, scale: { x: h / 1.5, y: h / 1.5, z: h / 1.5 }, visible: false });
+        addChild(cave.parts.armL, gunL);
         if (cave.parts.club) cave.parts.club.visible = false;
       }
       place(body);
@@ -177,7 +180,7 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, gunL, pet, phase: 0, name };
     });
   };
   const disposeActors = () => {
@@ -501,9 +504,9 @@
     else if (t === "grab") feed(`A gorilla grabbed ${e.actor === 0 ? "you" : who}!`, e.team);
     else if (t === "breakfree") feed(`${who} wriggled free of a gorilla`, e.team);
     else if (t === "gorillahit" && e.actor >= 0) feed(`${nameOf(e.actor)} stunned a gorilla`, sim.actors[e.actor].team);
-    else if (t === "gold") feed(`${who} won a Golden AK!`, e.team);
+    else if (t === "gold") feed(`${who} won the Golden Dual AKs!`, e.team);
     else if (t === "launch") feed(`${who} catapulted toward the ${TEAM_NAME[SIM.other(e.team)]} fort!`, e.team);
-    else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden AK!`, e.team);
+    else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden Dual AKs!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
@@ -686,15 +689,15 @@
         fx.burst(e.x, e.y + 1.4, e.z, 24, ORANGE_BITS, 3);
         audio.cues.power();
         if (me) {
-          center("GOLDEN AK!", 1200);
-          notice(COARSE ? "Semi-auto paint! Pick Gold AK · get netted and it's theirs" : "Semi-auto paint! It's in your hands (6) · get netted and it's theirs", 4000);
+          center("GOLDEN DUAL AKs!", 1200);
+          notice(COARSE ? "One in each hand, full auto! Hold Paint · get netted and they're theirs" : "One in each hand, full auto! Hold click (6) · get netted and they're theirs", 4000);
           chooseTool("gold");
-        } else notice(mine ? "Teammate won a Golden AK!" : "They won a Golden AK · net them to steal it", 2600);
+        } else notice(mine ? "Teammate won the Golden Dual AKs!" : "They won the Golden Dual AKs · net them to steal them", 2600);
         updateTools();
       } else if (e.type === "goldsteal") {
         fx.burst(e.x, e.y, e.z, 18, ORANGE_BITS, 2.6);
-        if (me) { center("STOLEN!", 1000); notice("You netted the Golden AK! It's yours (6)", 3000); audio.cues.rescue(); chooseTool("gold"); }
-        else if (e.by === 0) { center("AK STOLEN!", 1000); notice("They netted you and took your Golden AK", 2600); if (tool === "gold") chooseTool("paint"); }
+        if (me) { center("STOLEN!", 1000); notice("You netted the Golden Dual AKs! They're yours (6)", 3000); audio.cues.rescue(); chooseTool("gold"); }
+        else if (e.by === 0) { center("AKs STOLEN!", 1000); notice("They netted you and took your Golden Dual AKs", 2600); if (tool === "gold") chooseTool("paint"); }
         updateTools();
       } else if (e.type === "reload") {
         if (me) { notice("Reloading…", 1000); audio.cues.crate(0.6); updateTools(); }
@@ -785,7 +788,7 @@
     // Say why a throw didn't go, so the tools never seem locked: paint on you, a quiz bubble, or an empty tool.
     if (!ok && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
     else if (!ok && a.trapped > 0) notice("Answer the question to get out first", 1100);
-    else if (!ok && tool === "gold" && !a.gold) notice("Mine a block to win a Golden AK, or net someone who has one", 1800);
+    else if (!ok && tool === "gold" && !a.gold) notice("Mine a block to win the Golden Dual AKs, or net someone who has them", 1800);
     else if (!ok && tool === "sniper" && a.sniper <= 0) notice("The sniper rifle stays in the towers · climb one to use it", 1600);
     else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your stand or an ammo cache`, 1400);
     return ok;
@@ -811,7 +814,7 @@
     }
     chooseTool(ORDER[i]);
     if (ORDER[i] === "grab") notice("Lift · click lifts a crate, click or Tab throws it, F sets it down", 1400);
-    else if (ORDER[i] === "gold") notice("Golden AK", 900);
+    else if (ORDER[i] === "gold") notice("Golden Dual AKs", 900);
     else if (ORDER[i] === "ak") notice("Ooga AK · hold to fire on full auto", 900);
     else notice(`${ORDER[i][0].toUpperCase()}${ORDER[i].slice(1)}${ORDER[i] === "paint" || ORDER[i] === "sniper" ? "" : ` · ${a[ORDER[i]]} left`}`, 900);
   };
@@ -908,11 +911,11 @@
   // A number key picks its tool; one you don't have says where to get it instead.
   const keyTool = (k) => {
     const a = sim.actors[0];
-    if (k === "gold" && !a.gold) { notice("No Golden AK yet · mine a block to win one, or net whoever has it", 1800); return; }
+    if (k === "gold" && !a.gold) { notice("No Golden Dual AKs yet · mine a block to win them, or net whoever has them", 1800); return; }
     if (k === "sniper" && !a.sniper) { notice("The sniper rifle stays up the towers · climb a ladder", 1600); return; }
     chooseTool(k);
     const max = SIM.TOOLS[k].max;
-    notice(k === "gold" ? "Golden AK" : `${k[0].toUpperCase()}${k.slice(1)}${max ? (a[k] > 0 ? ` · ${a[k]} left` : " · empty · refill on your stand or an ammo cache") : ""}`, 900);
+    notice(k === "gold" ? "Golden Dual AKs" : `${k[0].toUpperCase()}${k.slice(1)}${max ? (a[k] > 0 ? ` · ${a[k]} left` : " · empty · refill on your stand or an ammo cache") : ""}`, 900);
   };
   const onCrouchKey = (e) => { if (e.key === "c" || e.key === "C") move.crouch = e.type === "keydown" ? 1 : 0; };
   // Pick up the crate in front, or set the held one down (stacking it on a crate there).
@@ -1027,6 +1030,10 @@
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
+      }
+      if (a.gunL) {
+        a.gunL.visible = armed && g === GUN_OF.gold;
+        if (a.gunL.visible) a.gunL.geometry = a.gun.geometry;
       }
       // A crate to the head shows stars, not paint.
       a.blob.visible = s.splat > 0 && !s.bonked;
@@ -1263,11 +1270,20 @@
         fpGun.rotation.y = cam.yaw;
         fpGun.rotation.x = -up;
       }
+      // With the golden pair, the second AK sits low and left.
+      fpGunL.visible = showGun && tool === "gold";
+      if (fpGunL.visible) {
+        fpGunL.geometry = fpGun.geometry;
+        const rx = -Math.cos(cam.yaw), rz = Math.sin(cam.yaw);
+        setVec(fpGunL.position, fpGun.position.x - rx * 0.48, fpGun.position.y, fpGun.position.z - rz * 0.48);
+        fpGunL.rotation.y = cam.yaw;
+        fpGunL.rotation.x = -up;
+      }
       setVec(RENDER_OPTS.shadowCenter, x, 0, z);
       return;
     }
     camera.fov = damp(camera.fov, 58 * Math.PI / 180, 10, dt);
-    if (fpGun) fpGun.visible = false;
+    if (fpGun) fpGun.visible = fpGunL.visible = false;
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view. Backed up
     // against something, the camera rises over it to look down from above, and eases back once the way is clear.
     const by = y + CAM.height;
@@ -1314,7 +1330,7 @@
   const boardView = (elapsed, dt) => {
     const t = selection.team, s = SIM.ARENA.stands[t], sign = t === "blue" ? 1 : -1;
     camera.fov = 58 * Math.PI / 180;
-    if (fpGun) fpGun.visible = false;
+    if (fpGun) fpGun.visible = fpGunL.visible = false;
     preview.wide = window.innerWidth >= PREVIEW_MIN_W;
     el.previewName.hidden = !preview.wide;
     // The Ooga picker sits under the Ooga on show when there is one, else in the board.
@@ -1346,8 +1362,8 @@
     RENDER_OPTS.time = elapsed;
     if (phase === "play") {
       readInput(dt);
-      // Full auto: with the AK and the trigger held, a round goes each time the shot clock allows.
-      if (trigger && tool === "ak" && !quiz.open && sim.actors[0].cooldown <= 0) paint();
+      // Full auto: with the AK or the golden pair and the trigger held, a round goes each time the shot clock allows.
+      if (trigger && (tool === "ak" || (tool === "gold" && sim.actors[0].gold)) && !quiz.open && sim.actors[0].cooldown <= 0) paint();
       // The live feed, folded in before the step: fees to weather, a new block to its reset.
       SIM.setLive(sim, feeWeather(live.fee));
       if (live.block) { SIM.newBlock(sim, live.block); live.block = 0; }
@@ -1679,6 +1695,7 @@
     mapRoot = null;
     // The gun in view in first person.
     fpGun = place(createNode({ geometry: BM.gun(0), visible: false }));
+    fpGunL = place(createNode({ geometry: BM.gun(0), visible: false }));
     shots = [];
     for (let i = 0; i < C.MAX_SHOTS; i++) shots.push(place(createNode({ geometry: BM.ball(0), visible: false })));
     crates = [];
@@ -1748,7 +1765,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden AK · 7 AK (hold to fire) · hold Space in the air for the jetpack · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -1833,7 +1850,7 @@
     input.dispose();
     hud.dispose();
     phase = "board";
-    sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = trampNodes = powerNodes = result = null;
+    sim = blocks = shots = splats = ticks = pads = crates = rain = caches = fpGun = fpGunL = trampNodes = powerNodes = result = null;
     mapRoot = fireNode = dancers = peelNodes = catapults = null;
     catNear = false;
     for (const t of SIM.TEAMS) iceNodes[t] = null;
