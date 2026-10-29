@@ -56,7 +56,7 @@
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
     // Free Hardware Wallets (DSB Land's VAC 2, brought over): a vending machine each side; a device taken goes off when
     // its fuse runs out, and a blast sets off any other within `WALLET_CHAIN`, knocking everyone near it back.
-    WALLET_CAP: 12, WALLET_FUSE: 9, VEND_R: 1.9, VEND_COOL: 5, WALLET_SPEED: 11, WALLET_LIFT: 4.5, WALLET_GRAVITY: 14,
+    WALLET_CAP: 12, WALLET_FUSE: 5, WALLET_STICK_R: 0.65, VEND_R: 1.9, VEND_COOL: 5, WALLET_SPEED: 13, WALLET_LIFT: 2, WALLET_GRAVITY: 14,
     WALLET_BLAST: 3.2, WALLET_CHAIN: 2.5, WALLET_PUSH: 9, WALLET_CAP_N: 8, KNOCK_S: 0.55, SOOT_S: 3,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
@@ -463,8 +463,9 @@
     const powers = A.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
     const peels = A.peels.map(([x, z]) => ({ x, z, dark: 0 }));
     const gorillas = A.gorillas.map(([x, z]) => ({ hx: x, hz: z, x, y: 0, z, vx: 0, vz: 0, heading: 0, state: 0, t: 0, holding: -1, held: 0, wx: x, wz: z }));
-    // The wallets: `state` 0 is held over its Ooga's head, 1 thrown, 2 lying on the ground; the machines' cool-downs.
-    const wallets = Array.from({ length: CONFIG.WALLET_CAP }, () => ({ live: false, state: 0, owner: -1, team: null, look: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0, spin: 0 }));
+    // The wallets: `state` 0 is held over its Ooga's head (no fuse yet), 1 thrown, 2 lying on the ground, 3 stuck to
+    // the rival it hit (`stuck`, its back); the machines' cool-downs.
+    const wallets = Array.from({ length: CONFIG.WALLET_CAP }, () => ({ live: false, state: 0, owner: -1, team: null, look: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0, spin: 0, stuck: -1 }));
     const vends = A.vends.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
@@ -937,7 +938,7 @@
     for (const v of sim.vends) if (v.dark <= 0 && (a.x - v.x) ** 2 + (a.z - v.z) ** 2 < CONFIG.VEND_R * CONFIG.VEND_R) return v;
     return null;
   };
-  // Take a device from the machine: it goes over the Ooga's head with its fuse already burning.
+  // Take a device from the machine: it goes over the Ooga's head, safe until it's thrown.
   const takeWallet = (sim, id = 0) => {
     use(sim);
     const a = sim.actors[id], v = sim.over || a.splat > 0 || a.trapped > 0 || a.grabbed ? null : nearVend(sim, a);
@@ -946,18 +947,19 @@
     if (k < 0) return false;
     const w = sim.wallets[k];
     w.live = true; w.state = 0; w.owner = id; w.team = a.team; w.look = Math.floor(sim.rng() * WALLETS.length);
-    w.fuse = CONFIG.WALLET_FUSE; w.x = a.x; w.y = a.y + 2.2; w.z = a.z; w.vx = w.vy = w.vz = 0; w.spin = 0;
+    w.fuse = CONFIG.WALLET_FUSE; w.stuck = -1; w.x = a.x; w.y = a.y + 2.2; w.z = a.z; w.vx = w.vy = w.vz = 0; w.spin = 0;
     a.wallet = k; v.dark = CONFIG.VEND_COOL;
     emit(sim, "wallet", a.team, id, a.x, w.look, a.z);
     return true;
   };
-  // Lob the held device along `yaw` with `pitch`; it bounces off walls and the ground and keeps its fuse.
+  // Lob the held device along `yaw` with `pitch`: its fuse starts. A rival it reaches gets it stuck on their back,
+  // unknowing, till it goes off; missing, it bounces off walls and the ground and lies there ticking.
   const throwWallet = (sim, id = 0, yaw = sim.actors[id].heading, pitch = 0.25) => {
     use(sim);
     const a = sim.actors[id];
     if (a.wallet < 0 || sim.over || a.splat > 0 || a.trapped > 0 || a.grabbed) return false;
     const w = sim.wallets[a.wallet], c = Math.cos(pitch);
-    w.state = 1;
+    w.state = 1; w.fuse = CONFIG.WALLET_FUSE;
     w.x = a.x + Math.sin(yaw) * 0.5; w.z = a.z + Math.cos(yaw) * 0.5; w.y = a.y + 1.9;
     w.vx = Math.sin(yaw) * c * CONFIG.WALLET_SPEED + a.vx * 0.3; w.vz = Math.cos(yaw) * c * CONFIG.WALLET_SPEED + a.vz * 0.3;
     w.vy = CONFIG.WALLET_LIFT + Math.sin(pitch) * CONFIG.WALLET_SPEED;
@@ -1007,11 +1009,30 @@
     for (const v of sim.vends) if (v.dark > 0) v.dark = Math.max(0, v.dark - dt);
     for (const w of sim.wallets) {
       if (!w.live) continue;
-      w.fuse -= dt;
+      // Held, it waits: the fuse only burns once it has been thrown.
       if (w.state === 0) {
         const a = sim.actors[w.owner];
         w.x = a.x; w.y = a.y + 2.2; w.z = a.z;
+        continue;
+      }
+      w.fuse -= dt;
+      if (w.state === 3) {
+        // On the back of the rival it hit, riding along wherever they go.
+        const v = sim.actors[w.stuck], h = v.heading;
+        w.x = v.x - Math.sin(h) * 0.38; w.y = v.y + 1.15; w.z = v.z - Math.cos(h) * 0.38;
       } else if (w.state === 1) {
+        // A rival in its path: it sticks to their back, and nobody tells them.
+        let hit = null;
+        for (const v of sim.actors) {
+          if (v.team === w.team || v.trapped > 0) continue;
+          const dy = w.y - v.y;
+          if (dy > -0.2 && dy < heightOf(v) + 0.4 && (w.x - v.x) ** 2 + (w.z - v.z) ** 2 < CONFIG.WALLET_STICK_R * CONFIG.WALLET_STICK_R) { hit = v; break; }
+        }
+        if (hit) {
+          w.state = 3; w.stuck = hit.id; w.vx = w.vy = w.vz = 0;
+          emit(sim, "stuck", hit.team, hit.id, hit.x, hit.y + 1.2, hit.z, w.owner);
+          continue;
+        }
         w.vy -= CONFIG.WALLET_GRAVITY * dt;
         const nx = w.x + w.vx * dt, nz = w.z + w.vz * dt;
         // A wall turns it back; the ground bounces it a little lower each time, until it lies still.
@@ -1243,22 +1264,20 @@
     if (near && a.crateGo <= 0) { a.crateGo = 1.5; a.crateX = near.x; a.crateZ = near.z; }
     else if (!near) a.crateT = 1;
   };
-  // Wallets: an expert now and then fetches one from a machine nearby, and lobs it into the rivals, the sooner the
-  // closer they are; with its fuse nearly out and nobody in reach it throws it away ahead rather than get rekt.
+  // Wallets: an expert now and then fetches one from a machine nearby, carries it till a rival is in reach, and throws
+  // it straight at them to stick it on their back.
   const expertWallets = (sim, a, dt) => {
     if (a.wallet >= 0) {
-      const w = sim.wallets[a.wallet];
-      let t = null, best = 13 * 13;
+      let t = null, best = 10 * 10;
       for (const b of sim.actors) {
         if (b.team === a.team || !open(b)) continue;
         const dd = (b.x - a.x) ** 2 + (b.z - a.z) ** 2;
         if (dd < best && dd > 2.5 * 2.5 && clearLine(a.x, a.z, b.x, b.z, 0.05, 2)) { best = dd; t = b; }
       }
-      // Cooked: thrown with under a couple of seconds left, so it goes off where it lands.
-      if (t && w.fuse < 1.9 + Math.sqrt(best) * 0.06) {
-        const dist = Math.sqrt(best), lead = dist / CONFIG.WALLET_SPEED + 0.4;
-        throwWallet(sim, a.id, Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z), lobPitch(dist, WALLET_THROW));
-      } else if (w.fuse < 1.3) throwWallet(sim, a.id, a.heading, 0.35);
+      if (t && a.cooldown <= 0) {
+        const dist = Math.sqrt(best), lead = dist / CONFIG.WALLET_SPEED + 0.15;
+        throwWallet(sim, a.id, Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z), lobPitch(dist, WALLET_THROW) - 0.08);
+      }
       return;
     }
     if (a.carrying || a.holding || sim.prep > 0) return;
@@ -1334,8 +1353,6 @@
     // gets a moment, and a bot just back from a splat can't throw at once): a net at a carrier, now and then a grenade
     // or a rocket, otherwise paint, leading the run a little with a seeded wobble.
     if (ex && sim.prep <= 0) { expertWallets(sim, a, dt); expertCrates(sim, a, dt); }
-    // Any bot left holding a device gets rid of it before it goes off.
-    else if (a.wallet >= 0 && sim.wallets[a.wallet].fuse < 3) throwWallet(sim, a.id, a.heading, 0.35);
     if (a.cooldown <= 0 && sim.prep <= 0 && !a.holding) {
       let t = null, best = sim.bots.range * sim.bots.range;
       for (const b of sim.actors) {

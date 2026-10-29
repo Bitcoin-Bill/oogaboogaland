@@ -729,9 +729,13 @@
       } else if (e.type === "wallet") {
         fx.burst(e.x, 2.2, e.z, 8, ORANGE_BITS, 1.4);
         audio.cues.refill();
-        if (me) { center(`${SIM.WALLETS[e.y].toUpperCase()}!`, 900); notice(`A free ${SIM.WALLETS[e.y]}! ${C.WALLET_FUSE} s on its fuse · ${COARSE ? "Paint! throws it" : "click or Y throws it"}`, 2600); updateTools(); }
+        if (me) { center(`${SIM.WALLETS[e.y].toUpperCase()}!`, 900); notice(`A free ${SIM.WALLETS[e.y]}! Throw it at a rival (${COARSE ? "Paint!" : "click or Y"}): it sticks on their back and they won't know · it goes off ${C.WALLET_FUSE} s after you throw it`, 3600); updateTools(); }
       } else if (e.type === "wthrow") { audio.cues.throw(me ? 1 : 0.4); if (me) updateTools(); }
       else if (e.type === "wbounce") audio.cues.crate(0.25);
+      else if (e.type === "stuck") {
+        // Only the thrower hears of it; the one wearing it doesn't.
+        if (e.by === 0) { center("STUCK!", 900); notice(`Stuck it on ${nameOf(e.actor)}! ${C.WALLET_FUSE} s…`, 1600); audio.cues.net(0.6); }
+      }
       else if (e.type === "blast") {
         const n = e.by, k = Math.sqrt(Math.min(n, 8));
         fx.burst(e.x, e.y + 0.4, e.z, 26 * k, BLAST_BITS, 4.5 * k);
@@ -836,7 +840,7 @@
     if (phase !== "play" || sim.actors[0].wallet < 0) return false;
     const a = sim.actors[0], q = aimPoint(), dx = q.x - a.x, dz = q.z - a.z;
     const flat = Math.hypot(dx, dz) || 1;
-    return SIM.throwWallet(sim, 0, Math.atan2(dx, dz), clamp(Math.atan2(q.y - a.y - 1.9, flat) + 0.3, -0.3, 0.9));
+    return SIM.throwWallet(sim, 0, Math.atan2(dx, dz), clamp(Math.atan2(q.y - a.y - 1.9, flat) + 0.12, -0.3, 0.9));
   };
   const paint = () => {
     if (sim.actors[0].wallet >= 0) return throwWallet();
@@ -1393,21 +1397,25 @@
     const me = sim.actors[0];
     for (let i = 0; i < walletNodes.length; i++) {
       const w = sim.wallets[i], n = walletNodes[i];
-      n.node.visible = w.live;
-      if (!w.live) { n.sec = -1; continue; }
+      // Stuck on the visitor's own back, it stays a secret: not shown, not heard.
+      const secret = w.live && w.state === 3 && w.stuck === 0;
+      n.node.visible = w.live && !secret;
+      if (!w.live || secret) { n.sec = -1; continue; }
       n.node.geometry = BM.walletDevice(w.look);
       setVec(n.node.position, w.x, w.y + (w.state === 2 ? 0.25 : 0), w.z);
-      n.node.rotation.y = w.state === 1 ? w.spin : w.state === 0 ? sim.actors[w.owner].heading : 0.6 * i;
+      n.node.rotation.y = w.state === 1 ? w.spin : w.state === 0 ? sim.actors[w.owner].heading : w.state === 3 ? sim.actors[w.stuck].heading + Math.PI : 0.6 * i;
       n.node.rotation.x = w.state === 1 ? w.spin * 0.7 : 0;
-      const rate = w.fuse > 5 ? 1 : w.fuse > 2 ? 3 : 8, on = (elapsed * rate) % 1 < 0.5;
+      // Held, it's not ticking yet: the light stays dark.
+      if (w.state === 0) { n.light.visible = false; n.sec = -1; continue; }
+      const rate = w.fuse > 3 ? 1 : w.fuse > 1.5 ? 3 : 8, on = (elapsed * rate) % 1 < 0.5;
       n.light.visible = on;
       const sec = Math.ceil(w.fuse * rate);
       if (sec !== n.sec) {
         n.sec = sec;
         const d = Math.hypot(w.x - me.x, w.z - me.z);
-        if (d < 16) audio.cues.beep(clamp(1 - d / 16, 0.15, 1) * (w.fuse > 5 ? 0.5 : w.fuse > 2 ? 0.75 : 1), w.fuse > 5 ? 0 : w.fuse > 2 ? 1 : 2);
-        // The visitor's own: the countdown in the notice line.
-        if (w.state === 0 && w.owner === 0 && rate === 1) notice(`Carrying ${SIM.WALLETS[w.look]} · ${Math.ceil(w.fuse)} s · ${COARSE ? "Paint! throws it" : "click or Y throws it"}`, 1100);
+        if (d < 16) audio.cues.beep(clamp(1 - d / 16, 0.15, 1) * (w.fuse > 3 ? 0.5 : w.fuse > 1.5 ? 0.75 : 1), w.fuse > 3 ? 0 : w.fuse > 1.5 ? 1 : 2);
+        // One the visitor stuck on someone: the countdown in the notice line.
+        if (w.state === 3 && w.owner === 0 && rate === 1) notice(`${SIM.WALLETS[w.look]} on ${nameOf(w.stuck)} · ${Math.ceil(w.fuse)} s`, 1100);
       }
     }
     // A sooted Ooga puffs smoke now and then.
@@ -1980,7 +1988,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · V changes view (chase, first person, Island) · two-finger swipe or the wheel zooms · X side-step (A D step sideways) · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · V changes view (chase, first person, Island) · two-finger swipe or the wheel zooms · X side-step (A D step sideways) · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it: it sticks to a rival, who won't know, and goes off 5 s later · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
