@@ -17873,18 +17873,18 @@ scene("dsb", { label: "dsb shared player", url: hubPage(dist), steps: [{ name: "
   record("dsb shared player: canonical selected actor is possessed with independent ammunition", await b.evaluate(`__ooga.dsb.phase === "land" && __ooga.pilot.player === __ooga.dsb.avatar && __ooga.pilot.player.traits.name === "rules-without-rulers" && __ooga.pilot.player.weapon.ammo === BL.crew.AMMO_MAX && __ooga.pilot.player.headOpen === BL.models.caveman(BL.contributors.traitsFor("rules-without-rulers")).headOpen`));
   const move = await b.evaluate(`(() => { const c = __ooga.pilot.player, z = c.root.position.z; window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" })); __ooga.advance(0.3); window.dispatchEvent(new KeyboardEvent("keyup", { key: "w" })); return Math.abs(c.root.position.z - z); })()`);
   record("dsb shared player: shared walking moves the actor", move > 0.2, String(move));
-  await b.evaluate(`document.querySelector('[data-action="dsb-lookout"]').click(); __ooga.advance(0.4)`);
-  record("dsb shared player: lookout remains a free camera", await b.evaluate('__ooga.pilot.player === null && __ooga.camera.position.y > 5'));
+  await b.evaluate(`document.getElementById("destination-hud").click(); __ooga.advance(0.4)`);
+  record("dsb shared player: the island view selector starts at overview as a free camera and keeps its CHORA label", await b.evaluate('__ooga.pilot.player === null && __ooga.camera.position.y > 5 && document.getElementById("detached-destination-name").textContent === "CHORA"'));
   const reset = await b.evaluate(`(() => {
     const B = __ooga, a = B.dsb.avatar, p = { ...a.root.position }, mode = B.pilot.mode;
     const canvas = document.getElementById("scene");
     for (const type of ["keydown", "keyup"]) canvas.dispatchEvent(new KeyboardEvent(type, { key: "0", code: "Digit0", bubbles: true, cancelable: true }));
     return { detached: !B.pilot.player && B.pilot.mode === mode,
       unmoved: Math.hypot(a.root.position.x - p.x, a.root.position.y - p.y, a.root.position.z - p.z) < 1e-6,
-      mapHidden: document.getElementById("destination-hud").hidden,
+      mapShown: !document.getElementById("destination-hud").hidden && !document.getElementById("destination-hud").disabled,
       retake: !document.getElementById("own-ooga-hud").hidden && B.hud.retakeActor?.actor === a };
   })()`);
-  record("dsb shared player: 0 keeps the lookout detached and the Ooga in place, exposes its return portrait and hides unsupported Map travel", Object.values(reset).every(Boolean), JSON.stringify(reset));
+  record("dsb shared player: 0 keeps the lookout detached and the Ooga in place, with its return portrait and island view selector available", Object.values(reset).every(Boolean), JSON.stringify(reset));
   await b.evaluate(`document.getElementById("own-ooga-hud").click(); __ooga.advance(0.4)`);
   record("dsb shared player: the last-actor portrait leaves lookout and restores the same playable actor", await b.evaluate('__ooga.pilot.player === __ooga.dsb.avatar'));
   await dsbApproach(b, "tv"); await b.key(" ");
@@ -19887,12 +19887,12 @@ const walletsChecks = BL => {
   record("Wallets address: occupied VAC 2 keeps VACANT 20 at 26/60 with its 4 x 4 m facade, beside SVRN at VAC 7",v.status==="occupied"&&v.occupant==="Free Hardware Wallets"&&v.interiorId==="free-wallets"&&e.building.name===v.buildingId&&e.building.x===26&&e.building.z===60&&e.building.w===4&&e.building.d===4&&e.label==="Free Hardware Wallets"&&BL.dsbVacancies.REGISTRY.filter(p=>p.status==="vacant").length===32,JSON.stringify({v,building:e.building}));
   I.review("free-wallets",true);I.update(.4);const Rm=I.active.room;
   // Regression: flat footprint blockers prevented jumping over furniture and never supplied a landing surface.
-  const counterTop=I.groundAt(4.2,4.6,1.2,1.2,A),caseTop=I.groundAt(-4.4,-4.5,1.7,1.7,A);
+  const counterTop=I.groundAt(3.9,4.6,1.2,1.2,A),caseTop=I.groundAt(-4.1,-4.5,1.7,1.7,A);
   record("Wallets furniture: counter and glass-case tops support landings, airborne travel clears the counter, walking off loses support, and floor-level bodies still collide",
     Math.abs(counterTop-1.08)<1e-6&&Math.abs(caseTop-1.6)<1e-6
-    &&!I.walkable(3.2,4.6,5.2,4.6,0,A.bodyHeight,A)
-    &&Rm.flyable(3.2,4.6,5.2,4.6,1.2,A.bodyHeight,A)
-    &&I.walkable(4.2,4.6,3,4.6,counterTop,A.bodyHeight,A)&&I.groundAt(3,4.6,counterTop,counterTop,A)===0
+    &&!I.walkable(2.9,4.6,4.9,4.6,0,A.bodyHeight,A)
+    &&Rm.flyable(2.9,4.6,4.9,4.6,1.2,A.bodyHeight,A)
+    &&I.walkable(3.9,4.6,2.7,4.6,counterTop,A.bodyHeight,A)&&I.groundAt(2.7,4.6,counterTop,counterTop,A)===0
     &&Math.abs(Rm.ceilingAt(0,0,0,A)-4.29)<1e-6&&!Rm.flyable(6,4,7,4,2,A.bodyHeight,A),JSON.stringify({counterTop,caseTop}));
   const clear=(ax,az,bx=ax,bz=az)=>I.walkable(ax,az,bx,bz,0,A.bodyHeight,A),step=.25,minX=-6.5,minZ=-7.5,w=53,h=61,seen=new Uint8Array(w*h),queue=[];
   const index=(x,z)=>Math.round((z-minZ)/step)*w+Math.round((x-minX)/step),start=index(Rm.spawn.x,Rm.spawn.z);seen[start]=1;queue.push(start);
@@ -19915,6 +19915,16 @@ const walletsChecks = BL => {
   }
   for(let i=0;i<Rm.cameras.length;i++){Rm.flicker(1.6-i*.23);blinking&&=Rm.cameras[i].led.glow===1;Rm.flicker(2.4-i*.23);blinking&&=Rm.cameras[i].led.glow===.05;}
   record("Wallets CCTV: four corner heads track the player's height across the room, with attached blinking lights",Rm.cameras.length===4&&new Set(Rm.cameras.map(({head})=>Math.sign(head.position.x)+":"+Math.sign(head.position.z))).size===4&&tracking&&blinking,JSON.stringify({tracking,blinking}));
+  const balance=Rm.vendor.children.find(n=>n.children.some(c=>c.geometry===W.passpoorBalanceGeometry(0))).children[0];
+  const front={x:.12,y:0,z:-4},behind={x:.12,y:0,z:-7.6};
+  Rm.flicker(100,front);const negative=balance.geometry===W.passpoorBalanceGeometry(1);
+  Rm.flicker(101,front);const counting=balance.geometry===W.passpoorBalanceGeometry(3);
+  Rm.flicker(160,front);const capped=balance.geometry===W.passpoorBalanceGeometry(99);
+  Rm.flicker(200,front);const held=balance.geometry===W.passpoorBalanceGeometry(99);
+  Rm.flicker(201,behind);const reset=balance.geometry===W.passpoorBalanceGeometry(0);
+  Rm.flicker(202,front);const restarted=balance.geometry===W.passpoorBalanceGeometry(1);
+  Rm.flicker(203);const unobserved=balance.geometry===W.passpoorBalanceGeometry(0);
+  record("Wallets Passpoor: the visible balance counts down, holds at -99, resets when facing away or unobserved, and restarts on return",negative&&counting&&capped&&held&&reset&&restarted&&unobserved,JSON.stringify({negative,counting,capped,held,reset,restarted,unobserved}));
   // The devices in the real Chora and the store, through the driven Ooga's own hands.
   const fx={say:noop,sayAt:noop,burst:noop,puff:noop},children=Wd.root.children.length;let space=0;
   const ground=(x,z,feet)=>I.active?I.groundAt(x,z):Math.max(land.groundAt(x,z),Wd.ground(x,z));
