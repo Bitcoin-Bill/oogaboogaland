@@ -116,7 +116,11 @@
   // `face` is where the visitor's Ooga faces and aims; `yaw` is the camera's, which follows it round.
   // `lift` is how far the chase camera has risen over something behind the Ooga, `dist` how far back it sits, `close`
   // when it is so near that the Ooga would fill the view.
-  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false, island: false, orbit: Math.PI, shuffle: false };
+  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false, island: false, orbit: Math.PI, shuffle: false, zoom: 1, islandZoom: 1, zoomGesture: -1 };
+  // Two-finger swipe (or the wheel) zooms the camera in and out, as on the island: the chase camera from close over
+  // the shoulder to far back (all the way in, a fresh swipe steps into first person, and out of it again), the Island
+  // view from near to high overhead.
+  const ZOOM = { chase: [0.35, 2.4], island: [0.45, 2.2] };
   // The Island view, as Ooga Booga Land plays: the camera high and back, W A S D running the way the screen faces,
   // the Ooga turning to run, Q E or the arrow keys swinging the camera round, and a click throwing at the pointer.
   const ISLAND = { dist: 11, pitch: 0.72, height: 1.2 };
@@ -639,7 +643,7 @@
             scope.island = cam.island;
             if (!cam.first) setMode("first", true);
             center("SNIPER RIFLE!", 1000);
-            notice(COARSE ? "Drag to aim · Paint! fires · tap View to look round" : "Click fires · wheel or + − zooms · R puts it down · E rides the zipline", 4200);
+            notice(COARSE ? "Drag to aim · Paint! fires · tap View to look round" : "Click fires · wheel, two-finger swipe or + − zooms · R puts it down · E rides the zipline", 4200);
           }
         }
       } else if (e.type === "unrifle") {
@@ -921,7 +925,7 @@
     else if (e.key === "ArrowRight") arrows.right = down;
   };
   const onArrowBlur = () => { arrows.left = arrows.right = 0; };
-  const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: cam.island ? "island" : cam.first ? "first" : "chase", shuffle: cam.shuffle })); } catch { /* kept this visit */ } };
+  const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: cam.island ? "island" : cam.first ? "first" : "chase", shuffle: cam.shuffle, zoom: cam.zoom, islandZoom: cam.islandZoom })); } catch { /* kept this visit */ } };
   // Three views, V going round them: the chase camera, first person, and the Island view.
   const setMode = (mode, quiet = false) => {
     const wasIsland = cam.island;
@@ -1460,7 +1464,7 @@
     if (fpGun) fpGun.visible = fpGunL.visible = false;
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view. Backed up
     // against something, the camera rises over it to look down from above, and eases back once the way is clear.
-    const by = y + (cam.island ? ISLAND.height : CAM.height), pitch = cam.island ? ISLAND.pitch : cam.pitch, far = cam.island ? ISLAND.dist : CAM.dist;
+    const by = y + (cam.island ? ISLAND.height : CAM.height), pitch = cam.island ? ISLAND.pitch : cam.pitch, far = cam.island ? ISLAND.dist * cam.islandZoom : CAM.dist * cam.zoom;
     let dist = clearBehind(x, by, z, pitch), lift = 0;
     if (dist < far * 0.6) {
       // Up over it first; under a floor overhead, down beneath it instead.
@@ -1493,7 +1497,7 @@
   const clearBehind = (x, y, z, pitch) => {
     const c = Math.cos(pitch);
     EYE.x = -Math.sin(cam.yaw) * c; EYE.z = -Math.cos(cam.yaw) * c; EYE.y = Math.sin(pitch);
-    const far = cam.island ? ISLAND.dist : CAM.dist;
+    const far = cam.island ? ISLAND.dist * cam.islandZoom : CAM.dist * cam.zoom;
     for (let d = 0.5; d <= far; d += 0.25) if (SIM.solidAt(x + EYE.x * d, y + EYE.y * d, z + EYE.z * d)) return Math.max(0.6, d - 0.4);
     return far;
   };
@@ -1834,7 +1838,11 @@
     // The view and side-step picked last time.
     try {
       const v = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
-      if (v) { cam.shuffle = !!v.shuffle; cam.island = v.mode === "island"; cam.first = v.mode === "first"; }
+      if (v) {
+        cam.shuffle = !!v.shuffle; cam.island = v.mode === "island"; cam.first = v.mode === "first";
+        if (v.zoom > 0) cam.zoom = clamp(v.zoom, ZOOM.chase[0], ZOOM.chase[1]);
+        if (v.islandZoom > 0) cam.islandZoom = clamp(v.islandZoom, ZOOM.island[0], ZOOM.island[1]);
+      }
     } catch { /* the defaults */ }
     el.canvas.addEventListener("mousedown", onLockedDown);
     el.canvas.addEventListener("mousedown", onRightDown);
@@ -1937,11 +1945,22 @@
         cam.face = wrap(cam.face - dx * 5e-3);
         cam.pitch = clamp(cam.pitch + dy * 3.5e-3, CAM.pitch[0], CAM.pitch[1]);
       },
-      // The wheel zooms the sniper's scope, and otherwise steps through the tools.
-      onZoom: (k) => {
+      // The wheel or a two-finger swipe zooms the sniper's scope, and otherwise the camera.
+      onZoom: (k, gesture) => {
         if (phase !== "play" || k === 1) return;
-        if (scoped()) zoomScope(k > 1 ? -1 : 1);
-        else cycleTool(k > 1 ? -1 : 1);
+        if (scoped()) { if (gesture !== cam.zoomGesture) { cam.zoomGesture = gesture; zoomScope(k > 1 ? -1 : 1); } return; }
+        if (cam.island) { cam.islandZoom = clamp(cam.islandZoom * k, ZOOM.island[0], ZOOM.island[1]); saveView(); return; }
+        if (cam.first) {
+          // Out of first person on a fresh swipe outward, close over the shoulder.
+          if (k > 1 && gesture !== cam.zoomGesture) { cam.zoomGesture = gesture; cam.zoom = ZOOM.chase[0]; setMode("chase", true); }
+          return;
+        }
+        const was = cam.zoom;
+        cam.zoom = clamp(cam.zoom * k, ZOOM.chase[0], ZOOM.chase[1]);
+        // Already all the way in when this swipe began: into first person.
+        if (k < 1 && was <= ZOOM.chase[0] + 1e-6 && gesture !== cam.zoomGesture) { setMode("first", true); }
+        cam.zoomGesture = gesture;
+        saveView();
       }
     });
     hud.onAction((action) => {
@@ -1961,7 +1980,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · V changes view (chase, first person, Island) · X side-step (A D step sideways) · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · V changes view (chase, first person, Island) · two-finger swipe or the wheel zooms · X side-step (A D step sideways) · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
