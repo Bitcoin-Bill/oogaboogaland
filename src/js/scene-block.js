@@ -51,6 +51,8 @@
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const SMOKE_BITS = ["#3d3d44", "#6a6a72"].map((c) => models.particleGeometry(c, 0.12, 0));
+  const BLAST_BITS = ["#ff8a1f", "#ffd66b", "#3d3d44", "#efe6cc"].map((c, i) => models.particleGeometry(c, 0.09, i < 2 ? 1 : 0));
   const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
   const TOOL_KEYS = { 1: "paint", 2: "grenade", 3: "rocket", 4: "net", 5: "sniper", 6: "gold", 7: "ak" };
   // Each tool's gun (`BM.gun` takes the gun's index times two plus the team's); Lift shows none.
@@ -92,7 +94,7 @@
   let home = "hub";
   let renderer, game, world, go, root, camera, hud, hooks, input, fx, controls, clock;
   let sim = null, phase = "board", sceneTime = 0, stateTimer = 0, hintTimer = 0, lineN = 0, result = null;
-  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, fpGunL = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
+  let actors = null, blocks = null, shots = null, splats = null, splatNext = 0, ticks = null, pads = null, crates = null, rain = null, caches = null, fpGun = null, fpGunL = null, walletNodes = null, vendNodes = null, zipNear = false, trampNodes = null, trampSeen = false, powerNodes = null;
   let mapRoot = null, fireNode = null, dancers = null, burnSeen = false, peelNodes = null, catapults = null, catNear = false;
   const iceNodes = {};
   let tool = "paint", flash = 0, flashT = 0, audio = null, unfeed = null;
@@ -501,6 +503,7 @@
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
+    else if (t === "rekt") feed(e.by >= 0 && e.by !== e.actor ? `${nameOf(e.by)}'s wallet rekt ${who}` : `${who} got rekt by a free wallet`, e.by >= 0 ? sim.actors[e.by].team : e.team);
     else if (t === "grab") feed(`A gorilla grabbed ${e.actor === 0 ? "you" : who}!`, e.team);
     else if (t === "breakfree") feed(`${who} wriggled free of a gorilla`, e.team);
     else if (t === "gorillahit" && e.actor >= 0) feed(`${nameOf(e.actor)} stunned a gorilla`, sim.actors[e.actor].team);
@@ -550,6 +553,10 @@
       g.fillStyle = BM.TEAM[t].paint;
       g.fillRect(mapX(f.x) - 2, mapY(f.z) - 2, 4, 4);
     }
+    g.fillStyle = "#e0262c";
+    for (const v of sim.vends) g.fillRect(mapX(v.x) - 2, mapY(v.z) - 2, 4, 4);
+    g.fillStyle = "#ff8a1f";
+    for (const w of sim.wallets) if (w.live && w.state) g.fillRect(mapX(w.x) - 1, mapY(w.z) - 1, 3, 3);
     g.fillStyle = "#3a2a1c";
     for (const go of sim.gorillas) g.fillRect(mapX(go.x) - 3, mapY(go.z) - 3, 6, 6);
     for (let i = sim.actors.length - 1; i >= 0; i--) {
@@ -706,6 +713,22 @@
       } else if (e.type === "slip") {
         fx.burst(e.x, 0.3, e.z, 8, ORANGE_BITS, 1.6);
         if (me) { center("SLIP!", 900); notice("Banana peel! Spinning…", 1500); }
+      } else if (e.type === "wallet") {
+        fx.burst(e.x, 2.2, e.z, 8, ORANGE_BITS, 1.4);
+        audio.cues.refill();
+        if (me) { center(`${SIM.WALLETS[e.y].toUpperCase()}!`, 900); notice(`A free ${SIM.WALLETS[e.y]}! ${C.WALLET_FUSE} s on its fuse · ${COARSE ? "Paint! throws it" : "click or Y throws it"}`, 2600); updateTools(); }
+      } else if (e.type === "wthrow") { audio.cues.throw(me ? 1 : 0.4); if (me) updateTools(); }
+      else if (e.type === "wbounce") audio.cues.crate(0.25);
+      else if (e.type === "blast") {
+        const n = e.by, k = Math.sqrt(Math.min(n, 8));
+        fx.burst(e.x, e.y + 0.4, e.z, 26 * k, BLAST_BITS, 4.5 * k);
+        fx.burst(e.x, e.y + 0.8, e.z, 14 * k, SMOKE_BITS, 2.2 * k);
+        const d = Math.hypot(e.x - sim.actors[0].x, e.z - sim.actors[0].z);
+        audio.cues.boom(clamp(1.2 - d / 30, 0.2, 1));
+        if (n > 1 && d < 25) notice(`Chain reaction! ${n} wallets went off`, 1800);
+      } else if (e.type === "rekt") {
+        if (me) { center("REKT!", 1100); notice("Wallet blast! Knocked back and sooted", 1600); }
+        say(e.actor, ["Rekt", "Not your keys!", "Trust me bro?"], 1.4);
       } else if (e.type === "grab") {
         fx.burst(e.x, 1.6, e.z, 12, WOOD_BITS, 2.2);
         gorillaPoke(e.actor);
@@ -770,7 +793,15 @@
     AIM.x = p.x + fx * d; AIM.y = p.y + fy * d; AIM.z = p.z + fz * d;
     return AIM;
   };
+  // Lob the device over your head toward the crosshair.
+  const throwWallet = () => {
+    if (phase !== "play" || sim.actors[0].wallet < 0) return false;
+    const a = sim.actors[0], q = aimPoint(), dx = q.x - a.x, dz = q.z - a.z;
+    const flat = Math.hypot(dx, dz) || 1;
+    return SIM.throwWallet(sim, 0, Math.atan2(dx, dz), clamp(Math.atan2(q.y - a.y - 1.9, flat) + 0.3, -0.3, 0.9));
+  };
   const paint = () => {
+    if (sim.actors[0].wallet >= 0) return throwWallet();
     const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
     // With Lift chosen and empty hands, a click lifts the crate in front; holding a crate, a throw throws the crate.
     if (tool === "grab" && !a.holding) return grabCrate();
@@ -846,7 +877,7 @@
       if (n) n.textContent = k === "paint" ? "∞" : k === "sniper" ? (a.sniper ? "∞" : "tower") : k === "gold" ? (a.gold ? "∞" : "—") : k === "ak" ? (a.akReload > 0 ? "…" : String(a.akMag)) : k === "crate" ? String(a.crates) : String(a[k]);
       if (k === "gold") b.disabled = !a.gold;
       if (k === "pass") b.disabled = !a.carrying && !a.holding;
-      if (k === "zip") b.disabled = !SIM.nearZip(sim, a) && !SIM.nearCatapult(sim, a);
+      if (k === "zip") b.disabled = !SIM.nearZip(sim, a) && !SIM.nearCatapult(sim, a) && !SIM.nearVend(sim, a);
       if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
@@ -938,6 +969,7 @@
   // Ride your tower's zipline down into the rival fort, from the platform by its gap.
   const zipNow = () => {
     if (phase !== "play") return false;
+    if (SIM.takeWallet(sim, 0)) return true;
     if (SIM.launch(sim, 0)) return true;
     if (SIM.zip(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
@@ -974,11 +1006,42 @@
   // Each pet heads for a spot a little behind and beside its Ooga, trots there at up to sprint pace with a hop in its
   // step, sits when it arrives, and jumps straight to its Ooga if it falls far behind (a roof, a double jump).
   const PET_BACK = 1.1, PET_SIDE = 0.6, PET_SPEED = 9.5;
+  // Up in the air (jetting, flung, on a zipline or well over what's under it), the dog flies along on a little jetpack
+  // of its own, as the island's adopted dogs do: behind its Ooga and a little below, then down onto open ground.
+  const PET_FLY_BACK = 1.7, PET_FLY_DROP = 0.5, PET_FLY_SPEED = 16;
   const poseCompanions = (dt, elapsed) => {
     for (let i = 0; i < actors.length; i++) {
       const a = actors[i], p = a.pet;
       if (!p) continue;
       const s = sim.actors[i], h = a.body.rotation.y;
+      const under = SIM.groundAt(s.x, s.z, s.y + 0.1, 0.15);
+      const flying = phase === "play" && !s.grounded && (s.jetting || s.flight || s.riding || s.y - under > 1.2);
+      if (!p.jet) {
+        p.jet = createNode({ geometry: BM.jetpack(TEAM_INDEX[s.team]), position: { x: 0, y: 0.32, z: -0.18 }, scale: { x: 0.55, y: 0.55, z: 0.55 }, visible: false });
+        p.flame = createNode({ geometry: BM.jetFlames(), visible: false });
+        addChild(p.jet, p.flame);
+        addChild(p.node, p.jet);
+      }
+      if (flying || p.air) {
+        // Flying: chase a point behind and below, then (its Ooga down) come straight down beside it.
+        const tx = s.x - Math.sin(h) * (flying ? PET_FLY_BACK : PET_BACK) + Math.cos(h) * PET_SIDE;
+        const tz = s.z - Math.cos(h) * (flying ? PET_FLY_BACK : PET_BACK) - Math.sin(h) * PET_SIDE;
+        const ty = flying ? Math.max(SIM.groundAt(tx, tz, s.y, 0.15), s.y - PET_FLY_DROP) : SIM.groundAt(tx, tz, s.y + 0.1, 0.15);
+        const dx = tx - p.x, dy = ty - p.y, dz = tz - p.z, d = Math.hypot(dx, dy, dz);
+        const step = Math.min(d, PET_FLY_SPEED * dt * Math.min(1, d / 2 + 0.3));
+        if (d > 0.01) { p.x += dx / d * step; p.y += dy / d * step; p.z += dz / d * step; }
+        if (Math.hypot(dx, dz) > 0.2) p.heading = Math.atan2(dx, dz);
+        p.air = flying || d > 0.15;
+        p.warm = true;
+        p.jet.visible = p.flame.visible = p.air;
+        p.flame.scale.y = 0.8 + Math.random() * 0.4;
+        setVec(p.node.position, p.x, p.y + (p.air ? Math.sin(elapsed * 7) * 0.05 : 0), p.z);
+        p.node.rotation.y = p.heading;
+        p.node.rotation.z = 0;
+        p.node.visible = a.body.visible || i === 0;
+        continue;
+      }
+      p.jet.visible = p.flame.visible = false;
       const tx = s.x - Math.sin(h) * PET_BACK + Math.cos(h) * PET_SIDE, tz = s.z - Math.cos(h) * PET_BACK - Math.sin(h) * PET_SIDE;
       const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
       if (!p.warm || d > 7) { p.x = tx; p.z = tz; p.warm = true; }
@@ -1026,7 +1089,7 @@
       if (a.chute.visible) a.chute.geometry = BM.chute(TEAM_INDEX[s.team]);
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
+      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && s.wallet < 0 && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -1099,8 +1162,8 @@
       const swing = Math.sin(a.phase) * Math.min(1, sp / 3);
       p.legR.rotation.x = swing * 0.6;
       p.legL.rotation.x = -swing * 0.6;
-      if (s.carrying || s.holding) {
-        // Both hands up holding the block (or a crate) overhead.
+      if (s.carrying || s.holding || s.wallet >= 0) {
+        // Both hands up holding the block (or a crate, or a wallet) overhead.
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
       } else if (armed) {
         // Gun up and forward, the other hand under it; a big launcher sits higher, on the shoulder.
@@ -1235,6 +1298,33 @@
         notice(`${COARSE ? "Zip" : "E"} rides the zipline ${home ? "home to our fort" : "into their fort"}`, 2200);
       }
     }
+  };
+  // The wallets: over a head, in the air turning, or lying where they stopped; the fuse light blinks once a second,
+  // then three times, then all but steady, with a beep each blink near the visitor, louder and higher as it runs out.
+  const poseWallets = (elapsed) => {
+    if (!walletNodes) return;
+    const me = sim.actors[0];
+    for (let i = 0; i < walletNodes.length; i++) {
+      const w = sim.wallets[i], n = walletNodes[i];
+      n.node.visible = w.live;
+      if (!w.live) { n.sec = -1; continue; }
+      n.node.geometry = BM.walletDevice(w.look);
+      setVec(n.node.position, w.x, w.y + (w.state === 2 ? 0.25 : 0), w.z);
+      n.node.rotation.y = w.state === 1 ? w.spin : w.state === 0 ? sim.actors[w.owner].heading : 0.6 * i;
+      n.node.rotation.x = w.state === 1 ? w.spin * 0.7 : 0;
+      const rate = w.fuse > 5 ? 1 : w.fuse > 2 ? 3 : 8, on = (elapsed * rate) % 1 < 0.5;
+      n.light.visible = on;
+      const sec = Math.ceil(w.fuse * rate);
+      if (sec !== n.sec) {
+        n.sec = sec;
+        const d = Math.hypot(w.x - me.x, w.z - me.z);
+        if (d < 16) audio.cues.beep(clamp(1 - d / 16, 0.15, 1) * (w.fuse > 5 ? 0.5 : w.fuse > 2 ? 0.75 : 1), w.fuse > 5 ? 0 : w.fuse > 2 ? 1 : 2);
+        // The visitor's own: the countdown in the notice line.
+        if (w.state === 0 && w.owner === 0 && rate === 1) notice(`Carrying ${SIM.WALLETS[w.look]} · ${Math.ceil(w.fuse)} s · ${COARSE ? "Paint! throws it" : "click or Y throws it"}`, 1100);
+      }
+    }
+    // A sooted Ooga puffs smoke now and then.
+    for (const a of sim.actors) if (a.soot > 0 && Math.random() < 0.08) fx.burst(a.x, a.y + 1.4, a.z, 2, SMOKE_BITS, 0.8);
   };
   const poseShots = () => {
     for (let i = 0; i < sim.shots.length; i++) {
@@ -1386,6 +1476,7 @@
     poseFire(elapsed);
     poseGorillas(dt, elapsed);
     poseShots();
+    poseWallets(elapsed);
     if (phase === "board") boardView(elapsed, dt);
     else updateCamera(dt);
     poseWeather(dt);
@@ -1429,6 +1520,7 @@
     }
     if (TOOL_KEYS[e.key]) keyTool(TOOL_KEYS[e.key]);
     if (e.key === "t" || e.key === "T") passBlock();
+    if (e.key === "y" || e.key === "Y") throwWallet();
     if (e.key === "r" || e.key === "R") cycleTool(1);
     if (e.key === "f" || e.key === "F") grabCrate();
     if (e.key === "g" || e.key === "G") dropBlock();
@@ -1509,6 +1601,8 @@
       return { body, armL, armR, k };
     });
     peelNodes = A.peels.map(([x, z], i) => add(createNode({ geometry: BM.peel(), position: { x, y: 0.01, z }, rotation: { x: 0, y: i * 1.7, z: 0 } })));
+    // The FREE WALLETS machines, facing the middle of the field.
+    vendNodes = A.vends.map(([x, z]) => add(createNode({ geometry: BM.vend(), position: { x, y: 0, z }, rotation: { x: 0, y: x < 0 ? Math.PI / 2 : -Math.PI / 2, z: 0 } })));
     // Gorilla Jungle: the cargo nets up to the tree forts, and the gorillas themselves.
     for (const n of A.nets || []) {
       const [x0, x1, z0, z1] = n.zone, w = n.dx ? z1 - z0 : x1 - x0;
@@ -1696,6 +1790,13 @@
     // The gun in view in first person.
     fpGun = place(createNode({ geometry: BM.gun(0), visible: false }));
     fpGunL = place(createNode({ geometry: BM.gun(0), visible: false }));
+    walletNodes = [];
+    for (let i = 0; i < C.WALLET_CAP; i++) {
+      const node = place(createNode({ geometry: BM.walletDevice(0), visible: false, scale: { x: 1.6, y: 1.6, z: 1.6 } }));
+      const light = createNode({ geometry: BM.walletLight(), position: { x: 0, y: 0.2, z: 0 } });
+      addChild(node, light);
+      walletNodes.push({ node, light, sec: -1 });
+    }
     shots = [];
     for (let i = 0; i < C.MAX_SHOTS; i++) shots.push(place(createNode({ geometry: BM.ball(0), visible: false })));
     crates = [];
@@ -1765,7 +1866,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
