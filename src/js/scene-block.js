@@ -109,14 +109,22 @@
   };
   // The sniper scope: its zoom step (`ZOOMS`, degrees of view), and the tool and view to go back to off the tower.
   const ZOOMS = [34, 20, 11];
-  const scope = { zoom: 0, tool: "paint", first: false };
+  const scope = { zoom: 0, tool: "paint", first: false, island: false };
   // The quiz: the deck of question indices still to ask this visit, the one on the card and where its right answer sits.
   const quiz = { open: false, deck: [], index: -1, right: -1, locked: false, lockTimer: 0, asked: 0, solved: 0 };
   const placed = [];
   // `face` is where the visitor's Ooga faces and aims; `yaw` is the camera's, which follows it round.
   // `lift` is how far the chase camera has risen over something behind the Ooga, `dist` how far back it sits, `close`
   // when it is so near that the Ooga would fill the view.
-  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false };
+  const cam = { yaw: Math.PI, face: Math.PI, pitch: 0.28, warm: false, first: false, lift: 0, dist: 6.8, close: false, island: false, orbit: Math.PI, shuffle: false };
+  // The Island view, as Ooga Booga Land plays: the camera high and back, W A S D running the way the screen faces,
+  // the Ooga turning to run, Q E or the arrow keys swinging the camera round, and a click throwing at the pointer.
+  const ISLAND = { dist: 11, pitch: 0.72, height: 1.2 };
+  // The visitor's view and side-step choice, kept between visits.
+  const VIEW_KEY = "blockfrenzy-view";
+  // Arrow keys held, read apart from A and D so side-step mode can turn on the arrows while A and D step.
+  const arrows = { left: 0, right: 0 };
+  const pointer = { x: 0, y: 0, seen: false };
   const EYE = { x: 0, y: 0, z: 0 };
   const move = { x: 0, z: 0, sprint: 0, jump: 0, jet: 0, crouch: 0, face: 0 };
   let jumpWas = false;
@@ -349,8 +357,8 @@
     hud.el.act.hidden = !COARSE;
     hud.setAct("Jump");
     el.paintBtn.hidden = !COARSE;
-    el.cross.hidden = COARSE && !cam.first;
-    cam.yaw = cam.face = sim.team === "blue" ? Math.PI : 0;
+    el.cross.hidden = (COARSE && !cam.first) || cam.island;
+    cam.yaw = cam.face = cam.orbit = sim.team === "blue" ? Math.PI : 0;
     cam.pitch = 0.28;
     cam.warm = false;
     cam.lift = 0; cam.close = false; cam.dist = CAM.dist;
@@ -628,7 +636,8 @@
             updateTools();
           } else {
             chooseTool("sniper");
-            if (!cam.first) { cam.first = true; cam.warm = false; el.viewBtn.setAttribute("aria-pressed", "true"); lockMouse(); }
+            scope.island = cam.island;
+            if (!cam.first) setMode("first", true);
             center("SNIPER RIFLE!", 1000);
             notice(COARSE ? "Drag to aim · Paint! fires · tap View to look round" : "Click fires · wheel or + − zooms · R puts it down · E rides the zipline", 4200);
           }
@@ -637,7 +646,7 @@
         if (me) {
           // Off the tower the rifle stays on its rack, and the view goes back to how it was.
           if (tool === "sniper") chooseTool(scope.tool);
-          if (!scope.first && cam.first) { cam.first = false; cam.warm = false; el.viewBtn.setAttribute("aria-pressed", "false"); }
+          if (!scope.first && cam.first) setMode(scope.island ? "island" : "chase", true);
           updateTools();
         }
       }
@@ -783,6 +792,7 @@
   // centre ray meets something (or 30 m out), less the lift the throw adds itself; a grenade arcs higher.
   const AIM = { x: 0, y: 0, z: 0 };
   const aimPoint = () => {
+    if (cam.island) return islandAim();
     const p = camera.position, t = camera.target;
     let fx = t.x - p.x, fy = t.y - p.y, fz = t.z - p.z;
     const l = Math.hypot(fx, fy, fz) || 1;
@@ -791,6 +801,30 @@
     let d = cam.first ? 0.5 : cam.dist + 0.4;
     for (; d < 30; d += 0.4) if (SIM.solidAt(p.x + fx * d, p.y + fy * d, p.z + fz * d)) break;
     AIM.x = p.x + fx * d; AIM.y = p.y + fy * d; AIM.z = p.z + fz * d;
+    return AIM;
+  };
+  // In the Island view a throw goes where the pointer is, on a level with the Ooga's chest (straight ahead on a touch
+  // screen, or before the pointer has moved).
+  const islandAim = () => {
+    const me = sim.actors[0], y0 = me.y + C.SHOT_Y;
+    const ahead = () => { AIM.x = me.x + Math.sin(cam.face) * 12; AIM.y = y0; AIM.z = me.z + Math.cos(cam.face) * 12; return AIM; };
+    if (COARSE || !pointer.seen) return ahead();
+    const p = camera.position, t = camera.target, r = el.canvas.getBoundingClientRect();
+    let fx = t.x - p.x, fy = t.y - p.y, fz = t.z - p.z;
+    const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+    // Right = forward × up, up = right × forward.
+    let rx = -fz, rz = fx; const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
+    const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+    const tan = Math.tan(camera.fov / 2), aspect = r.width / (r.height || 1);
+    const nx = ((pointer.x - r.left) / (r.width || 1)) * 2 - 1, ny = 1 - ((pointer.y - r.top) / (r.height || 1)) * 2;
+    const dx = fx + rx * nx * tan * aspect + ux * ny * tan, dy = fy + uy * ny * tan, dz = fz + rz * nx * tan * aspect + uz * ny * tan;
+    if (dy > -0.01) return ahead();
+    const k = (y0 - p.y) / dy;
+    AIM.x = p.x + dx * k; AIM.y = y0; AIM.z = p.z + dz * k;
+    // Too close to throw at (the Ooga itself): straight ahead instead.
+    if (Math.hypot(AIM.x - me.x, AIM.z - me.z) < 1.2) return ahead();
+    // In the Island view the Ooga turns to face its throw.
+    cam.face = Math.atan2(AIM.x - me.x, AIM.z - me.z);
     return AIM;
   };
   // Lob the device over your head toward the crosshair.
@@ -881,14 +915,39 @@
       if (k === "grab") b.setAttribute("aria-pressed", String(a.holding || tool === "grab"));
     }
   };
-  const setView = (first) => {
-    cam.first = first;
+  const onArrow = (e) => {
+    const down = e.type === "keydown" ? 1 : 0;
+    if (e.key === "ArrowLeft") arrows.left = down;
+    else if (e.key === "ArrowRight") arrows.right = down;
+  };
+  const onArrowBlur = () => { arrows.left = arrows.right = 0; };
+  const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: cam.island ? "island" : cam.first ? "first" : "chase", shuffle: cam.shuffle })); } catch { /* kept this visit */ } };
+  // Three views, V going round them: the chase camera, first person, and the Island view.
+  const setMode = (mode, quiet = false) => {
+    const wasIsland = cam.island;
+    cam.first = mode === "first";
+    cam.island = mode === "island";
     cam.warm = false;
-    el.cross.hidden = phase !== "play" || (COARSE && !first);
-    el.viewBtn.setAttribute("aria-pressed", String(first));
+    if (cam.island && !wasIsland) cam.orbit = cam.face;
+    if (!cam.island && wasIsland) cam.yaw = cam.face;
+    el.cross.hidden = phase !== "play" || cam.island || (COARSE && !cam.first);
+    el.viewBtn.setAttribute("aria-pressed", String(mode !== "chase"));
+    if (cam.island && locked()) document.exitPointerLock();
     // Switching on from a key or a click is a gesture, so the mouse can lock straight away.
-    if (first) lockMouse();
-    notice(first ? (COARSE ? "First person · drag to aim" : "First person · move the mouse to aim · V goes back") : "Chase camera · move the mouse to turn", 1800);
+    if (cam.first) lockMouse();
+    saveView();
+    if (quiet) return;
+    notice(cam.first ? (COARSE ? "First person · drag to aim" : "First person · move the mouse to aim · V for the Island view")
+      : cam.island ? (COARSE ? "Island view · the stick runs where the screen faces" : "Island view · W A S D run where the screen faces · Q E or ← → turn the camera · click throws at the pointer · V for the chase camera")
+      : (COARSE ? "Chase camera" : `Chase camera · move the mouse to turn · V for first person${cam.shuffle ? "" : " · X to side-step with A D"}`), 3200);
+  };
+  const setView = (first) => setMode(first ? "first" : "chase");
+  const cycleView = () => setMode(cam.island ? "chase" : cam.first ? "island" : "first");
+  // Side-step: A and D step sideways while the Ooga keeps facing ahead; the mouse and the arrow keys turn.
+  const setShuffle = (on) => {
+    cam.shuffle = on;
+    saveView();
+    notice(on ? "Side-step ON · A D step sideways, facing ahead · mouse or ← → turns · X turns it off" : "Side-step OFF · A D turn again", 2600);
   };
   // Mouse look, as a shooter has it: the first click on the view locks the mouse (and throws), then moving the mouse
   // or touchpad turns the view in either camera, the world swinging round the Ooga, which turns with it to face the
@@ -896,7 +955,8 @@
   // Escape lets the mouse go.
   const locked = () => document.pointerLockElement === el.canvas;
   const onLockedMove = (e) => {
-    if (phase !== "play" || quiz.open) return;
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.seen = true;
+    if (phase !== "play" || quiz.open || cam.island) return;
     if (!locked() && (!cam.first || e.buttons !== 0)) return;
     // Zoomed in, the same move turns the view less, so a far shot can be lined up.
     const k = camera.fov / (58 * Math.PI / 180);
@@ -913,7 +973,7 @@
     if (phase !== "play" || e.button !== 0 || quiz.open) return;
     trigger = true;
     paint();
-    lockMouse();
+    if (!cam.island) lockMouse();
   };
   // The trigger is held from the press until the button comes up anywhere; with the AK it fires on full auto.
   let trigger = false;
@@ -973,6 +1033,7 @@
     if (SIM.launch(sim, 0)) return true;
     if (SIM.zip(sim, 0, cam.face)) return true;
     const a = sim.actors[0];
+    if (cam.island) return false;
     notice(sim.prep > 0 ? "The zipline opens when the round starts" : a.holding ? "Put the crate down first (F)" : "Climb a sniper tower's ladder and stand by the cable to ride", 1600);
     return false;
   };
@@ -988,11 +1049,33 @@
   // world turns, not the Ooga on screen. A locked mouse turns it too.
   const TURN = 2.7;
   const readInput = (dt) => {
-    const a = controls.read();
-    cam.face = wrap(cam.face + (a.yaw - a.x) * TURN * dt);
-    const fx2 = Math.sin(cam.face), fz = Math.cos(cam.face), f = clamp(a.y, -1, 1);
-    move.x = fx2 * f;
-    move.z = fz * f;
+    const a = controls.read(), turnKeys = arrows.left - arrows.right;
+    if (cam.island) {
+      // Island view: the camera swings on Q E and the arrows; the stick or W A S D run the way the screen faces, and
+      // the Ooga turns to face where it runs.
+      const side = clamp(a.x + turnKeys, -1, 1);
+      cam.orbit = wrap(cam.orbit + (a.yaw + turnKeys) * TURN * 0.8 * dt);
+      const ox = Math.sin(cam.orbit), oz = Math.cos(cam.orbit), rx = -Math.cos(cam.orbit), rz = Math.sin(cam.orbit);
+      let mx = ox * a.y + rx * side, mz = oz * a.y + rz * side;
+      const l = Math.hypot(mx, mz);
+      if (l > 1) { mx /= l; mz /= l; }
+      move.x = mx; move.z = mz;
+      if (l > 0.15) cam.face = Math.atan2(mx, mz);
+    } else if (cam.shuffle) {
+      // Side-step: A and D (not the arrows) step sideways, facing ahead; the mouse, Q E and the arrows turn.
+      cam.face = wrap(cam.face + (a.yaw + turnKeys) * TURN * dt);
+      const side = clamp(a.x + turnKeys, -1, 1), f = clamp(a.y, -1, 1);
+      const fx2 = Math.sin(cam.face), fz = Math.cos(cam.face), rx = -Math.cos(cam.face), rz = Math.sin(cam.face);
+      let mx = fx2 * f + rx * side, mz = fz * f + rz * side;
+      const l = Math.hypot(mx, mz);
+      if (l > 1) { mx /= l; mz /= l; }
+      move.x = mx; move.z = mz;
+    } else {
+      cam.face = wrap(cam.face + (a.yaw - a.x) * TURN * dt);
+      const fx2 = Math.sin(cam.face), fz = Math.cos(cam.face), f = clamp(a.y, -1, 1);
+      move.x = fx2 * f;
+      move.z = fz * f;
+    }
     move.sprint = a.sprint;
     move.face = cam.face;
     if (quiz.open) move.crouch = 0;
@@ -1341,7 +1424,8 @@
   const updateCamera = (dt) => {
     const me = sim ? sim.actors[0] : null, x = me ? me.x : 0, y = me ? me.y : 0, z = me ? me.z : 0;
     // First person looks exactly where the Ooga faces; the chase camera swings round behind it within a few frames.
-    cam.yaw = cam.first || !cam.warm ? cam.face : wrap(cam.yaw + wrap(cam.face - cam.yaw) * Math.min(1, dt * 7));
+    const want = cam.island ? cam.orbit : cam.face;
+    cam.yaw = cam.first || !cam.warm ? want : wrap(cam.yaw + wrap(want - cam.yaw) * Math.min(1, dt * (cam.island ? 9 : 7)));
     if (cam.first && me) {
       // The eye at the Ooga's eyes (lower when crouched), looking along the aim.
       const eye = y + (me.crouch ? 0.9 : 1.55), up = lookUp(), c = Math.cos(up);
@@ -1376,18 +1460,18 @@
     if (fpGun) fpGun.visible = fpGunL.visible = false;
     // The eye comes in front of any wall between it and the Ooga, so a fort's back wall never fills the view. Backed up
     // against something, the camera rises over it to look down from above, and eases back once the way is clear.
-    const by = y + CAM.height;
-    let dist = clearBehind(x, by, z, cam.pitch), lift = 0;
-    if (dist < CAM.dist * 0.6) {
+    const by = y + (cam.island ? ISLAND.height : CAM.height), pitch = cam.island ? ISLAND.pitch : cam.pitch, far = cam.island ? ISLAND.dist : CAM.dist;
+    let dist = clearBehind(x, by, z, pitch), lift = 0;
+    if (dist < far * 0.6) {
       // Up over it first; under a floor overhead, down beneath it instead.
       for (let k = 1; k <= 8; k++) {
-        const p = k <= 6 ? Math.min(1.3, cam.pitch + k * 0.17) : Math.max(-0.25, cam.pitch - (k - 6) * 0.2), d = clearBehind(x, by, z, p);
-        if (d > dist + 0.5) { dist = d; lift = p - cam.pitch; }
-        if (d >= CAM.dist * 0.8) break;
+        const p = k <= 6 ? Math.min(1.3, pitch + k * 0.17) : Math.max(-0.25, pitch - (k - 6) * 0.2), d = clearBehind(x, by, z, p);
+        if (d > dist + 0.5) { dist = d; lift = p - pitch; }
+        if (d >= far * 0.8) break;
       }
     }
     cam.lift = damp(cam.lift, lift, lift > cam.lift ? 10 : 3, dt);
-    dist = clearBehind(x, by, z, cam.pitch + cam.lift);
+    dist = clearBehind(x, by, z, pitch + cam.lift);
     cam.dist = dist;
     // So close that the Ooga would fill the view: it steps out of the way (shown as the crosshair alone).
     cam.close = dist < 1.1;
@@ -1400,7 +1484,8 @@
       camera.position.y = damp(camera.position.y, ey, 12, dt);
       camera.position.z = damp(camera.position.z, ez, 12, dt);
     }
-    setVec(camera.target, x + Math.sin(cam.yaw) * 2, y + 1.9, z + Math.cos(cam.yaw) * 2);
+    if (cam.island) setVec(camera.target, x, y + 1.1, z);
+    else setVec(camera.target, x + Math.sin(cam.yaw) * 2, y + 1.9, z + Math.cos(cam.yaw) * 2);
     setVec(RENDER_OPTS.shadowCenter, x, 0, z);
   };
   // How far back along `pitch` (and the camera's yaw) the eye can sit from (x, y, z) before a wall: the direction goes
@@ -1408,8 +1493,9 @@
   const clearBehind = (x, y, z, pitch) => {
     const c = Math.cos(pitch);
     EYE.x = -Math.sin(cam.yaw) * c; EYE.z = -Math.cos(cam.yaw) * c; EYE.y = Math.sin(pitch);
-    for (let d = 0.5; d <= CAM.dist; d += 0.25) if (SIM.solidAt(x + EYE.x * d, y + EYE.y * d, z + EYE.z * d)) return Math.max(0.6, d - 0.4);
-    return CAM.dist;
+    const far = cam.island ? ISLAND.dist : CAM.dist;
+    for (let d = 0.5; d <= far; d += 0.25) if (SIM.solidAt(x + EYE.x * d, y + EYE.y * d, z + EYE.z * d)) return Math.max(0.6, d - 0.4);
+    return far;
   };
   // The board shows the whole fort from above its gate, slowly turning.
   // On a wide screen the board sits on the left and the chosen Ooga stands on the right inside its fort's gate,
@@ -1506,7 +1592,7 @@
     audio.unlock();
     if (e.key === "Escape") {
       if (phase === "play" && locked()) document.exitPointerLock();
-      else if (phase === "play" && cam.first) setView(false);
+      else if (phase === "play" && (cam.first || cam.island)) setMode("chase");
       else if (phase === "play" || phase === "results") showBoard();
       else go(home);
       return;
@@ -1527,7 +1613,8 @@
     if (e.key === "e" || e.key === "E") zipNow();
     if ((e.key === "+" || e.key === "=") && scoped()) zoomScope(1);
     if ((e.key === "-" || e.key === "_") && scoped()) zoomScope(-1);
-    if (e.key === "v" || e.key === "V") setView(!cam.first);
+    if (e.key === "v" || e.key === "V") cycleView();
+    if (e.key === "x" || e.key === "X") setShuffle(!cam.shuffle);
     if (e.key === "0") cam.pitch = 0.28;
   };
   const chooseTarget = (n) => {
@@ -1741,6 +1828,14 @@
     el.soundBtn.setAttribute("aria-pressed", String(!audio.muted));
     el.canvas = ctx.canvas;
     document.addEventListener("mousemove", onLockedMove);
+    window.addEventListener("keydown", onArrow);
+    window.addEventListener("keyup", onArrow);
+    window.addEventListener("blur", onArrowBlur);
+    // The view and side-step picked last time.
+    try {
+      const v = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
+      if (v) { cam.shuffle = !!v.shuffle; cam.island = v.mode === "island"; cam.first = v.mode === "first"; }
+    } catch { /* the defaults */ }
     el.canvas.addEventListener("mousedown", onLockedDown);
     el.canvas.addEventListener("mousedown", onRightDown);
     el.canvas.addEventListener("contextmenu", noMenu);
@@ -1853,7 +1948,7 @@
       if (action === "block-start" || action === "block-again") start();
       else if (action === "block-board") showBoard();
       else if (action === "block-drop") dropBlock();
-      else if (action === "block-view") setView(!cam.first);
+      else if (action === "block-view") cycleView();
       else if (action === "block-sound") {
         audio.unlock();
         audio.setMuted(!audio.muted);
@@ -1866,7 +1961,7 @@
     hud.setStats(game.state);
     hud.el.sheet.dataset.open = "false";
     el.help = document.getElementById("block-help");
-    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch · V view";
+    el.help.textContent = COARSE ? "Left stick runs · right stick turns · Jump twice to climb · Paint! throws the tool you pick · View for first person" : "W S run · A D turn · Shift sprints · Space jumps, twice to climb · click fires · R or right click switches weapon · V changes view (chase, first person, Island) · X side-step (A D step sideways) · 5 sniper (from a tower) · 6 Golden Dual AKs (hold to fire) · 7 AK (hold to fire) · hold Space in the air for the jetpack · mash Space to escape a gorilla · E at a FREE WALLETS machine takes one, click or Y throws it · W into a ladder climbs · E zipline or catapult · Tab throws what you hold · F lifts crates · B new crate · C crouch";
     showBoard();
     stateTimer = window.setInterval(() => fx.trimPool(), 6e4);
     hintTimer = window.setTimeout(() => hud.hint(COARSE ? "Pick a side, then Play!" : "Pick a side, then Play! (Enter)"), 1200);
@@ -1924,6 +2019,9 @@
     el.toolBar.hidden = true;
     for (const b of el.tools) b.removeEventListener("click", el.onTool);
     document.removeEventListener("mousemove", onLockedMove);
+    window.removeEventListener("keydown", onArrow);
+    window.removeEventListener("keyup", onArrow);
+    window.removeEventListener("blur", onArrowBlur);
     el.canvas.removeEventListener("mousedown", onLockedDown);
     el.canvas.removeEventListener("mousedown", onRightDown);
     el.canvas.removeEventListener("contextmenu", noMenu);
@@ -1933,7 +2031,7 @@
     window.removeEventListener("keyup", onCrouchKey);
     if (document.pointerLockElement === el.canvas) document.exitPointerLock();
     el.cross.hidden = true;
-    cam.first = false;
+    cam.first = cam.island = false;
     move.crouch = 0;
     el.oogaPick.removeEventListener("change", el.onOoga);
     el.paintBtn.hidden = true;
