@@ -1209,7 +1209,7 @@
   // Crates as weapons: a rival close by and a free crate at hand, lift it; holding one, throw it at them.
   const expertCrates = (sim, a, dt) => {
     if (a.carrying || a.riding || a.flight || a.climbing || !a.grounded) return;
-    if (a.crateT > 0) { a.crateT -= dt; if (!a.holding) return; }
+    if (a.crateT > 0 && !a.holding) { a.crateT -= dt; return; }
     let t = null, best = 11 * 11;
     for (const b of sim.actors) {
       if (b.team === a.team || !open(b)) continue;
@@ -1217,10 +1217,18 @@
       if (dd < best && clearLine(a.x, a.z, b.x, b.z, 0.05, 1.8)) { best = dd; t = b; }
     }
     if (a.holding) {
-      if (t && a.cooldown <= 0) {
-        const dist = Math.sqrt(best);
-        fire(sim, a.id, Math.atan2(t.x + t.vx * 0.3 - a.x, t.z + t.vz * 0.3 - a.z), lobPitch(dist, "crate"), "crate");
-      } else if (!t && a.crateT <= -3) grab(sim, a.id, a.heading);
+      if (t) {
+        a.crateT = 0;
+        if (a.cooldown <= 0) {
+          const dist = Math.sqrt(best);
+          fire(sim, a.id, Math.atan2(t.x + t.vx * 0.3 - a.x, t.z + t.vz * 0.3 - a.z), lobPitch(dist, "crate"), "crate");
+        }
+      } else {
+        // Three seconds without a target frees the hands for blocks and travel. If there is no room to set the
+        // crate down yet, keep trying rather than restarting the delay.
+        a.crateT -= dt;
+        if (a.crateT <= -3) grab(sim, a.id, a.heading);
+      }
       return;
     }
     if (!t || best > 9 * 9 || a.role === "attack" && a.route) return;

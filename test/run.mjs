@@ -5363,6 +5363,46 @@ const gameRulesChecks = async () => {
     record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side carries it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes, a pass is caught, a crate stacks and a thrown one stuns",
       picked && dropped && held && regrab && noScoreAway && scored && splatted && stays && rescued && returned && trapped && frozen && shielded && freed && netted && pushed && caught && bonked,
       JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, stays, rescued, returned, trapped, frozen, shielded, freed, netted, pushed, caught, lifted, stacked, bonked }));
+    // An expert that loses its crate target must free its hands so it can rescue a block.
+    const expertFixture = () => {
+      const r = S.create({ skill: "expert", prep: 0 }), bot = r.actors[1];
+      for (const actor of r.actors) { actor.bot = false; actor.x = 18; actor.z = -35; }
+      Object.assign(bot, { x: 0, z: 20, y: 0, bot: true });
+      Object.assign(r.weather, { target: 0, strength: 0, left: 1e9 });
+      const lifted = S.grab(r, bot.id, 0);
+      Object.assign(r.flags.blue, { state: "dropped", x: 0, z: 20, y: 0, carrier: null });
+      const advance = (seconds) => { for (let n = 0; n < Math.round(seconds / S.CONFIG.STEP); n++) S.tick(r, S.CONFIG.STEP, { ...still }); };
+      return { r, bot, lifted, advance };
+    };
+    const lost = expertFixture();
+    lost.advance(2.5);
+    const waits = lost.bot.holding;
+    lost.advance(7.5);
+    record("block frenzy expert: after losing a crate target, wait three seconds, set it down and rescue the dropped home block",
+      lost.lifted && waits && !lost.bot.holding && lost.r.flags.blue.state === "home",
+      JSON.stringify({ lifted: lost.lifted, waits, holding: lost.bot.holding, flag: lost.r.flags.blue.state }));
+    const reacquired = expertFixture();
+    reacquired.advance(2);
+    Object.assign(reacquired.r.actors[2], { x: 3, z: 20, y: 0, guard: 0 });
+    reacquired.bot.cooldown = 20; // Keep a visible target without being able to throw yet.
+    reacquired.advance(1);
+    const retained = reacquired.bot.holding;
+    Object.assign(reacquired.r.actors[2], { x: 18, z: -35 });
+    reacquired.advance(2);
+    const freshWait = reacquired.bot.holding;
+    reacquired.advance(2);
+    record("block frenzy expert: reacquiring a target resets the crate-release delay even during weapon cooldown",
+      reacquired.lifted && retained && freshWait && !reacquired.bot.holding,
+      JSON.stringify({ retained, freshWait, holding: reacquired.bot.holding }));
+    const blockedCrate = expertFixture(), stack = blockedCrate.r.crates.filter((c) => !c.live).slice(0, 3);
+    for (let i = 0; i < stack.length; i++) Object.assign(stack[i], { live: true, team: "blue", x: 0, z: 18.7, y: i * S.CONFIG.CRATE_H });
+    blockedCrate.advance(4);
+    const blockedWait = blockedCrate.bot.holding;
+    for (const c of stack) c.live = false;
+    blockedCrate.advance(1);
+    record("block frenzy expert: a blocked set-down is retried as soon as the space clears",
+      blockedCrate.lifted && blockedWait && !blockedCrate.bot.holding,
+      JSON.stringify({ blockedWait, holding: blockedCrate.bot.holding }));
     const round = (seed) => { const r = S.create({ team: "red", seed }); r.actors[0].bot = "auto"; for (let t = 0; t < 900 && !r.over; t += 1 / 30) S.step(r, 1 / 30, still), r.eventCount = 0; return JSON.stringify({ over: r.over, winner: r.winner, score: r.score, time: Math.round(r.time) }); };
     const a = round(3), b = round(3);
     record("block frenzy rounds: a seeded round replays exactly and reaches three captures", a === b && JSON.parse(a).over && Math.max(...Object.values(JSON.parse(a).score)) === S.CONFIG.CAPTURES, JSON.stringify({ a, b }));
