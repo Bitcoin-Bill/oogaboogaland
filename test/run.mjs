@@ -5522,6 +5522,33 @@ const ghostHuntChecks = async () => {
     record("ghost hunt: a seeded hunt repeats exactly, one picked up from its snapshot mid-way (a new host) goes on the same, and its rows stay readable across a deploy", repeated && loaded && same && hunting && a.state.kills > 0 && rows && older, JSON.stringify({ repeated, loaded, same, hunting, kills: a.state.kills, rows, older }));
   }
   {
+    // Old v1 tabs have only twelve drop slots. More rewards must wait, including through a host handoff.
+    const z = begin(19);
+    let now = T0;
+    const tick = () => { now += FRAME; z.beginPresence(); z.present(1, 0, 0, 6); z.advance(now); };
+    while (now < T0 + 60000 && z.state.state !== ST.ACTIVE) tick();
+    for (let i = 0; i < z.drops.length; i++) Object.assign(z.drops[i], { on: true, id: 1000 + i, kind: 0, x: 15, z: 15, at: z.state.now });
+    z.state.pendingCount = 2; z.state.pending[0] = z.state.pending[1] = z.state.now;
+    z.state.midDropAt = z.state.now; z.state.lightningSent = 1;
+    const due = z.state.midDropAt;
+    for (let i = 0; i < 6; i++) tick();
+    const held = z.state.pendingCount === 2 && z.state.midDropAt === due;
+    const snap = JSON.parse(JSON.stringify(z.snapshot())), handed = G.create({ seed: 99, spots, lapMs: 20000 });
+    // A deployed reader's six-number drop rows must all address slots 0 through 11.
+    const readable = snap.v === 1 && snap.d.length === 12 * 6 && snap.d.every((n, i) => i % 6 || n >= 0 && n < 12);
+    const loaded = handed.load(snap) && JSON.stringify(handed.snapshot().d) === JSON.stringify(snap.d)
+      && handed.state.pendingCount === 2 && handed.state.midDropAt === due;
+    z.load(JSON.parse(JSON.stringify(handed.snapshot())));
+    z.drops[0].on = false;
+    for (let i = 0; i < 6; i++) tick();
+    const one = z.drops[0].on && z.state.pendingCount === 1 && z.state.midDropAt === due;
+    z.drops[1].on = false; z.drops[2].on = false;
+    for (let i = 0; i < 6; i++) tick();
+    const rest = z.drops[1].on && z.drops[2].on && !z.state.pendingCount && z.state.midDropAt > z.state.now;
+    record("ghost hunt: v1 drop slots survive a host handoff and full pools retain round and mid-round rewards until space opens",
+      held && readable && loaded && one && rest, JSON.stringify({ held, readable, loaded, one, rest }));
+  }
+  {
     const sim = begin(11), rounds = [], drops = { 3: false, 4: false }, gorillas = [], skeletons = [], spiders = [], brood = [], glasses = [], seenBrutes = new Set();
     let bossGlasses = 0, dropped = 0, crowded = 0;
     let maxAlive = 0, round = 0, lapToNight = false;

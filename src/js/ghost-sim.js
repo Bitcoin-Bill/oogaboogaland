@@ -53,7 +53,8 @@
   // The debug stand-in a revive can be watched on alone (`debug.revive`): a player id no room hands out.
   const REVIVE_BOT = -7;
   const CONFIG = {
-    TICK_MS: 50, MAX_GHOSTS: 32, MAX_DROPS: 24, MAX_PLAYERS: 16, MAX_PENDING: 24,
+    // Snapshot v1 readers have twelve drop slots. Extra rewards wait in the shared pending queue.
+    TICK_MS: 50, MAX_GHOSTS: 32, MAX_DROPS: 12, MAX_PLAYERS: 16, MAX_PENDING: 24,
     // The lobby: how long players have to gather and ready up once the herald is woken.
     GATHER_MS: 30000,
     // A won hunt holds its banner and podium `VICTORY_MS` (five seconds past the ten it once held) before the dawn.
@@ -381,6 +382,9 @@
       return false;
     };
     const dropRandom = () => {
+      let free = false;
+      for (const d of drops) if (!d.on) { free = true; break; }
+      if (!free) return null;
       let kind = Math.floor(rand() * (TESS_DROP + 2));
       if (kind === TESS_DROP + 1) kind = MONKEY_DROP;
       if (kind === TESS_DROP && tessOut()) kind = Math.floor(rand() * TESS_DROP);
@@ -776,11 +780,11 @@
       const dt = C.TICK_MS / 1000;
       s.now += C.TICK_MS;
       const now = s.now;
-      // Pending round drops, oldest first.
+      // Pending round drops, oldest first; a full pool holds them for the next free slot.
       while (s.pendingCount && now >= s.pending[0]) {
+        if (!dropRandom()) break;
         for (let i = 1; i < s.pendingCount; i++) s.pending[i - 1] = s.pending[i];
         s.pendingCount--;
-        dropRandom();
       }
       for (const p of players) if (p.on && p.frozenUntil && now >= p.frozenUntil) { p.frozenUntil = 0; p.seg = C.PLAYER_SEGMENTS; }
       // Dying ghosts leave once their fade is done.
@@ -883,7 +887,7 @@
       // A drop every so often while the fighting lasts, its clock starting afresh with each round.
       if (!fighting()) s.midDropAt = 0;
       else if (!s.midDropAt) s.midDropAt = now + C.MID_DROP_MS / dropShare();
-      else if (now >= s.midDropAt) { dropRandom(); s.midDropAt = now + C.MID_DROP_MS / dropShare(); }
+      else if (now >= s.midDropAt && dropRandom()) s.midDropAt = now + C.MID_DROP_MS / dropShare();
 
       // Drops: the first player to walk into a landed one who can use it takes it; the lightning, the first to reach
       // the pile under it.

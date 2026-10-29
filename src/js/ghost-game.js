@@ -465,7 +465,7 @@
       const crystal = createNode({ geometry: P.crystal, position: { x: 0, y: MODELS.HOURGLASS_CRYSTAL, z: 0 } });
       const orbs = Array.from({ length: GLASS_ORBS }, () => createNode({ geometry: P.orb }));
       addChild(root, frame, top, bottom, crystal, ...orbs, glass);
-      if (o) { target(frame, o); target(glass, o); }
+      if (o) { target(frame, o); target(glass, o); target(crystal, o); }
       return { root, top, bottom, crystal, orbs };
     };
     // The tower's living parts at `s` seconds: its crystal turning and breathing, and its orbs circling in three tilted
@@ -2287,7 +2287,7 @@
     };
     // Whether any hunter is still standing: none once the last of them (or the only one) goes down.
     const anyStanding = () => {
-      for (const q of sim.players) if (scored(q) && !down(q.id)) return true;
+      for (const q of sim.players) if (scored(q) && q.here && !down(q.id)) return true;
       return false;
     };
     let viewHeld = false, hidMine = null, downYaw = 0;
