@@ -164,7 +164,9 @@
       roar: (k = 1) => { blip("sawtooth", 140, 70, 0.04, 0.35, 0.4, 0.26 * k); blip("sawtooth", 95, 55, 0.05, 0.3, 0.4, 0.2 * k, 0.05); boomNoise(0.4 * k, 0.8); },
       grunt: (k = 1) => blip("sawtooth", 180, 110, 0.01, 0.05, 0.1, 0.14 * k),
       yelp: (k = 1) => blip("square", 500, 220, 0.005, 0.06, 0.2, 0.16 * k),
-      free: () => chord([0, 7, 12], 0.05, "triangle", 0.05, 0.18)
+      free: () => chord([0, 7, 12], 0.05, "triangle", 0.05, 0.18),
+      // A wallet's fuse: a short beep, higher (`urgency` 0 to 2) as it runs out.
+      beep: (k = 1, urgency = 0) => blip("square", 1400 + urgency * 500, 1400 + urgency * 500, 0.002, 0.03, 0.03, 0.08 * k)
     };
     // The held layers follow `state` each frame: wind and rain from the weather (0 to 1), the whir from the zipline.
     const update = () => {
