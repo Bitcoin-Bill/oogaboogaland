@@ -6335,45 +6335,45 @@ body.orbit-dragging #tooltip {
   }
 }
 
-/* Scale the HUB banner continuously from phone to desktop; hud.js fits the visible controls. */
-body[data-active-scene="hub"] {
+/* Scale the island banners continuously from phone to desktop; hud.js fits the visible controls. */
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) {
   --hub-title-font: clamp(13px, calc(8.62px + 1.2162vw), 22px);
   --hub-meta-font: clamp(10.5px, calc(9.77px + 0.2027vw), 12px);
   --hub-banner-gutter: clamp(8px, 1.5vw, 16px);
 }
 
-body[data-active-scene="hub"] .topbar {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .topbar {
   min-height: calc(52px + var(--safe-top));
   padding-left: calc(var(--hub-banner-gutter) + var(--safe-left));
   padding-right: calc(var(--hub-banner-gutter) + var(--safe-right));
 }
 
-body[data-active-scene="hub"] .brand { width: max-content; }
-body[data-active-scene="hub"] .brand h1 { font-size: var(--hub-title-font); white-space: nowrap; }
-body[data-active-scene="hub"] .brand p { font-size: var(--hub-meta-font); }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .brand { width: max-content; }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .brand h1 { font-size: var(--hub-title-font); white-space: nowrap; }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .brand p { font-size: var(--hub-meta-font); }
 
-body[data-active-scene="hub"] .world-clock,
-body[data-active-scene="hub"] .world-block {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .world-clock,
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .world-block {
   right: calc(var(--hub-banner-gutter) + var(--safe-right));
   left: auto;
   margin: 0;
 }
 
-body[data-active-scene="hub"] .world-clock { font-size: var(--hub-title-font); }
-body[data-active-scene="hub"] .world-block {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .world-clock { font-size: var(--hub-title-font); }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .world-block {
   top: calc(15px + var(--hub-title-font) + var(--safe-top));
   width: max-content;
   justify-content: flex-end;
   font-size: var(--hub-meta-font);
 }
 
-body[data-active-scene="hub"] #equipment-hud {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) #equipment-hud {
   top: var(--hub-equipment-top, calc(62px + var(--safe-top)));
   left: var(--hub-equipment-left, calc(var(--hub-banner-gutter) + var(--safe-left)));
   grid-template-columns: max-content;
 }
 
-body[data-active-scene="hub"] .weapon-equipment-row {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .weapon-equipment-row {
   width: max-content;
   gap: clamp(4px, calc(2px + 0.55vw), 8px);
   flex-wrap: nowrap;
@@ -6381,30 +6381,30 @@ body[data-active-scene="hub"] .weapon-equipment-row {
   transform-origin: top left;
 }
 
-body[data-active-scene="hub"] .weapon-equipment-row .magazine-hud { margin-right: 0; }
-body[data-active-scene="hub"] .weapon-hud { transition: background 0.15s ease, transform 0.15s ease; }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .weapon-equipment-row .magazine-hud { margin-right: 0; }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .weapon-hud { transition: background 0.15s ease, transform 0.15s ease; }
 
-body[data-active-scene="hub"] .equipment-hud[data-banner="below"] .weapon-equipment-row {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .equipment-hud[data-banner="below"] .weapon-equipment-row {
   width: var(--hub-equipment-width);
   flex-wrap: wrap;
 }
 
-body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] { width: 78px; }
-body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-readout {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] { width: 78px; }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-readout {
   opacity: 0;
   visibility: hidden;
 }
-body[data-active-scene="hub"] .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-compact {
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .equipment-hud:is([data-banner="compact"], [data-banner="below"]) .weapon-hud[data-equipped="true"] .weapon-compact {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
 }
 
-body[data-active-scene="hub"] .sheet[data-dock="right"][data-sized="false"] { top: calc(72px + var(--safe-top)); }
-body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(72px + var(--safe-top))); }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .sheet[data-dock="right"][data-sized="false"] { top: calc(72px + var(--safe-top)); }
+body:is([data-active-scene="hub"], [data-active-scene="dsb"]) .mic-note { top: var(--hub-equipment-bottom, calc(72px + var(--safe-top))); }
 
 @media (max-width: 720px) {
-  body[data-active-scene="hub"] #equipment-hud~.bottom-hud>#message-stack {
+  body:is([data-active-scene="hub"], [data-active-scene="dsb"]) #equipment-hud~.bottom-hud>#message-stack {
     top: var(--hub-equipment-bottom, calc(118px + var(--safe-top)));
     left: calc(var(--hub-banner-gutter) + var(--safe-left));
   }
@@ -7071,6 +7071,29 @@ body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(
 }
 
 /* DSB keeps controls in the existing page and its world in a separate scene. */
+.dsb-island-icon { display: none; }
+body[data-active-scene="dsb"] .dsb-island-icon {
+  display: block;
+  width: 56px;
+  height: 44px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.45));
+}
+body[data-active-scene="dsb"] :is(#freeroam-icon, #weapon-hud, #magazine-hud) { display: none !important; }
+body[data-active-scene="dsb"] :is(.world-clock, .world-block) {
+  right: calc(var(--hub-banner-gutter) + var(--safe-right) + 48px);
+}
+.dsb-sound {
+  position: absolute;
+  top: calc(10px + var(--safe-top));
+  right: calc(var(--hub-banner-gutter) + var(--safe-right));
+  width: 36px;
+  height: 36px;
+}
+.dsb-sound svg { width: 24px; height: 24px; }
+.dsb-sound svg path:not(:first-child) { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dsb-sound .sound-muted, .dsb-sound[aria-pressed="true"] .sound-waves { display: none; }
+.dsb-sound[aria-pressed="true"] .sound-muted { display: block; }
+body[data-active-scene="dsb"] #destination-hud:disabled { opacity: 1; cursor: default; }
 .dsb-panel { position: absolute; z-index: 5; right: 20px; top: 104px; width: 300px; max-height: calc(100% - 230px); overflow: auto; padding: 18px; background: rgba(25, 15, 42, 0.92); border: 1px solid #8863a5; border-radius: 10px; box-shadow: 0 8px 35px #0005; }
 .dsb-panel h2 { margin: 4px 0 12px; color: #ffdf38; font-size: 25px; }
 .dsb-panel p { margin: 8px 0; }
@@ -7092,16 +7115,13 @@ body[data-active-scene="hub"] .mic-note { top: var(--hub-equipment-bottom, calc(
 .dsb-entry .dsb-world { display: none; }
 .dsb-entry .dsb-intro h2 { color: white; }
 .dsb-entry .dsb-sounds { font-size: 11px; }
-.dsb-active .world-clock { visibility: hidden; }
 .dsb-shop { border-top: 1px solid #ffdf38; margin-top: 12px; }
 @media (max-width: 720px) {
   .dsb-panel { top: 100px; right: 8px; width: 220px; padding: 10px; max-height: calc(100% - 300px); font-size: 11px; }
   .dsb-panel h2 { font-size: 19px; }
   .dsb-entry .dsb-panel { bottom: 210px; max-height: 35%; width: 75vw; }
-  .dsb-active .brand { display: none; }
 }
 .dsb-toggle { display: block; }
-.dsb-active .world-block { display: none; }
 
   .dsb-panel[data-folded="true"]:not([data-phase="entrance"]) { width: auto; padding: 3px 8px; }
   .dsb-panel[data-folded="true"] .dsb-world > :not(.dsb-toggle),

@@ -34,26 +34,41 @@
     block(root,C.wood,3.5,1.85,-7.8,3.3,1,.08);block(root,C.trim,3.5,1.85,-7.75,3.1,.84,.03);
     label(root,"100% legit.",3.5,1.96,-7.71,.25,C.cream);label(root,"Trust me bro.",3.5,1.58,-7.71,.25,C.cream);
     // Shelves of boxed devices along the sides, a stock rack at the back, and two freestanding shelves aligned
-    // with the right wall's shelves on either side of the staff door, leaving the glass displays unobstructed.
+    // with the right wall's shelves on either side of the staff door, with a wider aisle behind them.
     for(const [x,yaw] of [[-6.6,Math.PI/2],[6.6,-Math.PI/2]])for(const z of [-3.5,1])fixtures.push({node:prop(root,"shelf",x,0,z,z>0?1:0,yaw),floor:0,kind:"shelf"});
     for(const z of [-3.5,1]){solid(-6.6,z,.6,2.5);solid(6.6,z,.6,2.5);}
     fixtures.push({node:prop(root,"rack",-5.4,0,-7.45),floor:0,kind:"shelf"});solid(-5.4,-7.45,2.4,.6);
-    for(const [z,v] of [[-3.5,0],[1,1]]){fixtures.push({node:prop(root,"gondola",4.2,0,z,v),floor:0,kind:"shelf"});solid(4.2,z,.9,2.6);}
+    for(const [z,v] of [[-3.5,0],[1,1]]){fixtures.push({node:prop(root,"gondola",3.9,0,z,v),floor:0,kind:"shelf"});solid(3.9,z,.9,2.6);}
     for(const [x,z,v] of [[-2.4,-6.8,0],[-3.6,-6.2,1]]){prop(root,"crate",x,0,z,v);solid(x,z,1,.8);}
     for(const [x,z,v,yaw] of [[-5.6,-5.5,0,.3],[6,6.9,2,-.4],[-5,7.1,1,.2]]){prop(root,"cartons",x,0,z,v,yaw);solid(x,z,1.1,1);}
     // The till faces the room's centre; its counter, sign and devices turn together.
-    const checkout=S.createNode({position:{x:4.2,y:0,z:4.6},rotation:{x:0,y:-Math.PI/2,z:0}});S.addChild(root,checkout);
-    collision.add(block(checkout,C.wood,0,.5,0,2.6,1,1));collision.add(block(checkout,C.cream,0,1.04,0,2.76,.08,1.14));block(checkout,C.trim,0,.5,.52,2.4,.18,.02);solid(4.2,4.6,1,2.6);
+    const checkout=S.createNode({position:{x:3.9,y:0,z:4.6},rotation:{x:0,y:-Math.PI/2,z:0}});S.addChild(root,checkout);
+    collision.add(block(checkout,C.wood,0,.5,0,2.6,1,1));collision.add(block(checkout,C.cream,0,1.04,0,2.76,.08,1.14));block(checkout,C.trim,0,.5,.52,2.4,.18,.02);solid(3.9,4.6,1,2.6);
     label(checkout,"FREE",0,.42,.54,.3,C.gold);prop(checkout,"register",.8,1.08,-.1);prop(checkout,"reader",-.7,1.08,.15);
     const blacklightSwitch=prop(checkout,"blacklight-switch",0,.72,-.54,0,Math.PI);blacklightSwitch.glow=.12;
     label(checkout,"BLACKLIGHT",-.65,.688,-.565,.10,C.cream).rotation.y=Math.PI;
-    const nearBlacklight=(p,feet)=>feet>=-.1&&feet<.3&&p.x>4.74&&Math.hypot(p.x-4.74,p.z-4.6)<1.5;
+    const nearBlacklight=(p,feet)=>feet>=-.1&&feet<.3&&p.x>4.44&&Math.hypot(p.x-4.44,p.z-4.6)<1.5;
     // Display cases along the left aisle, lit from below, each named on its plinth.
-    const devices=BL.walletBombs.LOOKS,displays=[];
-    prop(root,"display-row",-4.4,0,-4.5);
+    const devices=BL.walletBombs.LOOKS,displays=[],jadedEyes=[];
+    const passpoorBalances=[],balanceFrames=Array.from({length:100},(_,i)=>BL.walletBombs.passpoorBalanceGeometry(i));
+    const addPasspoorBalance=(pivot,parent)=>{
+      const digits=S.createNode({geometry:balanceFrames[0]});S.addChild(parent,digits);
+      passpoorBalances.push({pivot,digits,x:parent.position.x,z:parent.position.z+.072*parent.scale.z,startedAt:-1});
+    };
+    const passpoorSlot=BL.walletsModels.vendorLayout(3);
+    const passpoorParent=S.createNode({position:{x:passpoorSlot.x-passpoorSlot.cx*passpoorSlot.scale,y:passpoorSlot.y+passpoorSlot.cz*passpoorSlot.scale,z:passpoorSlot.z},rotation:{x:Math.PI/2,y:0,z:0},scale:{x:passpoorSlot.scale,y:passpoorSlot.scale,z:passpoorSlot.scale}});
+    S.addChild(vendor,passpoorParent);addPasspoorBalance(vendor,passpoorParent);
+    const addJadedEyes=(pivot,parent)=>{
+      const eyes=S.createNode({geometry:BL.walletBombs.jadedEyesGeometry()});S.addChild(parent,eyes);
+      jadedEyes.push({pivot,eyes,x:parent.position.x-.092*parent.scale.x,z:parent.position.z+.153*parent.scale.z});
+    };
+    const jadeSlot=BL.walletsModels.vendorLayout(4);
+    const jadeParent=S.createNode({position:{x:jadeSlot.x-jadeSlot.cx*jadeSlot.scale,y:jadeSlot.y+jadeSlot.cz*jadeSlot.scale,z:jadeSlot.z},rotation:{x:Math.PI/2,y:0,z:0},scale:{x:jadeSlot.scale,y:jadeSlot.scale,z:jadeSlot.scale}});
+    S.addChild(vendor,jadeParent);addJadedEyes(vendor,jadeParent);
+    prop(root,"display-row",-4.1,0,-4.5);
     devices.forEach((look,i)=>{
       const z=-4.5+i*1.8;
-      fixtures.push({node:prop(root,"vitrine",-4.4,0,z),floor:0,kind:"vitrine"});prop(root,"vitrine-glass",-4.4,0,z);solid(-4.4,z,1.008,1.008);
+      fixtures.push({node:prop(root,"vitrine",-4.1,0,z),floor:0,kind:"vitrine"});prop(root,"vitrine-glass",-4.1,0,z);solid(-4.1,z,1.008,1.008);
       // Stand the shared model on its edge and centre its full rotating envelope inside the glass.
       const geometry=BL.walletBombs.geometryOf(i),v=geometry.verts;
       let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
@@ -63,24 +78,28 @@
       // Float at the glass's vertical centre. Rektdger centres its body, keeping the enlarged sleeve below it.
       // Fill the larger cube, leaving clearance above and around the full spin.
       const scale=Math.min(i===0?.4/Math.max(.0001,-minZ):.8/(maxZ-minZ),.41/radius);
-      const pivot=S.createNode({position:{x:-4.4,y:i===0?1.104-cz*scale:1.104,z},rotation:{x:0,y:Math.PI/2+i*.5,z:0}});
-      S.addChild(root,pivot);S.addChild(pivot,S.createNode({geometry,position:{x:-cx*scale,y:cz*scale,z:-cy*scale},rotation:{x:Math.PI/2,y:0,z:0},scale:{x:scale,y:scale,z:scale}}));displays.push(pivot);
+      const pivot=S.createNode({position:{x:-4.1,y:i===0?1.104-cz*scale:1.104,z},rotation:{x:0,y:Math.PI/2+i*.5,z:0}});
+      const device=S.createNode({geometry:i===3?BL.walletBombs.passpoorScreenGeometry():i===4?BL.walletBombs.jadedTrackingGeometry():geometry,position:{x:-cx*scale,y:cz*scale,z:-cy*scale},rotation:{x:Math.PI/2,y:0,z:0},scale:{x:scale,y:scale,z:scale}});
+      S.addChild(root,pivot);S.addChild(pivot,device);displays.push(pivot);
+      if(i===4)addJadedEyes(pivot,device);
+      if(i===3)addPasspoorBalance(pivot,device);
     });
-    // A retained, flat photo covers only SeedSnitcher's four tiles, leaving SNITCH visible above it.
+    // A retained photo replaces SeedSnitcher's four tiles flush with the screen, leaving SNITCH above it.
     // Canvas/portrait work happens on the shutter event; the ordinary animation only checks alignment.
     const snitchPhotos=[null,null];
     let snitchFacing=false,snitchShotAt=-Infinity,machineNear=false;
     const paintSnitchPhoto=photo=>{
-      photo.context.fillStyle="#142021";photo.context.fillRect(0,0,128,128);
+      photo.context.fillStyle="#000000";photo.context.fillRect(0,0,128,128);
       photo.context.drawImage(blacklightLit?photo.albedo:photo.portrait,0,0,128,128);photo.surface.version++;
     };
     const snapSnitch=(index,actor,t)=>{
       let photo=snitchPhotos[index];
       if(!photo){
         const canvas=document.createElement("canvas"),portrait=document.createElement("canvas"),albedo=document.createElement("canvas");canvas.width=canvas.height=128;
-        const surface={canvas,version:0,rect:[-.1,-.092,.2,.184],background:[20,32,33],bright:.6};
+        const surface={canvas,version:0,rect:[-.1,-.092,.2,.184],background:[0,0,0],bright:.6};
         const geometry={verts:[-.1,-.092,0,.1,-.092,0,.1,.092,0,-.1,.092,0],faces:[{i:[0,1,2,3],color:[255,255,255],emissive:1}],lines:[],castShadow:false,imageSurface:surface};
-        const screen=S.createNode({geometry,position:{x:.025,y:.15,z:.012},rotation:{x:-Math.PI/2,y:0,z:0}});
+        // The screen face is at .136; a tiny clearance avoids coplanar depth fighting.
+        const screen=S.createNode({geometry,position:{x:.025,y:.1365,z:.012},rotation:{x:-Math.PI/2,y:0,z:0}});
         // Under UV, shade the photo's pixels like the Ooga instead of bypassing the room light.
         screen.glow=blacklightLit?0:1;
         let parent=displays[5].children[0];
@@ -89,13 +108,15 @@
           parent=S.createNode({position:{x:x-cx*scale,y:y+cz*scale,z},rotation:{x:Math.PI/2,y:0,z:0},scale:{x:scale,y:scale,z:scale}});S.addChild(vendor,parent);
         }
         S.addChild(parent,screen);
-        photo=snitchPhotos[index]={portrait,albedo,surface,screen,context:canvas.getContext("2d"),flashUntil:0,expiresAt:0};
+        const device=index===1?vendor:parent,idleGeometry=device.geometry;
+        const photoGeometry=index===1?BL.walletsModels.geometry("vendor",1):BL.walletBombs.snitchPhotoGeometry();
+        photo=snitchPhotos[index]={portrait,albedo,surface,screen,device,idleGeometry,photoGeometry,context:canvas.getContext("2d"),flashUntil:0,expiresAt:0};
       }
       BL.hud.renderFaceIcon(photo.portrait,actor,null,128);
       // Preserve material whites for the room shader instead of applying UV to an already shaded icon.
       BL.hud.renderFaceIcon(photo.albedo,actor,null,128,true);
       photo.context.fillStyle="#ffffff";photo.context.fillRect(0,0,128,128);photo.surface.version++;
-      photo.screen.visible=true;photo.flashUntil=t+.12;photo.expiresAt=t+4.62;
+      photo.device.geometry=photo.photoGeometry;photo.screen.visible=true;photo.flashUntil=t+.12;photo.expiresAt=t+4.62;
     };
     // The neon over the left shelves: FREE in pink, flickering (`flicker`).
     const neon=onWall(prop(root,"neon",-6.82,3.4,-1.2),Math.PI/2),neonWord=onWall(label(root,"FREE",-6.8,3.21,-1.2,.5,C.pink),Math.PI/2);
@@ -159,16 +180,16 @@
     };
     // Five lamps and one slot left for a blast's flash; the second lamp, by the neon, takes its pink and its flicker.
     const lighting={clear:[.06,.05,.045],sky:[.6,.56,.5],ground:[.4,.34,.28],direct:[1,.92,.8],directStrength:.4,ambientFloor:.48,sun:{x:.3,y:.9,z:.2},shadowCenter:{x:0,y:2.3,z:0},shadowExtent:12,shadowStrength:.16,bloomStrength:.3,fog:[.06,.05,.045],fogNear:40,fogFar:80,lights:new Float32Array(48),lightCount:5};
-    lighting.lights.set([0,3.9,-5.6,8,1.2,.75,.6,0,-4.5,4,-1.5,8,1.1,.62,.86,0,4.5,4,-1.5,8,1,.86,.64,0,4.2,3.9,4.6,7,1,.84,.6,0,0,4,6,8,1,.86,.64,0]);
-    const normalLights=lighting.lights.slice(0,40),blacklightLights=new Float32Array([
-      0,4.3,-7.65,12,.32,.025,.85,1,0,4.15,-5,12,.3,.03,.9,1,
-      0,4.15,0,12,.32,.025,.85,1,0,4.15,5,12,.3,.03,.9,1,0,4.3,7.65,12,.32,.025,.85,1]);
+    lighting.lights.set([0,3.9,-5.6,8,1.2,.75,.6,0,-4.5,4,-1.5,8,1.1,.62,.86,0,4.5,4,-1.5,8,1,.86,.64,0,3.9,3.9,4.6,7,1,.84,.6,0,0,4,6,8,1,.86,.64,0]);
+    const normalLights=lighting.lights.slice(0,40),blacklightLights=new Float32Array(40);
+    // Keep the unused lamp slots dark without moving the blast's flash slot.
+    blacklightLights.set([0,4.15,-5,12,.3,.03,.9,1,0,4.15,0,12,.32,.025,.85,1,0,4.15,5,12,.3,.03,.9,1]);
     lighting.blacklight=new Float32Array(4);
     const normalMood={clear:lighting.clear,sky:lighting.sky,ground:lighting.ground,direct:lighting.direct,directStrength:lighting.directStrength,ambientFloor:lighting.ambientFloor,bloomStrength:lighting.bloomStrength,fog:lighting.fog};
     const blacklightMood={clear:[.009,.002,.022],sky:[.045,.012,.085],ground:[.014,.003,.028],direct:[.2,.025,.45],directStrength:.04,ambientFloor:.006,bloomStrength:.8,fog:[.009,.002,.022]};
     const blacklightTubes=[];
-    // Two high wall fixtures and one directly beneath each of the three ceiling beams.
-    for(const [y,z] of [[4.38,-7.68],[4.38,7.68],[4.22,-5],[4.22,0],[4.22,5]]){
+    // One fixture directly beneath each of the three ceiling beams.
+    for(const [y,z] of [[4.22,-5],[4.22,0],[4.22,5]]){
       block(root,"#17191c",0,y+.045,z,12.8,.04,.14);
       const tube=block(root,"#7645ff",0,y,z,12.5,.045,.055,1);tube.glow=.03;blacklightTubes.push(tube);
     }
@@ -199,9 +220,33 @@
       }
       if(target){lighting.blacklight[0]=target.x;lighting.blacklight[1]=target.y+aimHeight;lighting.blacklight[2]=target.z;}
       for(let i=0;i<displays.length;i++)displays[i].rotation.y=Math.PI/2+i*.5+t*Math.PI/10;
+      // Lose a sat each half-second while facing the visitor; hold at -99 until turning away.
+      for(const balance of passpoorBalances){
+        let facing=false;
+        if(target){
+          const c=Math.cos(balance.pivot.rotation.y),s=Math.sin(balance.pivot.rotation.y),dx=target.x-balance.pivot.position.x,dz=target.z-balance.pivot.position.z;
+          const side=c*dx-s*dz-balance.x,front=s*dx+c*dz-balance.z;
+          facing=front>.5*Math.max(.1,Math.hypot(side,front));
+        }
+        if(!facing)balance.startedAt=-1;
+        else if(balance.startedAt<0)balance.startedAt=t;
+        const elapsed=facing?t-balance.startedAt:0;
+        const amount=facing?Math.min(99,1+Math.floor(elapsed*2)):0;
+        balance.digits.geometry=balanceFrames[amount];
+      }
+      // Follow the visitor in each wallet's rotating screen frame, keeping pupils beneath the lids.
+      for(const eye of jadedEyes){
+        let shift=0;
+        if(target){
+          const c=Math.cos(eye.pivot.rotation.y),s=Math.sin(eye.pivot.rotation.y),dx=target.x-eye.pivot.position.x,dz=target.z-eye.pivot.position.z;
+          const side=c*dx-s*dz-eye.x,front=s*dx+c*dz-eye.z;
+          shift=.024*side/Math.max(.5,Math.hypot(side,front));
+        }
+        eye.eyes.position.x=shift;
+      }
       for(const photo of snitchPhotos){
         if(!photo||!photo.screen.visible)continue;
-        if(t>=photo.expiresAt){photo.screen.visible=false;continue;}
+        if(t>=photo.expiresAt){photo.screen.visible=false;photo.device.geometry=photo.idleGeometry;continue;}
         if(photo.flashUntil>0&&t>=photo.flashUntil){
           photo.flashUntil=0;paintSnitchPhoto(photo);
         }

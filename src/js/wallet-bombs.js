@@ -72,7 +72,18 @@
   // the REKT on it, the LED and the clown nose, which blink by the instance glow.
   // Like the other builder caches here, they are dropped when the scenes that used them are left.
   const geometryOf = BL.models.variants((look) => build(look));
-  const build = (look) => {
+  const snitchPhotoGeometry = BL.models.cached(() => build(5, true));
+  const passpoorScreenGeometry = BL.models.cached(() => build(3, true));
+  const passpoorBalanceGeometry = BL.models.variants(balance=>{
+    const text=String(-balance),parts=[],px=.014;
+    [...text].forEach((ch,i)=>BL.hubModels.SIGN_GLYPHS[ch].forEach((row,r)=>[...row].forEach((on,c)=>{
+      if(on==="1")parts.push(BL.models.box({color:"#4c6e5e",w:px,h:.004,d:px,emissive:1,offset:{x:(i*4+c-(text.length*4-2)/2)*px,y:.072,z:-.105+(r-2)*px}}));
+    })));
+    return BL.models.merge(...parts);
+  });
+  const jadedTrackingGeometry = BL.models.cached(() => build(4, false, true));
+  const jadedEyesGeometry = BL.models.cached(() => BL.models.merge(...[-.145,-.039].map(x=>BL.models.box({color:"#17191c",w:.009,h:.004,d:.018,offset:{x,y:.153,z:-.011}}))));
+  const build = (look, blankScreen = false, trackingEyes = false) => {
     const M=BL.models,parts=[],dark="#17191c",cream="#efe5cd",steel="#aeb6bd";
     const b=(color,x,y,z,w,h,d,emissive=0)=>parts.push(M.box({color,w,h,d,emissive,offset:{x,y,z}}));
     const shell=(color,w,h,d,bevel)=>parts.push(M.bevelBox({color,w,h,d,bevel,offset:{y:h/2}}));
@@ -137,7 +148,7 @@
       b(dark,0,.058,0,.25,.006,.484);
       parts.push(M.bevelBox({color:"#f5f4ef",w:.25,h:.006,d:.49,bevel:.002}));
       b("#e6ecdf",0,.065,-.021,.22,.006,.373,.4);
-      pixels("0",0,.072,-.105,.014,"#4c6e5e");pixels("SATS",0,.072,-.04,.008,"#4c6e5e");
+      if(!blankScreen)pixels("0",0,.072,-.105,.014,"#4c6e5e");pixels("SATS",0,.072,-.04,.008,"#4c6e5e");
       for(const x of [-.063,0,.063])b("#a2b6a4",x,.072,.095,.046,.004,.047,.5);
       b(cream,0,.069,.214,.06,.006,.012,.5);
       parts.push(M.bevelBox({color:"#d7ad95",w:.085,h:.018,d:.012,bevel:.004,offset:{y:.028,z:-.254}}));
@@ -150,7 +161,7 @@
       // Original Jade: left-hand landscape screen, front application button and a click-wheel on the top edge.
       shell("#39785b",.48,.136,.192,.012);b(dark,-.092,.14,0,.252,.006,.153);
       b("#9dc9a6",-.092,.147,0,.232,.006,.132,.4);
-      for(const x of [-.145,-.039]){b(dark,x,.153,-.024,.059,.004,.009);b(dark,x+.015,.153,-.011,.009,.004,.018);}
+      for(const x of [-.145,-.039]){b(dark,x,.153,-.024,.059,.004,.009);if(!trackingEyes)b(dark,x+.015,.153,-.011,.009,.004,.018);}
       b(dark,-.092,.153,.035,.06,.004,.008);
       b("#25533f",.104,.143,0,.078,.014,.074);b("#75ac8d",.104,.153,0,.058,.006,.054);
       const wheel=M.lathe({profile:[[0,-.042],[.027,-.042],[.027,.042],[0,.042]],segments:12,color:dark});
@@ -166,7 +177,7 @@
       parts.push(M.bevelBox({color:"#ff841f",w:.482,h:.012,d:.262,bevel:.005,offset:{y:.123}}));
       b(dark,.025,.132,0,.226,.008,.234);
       pixels("SNITCH",.025,.138,-.095,.005,cream);
-      for(let r=0;r<2;r++)for(let c=0;c<2;c++){
+      if(!blankScreen)for(let r=0;r<2;r++)for(let c=0;c<2;c++){
         const x=-.023+c*.098,z=-.039+r*.093;
         b(r===0&&c===0?"#ffb21c":"#353b3e",x,.139,z,.088,.004,.083,.3);
         const ink=r===0&&c===0?dark:cream;
@@ -665,5 +676,5 @@
     };
     return { update, releasePose, drawOverlay, flashLight, get flashing() { return flash.t > 0; }, take, refusal, throwCarried, setDown, tap, where, held, lookAt, secondsLeft, stats, dispose, debug };
   };
-  BL.walletBombs = { create, BOMB_CAP, SCORCH_CAP, FUSE, CHAIN_RADIUS, BASE_RADIUS, BASE_POWER, POWER_CAP, SCALE, LOOKS, geometryOf, blastOf, chainFrom };
+  BL.walletBombs = { create, BOMB_CAP, SCORCH_CAP, FUSE, CHAIN_RADIUS, BASE_RADIUS, BASE_POWER, POWER_CAP, SCALE, LOOKS, geometryOf, snitchPhotoGeometry, passpoorScreenGeometry, passpoorBalanceGeometry, jadedTrackingGeometry, jadedEyesGeometry, blastOf, chainFrom };
 })();

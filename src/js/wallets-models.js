@@ -30,7 +30,7 @@
       b("#3a3d42",0,.08,0,2,.16,1.2);b("#c8352a",0,1.45,0,1.9,2.6,1.1);b("#a32a21",0,2.8,0,1.96,.1,1.16);
       b(dark,-.18,1.75,.556,1.3,1.6,.02);b("#2a4a5c",-.18,1.75,.562,1.22,1.52,.01,.35);
       for(let r=0;r<3;r++){b(steel,-.18,2.02-r*.49,.57,1.2,.03,.03);for(let c=0;c<2;c++){
-        const index=r*2+c,{x,y,z,cx,cz,scale}=vendorLayout(index),g=M.merge(BL.walletBombs.geometryOf(VENDOR_STOCK[index]));
+        const index=r*2+c,{x,y,z,cx,cz,scale}=vendorLayout(index),g=M.merge(index===3?BL.walletBombs.passpoorScreenGeometry():index===4?BL.walletBombs.jadedTrackingGeometry():variant===1&&index===5?BL.walletBombs.snitchPhotoGeometry():BL.walletBombs.geometryOf(VENDOR_STOCK[index]));
         for(let k=0;k<g.verts.length;k+=3){g.verts[k]=(g.verts[k]-cx)*scale;g.verts[k+1]*=scale;g.verts[k+2]=(g.verts[k+2]-cz)*scale;}
         parts.push(M.moved(M.turnedX(g,Math.PI/2),x,y,z));
       }}

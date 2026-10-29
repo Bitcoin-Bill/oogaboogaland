@@ -4,6 +4,7 @@
   const BL=window.BL, S=BL.scene, daylight=BL.daylight;
   const params=new URLSearchParams(location.search), DEBUG=params.has("debug"), LATITUDE=37;
   const OVERVIEW={yaw:-0.08,pitch:1.22,dist:207,target:{x:-2,y:10,z:-1}};
+  const VIEW_NAMES={overview:"Overview",portara:"Portara","coastal-chora":"Chora","coastal-harbor":"Harbor","coastal-beach":"Beach","coastal-ruins":"Ruins","coastal-trail":"Sacred Way","water-falls":"Waterfalls","water-pool":"Pool","vac-windmills":"Windmills","vac-lower":"Lower town","vac-central":"Central town","vac-upper":"Upper town"};
   const JETPACK_HUD_STATE={owned:false,equipped:false,fuel:1,blocked:false};
   // Same mutable sampling surface as the hub; geography and camera stay fixed.
   const renderOpts={
@@ -111,7 +112,13 @@
   const before={x:0,y:0,z:0},after={x:0,y:0,z:0};
   const nearGate=()=>avatar&&Math.hypot(avatar.root.position.x+45,avatar.root.position.z+44)<10;
   const walk=()=>{overview=false;pilot.possess(avatar);pilot.navigate({position:{x:avatar.root.position.x,y:avatar.root.position.y-avatar.baseY,z:avatar.root.position.z},yaw:Math.PI,pitch:.22,dist:7});pilot.setActive(true);};
-  const overviewView=()=>{if(interiors?.active||interiors?.transitioning)return;overview=true;pilot.goPreset("overview");};
+  const presetView=name=>{
+    if(leaving||gate?.isOpen||interiors?.transitioning)return;
+    if(interiors?.active){detachedExit=!pilot.player;interiors.request(interiors.active.room.exit);return;}
+    if(!VIEW_NAMES[name])return;
+    overview=true;pilot.freeCursor();pilot.goPreset(name);hud.setDetachedView(name);hud.el.modeDestination.title="DSB island · "+VIEW_NAMES[name]+" · cycle views";
+  };
+  const overviewView=()=>presetView("overview");
   const escapeView=()=>{
     if(interiors?.transitioning)return true;
     if(pilot.escape()){overview=!pilot.player;return true;}
@@ -182,9 +189,10 @@
     if(menuZone()){openVenue();return true;}return false;
   };
   const act=()=>{if(menuOpen())return true;if(!interiors?.transitioning&&studioAct())return true;if(nearTv()){tv.open();return true;}if(!overview&&interiors?.request(avatar.root.position,avatar.root.rotation.y))return true;if(interiors?.active)return false;if(nearGate()&&!overview){gate.open();return true;}return false;};
-  const mute=()=>{const on=weather.toggleMuted(),button=document.getElementById("dsb-mute");interiors?.audio.update(on);button.textContent=on?"Unmute":"Mute";button.setAttribute("aria-pressed",String(on));};
+  const syncSound=()=>{const on=weather.shared.state.muted,button=document.getElementById("dsb-mute"),label=on?"Unmute DSB sound":"Mute DSB sound";button.setAttribute("aria-label",label);button.title=label+" · M";button.setAttribute("aria-pressed",String(on));};
+  const mute=()=>{const on=weather.toggleMuted();interiors?.audio.update(on);syncSound();};
   const modeAction=name=>!leaving&&!gate?.isOpen&&!interiors?.transitioning&&pilot.modeAction(name);
-  const action=name=>{if(entrance?.action(name))return;if(menuOpen())return;if(modeAction(name)||seatRoom()&&pilot.weaponAction(name))return;if(name==="dsb-mute")mute();else if(name==="jetpack-toggle")toggleJetpack();else if(interiors?.transitioning)return;else if(name==="dsb-lookout")overviewView();else if(name==="reset-view")pilot.resetCamera();else if(name==="dsb-context")act();else if(name==="act")pilot.action();else if(name==="leave")hud.toast("Return through the Portara at the summit.");};
+  const action=(name,value)=>{if(entrance?.action(name))return;if(menuOpen())return;if(modeAction(name)||(name.startsWith("weapon-primary")||seatRoom())&&pilot.weaponAction(name))return;if(name==="dsb-mute")mute();else if(name==="jetpack-toggle")toggleJetpack();else if(interiors?.transitioning)return;else if(name==="mode-preset")presetView(value);else if(name==="reset-view")pilot.resetCamera();else if(name==="dsb-context")act();else if(name==="act")pilot.action();else if(name==="leave")hud.toast("Return through the Portara at the summit.");};
   const shore={x:0,z:0,nx:0,nz:0};
   const deepWaterReturn=()=>{
     if(overview||crew.player!==avatar)return false;
@@ -223,7 +231,10 @@
     const allowed=c=>!BL.net.mayDrive(c.name);
     const name=own?.handle||BL.contributors.roster.find(c=>c.name===carried&&allowed(c))?.name||(!BL.net.state.backend?"YellowBrokeIt":BL.contributors.roster.find(allowed)?.name||"YellowBrokeIt");world.pilot=null;
     hud=BL.hud.create({signal:ctx.signal,roster:BL.contributors.roster,catalog:BL.models.SWAG,tierColors:BL.models.TIER_COLORS,renderIcon:BL.hud.renderIcon,lootEnabled:false});
-    hud.setAreaLabel("DSB LAND · MASTER LAYOUT");
+    hud.setDestinations(Object.keys(VIEW_NAMES),VIEW_NAMES);
+    hud.setAreaLabel("CHORA");
+    hud.el.modeDestination.title="DSB island · cycle views";
+    hud.el.modeDestinationLabel.textContent="DSB island. Cycle views";
     const hooks={};input=BL.interact.create({canvas:ctx.canvas,renderer:ctx.renderer,camera,hooks});
     const STEP=BL.pilot.WALK.step;
     const loginContexts=BL.dsbInteriors.definitions.filter(d=>land.buildings.some(b=>b.name===d.building)).map(d=>d.id);
@@ -239,12 +250,15 @@
     const splatGeometry=BL.models.particleGeometry("#e34d32",.12,0);
     const walkable=(ax,az,bx,bz,y,h=1.5,a)=>{
       if(interiors?.active)return interiors.walkable(ax,az,bx,bz,y,h,a);
-      // The approved geography keeps its depth, deck-edge and slope gates; the collision set adds solid props on top.
+      // Grounded walkers keep the geography's depth, deck-edge and slope gates; elevated bodies use solid collision.
       if(Math.hypot(bx,bz)>125)return false;
       const solids=collision?.solids,r=a?.bodyRadius||.4;
       const terrain=land.groundAt(bx,bz),support=solids?solids.supportAt(bx,bz,y,STEP,r):-Infinity;
       const raised=support>terrain+1e-7&&Math.abs(support-y)<=STEP+1e-7;
-      if(!raised&&!land.walkable(ax,az,bx,bz,y,h,a))return false;
+      // Once roof support ends, allow the step into open air so the crew's ledge fall can take over.
+      // Include the starting ground height so walking off a harbor deck still respects its edge gate.
+      const elevated=y>Math.max(land.groundAt(ax,az),terrain)+STEP+1e-7;
+      if(!raised&&!elevated&&!land.walkable(ax,az,bx,bz,y,h,a))return false;
       const floor=groundAt(bx,bz,y,undefined,a),feet=Math.max(y,floor);
       if(floor-y>STEP+1e-7)return false;
       return !solids||solids.segmentClear(ax,feet+STEP,az,bx,feet+STEP,bz,r,Math.max(0,h-STEP))
@@ -270,7 +284,7 @@
     footsteps=BL.footsteps.create(); // The driven Ooga's own footsteps, heard by this page alone (footsteps.js).
     document.addEventListener("focusin",sheetFocus,{signal:ctx.signal});
     Object.assign(avatar.root.position,{x:-45,y:land.heightAt(-45,-43)+avatar.baseY,z:-43});avatar.root.rotation.y=0;
-    Object.assign(hooks,pilot.hooks);hud.onAction(action);hud.onPreset(()=>overviewView());
+    Object.assign(hooks,pilot.hooks);hud.onAction(action);hud.onPreset(presetView);
     // Shared timing/input/transport; DSB alone uses the marble's rectangular clear aperture.
     const floor=land.heightAt(-45,-48),aperture=BL.dsbAtmosphere.portaraAperture;
     gate=BL.oogaPortal.create({radius:2.5,outerRadius:2.8,aperture,position:{x:-45,y:floor+aperture.height/2,z:-48},rotation:{x:Math.PI/2,y:0,z:0},destinations:[{id:"bifrost",label:"OogaBoogaLand Bifrost",enabled:true}],menuHint:"Activate, then walk through the Portara to Bifrost.",onMenu:open=>{pilot.setActive(!open);pilot.controls.reset();input.reset();},onTraverse:()=>{if(leaving)return;world.pilot=avatar.traits.name;leaving=go("bifrost");}});
@@ -283,6 +297,7 @@
     document.body.classList.add("dsb-active");
     noderunner=BL.dsbNoderunner.create({root:exterior,land});
     weather=BL.dsbWeather.create({root:exterior,renderer:ctx.renderer,camera,land,water,params,audioFactory:noderunner.createAudio});
+    syncSound();
     input.add(noderunner.screenFace,{kind:"dsb-tv"});
     // A ground tap while carrying: the first point down the pointer's ray that meets the floor, if a device fits there.
     // The ray is walked down in quarter metres and the crossing halved eight times, since a slope or a step (the beach
@@ -342,7 +357,7 @@
         pilot.navigate({position,target:{x:position.x,y:position.y+1.7,z:position.z},yaw,pitch:.22,dist});
         pilot.setActive(!interiors?.transitioning);
       },
-      lock:on=>{pilot.setActive(!on);pilot.controls.reset();input.reset();},
+      lock:on=>{pilot.setActive(!on);pilot.controls.reset();input.reset();hud.el.modeDestination.disabled=on;},
       onChange:(lighting,label)=>{
         if(exitPick){input.remove(exitPick);exitPick=null;}
         if(interiors.active?.room.exitDoor){exitPick=interiors.active.room.exitDoor;input.add(exitPick,{kind:"dsb-exit"});}
@@ -366,7 +381,11 @@
         if(walletsRoom()){walletsPick=walletsRoom();input.add(walletsPick.screen,{kind:"wallet-vendor"});input.add(walletsPick.blacklightSwitch,{kind:"wallet-blacklight"});}
         walletSpace=interiors.active?1+BL.dsbInteriors.definitions.findIndex(d=>d.id===interiors.active.room.id):0;walletWalk.on=false;
         if(interiors.active)tv?.close();
-        scene.renderOpts=lighting||renderOpts;hud.setAreaLabel(label);BL.net.setZone(voiceZone());
+        scene.renderOpts=lighting||renderOpts;hud.setAreaLabel(interiors.active?label:"CHORA");
+        hud.el.modeDestination.disabled=interiors.transitioning;
+        hud.el.modeDestination.title=interiors.active?"Return outside to CHORA":"DSB island · cycle views";
+        hud.el.modeDestinationLabel.textContent=interiors.active?"Return outside to CHORA":"DSB island. Cycle views";
+        BL.net.setZone(voiceZone());
       }
     });
     memeMenu=BL.memeFactoryMenu.create({onOpen:on=>{pilot.setActive(!on&&!interiors.transitioning);pilot.controls.reset();input.reset();crew.setWeaponTrigger(false);}});
