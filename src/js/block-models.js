@@ -94,6 +94,15 @@
         parts.push(box({ w: 0.5, h: 0.06, d: 0.18, color: TEAM[t].paint, emissive: 0.3, offset: { x: M.stands[t].x + Math.sin(a) * SIM.CONFIG.STAND_R, y: 0.03, z: M.stands[t].z + Math.cos(a) * SIM.CONFIG.STAND_R } }));
       }
     }
+    // A map's own scoring spots: a wide ring of team paint with an orange ₿-coloured centre.
+    if (M.goals) for (const t of SIM.TEAMS) {
+      const g = M.goals[t], R = SIM.CONFIG.GOAL_R;
+      for (let k = 0; k < 24; k++) {
+        const a = k / 24 * Math.PI * 2;
+        parts.push(box({ w: 0.6, h: 0.06, d: 0.2, color: TEAM[t].paint, emissive: 0.5, offset: { x: g.x + Math.sin(a) * R, y: 0.04, z: g.z + Math.cos(a) * R } }));
+      }
+      parts.push(box({ w: 1.2, h: 0.05, d: 1.2, color: ORANGE, emissive: 0.6, offset: { x: g.x, y: 0.035, z: g.z } }));
+    }
     // A low rim round the field.
     for (const s of [-1, 1]) {
       parts.push(bevelBox({ w: 0.6, h: 0.8, d: M.L * 2 + 0.6, color: "#7d7468", offset: { x: s * (M.W + 0.3), y: 0.4 } }));

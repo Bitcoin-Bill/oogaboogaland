@@ -483,6 +483,7 @@
     else if (t === "slip") c.slip(me ? 1 : k);
     else if (t === "grab") c.roar(me ? 1 : k);
     else if (t === "boo") c.boo(me ? 1 : k);
+    else if (t === "homers") c.rocket(0.45 * k);
     else if (t === "ghostpop") c.ghostPop(k);
     else if (t === "struggle" && me) c.grunt();
     else if (t === "breakfree" && me) c.free();
@@ -515,7 +516,7 @@
     const t = e.type, who = e.actor >= 0 ? nameOf(e.actor) : "";
     if ((t === "splat" || t === "bonk") && e.by >= 0) feed(`${nameOf(e.by)} ${t === "bonk" ? "bonked" : "splatted"} ${who}`, sim.actors[e.by].team);
     else if (t === "pickup") feed(`${who} grabbed the ${TEAM_NAME[e.team]} block`, sim.actors[e.actor].team);
-    else if (t === "rescue") feed(`${who} rescued the ${TEAM_NAME[e.team]} block`, e.team);
+    else if (t === "rescue") feed(`${who} sent the ${TEAM_NAME[e.team]} block home`, e.team);
     else if (t === "capture") feed(`${who} mined a block! ${TEAM_NAME[e.team]} ${sim.score[e.team]}`, e.team);
     else if (t === "power") feed(`${who} got ${({ boots: "lightning boots", halving: "the halving", cold: "cold storage", laser: "laser eyes", monkeys: "the monkeys" })[SIM.POWERS[e.y]]}`, e.team);
     else if (t === "zip") feed(`${who} took the zipline`, e.team);
@@ -551,6 +552,11 @@
       const x0 = mapX(b[0]), x1 = mapX(b[1]), y0 = mapY(b[2]), y1 = mapY(b[3]);
       g.fillStyle = (b[5] || 0) > 1.5 ? "#6a5032" : "#4a4440";
       g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.max(1, Math.abs(x1 - x0)), Math.max(1, Math.abs(y1 - y0)));
+    }
+    if (SIM.ARENA.goals) for (const t of SIM.TEAMS) {
+      const g = SIM.ARENA.goals[t], g2 = c.getContext("2d");
+      g2.strokeStyle = BM.TEAM[t].light; g2.lineWidth = 2;
+      g2.beginPath(); g2.arc(mapX(g.x), mapY(g.z), 4, 0, Math.PI * 2); g2.stroke();
     }
     for (const t of SIM.TEAMS) {
       const s = SIM.ARENA.stands[t];
@@ -604,7 +610,7 @@
         if (e.actor >= 0) say(e.actor, LINES.splat, 1.2);
       } else if (e.type === "pickup") {
         fx.burst(e.x, 1.2, e.z, 14, ORANGE_BITS, 2);
-        if (me) { center("GOT THE BLOCK!", 1100); notice(COARSE ? "Run it home · Drop hands it off" : "Run it home to your stand · G drops it", 4000); }
+        if (me) { center("GOT THE BLOCK!", 1100); notice(SIM.ARENA.goals ? "Run it to the glowing ring at the foot of your house's front steps" : COARSE ? "Run it home · Drop hands it off" : "Run it home to your stand · G drops it", 4000); }
         // The block's side is the event's team; whose side picked it up is the carrier's.
         else if (sim.actors[e.actor].team === sim.team) notice("Teammate has the block! Cover them!", 2500);
         else { notice("They took your block! Paint the carrier!", 2500); say(1, LINES.lost); }
@@ -617,11 +623,11 @@
         if (e.team === sim.team) notice("Your block is home", 1800);
         else notice("Their block is back on its stand", 1800);
       } else if (e.type === "rescue") {
-        if (e.team === sim.team) notice(me ? "Got our block back! Carry it home to your stand" : "Teammate has our block · cover them home", 2500);
-        else notice("They grabbed their block back! Stop them before their stand", 2500);
+        if (e.team === sim.team) notice(me ? "Got our block back! It's home again" : "Teammate sent our block home", 2500);
+        else notice("They touched their block · it's back on its stand", 2500);
         say(e.actor, LINES.rescue);
       } else if (e.type === "knock" || e.type === "drop") {
-        if (e.team === sim.team) notice("Our block is loose! Grab it and carry it home", 2500);
+        if (e.team === sim.team) notice("Our block is loose! Touch it to send it home", 2500);
         else notice(me ? "Block dropped · grab it again, or a teammate can" : "Their block is down! Grab it", 2500);
       } else if (e.type === "go") {
         center("GO!", 900);
@@ -704,7 +710,7 @@
           halving: mine ? "THE HALVING! Our splats last half as long" : "They halved their splats for a while",
           cold: mine ? "COLD STORAGE! Our block is frozen on its stand" : "Their block is in cold storage · it can't be taken for a bit",
           laser: me ? (COARSE ? "LASER EYES! Tap Paint! for one long beam from your eyes (3 s) · turn to sweep it" : "LASER EYES! Click for one long beam from your eyes (3 s) · turn to sweep it") : `${who} got laser eyes`,
-          monkeys: me ? "MONKEYS! One at each hip, shooting with you" : `${who} got the monkeys`
+          monkeys: me ? "MONKEYS! When you shoot, they fire heat-seeking missiles at the nearest rival" : `${who} got the monkeys`
         };
         if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : kind === "monkeys" ? "MONKEYS!" : "HALVING!", 900);
         notice(words[kind], 2600);
@@ -1474,9 +1480,14 @@
       if (!s.live) continue;
       setVec(n.position, s.x, s.y, s.z);
       const t = TEAM_INDEX[s.team];
-      n.geometry = s.kind === "gold" ? BM.goldBall() : s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
+      const homer = s.kind === "homer";
+      n.geometry = s.kind === "gold" ? BM.goldBall() : s.kind === "grenade" ? BM.grenade(t) : s.kind === "rocket" || homer ? BM.rocket(t) : s.kind === "net" ? BM.net() : s.kind === "crate" ? BM.crate(t) : BM.ball(t);
+      const k = homer ? 0.55 : 1;
+      n.scale.x = n.scale.y = n.scale.z = k;
       n.rotation.y = Math.atan2(s.vx, s.vz);
-      n.rotation.x = s.kind === "rocket" ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
+      n.rotation.x = s.kind === "rocket" || homer ? -Math.atan2(s.vy, Math.hypot(s.vx, s.vz)) : s.kind === "net" ? 0 : s.t * 9;
+      // A heat-seeker trails smoke.
+      if (homer && Math.random() < 0.5) fx.burst(s.x, s.y, s.z, 1, SMOKE_BITS, 0.3);
     }
   };
   const updateCamera = (dt) => {
