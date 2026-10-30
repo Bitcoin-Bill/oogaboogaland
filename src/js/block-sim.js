@@ -53,7 +53,7 @@
     GORILLA_SPEED: 3.2, GORILLA_CHARGE: 6.4, GORILLA_SIGHT: 7, GORILLA_LEASH: 11, GORILLA_WANDER: 5, GORILLA_R: 0.75,
     GORILLA_GRAB_R: 1.05, GRAB_HITS: 5, GRAB_MAX_S: 6, GORILLA_REST: 3, GORILLA_STUN: 1.6,
     GOLD_GUNS: 2, AK_MAG: 30, GOLD_SIDE: 0.3, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
-    POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 5, LASER_COOL: 0.08,
+    POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 25, BEAM_S: 3, BEAM_LEN: 30, BEAM_R: 0.45,
     // Free Hardware Wallets (DSB Land's VAC 2, brought over): a vending machine each side; a device taken goes off when
     // its fuse runs out, and a blast sets off any other within `WALLET_CHAIN`, knocking everyone near it back.
     WALLET_CAP: 12, WALLET_FUSE: 5, WALLET_STICK_R: 0.65, VEND_R: 1.9, VEND_COOL: 5, WALLET_SPEED: 13, WALLET_LIFT: 2, WALLET_GRAVITY: 14,
@@ -402,7 +402,7 @@
   let ARENA = ARENAS.fort, BLOCKS = ARENA.BLOCKS;
   const MAPS = Object.keys(ARENAS);
   // The power-ups: lightning boots (a burst of speed), the halving (your side's splats last half as long), cold
-  // storage (your block can't be lifted off its stand) and laser eyes (rapid paint).
+  // storage (your block can't be lifted off its stand) and laser eyes (one long beam from the eyes, `BEAM_S`).
   // The monkeys (the ghost hunt's drop): one at each hip, firing with every shot you take.
   const POWERS = ["boots", "halving", "cold", "laser", "monkeys"];
   const other = (team) => team === "blue" ? "red" : "blue";
@@ -543,7 +543,7 @@
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
       climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
-      wallet: -1, knock: 0, soot: 0, spooked: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
+      wallet: -1, knock: 0, soot: 0, spooked: 0, beam: 0, beamLen: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -620,7 +620,7 @@
       a.stamina = CONFIG.SPRINT_S; a.tired = a.sprinting = a.waiting = a.holding = a.bonked = false; a.rest = 0;
       a.captures = a.splats = a.hits = a.longShot = a.rescues = 0;
       a.fuel = CONFIG.JET_FUEL; a.jetting = false; a.grabbed = a.grabHits = 0;
-      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
+      a.sniper = 0; a.climbing = a.riding = false; a.zipT = 0; a.flight = 0; a.boots = a.laser = a.beam = a.burnt = a.slip = 0; a.gold = false; a.akMag = CONFIG.AK_MAG; a.akReload = 0; a.monkeys = 0;
       a.wallet = -1; a.knock = a.soot = a.vendGo = 0;
       a.route = ""; a.routeT = a.jetT = a.hopT = a.crateT = a.stacks = a.crateGo = a.routeBan = 0; a.botClimb = false;
       refill(a);
@@ -888,7 +888,15 @@
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
-    const a = sim.actors[id], tool = TOOLS[kind];
+    // Laser eyes ready: the trigger fires them instead, one long beam (`stepBeam`).
+    const la = sim.actors[id];
+    if (la.laser > 0 && la.beam <= 0 && (kind === "paint" || kind === "ak" || kind === "gold") && !sim.over && la.splat <= 0 && la.trapped <= 0 && !la.grabbed) {
+      la.laser = 0; la.beam = CONFIG.BEAM_S; la.heading = yaw; la.beamLen = 0;
+      emit(sim, "laseron", la.team, id, la.x, la.y + 1.5, la.z);
+      return true;
+    }
+    if (la.beam > 0) return false;
+    const a = la, tool = TOOLS[kind];
     if (sim.over || !tool || a.splat > 0 || a.trapped > 0 || a.cooldown > 0 || (tool.max && a[kind] <= 0) || (kind === "crate") !== a.holding || (kind === "sniper" && !onTower(a)) || a.burnt > 0 || a.slip > 0 || a.grabbed || (kind === "gold" && !a.gold) || (kind === "ak" && (a.akMag <= 0 || a.akReload > 0))) return false;
     let s = null;
     for (let i = 0; i < sim.shots.length && !s; i++) if (!sim.shots[i].live) s = sim.shots[i];
@@ -899,7 +907,7 @@
     s.vx = sx * tool.speed; s.vz = sz * tool.speed; s.vy = tool.lift + Math.sin(pitch) * tool.speed;
     if (tool.max) a[kind]--;
     if (kind === "crate") { a.holding = false; s.y = a.y + 1.7; }
-    a.cooldown = a.laser > 0 && kind === "paint" ? CONFIG.LASER_COOL : a.bot ? (sim.bots.akCool && (kind === "ak" || kind === "gold") ? sim.bots.akCool : Math.max(tool.cool, sim.bots.cool)) : tool.cool;
+    a.cooldown = a.bot ? (sim.bots.akCool && (kind === "ak" || kind === "gold") ? sim.bots.akCool : Math.max(tool.cool, sim.bots.cool)) : tool.cool;
     a.heading = yaw;
     if (kind !== "crate") a.lastKind = kind;
     emit(sim, kind === "paint" || kind === "gold" || kind === "ak" ? "fire" : "throw", a.team, id, s.x, s.y, s.z);
@@ -1164,6 +1172,40 @@
         }
       }
       if (w.fuse <= 0) blowWallet(sim, w);
+    }
+  };
+  // ---- Laser eyes ----
+  // The beam: from the eyes straight along the Ooga's heading, as far as the first solid thing (`BEAM_LEN` at most);
+  // every rival it touches is splatted, every gorilla stunned, every ghost popped. It lasts `BEAM_S`.
+  const BEAM_SHOT = { kind: "laser", owner: -1, team: null, ox: 0, oz: 0 };
+  const stepBeam = (sim, a, dt) => {
+    if ((a.beam -= dt) <= 0 || a.splat > 0 || a.trapped > 0 || a.grabbed) {
+      a.beam = 0; a.beamLen = 0;
+      emit(sim, "laseroff", a.team, a.id, a.x, a.y + 1.5, a.z);
+      return;
+    }
+    const ey = a.y + (a.crouch ? CONFIG.CROUCH_H - 0.15 : 1.5), dx = Math.sin(a.heading), dz = Math.cos(a.heading);
+    let len = 0.4;
+    for (; len < CONFIG.BEAM_LEN; len += 0.25) if (solidAt(a.x + dx * len, ey, a.z + dz * len)) break;
+    a.beamLen = len;
+    const R = CONFIG.BEAM_R;
+    for (const b of sim.actors) {
+      if (b.team === a.team || !open(b)) continue;
+      const rx = b.x - a.x, rz = b.z - a.z, along = rx * dx + rz * dz;
+      if (along < 0 || along > len) continue;
+      const side = Math.abs(rx * dz - rz * dx);
+      if (side < R + CONFIG.BODY_R * 0.5 && ey > b.y - 0.1 && ey < b.y + heightOf(b) + 0.2) {
+        BEAM_SHOT.owner = a.id; BEAM_SHOT.team = a.team; BEAM_SHOT.ox = a.x; BEAM_SHOT.oz = a.z;
+        splat(sim, b, false, BEAM_SHOT);
+      }
+    }
+    for (const g of sim.gorillas) {
+      const rx = g.x - a.x, rz = g.z - a.z, along = rx * dx + rz * dz;
+      if (g.state !== G_STUN && along > 0 && along < len && Math.abs(rx * dz - rz * dx) < 1) stunGorilla(sim, g, a.id);
+    }
+    for (const g of sim.ghosts) {
+      const rx = g.x - a.x, rz = g.z - a.z, along = rx * dx + rz * dz;
+      if (g.state !== 2 && along > 0 && along < len && Math.abs(rx * dz - rz * dx) < 0.8 && Math.abs(g.y - ey) < 1.2) popGhost(sim, g, a.id);
     }
   };
   // ---- Ghosts ----
@@ -1584,6 +1626,20 @@
     // Throw at the nearest open rival in range, after holding them in sight for `BOT_AIM` (so a rival who runs past
     // gets a moment, and a bot just back from a splat can't throw at once): a net at a carrier, now and then a grenade
     // or a rocket, otherwise paint, leading the run a little with a seeded wobble.
+    // Beaming: swing the laser toward the nearest rival in sight, at a turn a visitor could match.
+    if (a.beam > 0) {
+      let t = null, best = CONFIG.BEAM_LEN * CONFIG.BEAM_LEN;
+      for (const b of sim.actors) {
+        if (b.team === a.team || !open(b)) continue;
+        const dd = (b.x - a.x) ** 2 + (b.z - a.z) ** 2;
+        if (dd < best && clearLine(a.x, a.z, b.x, b.z, 0.05, 1.5)) { best = dd; t = b; }
+      }
+      if (t) {
+        const want = Math.atan2(t.x - a.x, t.z - a.z), diff = Math.atan2(Math.sin(want - a.heading), Math.cos(want - a.heading));
+        a.heading += Math.max(-2.2 * dt, Math.min(2.2 * dt, diff));
+      }
+      return;
+    }
     if (ex && sim.prep <= 0) { expertWallets(sim, a, dt); expertCrates(sim, a, dt); }
     if (a.cooldown <= 0 && sim.prep <= 0 && !a.holding) {
       let t = null, best = sim.bots.range * sim.bots.range;
@@ -1775,6 +1831,7 @@
       if (a.cooldown > 0) a.cooldown -= dt;
       if (a.boots > 0) a.boots = Math.max(0, a.boots - dt);
       if (a.laser > 0) a.laser = Math.max(0, a.laser - dt);
+      if (a.beam > 0) stepBeam(sim, a, dt);
       if (a.monkeys > 0) a.monkeys = Math.max(0, a.monkeys - dt);
       if (a.akReload > 0 && (a.akReload -= dt) <= 0) { a.akReload = 0; a.akMag = CONFIG.AK_MAG; emit(sim, "reloaded", a.team, a.id, a.x, a.y, a.z); }
       if (a.netted > 0) { a.netted -= dt; if (a.netted <= 0) { a.netted = 0; emit(sim, "unnet", a.team, a.id, a.x, a.y, a.z); } }
@@ -1962,7 +2019,7 @@
       // where they run, unless they just threw.
       if (a.slip > 0) { /* spinning: the heading turns by itself */ }
       else if (!a.bot && free && input.face !== undefined) a.heading = input.face;
-      else if (sp > 0.5 && a.cooldown <= (a.bot ? sim.bots.cool : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
+      else if (sp > 0.5 && a.beam <= 0 && a.cooldown <= (a.bot ? sim.bots.cool : TOOLS.paint.cool) - 0.25) a.heading = Math.atan2(a.vx, a.vz);
       if (a.carrying) { const f = sim.flags[a.carrying]; f.x = a.x; f.z = a.z; }
     }
     for (let n = 0; n < N; n++) touchFlags(sim, sim.actors[sim.flip ? N - 1 - n : n]);

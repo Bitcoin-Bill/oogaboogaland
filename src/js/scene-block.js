@@ -51,6 +51,7 @@
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const LASER_BITS = ["#ff3a1a", "#ffd0a0"].map((c) => models.particleGeometry(c, 0.08, 1));
   const GHOST_BITS = ["#e8eefc", "#b9a8ff"].map((c) => models.particleGeometry(c, 0.1, 1));
   const SMOKE_BITS = ["#3d3d44", "#6a6a72"].map((c) => models.particleGeometry(c, 0.12, 0));
   const BLAST_BITS = ["#ff8a1f", "#ffd66b", "#3d3d44", "#efe6cc"].map((c, i) => models.particleGeometry(c, 0.09, i < 2 ? 1 : 0));
@@ -172,7 +173,10 @@
       addChild(jet, jetFlame);
       // The monkeys at the hips, shown while the power-up lasts.
       const monkeys = [-1, 1].map((side) => createNode({ geometry: BM.monkey(), position: { x: side * 0.62, y: 0.82, z: 0.08 }, scale: { x: 0.9, y: 0.9, z: 0.9 }, visible: false }));
-      addChild(body, ring, blob, bubble, netted, held, trolley, chute, jet, ...monkeys);
+      // Laser eyes: the lit eyes on the face, and the beam, placed in the world each frame (`poseBeams`).
+      const eyes = createNode({ geometry: BM.laserEyes(), position: { x: 0, y: 1.5, z: 0.24 }, visible: false });
+      const beam = place(createNode({ geometry: BM.beam(), visible: false }));
+      addChild(body, ring, blob, bubble, netted, held, trolley, chute, jet, eyes, ...monkeys);
       // The gun sits in the right hand, its muzzle along the arm; the caveman's own club stays home.
       let gun = null, gunL = null;
       if (cave) {
@@ -195,14 +199,14 @@
         place(node);
         pet = { node, x: 0, y: 0, z: 0, heading: 0, step: 0, warm: false };
       }
-      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, gunL, pet, phase: 0, name };
+      return { body, cave, ring, blob, bubble, netted, held, trolley, chute, monkeys, jet, jetFlame, gun, gunL, pet, eyes, beam, phase: 0, name };
     });
   };
   const disposeActors = () => {
     if (!actors) return;
     for (const a of actors) {
       if (a.cave) input.remove(a.cave.parts.torso);
-      for (const node of a.pet ? [a.body, a.pet.node] : [a.body]) {
+      for (const node of a.pet ? [a.body, a.beam, a.pet.node] : [a.body, a.beam]) {
         removeChild(root, node);
         const i = placed.indexOf(node);
         if (i >= 0) placed.splice(i, 1);
@@ -699,7 +703,7 @@
           boots: me ? "LIGHTNING BOOTS! Run!" : `${who} grabbed lightning boots`,
           halving: mine ? "THE HALVING! Our splats last half as long" : "They halved their splats for a while",
           cold: mine ? "COLD STORAGE! Our block is frozen on its stand" : "Their block is in cold storage · it can't be taken for a bit",
-          laser: me ? "LASER EYES! Rapid paint for five seconds" : `${who} got laser eyes`,
+          laser: me ? (COARSE ? "LASER EYES! Tap Paint! for one long beam from your eyes (3 s) · turn to sweep it" : "LASER EYES! Click for one long beam from your eyes (3 s) · turn to sweep it") : `${who} got laser eyes`,
           monkeys: me ? "MONKEYS! One at each hip, shooting with you" : `${who} got the monkeys`
         };
         if (me) center(kind === "boots" ? "⚡ BOOTS!" : kind === "laser" ? "LASER EYES!" : kind === "cold" ? "COLD STORAGE!" : kind === "monkeys" ? "MONKEYS!" : "HALVING!", 900);
@@ -759,6 +763,9 @@
       } else if (e.type === "rekt") {
         if (me) { center("REKT!", 1100); notice("Wallet blast! Knocked back and sooted", 1600); }
         say(e.actor, ["Rekt", "Not your keys!", "Trust me bro?"], 1.4);
+      } else if (e.type === "laseron") {
+        audio.cues.laser(me ? 1 : 0.5);
+        if (me) center("LASERS!", 800);
       } else if (e.type === "boo") {
         fx.burst(e.x, e.y, e.z, 14, GHOST_BITS, 2.2);
         if (me) { center("BOO!", 900); notice(sim.actors[0].carrying ? "Spooked stiff!" : "Spooked stiff! Shoot ghosts to pop them", 1600); }
@@ -862,6 +869,8 @@
   };
   const paint = () => {
     if (sim.actors[0].wallet >= 0) return throwWallet();
+    // Laser eyes ready: whatever is in hand, the click lets them loose.
+    { const me = sim.actors[0]; if (me.laser > 0 && me.beam <= 0 && !me.holding) return SIM.fire(sim, 0, cam.face, 0, "paint"); }
     const a = sim.actors[0], q = aimPoint(), oy = a.y + (a.crouch ? C.CROUCH_H - 0.25 : C.SHOT_Y);
     // With Lift chosen and empty hands, a click lifts the crate in front; holding a crate, a throw throws the crate.
     if (tool === "grab" && !a.holding) return grabCrate();
@@ -1612,6 +1621,7 @@
     poseFire(elapsed);
     poseGorillas(dt, elapsed);
     poseGhosts(elapsed);
+    if (sim && actors) poseBeams(elapsed);
     poseShots();
     poseWallets(elapsed);
     if (phase === "board") boardView(elapsed, dt);
@@ -1767,6 +1777,23 @@
     });
   };
   // The gorillas follow the sim: walking or charging, standing still holding an Ooga up, or dazed when painted.
+  // Laser eyes: the eyes glow while the power waits or the beam runs; the beam runs from the eyes along the heading to
+  // where it stops, sparks flying where it hits.
+  const poseBeams = (elapsed) => {
+    for (let i = 0; i < actors.length; i++) {
+      const s = sim.actors[i], a = actors[i];
+      if (!a.eyes) continue;
+      a.eyes.visible = (s.laser > 0 || s.beam > 0) && !(i === 0 && cam.first);
+      a.beam.visible = s.beam > 0 && s.beamLen > 0;
+      if (!a.beam.visible) continue;
+      const ey = s.y + (s.crouch ? C.CROUCH_H - 0.15 : 1.5), dx = Math.sin(s.heading), dz = Math.cos(s.heading);
+      setVec(a.beam.position, s.x + dx * 0.25, ey, s.z + dz * 0.25);
+      a.beam.rotation.y = s.heading;
+      a.beam.scale.z = Math.max(0.1, s.beamLen - 0.25);
+      a.beam.scale.x = a.beam.scale.y = 1 + Math.sin(elapsed * 60) * 0.15;
+      if (Math.random() < 0.6) fx.burst(s.x + dx * s.beamLen, ey, s.z + dz * s.beamLen, 2, LASER_BITS, 1.6);
+    }
+  };
   let ghostNodes = [];
   // The ghosts drift, bob and sway, leaning into a chase; gone, they're hidden.
   const poseGhosts = (elapsed) => {
