@@ -526,7 +526,7 @@
     else if (t === "gorillahit" && e.actor >= 0) feed(`${nameOf(e.actor)} stunned a gorilla`, sim.actors[e.actor].team);
     else if (t === "gold") feed(`${who} won the Golden Dual AKs!`, e.team);
     else if (t === "launch") feed(`${who} catapulted toward the ${TEAM_NAME[SIM.other(e.team)]} fort!`, e.team);
-    else if (t === "goldsteal") feed(`${who} netted ${nameOf(e.by)} and stole the Golden Dual AKs!`, e.team);
+    else if (t === "goldsteal") feed(`${who} wallet-bombed ${nameOf(e.by)} and stole the Golden Dual AKs!`, e.team);
     else if (t === "mined") feed(e.x ? `Bitcoin block ${e.x} found!` : "A Bitcoin block was found!", null);
   };
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
@@ -719,14 +719,14 @@
         audio.cues.power();
         if (me) {
           center("GOLDEN DUAL AKs!", 1200);
-          notice(COARSE ? "One in each hand, full auto! Hold Paint · get netted and they're theirs" : "One in each hand, full auto! Hold click (6) · get netted and they're theirs", 4000);
+          notice(COARSE ? "One in each hand, full auto! Hold Paint · a wallet bomb stuck on you takes them" : "One in each hand, full auto! Hold click (6) · a wallet bomb stuck on you takes them", 4000);
           chooseTool("gold");
-        } else notice(mine ? "Teammate won the Golden Dual AKs!" : "They won the Golden Dual AKs · net them to steal them", 2600);
+        } else notice(mine ? "Teammate won the Golden Dual AKs!" : "They won the Golden Dual AKs · stick a wallet bomb on them to steal them", 2600);
         updateTools();
       } else if (e.type === "goldsteal") {
         fx.burst(e.x, e.y, e.z, 18, ORANGE_BITS, 2.6);
-        if (me) { center("STOLEN!", 1000); notice("You netted the Golden Dual AKs! They're yours (6)", 3000); audio.cues.rescue(); chooseTool("gold"); }
-        else if (e.by === 0) { center("AKs STOLEN!", 1000); notice("They netted you and took your Golden Dual AKs", 2600); if (tool === "gold") chooseTool("paint"); }
+        if (me) { center("STOLEN!", 1000); notice("Your wallet bomb took the Golden Dual AKs! They're yours (6)", 3000); audio.cues.rescue(); chooseTool("gold"); }
+        else if (e.by === 0) { center("AKs STOLEN!", 1000); notice("A wallet bomb went off on you · they took your Golden Dual AKs", 2600); if (tool === "gold") chooseTool("paint"); }
         updateTools();
       } else if (e.type === "reload") {
         if (me) { notice("Reloading…", 1000); audio.cues.crate(0.6); updateTools(); }
@@ -743,7 +743,11 @@
       else if (e.type === "wbounce") audio.cues.crate(0.25);
       else if (e.type === "stuck") {
         // Only the thrower hears of it; the one wearing it doesn't.
-        if (e.by === 0) { center("STUCK!", 900); notice(`Stuck it on ${nameOf(e.actor)}! ${C.WALLET_FUSE} s…`, 1600); audio.cues.net(0.6); }
+        if (e.by === 0) {
+          center("STUCK!", 900);
+          notice(sim.actors[e.actor].gold && !sim.actors[0].gold ? `Stuck it on ${nameOf(e.actor)}! When it goes off, the Golden Dual AKs are yours` : `Stuck it on ${nameOf(e.actor)}! ${C.WALLET_FUSE} s…`, 2400);
+          audio.cues.net(0.6);
+        }
       }
       else if (e.type === "blast") {
         const n = e.by, k = Math.sqrt(Math.min(n, 8));
@@ -875,7 +879,7 @@
     // Say why a throw didn't go, so the tools never seem locked: paint on you, a quiz bubble, or an empty tool.
     if (!ok && a.splat > 0) notice(`Splatted · throwing again in ${Math.ceil(a.splat)} s`, 900);
     else if (!ok && a.trapped > 0) notice("Answer the question to get out first", 1100);
-    else if (!ok && tool === "gold" && !a.gold) notice("Mine a block to win the Golden Dual AKs, or net someone who has them", 1800);
+    else if (!ok && tool === "gold" && !a.gold) notice("Mine a block to win the Golden Dual AKs, or stick a wallet bomb on whoever has them", 1800);
     else if (!ok && tool === "sniper" && a.sniper <= 0) notice("The sniper rifle stays in the towers · climb one to use it", 1600);
     else if (!ok && tool !== "paint" && a[tool] <= 0) notice(`Out of ${tool}s · refill on your stand or an ammo cache`, 1400);
     return ok;
@@ -1024,7 +1028,7 @@
   // A number key picks its tool; one you don't have says where to get it instead.
   const keyTool = (k) => {
     const a = sim.actors[0];
-    if (k === "gold" && !a.gold) { notice("No Golden Dual AKs yet · mine a block to win them, or net whoever has them", 1800); return; }
+    if (k === "gold" && !a.gold) { notice("No Golden Dual AKs yet · mine a block to win them, or stick a wallet bomb on whoever has them", 1800); return; }
     if (k === "sniper" && !a.sniper) { notice("The sniper rifle stays up the towers · climb a ladder", 1600); return; }
     chooseTool(k);
     const max = SIM.TOOLS[k].max;
