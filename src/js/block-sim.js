@@ -52,17 +52,17 @@
     JET_FUEL: 2.6, JET_REFILL: 3, JET_ACCEL: 27, JET_RISE: 6, JET_CEILING: 15,
     GORILLA_SPEED: 3.2, GORILLA_CHARGE: 6.4, GORILLA_SIGHT: 7, GORILLA_LEASH: 11, GORILLA_WANDER: 5, GORILLA_R: 0.75,
     GORILLA_GRAB_R: 1.05, GRAB_HITS: 5, GRAB_MAX_S: 6, GORILLA_REST: 3, GORILLA_STUN: 1.6,
-    GOLD_GUNS: 2, AK_MAG: 30, GOLD_SIDE: 0.3, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
+    GOLD_GUNS: 2, AK_MAG: 30, GOLD_SIDE: 0.3, AK_RELOAD: 1.4, MONKEYS_S: 12, MONKEY_SIDE: 0.8, MONKEY_COOL: 1, HOMER_TURN: 3.5, HOMER_SEEK: 20, CATAPULT_R: 1.0, LAUNCH_H: 13, CHUTE_FALL: 2.8, CHUTE_SPEED: 3.4, PEEL_R: 0.55, SLIP_S: 1.5, SLIP_SPIN: 13, PEEL_REARM: 8,
     POWER_R: 1.1, POWER_RESPAWN: 20, BOOTS_S: 6, BOOTS: 1.5, HALVING_S: 12, COLD_S: 12, LASER_S: 25, BEAM_S: 3, BEAM_LEN: 30, BEAM_R: 0.45,
     // Free Hardware Wallets (DSB Land's VAC 2, brought over): a vending machine each side; a device taken goes off when
     // its fuse runs out, and a blast sets off any other within `WALLET_CHAIN`, knocking everyone near it back.
     WALLET_CAP: 12, WALLET_FUSE: 5, WALLET_STICK_R: 0.65, VEND_R: 1.9, VEND_COOL: 5, WALLET_SPEED: 13, WALLET_LIFT: 2, WALLET_GRAVITY: 14,
     WALLET_BLAST: 3.2, WALLET_CHAIN: 2.5, WALLET_PUSH: 9, WALLET_CAP_N: 8, KNOCK_S: 0.55, SOOT_S: 3,
     // Haunted Hollow's ghosts: they drift through walls round their haunt, chase an Ooga that comes within
-    // `GHOST_SIGHT`, and a touch (`GHOST_R`) spooks it stiff for `SPOOK_S`, dropping any block; then the ghost fades
+    // `GHOST_SIGHT`, and a touch (`GHOST_R`) spooks it stiff for `SPOOK_S` (dropping a crate, not a block); then the ghost fades
     // and comes back after `GHOST_BACK`. Paint or a blast pops one sooner.
     GHOST_SPEED: 1.4, GHOST_CHASE: 3, GHOST_SIGHT: 6, GHOST_R: 0.7, SPOOK_S: 1.2, GHOST_BACK: 14, GHOST_POP: 10,
-    TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
+    GOAL_R: 2.4, TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
   // many a full refill holds (0 for no limit).
@@ -80,7 +80,9 @@
     gold: { speed: 36, lift: 1.2, gravity: 6.5, life: 1.1, r: 0.48, blast: 0, cool: 0.08, max: 0 },
     // The Ooga AK, the island's rifle: a tap fires one round, a held trigger fires on full auto every `cool` (the island
     // AK's 0.09 s), from a `AK_MAG`-round magazine that reloads itself in `AK_RELOAD` when it runs dry.
-    ak: { speed: 38, lift: 1.0, gravity: 6, life: 1.0, r: 0.42, blast: 0, cool: 0.09, max: 0 }
+    ak: { speed: 38, lift: 1.0, gravity: 6, life: 1.0, r: 0.42, blast: 0, cool: 0.09, max: 0 },
+    // The monkeys' heat-seekers: a little missile that steers for the nearest rival (`target`), splatting it.
+    homer: { speed: 16, lift: 0, gravity: 0, life: 2.8, r: 0.55, blast: 0, cool: 0, max: 0 }
   };
   const KINDS = ["paint", "grenade", "rocket", "net"];
   // The six devices from the wallet store, in its order.
@@ -335,7 +337,13 @@
     // end, and the back room.
     const navHalf = [[-15.4, 34.2], [-12.6, 34.2], [15.4, 34.2], [12.6, 34.2], [11, 36.4], [11, 40.2], [-11, 40.2], [-11, 44], [-10.5, 46], [-4.5, 46.4], [-16.5, 31], [16.5, 31], [-16.5, 49.6], [16.5, 49.6],
       // Across the graveyard to the other half.
-      [10, 0], [22, 0], [-10.5, 22], [10.5, 22], [0, 17], [-17, 12]];
+      [10, 0], [22, 0], [-10.5, 22], [10.5, 22], [0, 17], [-17, 12],
+      // The way up through the house: the foot of the cellar stairs, their top on the house floor, inside the front door,
+      // the yard before it, and the foot of the front stairs (indices 20 to 24, joined by `links`).
+      // The middle three are up on the yard: a node's third number is its floor, 0 if left out.
+      [-4.5, 46.6], [-4.5, 42.3, YARD], [0, 37.6, YARD], [0, 34.2, YARD], [0, 27.8]];
+    // Node pairs joined though a straight line between them crosses a step (the stairs are walked, not seen through).
+    const linkHalf = [[20, 21], [21, 22], [22, 23], [23, 24], [8, 20]];
     return {
       id: "haunted", name: "Haunted Hollow", BLOCKS, steps: stepSet, decor: allDecor,
       // The rivals' block isn't marked on the mini-map until it's out of its cellar: it has to be found.
@@ -343,6 +351,9 @@
       W: 30, L: 50, tower, gap, spawnZ: 26,
       // The block's stand, in the cellar's back room.
       stands: { blue: { x: -10.5, z: 46 }, red: { x: 10.5, z: -46 } },
+      // Where a stolen block is mined: at the foot of your own house's front stairs, so the hunt is in the rivals'
+      // cellar and the run home is a dash, not a second maze.
+      goals: { blue: { x: 0, z: 26.5 }, red: { x: 0, z: -26.5 } },
       // Where the visitor's Ooga stands on show on the board: before its house's stairs.
       showcase: { blue: { x: 4, z: 24 }, red: { x: -4, z: -24 } },
       // A catapult drops its Ooga into the other house, right over its stairs down.
@@ -350,11 +361,11 @@
       zipEnd: [-4, 3.1, -29],
       // Each house's cellar, and where an Ooga up on its yard drops in: the top of the stairs inside the house.
       cellars: [{ box: [-14, 14, 32, 49], entry: [-4.5, 43.4] }, { box: [-14, 14, -49, -32], entry: [4.5, -43.4] }],
-      nav: { blue: navHalf, red: flip(navHalf) },
+      nav: { blue: navHalf, red: navHalf.map(([x, z, y]) => y ? [-x, -z, y] : [-x, -z]), links: [...linkHalf, ...linkHalf.map(([i, j]) => [i + navHalf.length, j + navHalf.length])] },
       guard: { blue: { x: 0, z: 29 }, red: { x: 0, z: -29 } },
       traps: two([[0, 35.4], [10, 40.2], [-12, 15], [16, 2], [-6, 26], [-1, 44]]),
       crates: both([[-6, 23], [6, 23], [-9, 29], [9, 29]]),
-      plug: both([[0, 27.4], [-1.4, 26.4], [1.4, 26.4]]),
+      plug: both([[-6, 27], [6, 27], [-3.5, 22]]),
       alley: both([[-17.5, 29.5], [17.5, 29.5]]),
       caches: [[10, YARD, 38], [-10, YARD, -38], [0, 0, 40.2], [0, 0, -40.2], [0, 2.6, 0]],
       tramps: two([[-17, 22], [10, 6]]),
@@ -542,13 +553,13 @@
       x: 0, z: 0, y: 0, vx: 0, vz: 0, vy: 0, heading: 0, moving: 0, carrying: null, splat: 0, guard: 0, cooldown: 0,
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
-      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
+      climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0, monkeyCool: 0,
       wallet: -1, knock: 0, soot: 0, spooked: 0, beam: 0, beamLen: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
     for (const t of TEAMS) flags[t] = { team: t, state: "home", x: ARENA.stands[t].x, y: 0, z: ARENA.stands[t].z, carrier: null, vx: 0, vy: 0, vz: 0, thrower: -1, t: 0 };
-    const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, ox: 0, oz: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0 }));
+    const shots = Array.from({ length: CONFIG.MAX_SHOTS }, () => ({ live: false, kind: "paint", team: null, owner: -1, ox: 0, oz: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, target: -1 }));
     const crates = Array.from({ length: CONFIG.MAX_CRATES }, () => ({ live: false, team: null, x: 0, y: 0, z: 0 }));
     const traps = A.traps.map(([x, z]) => ({ x, z, dark: 0 }));
     const caches = A.caches.map(([x, y, z]) => ({ x, y, z, dark: 0 }));
@@ -885,6 +896,16 @@
     }
     return null;
   };
+  // The rival a heat-seeker goes after: the nearest open one within `HOMER_SEEK`, or -1.
+  const seekTarget = (sim, s) => {
+    let best = -1, bd = CONFIG.HOMER_SEEK * CONFIG.HOMER_SEEK;
+    for (const b of sim.actors) {
+      if (b.team === s.team || !open(b)) continue;
+      const d = (b.x - s.x) ** 2 + (b.z - s.z) ** 2;
+      if (d < bd) { bd = d; best = b.id; }
+    }
+    return best;
+  };
   // Throw tool `kind` from actor `id` along `yaw` (radians, 0 toward +z) with an upward `pitch` added to the lob.
   const fire = (sim, id, yaw, pitch = 0, kind = "paint") => {
     use(sim);
@@ -924,16 +945,21 @@
     }
     // A round from the AK; an empty magazine starts its reload.
     if (kind === "ak" && --a.akMag <= 0) { a.akReload = CONFIG.AK_RELOAD; emit(sim, "reload", a.team, id, a.x, a.y, a.z); }
-    // The monkeys fire with you: one more of the same from each hip, the same way.
-    if (a.monkeys > 0 && (kind === "paint" || kind === "ak" || kind === "gold")) {
+    // The monkeys fire with you: each launches a heat-seeking missile (once a second) that hunts the nearest rival.
+    if (a.monkeys > 0 && a.monkeyCool <= 0 && (kind === "paint" || kind === "ak" || kind === "gold")) {
+      a.monkeyCool = CONFIG.MONKEY_COOL;
       for (const side of [-1, 1]) {
         let m = null;
         for (let i = 0; i < sim.shots.length && !m; i++) if (!sim.shots[i].live) m = sim.shots[i];
         if (!m) break;
-        const ox = Math.cos(yaw) * side * CONFIG.MONKEY_SIDE, oz = -Math.sin(yaw) * side * CONFIG.MONKEY_SIDE;
-        m.live = true; m.kind = kind; m.team = a.team; m.owner = id; m.t = 0; m.ox = a.x; m.oz = a.z;
-        m.x = s.x + ox; m.y = s.y - 0.35; m.z = s.z + oz; m.vx = s.vx; m.vy = s.vy; m.vz = s.vz;
+        const ox = Math.cos(yaw) * side * CONFIG.MONKEY_SIDE, oz = -Math.sin(yaw) * side * CONFIG.MONKEY_SIDE, sp = TOOLS.homer.speed;
+        m.live = true; m.kind = "homer"; m.team = a.team; m.owner = id; m.t = 0; m.ox = a.x; m.oz = a.z;
+        m.x = a.x + ox; m.y = a.y + 1.1; m.z = a.z + oz;
+        // Up and out first, then it turns for its prey.
+        m.vx = Math.sin(yaw) * sp * 0.6 + ox * 3; m.vy = sp * 0.5; m.vz = Math.cos(yaw) * sp * 0.6 + oz * 3;
+        m.target = seekTarget(sim, m);
       }
+      emit(sim, "homers", a.team, id, a.x, a.y + 1.1, a.z);
     }
     return true;
   };
@@ -1234,11 +1260,10 @@
       if (best) {
         g.state = 1; tx = best.x; tz = best.z; speed = CONFIG.GHOST_CHASE;
         if (bd < CONFIG.GHOST_R * CONFIG.GHOST_R && Math.abs(best.y + 1 - g.y) < 1.4) {
-          // Boo: the Ooga freezes stiff, its block falls, and the ghost fades away.
+          // Boo: the Ooga freezes stiff (a carrier keeps its block, but the chasers catch up), and the ghost fades away.
           best.vx = best.vz = 0; best.knock = CONFIG.SPOOK_S; best.spooked = CONFIG.SPOOK_S;
           if (best.holding) { best.holding = false; emit(sim, "smash", best.team, best.id, best.x, best.y + 2, best.z); }
           emit(sim, "boo", best.team, best.id, best.x, best.y + 1.2, best.z);
-          dropFlag(sim, best, "knock");
           g.state = 2; g.t = CONFIG.GHOST_BACK;
           continue;
         }
@@ -1274,6 +1299,16 @@
   const goal = { x: 0, z: 0 };
   // Defenders stand side by side before the gate: the first in the middle, the next either side of it.
   const guardSpread = (a) => { const k = a.slot >> 1; return k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 2.2; };
+  // Of a side's attackers, the one nearest (x, z): the one that breaks off to deal with something, the rest carry on.
+  const nearestAttacker = (sim, team, x, z) => {
+    let best = null, bd = Infinity;
+    for (const b of sim.actors) {
+      if (b.team !== team || b.role !== "attack" || b.carrying || b.splat > 0) continue;
+      const d = (b.x - x) ** 2 + (b.z - z) ** 2;
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  };
   const botGoal = (sim, a) => {
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)], stand = ARENA.stands[a.team];
     if (sim.prep > 0) {
@@ -1282,9 +1317,15 @@
       else { goal.x = [6, -6, 0][(a.slot >> 1) % 3]; goal.z = a.team === "blue" ? 2.5 : -2.5; }
       return;
     }
-    if (a.carrying) { goal.x = stand.x; goal.z = stand.z; return; }
-    if (own.state === "dropped" || own.state === "flying") { goal.x = own.x; goal.z = own.z; return; }
-    if (own.state === "carried" && sim.actors[own.carrier].team !== a.team) { const c = sim.actors[own.carrier]; goal.x = c.x; goal.z = c.z; return; }
+    if (a.carrying) { const gl = ARENA.goals ? ARENA.goals[a.team] : stand; goal.x = gl.x; goal.z = gl.z; return; }
+    // Our block out of its stand: the defenders go for it, and so does whoever is near it or the nearest attacker; the
+    // other attackers keep going for theirs, so a side doesn't all pile onto one spot.
+    const ownOut = own.state === "dropped" || own.state === "flying" || (own.state === "carried" && sim.actors[own.carrier].team !== a.team);
+    if (ownOut) {
+      const c = own.state === "carried" ? sim.actors[own.carrier] : own;
+      const near = (c.x - a.x) ** 2 + (c.z - a.z) ** 2 < 14 * 14;
+      if (a.role === "defend" || near || nearestAttacker(sim, a.team, c.x, c.z) === a) { goal.x = c.x; goal.z = c.z; return; }
+    }
     if (a.role === "defend") {
       let near = null, best = CONFIG.GUARD_RANGE * CONFIG.GUARD_RANGE;
       for (const b of sim.actors) {
@@ -1297,13 +1338,24 @@
       return;
     }
     if (theirs.state === "carried" && sim.actors[theirs.carrier].team === a.team) {
-      // A teammate has it: walk alongside them home.
       const c = sim.actors[theirs.carrier];
-      goal.x = c.x + (a.x < c.x ? -2 : 2); goal.z = c.z;
+      // A teammate has it but can't score till ours is home: go and get ours back.
+      if (ownOut) { const o = own.state === "carried" ? sim.actors[own.carrier] : own; goal.x = o.x; goal.z = o.z; return; }
+      // Otherwise one attacker walks alongside them home; the rest hold the middle for the next run.
+      if (nearestAttacker(sim, a.team, c.x, c.z) === a) { goal.x = c.x + (a.x < c.x ? -2 : 2); goal.z = c.z; return; }
+      goal.x = [5, -5, 0][(a.slot >> 1) % 3]; goal.z = a.team === "blue" ? 4 : -4;
+      return;
+    }
+    // Their block lying out in the open: the nearest attacker and anyone close go for it; the rest cover from a
+    // distance rather than all piling onto it.
+    if (theirs.state === "dropped" && nearestAttacker(sim, a.team, theirs.x, theirs.z) !== a && (theirs.x - a.x) ** 2 + (theirs.z - a.z) ** 2 > 10 * 10) {
+      const k = (a.slot >> 1) % 3, side = k === 0 ? 0 : k === 1 ? 6 : -6;
+      goal.x = theirs.x + side; goal.z = theirs.z + (a.team === "blue" ? 7 : -7);
       return;
     }
     goal.x = theirs.x; goal.z = theirs.z;
   };
+
   // Eight headings round the wanted one, nearest first; the first that walks clear for a probe's length wins.
   const PROBE = 2.6, FANS = [0, 0.5, -0.5, 1, -1, 1.6, -1.6, 2.4, -2.4, Math.PI];
   const steer = (sim, a, wantX, wantZ) => {
@@ -1352,30 +1404,32 @@
     if (N) return N;
     const pts = [...ARENA.nav.blue, ...ARENA.nav.red], n = pts.length, keep = CRATES;
     CRATES = [];
-    const see = Array.from({ length: n }, (_, i) => pts.map((q, j) => i !== j && clearLine(pts[i][0], pts[i][1], q[0], q[1], CONFIG.BODY_R * 0.8)));
+    const lvl = (p) => p[2] || 0;
+    const see = Array.from({ length: n }, (_, i) => pts.map((q, j) => i !== j && lvl(pts[i]) === lvl(q) && clearLine(pts[i][0], pts[i][1], q[0], q[1], CONFIG.BODY_R * 0.8)));
+    const linked = new Set();
+    for (const [i, j] of ARENA.nav.links || []) { see[i][j] = see[j][i] = true; linked.add(i).add(j); }
     CRATES = keep;
-    N = navCache[ARENA.id] = { pts, see, dist: new Float64Array(n + 1), prev: new Int16Array(n + 1), done: new Uint8Array(n + 1), seeEnd: new Uint8Array(n) };
+    N = navCache[ARENA.id] = { pts, see, linked, dist: new Float64Array(n + 1), prev: new Int16Array(n + 1), done: new Uint8Array(n + 1), seeEnd: new Uint8Array(n) };
     return N;
   };
-  // When the bot can't run straight at its goal, the next node on the shortest way there through the nodes, every
-  // half second; up on a house's yard with its goal in that house's cellar, the stairs down first.
+  // When the bot can't run straight at its goal (or is up on a yard), the next node on the shortest way there through
+  // the nodes on its own floor, every half second.
   const navigate = (sim, a, dt) => {
     if (!ARENA.nav || a.riding || a.flight || a.climbing) return;
-    if (a.y > 1.5) {
-      for (const c of ARENA.cellars) {
-        const [x0, x1, z0, z1] = c.box;
-        if (goal.x > x0 && goal.x < x1 && goal.z > z0 && goal.z < z1 && a.x > x0 - 1 && a.x < x1 + 1 && a.z > z0 - 1 && a.z < z1 + 1) { goal.x = c.entry[0]; goal.z = c.entry[1]; return; }
-      }
-    }
-    if (clearLine(a.x, a.z, goal.x, goal.z, CONFIG.BODY_R * 0.9)) { a.navI = -1; return; }
+    if (a.y < 1.5 && clearLine(a.x, a.z, goal.x, goal.z, CONFIG.BODY_R * 0.9)) { a.navI = -1; return; }
     const N = navFor(), pts = N.pts, n = pts.length;
-    if (a.navI >= 0 && (a.navT -= dt) > 0 && Math.hypot(pts[a.navI][0] - a.x, pts[a.navI][1] - a.z) > 0.7) { goal.x = pts[a.navI][0]; goal.z = pts[a.navI][1]; return; }
+    // Heading for a stairs node, run straight at it: the steps are walked up, not steered round.
+    const onStairs = (i) => N.linked.has(i) && Math.hypot(pts[i][0] - a.x, pts[i][1] - a.z) < 7;
+    if (a.navI >= 0 && (a.navT -= dt) > 0 && Math.hypot(pts[a.navI][0] - a.x, pts[a.navI][1] - a.z) > 0.7) { goal.x = pts[a.navI][0]; goal.z = pts[a.navI][1]; a.botStraight = onStairs(a.navI); return; }
     a.navT = 0.5;
     // Dijkstra from the bot: node i's distance, the goal as node n.
     const { dist, prev, done, seeEnd } = N;
+    // The bot is on the floor it stands on; goals are on the ground.
+    const level = a.y > 1.5 ? 3 : 0;
     for (let i = 0; i < n; i++) {
-      seeEnd[i] = clearLine(pts[i][0], pts[i][1], goal.x, goal.z, CONFIG.BODY_R * 0.8) ? 1 : 0;
-      dist[i] = clearLine(a.x, a.z, pts[i][0], pts[i][1], CONFIG.BODY_R * 0.8) ? Math.hypot(pts[i][0] - a.x, pts[i][1] - a.z) : Infinity;
+      const pl = pts[i][2] || 0;
+      seeEnd[i] = pl === 0 && clearLine(pts[i][0], pts[i][1], goal.x, goal.z, CONFIG.BODY_R * 0.8) ? 1 : 0;
+      dist[i] = pl === level && clearLine(a.x, a.z, pts[i][0], pts[i][1], CONFIG.BODY_R * 0.8) ? Math.hypot(pts[i][0] - a.x, pts[i][1] - a.z) : Infinity;
       prev[i] = -1; done[i] = 0;
     }
     dist[n] = Infinity; prev[n] = -1; done[n] = 0;
@@ -1404,7 +1458,7 @@
     let k = prev[n], next = -1;
     while (k >= 0) { if (Math.hypot(pts[k][0] - a.x, pts[k][1] - a.z) > 0.7) next = k; k = prev[k]; }
     a.navI = next;
-    if (next >= 0) { goal.x = pts[next][0]; goal.z = pts[next][1]; }
+    if (next >= 0) { goal.x = pts[next][0]; goal.z = pts[next][1]; a.botStraight = onStairs(next); }
   };
   // ---- The expert bot's extra moves ----
   // A free crate: live, nothing on it, low enough to lift.
@@ -1585,7 +1639,8 @@
     if (a.detour <= 0 && !a.botClimb) navigate(sim, a, dt);
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
-    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
+    // A bot with the rivals' block sprints for home, as a visitor would.
+    const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed * (a.carrying && a.carrying !== a.team ? 1.3 : 1)) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);
     // Burnt feet: a bot hops until they cool.
     if (a.burnt > 0 && a.grounded) a.botJump = true;
     if (a.botStop) a.vx = a.vz = 0;
@@ -1674,6 +1729,9 @@
       }
     }
     const stand = ARENA.stands[a.team], home = a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R;
+    // Where a stolen block is mined: the stand, or a map's own scoring spot (`goals`) where it has one.
+    const gl = ARENA.goals ? ARENA.goals[a.team] : stand, gr = ARENA.goals ? CONFIG.GOAL_R : CONFIG.STAND_R;
+    const atGoal = a.y < 1.4 && (a.x - gl.x) ** 2 + (a.z - gl.z) ** 2 < gr * gr;
     if (home && refill(a)) emit(sim, "refill", a.team, a.id, a.x, a.y, a.z);
     // Up a tower the rifle is in hand (`sniper` 1); stepping off leaves it on the rack.
     const up = onTower(a) ? 1 : 0;
@@ -1717,11 +1775,18 @@
         const fy = f.state === "dropped" ? f.y : 0;
         if (a.y > fy + 1.4 || a.y < fy - 0.5 || (a.x - f.x) ** 2 + (a.z - f.z) ** 2 >= r2) continue;
       }
+      // Your own block, dropped: a touch sends it straight home, as capture the flag has it.
+      if (f === own) {
+        a.rescues++;
+        emit(sim, "rescue", f.team, a.id, f.x, 0, f.z);
+        homeFlag(own);
+        emit(sim, "return", own.team, a.id, own.x, 0, own.z);
+        continue;
+      }
       f.state = "carried";
       f.carrier = a.id;
       a.carrying = f.team;
-      if (f === own) a.rescues++;
-      emit(sim, f === own ? "rescue" : "pickup", f.team, a.id, f.x, 0, f.z);
+      emit(sim, "pickup", f.team, a.id, f.x, 0, f.z);
     }
     // Your own flag carried back onto your stand is home again.
     if (a.carrying === a.team && home) {
@@ -1730,18 +1795,18 @@
       emit(sim, "return", own.team, a.id, own.x, 0, own.z);
     }
     // At home with their block while your own is away: no score yet, said once a visit to the stand.
-    if (a.carrying === theirs.team && home && own.state !== "home" && !a.waiting) {
+    if (a.carrying === theirs.team && atGoal && own.state !== "home" && !a.waiting) {
       a.waiting = true;
-      emit(sim, "waiting", a.team, a.id, stand.x, 0, stand.z);
-    } else if (!home) a.waiting = false;
-    if (a.carrying === theirs.team && home && own.state === "home") {
+      emit(sim, "waiting", a.team, a.id, gl.x, 0, gl.z);
+    } else if (!atGoal) a.waiting = false;
+    if (a.carrying === theirs.team && atGoal && own.state === "home") {
       const f = sim.flags[a.carrying];
       a.carrying = null;
       homeFlag(f);
       homeFlag(own);
       a.captures++;
       sim.score[a.team]++;
-      emit(sim, "capture", a.team, a.id, stand.x, 0, stand.z);
+      emit(sim, "capture", a.team, a.id, gl.x, 0, gl.z);
       // A Golden AK for the miner while any are left.
       if (sim.goldLeft > 0 && !a.gold) {
         sim.goldLeft--;
@@ -1829,6 +1894,7 @@
     for (let n = 0; n < N; n++) {
       const a = sim.actors[sim.flip ? N - 1 - n : n];
       if (a.cooldown > 0) a.cooldown -= dt;
+      if (a.monkeyCool > 0) a.monkeyCool -= dt;
       if (a.boots > 0) a.boots = Math.max(0, a.boots - dt);
       if (a.laser > 0) a.laser = Math.max(0, a.laser - dt);
       if (a.beam > 0) stepBeam(sim, a, dt);
@@ -2041,8 +2107,19 @@
       if (!s.live) continue;
       const tool = TOOLS[s.kind];
       s.t += dt;
+      if (s.kind === "homer") {
+        // A heat-seeker steers for its rival's chest, finding another if that one is splatted or trapped.
+        let t = s.target >= 0 ? sim.actors[s.target] : null;
+        if (!t || !open(t)) { s.target = seekTarget(sim, s); t = s.target >= 0 ? sim.actors[s.target] : null; }
+        if (t && s.t > 0.15) {
+          const dx = t.x - s.x, dy = t.y + 1 - s.y, dz = t.z - s.z, d = Math.hypot(dx, dy, dz) || 1, sp = tool.speed, k = Math.min(1, CONFIG.HOMER_TURN * dt);
+          s.vx += (dx / d * sp - s.vx) * k; s.vy += (dy / d * sp - s.vy) * k; s.vz += (dz / d * sp - s.vz) * k;
+          const v = Math.hypot(s.vx, s.vy, s.vz) || 1;
+          s.vx *= sp / v; s.vy *= sp / v; s.vz *= sp / v;
+        }
+      }
       s.vy -= tool.gravity * dt;
-      const drift = (s.kind === "rocket" ? 0.3 : s.kind === "sniper" ? 0.1 : 1) * CONFIG.SHOT_WIND * dt;
+      const drift = (s.kind === "rocket" ? 0.3 : s.kind === "sniper" ? 0.1 : s.kind === "homer" ? 0 : 1) * CONFIG.SHOT_WIND * dt;
       s.vx += wind.x * drift; s.vz += wind.z * drift;
       s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
       let hit = null;

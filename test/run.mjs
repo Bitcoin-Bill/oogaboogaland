@@ -5317,7 +5317,8 @@ const gameRulesChecks = async () => {
     for (let t = 0; t < 25; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const stays = sim.flags.red.state === "dropped";
     put(rival, sim.flags.red.x, sim.flags.red.z);
-    const rescued = rival.carrying === "red";
+    // A touch by its own side sends a dropped block straight home.
+    const rescued = sim.flags.red.state === "home" && !rival.carrying;
     put(rival, theirs.x, theirs.z);
     const returned = sim.flags.red.state === "home" && !rival.carrying;
     for (let t = 0; t < 4; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
@@ -5360,7 +5361,7 @@ const gameRulesChecks = async () => {
     S.fire(sim, 0, 0, 0.05, "crate");
     for (let t = 0; t < 1.2 && rival.splat <= 0; t += S.CONFIG.STEP) S.tick(sim, S.CONFIG.STEP, still);
     const bonked = lifted && stacked && rival.splat > 0 && rival.bonked;
-    record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side carries it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes, a pass is caught, a crate stacks and a thrown one stuns",
+    record("block frenzy rules: pickup, a drop held until you step out, scoring only with your own block home, a splat drops the carrier's block, which stays until its side touches it home, a quiz trap holds and shields, a net slows and grounds, a crate pushes, a pass is caught, a crate stacks and a thrown one stuns",
       picked && dropped && held && regrab && noScoreAway && scored && splatted && stays && rescued && returned && trapped && frozen && shielded && freed && netted && pushed && caught && bonked,
       JSON.stringify({ picked, dropped, held, regrab, noScoreAway, scored, splatted, stays, rescued, returned, trapped, frozen, shielded, freed, netted, pushed, caught, lifted, stacked, bonked }));
     // An expert that loses its crate target must free its hands so it can rescue a block.
