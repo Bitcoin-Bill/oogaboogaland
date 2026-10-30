@@ -76,7 +76,7 @@
     sniper: { speed: 60, lift: 0, gravity: 0.6, life: 0.85, r: 0.35, blast: 0, cool: 1.1, max: 0 },
     // The Golden Dual AKs: one in each hand, full auto, both firing every round (two balls `GOLD_SIDE` either side of
     // the Ooga), never empty. There are `GOLD_GUNS` pairs a round: mining a block wins a pair while any are left, and
-    // netting whoever holds them takes them.
+    // a wallet bomb stuck on whoever holds them takes them when it goes off.
     gold: { speed: 36, lift: 1.2, gravity: 6.5, life: 1.1, r: 0.48, blast: 0, cool: 0.08, max: 0 },
     // The Ooga AK, the island's rifle: a tap fires one round, a held trigger fires on full auto every `cool` (the island
     // AK's 0.09 s), from a `AK_MAG`-round magazine that reloads itself in `AK_RELOAD` when it runs dry.
@@ -1097,6 +1097,14 @@
     x /= n; y /= n; z /= n;
     const r = CONFIG.WALLET_BLAST * Math.sqrt(k), by = first.owner;
     emit(sim, "blast", first.team, by, x, Math.max(0.1, y), z, n);
+    // The Golden Dual AKs go to whoever stuck a wallet on their holder, when it goes off (unless they have a pair).
+    for (const w of chain) {
+      if (w.state !== 3 || w.stuck < 0 || w.owner < 0) continue;
+      const holder = sim.actors[w.stuck], thief = sim.actors[w.owner];
+      if (!holder.gold || thief.gold || thief.team === holder.team) continue;
+      holder.gold = false; thief.gold = true;
+      emit(sim, "goldsteal", thief.team, thief.id, holder.x, holder.y + 1, holder.z, holder.id);
+    }
     for (const g of sim.gorillas) if (g.state !== G_STUN && (g.x - x) ** 2 + (g.z - z) ** 2 < r * r) stunGorilla(sim, g, by);
     for (const g of sim.ghosts) if (g.state !== 2 && (g.x - x) ** 2 + (g.z - z) ** 2 < r * r) popGhost(sim, g, by);
     for (const a of sim.actors) {
@@ -1492,21 +1500,23 @@
       let t = null, best = 10 * 10;
       for (const b of sim.actors) {
         if (b.team === a.team || !open(b)) continue;
-        const dd = (b.x - a.x) ** 2 + (b.z - a.z) ** 2;
-        if (dd < best && dd > 2.5 * 2.5 && clearLine(a.x, a.z, b.x, b.z, 0.05, 2)) { best = dd; t = b; }
+        // A Golden AK holder counts as nearer: stick it on them to take the pair.
+        const dd = ((b.x - a.x) ** 2 + (b.z - a.z) ** 2) * (b.gold && !a.gold ? 0.4 : 1);
+        if (dd < best && dd > 1 && clearLine(a.x, a.z, b.x, b.z, 0.05, 2)) { best = dd; t = b; }
       }
       if (t && a.cooldown <= 0) {
-        const dist = Math.sqrt(best), lead = dist / CONFIG.WALLET_SPEED + 0.15;
+        const dist = Math.hypot(t.x - a.x, t.z - a.z), lead = dist / CONFIG.WALLET_SPEED + 0.15;
         throwWallet(sim, a.id, Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z), lobPitch(dist, WALLET_THROW) - 0.08);
       }
       return;
     }
     if (a.carrying || a.holding || sim.prep > 0) return;
     if (nearVend(sim, a) && (a.vendGo > 0 || sim.rng() < 0.3)) { takeWallet(sim, a.id); a.vendGo = 0; return; }
-    if (a.vendGo <= 0 && sim.rng() < dt * 0.05) {
+    const goldOut = sim.actors.some((b) => b.gold && b.team !== a.team) && !a.gold;
+    if (a.vendGo <= 0 && sim.rng() < dt * (goldOut ? 0.3 : 0.05)) {
       for (let i = 0; i < sim.vends.length; i++) {
         const v = sim.vends[i];
-        if (v.dark <= 0 && Math.hypot(v.x - a.x, v.z - a.z) < 10) { a.vendGo = 3; a.vendI = i; break; }
+        if (v.dark <= 0 && Math.hypot(v.x - a.x, v.z - a.z) < (goldOut ? 22 : 10)) { a.vendGo = goldOut ? 6 : 3; a.vendI = i; break; }
       }
     }
   };
@@ -1585,10 +1595,10 @@
       a.aim = t ? a.aim + dt : 0;
       if (t && a.aim >= sim.bots.aim) {
         const dist = Math.sqrt(best), roll = sim.rng();
-        // A net at a carrier or at a Golden AK's holder, now and then a grenade or a rocket, otherwise paint (or the
+        // A net at a carrier, now and then a grenade or a rocket, otherwise paint (or the
         // Golden AK, if this bot holds one).
         // An expert sprays the AK instead of plain paint while its magazine lasts, holding the target between rounds.
-        const kind = (t.carrying || (t.gold && !a.gold)) && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : a.gold ? "gold" : ex && dist < 16 && a.akMag > 0 && a.akReload <= 0 ? "ak" : "paint";
+        const kind = t.carrying && a.net > 0 ? "net" : dist > 6 && a.grenade > 0 && roll < 0.25 ? "grenade" : dist < 14 && a.rocket > 0 && roll > 0.88 ? "rocket" : a.gold ? "gold" : ex && dist < 16 && a.akMag > 0 && a.akReload <= 0 ? "ak" : "paint";
         a.aim = ex && (kind === "ak" || kind === "gold") ? sim.bots.aim : 0;
         const lead = dist / TOOLS[kind].speed;
         const yaw = Math.atan2(t.x + t.vx * lead - a.x, t.z + t.vz * lead - a.z) + (sim.rng() - 0.5) * 2 * sim.bots.spread;
@@ -2008,13 +2018,6 @@
       else if (hit && s.kind === "net") {
         hit.netted = CONFIG.NET_S;
         emit(sim, "net", hit.team, hit.id, hit.x, hit.y + 1, hit.z);
-        // Netting a Golden AK's holder takes it, unless the netter already has one.
-        const by = s.owner >= 0 ? sim.actors[s.owner] : null;
-        if (hit.gold && by && !by.gold) {
-          hit.gold = false;
-          by.gold = true;
-          emit(sim, "goldsteal", by.team, by.id, hit.x, hit.y + 1, hit.z, hit.id);
-        }
       } else if (hit) splat(sim, hit, s.kind === "crate", s);
       if (s.kind === "crate") landCrate(sim, s);
       else if (!hit) emit(sim, s.kind === "net" ? "netmiss" : "miss", s.team, s.owner, s.x, Math.max(0.02, s.y), s.z);
