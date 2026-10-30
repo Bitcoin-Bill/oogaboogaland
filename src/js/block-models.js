@@ -118,6 +118,48 @@
       parts.push(box({ w: M.W * 2, h: 0.045, d: M.L * 2 - 4, color: "#4a5238", offset: { y: 0.03 } }));
       const r = (k) => ((Math.sin(k * 7.233) * 43758.5453) % 1 + 1) % 1;
       for (let k = 0; k < 60; k++) parts.push(box({ w: 1 + r(k) * 3, h: 0.05, d: 1 + r(k + 70) * 3, color: k % 3 ? "#3d4430" : "#5a5a44", offset: { x: (r(k + 140) - 0.5) * M.W * 1.9, y: 0.035, z: (r(k + 210) - 0.5) * (M.L * 2 - 8) } }));
+      // Grass: tufts of blades in greens and dry yellows, thicker toward the edges and round the headstones.
+      const greens = ["#4f6b34", "#5e7d3a", "#6f8a44", "#7d8a4a", "#8a8a52"];
+      for (let k = 0; k < 1100; k++) {
+        const gx = (r(k + 400) - 0.5) * M.W * 1.94, gz = (r(k + 900) - 0.5) * M.L * 1.94;
+        if (Math.abs(gz) > 31 && Math.abs(gx) < 14.5) continue;
+        const c = greens[k % greens.length], hgt = 0.18 + r(k + 1300) * 0.3;
+        for (let j = 0; j < 3; j++) parts.push(box({ w: 0.05, h: hgt * (1 - j * 0.2), d: 0.05, color: c, offset: { x: gx + (j - 1) * 0.07, y: hgt * (1 - j * 0.2) / 2, z: gz + ((j * 37) % 3 - 1) * 0.06 } }));
+      }
+      // Tall grass in clumps, and grey rocks half sunk in it.
+      for (let k = 0; k < 46; k++) {
+        const cx = (r(k + 2400) - 0.5) * M.W * 1.9, cz = (r(k + 2500) - 0.5) * M.L * 1.6;
+        if (Math.abs(cx) < 3.5 && Math.abs(cz) < 6) continue;
+        for (let j = 0; j < 9; j++) {
+          const hgt = 0.5 + r(k * 9 + j + 2600) * 0.45, ox = (r(k * 9 + j + 2700) - 0.5) * 1.1, oz = (r(k * 9 + j + 2800) - 0.5) * 1.1;
+          parts.push(box({ w: 0.06, h: hgt, d: 0.06, color: j % 3 ? "#6a7f3e" : "#8f8a50", offset: { x: cx + ox, y: hgt / 2, z: cz + oz } }));
+        }
+      }
+      for (let k = 0; k < 26; k++) {
+        const rx = (r(k + 3000) - 0.5) * M.W * 1.9, rz = (r(k + 3100) - 0.5) * M.L * 1.7, sz = 0.35 + r(k + 3200) * 0.5;
+        if (Math.abs(rx) < 3.5 && Math.abs(rz) < 6) continue;
+        parts.push(bevelBox({ w: sz * 1.3, h: sz * 0.6, d: sz, color: k % 2 ? "#7a7880" : "#68666e", offset: { x: rx, y: sz * 0.25, z: rz } }));
+      }
+      // Bushes, dark and lumpy.
+      for (let k = 0; k < 28; k++) {
+        const bx = (r(k + 1700) - 0.5) * M.W * 1.9, bz = (r(k + 1800) - 0.5) * M.L * 1.7;
+        if (Math.abs(bz) > 30 || (Math.abs(bx) < 4 && Math.abs(bz) < 5)) continue;
+        parts.push(bevelBox({ w: 0.9, h: 0.6, d: 0.8, color: "#3c5a2c", offset: { x: bx, y: 0.3, z: bz } }), bevelBox({ w: 0.6, h: 0.45, d: 0.6, color: "#4a6a34", offset: { x: bx + 0.35, y: 0.55, z: bz - 0.2 } }));
+      }
+      // A worn stone path from each house's stairs to the mausoleum, and little white flowers on the graves.
+      for (const s of [-1, 1]) for (let k = 0; k < 14; k++) parts.push(box({ w: 1.1 + r(k + s * 50) * 0.5, h: 0.05, d: 0.8, color: k % 2 ? "#8a8478" : "#77716a", offset: { x: Math.sin(k) * 0.4, y: 0.04, z: s * (27.6 - k * 1.7) } }));
+      for (let k = 0; k < 60; k++) parts.push(box({ w: 0.07, h: 0.07, d: 0.07, color: k % 3 ? "#f2eee0" : "#c9a0e8", emissive: 0.2, offset: { x: (r(k + 2100) - 0.5) * 30, y: 0.12, z: (r(k + 2200) - 0.5) * 50 } }));
+      // Jack-o'-lanterns, glowing, by the stairs and through the graveyard; lanterns on posts along the path.
+      const lantern = (lx, lz) => parts.push(box({ w: 0.1, h: 1.8, d: 0.1, color: "#1c1a20", offset: { x: lx, y: 0.9, z: lz } }), box({ w: 0.28, h: 0.32, d: 0.28, color: "#ffcf7a", emissive: 1, offset: { x: lx, y: 1.95, z: lz } }), box({ w: 0.34, h: 0.06, d: 0.34, color: "#1c1a20", offset: { x: lx, y: 2.14, z: lz } }));
+      const pumpkin = (px, pz, sz = 0.5) => {
+        parts.push(bevelBox({ w: sz, h: sz * 0.8, d: sz, color: "#e8761c", offset: { x: px, y: sz * 0.4, z: pz } }), box({ w: 0.06, h: 0.14, d: 0.06, color: "#3e5a22", offset: { x: px, y: sz * 0.85, z: pz } }));
+        parts.push(box({ w: sz * 0.5, h: sz * 0.12, d: 0.02, color: "#ffd84a", emissive: 1, offset: { x: px, y: sz * 0.32, z: pz + sz / 2 * Math.sign(-pz || 1) } }));
+        for (const e of [-1, 1]) parts.push(box({ w: sz * 0.14, h: sz * 0.14, d: 0.02, color: "#ffd84a", emissive: 1, offset: { x: px + e * sz * 0.18, y: sz * 0.55, z: pz + sz / 2 * Math.sign(-pz || 1) } }));
+      };
+      for (const s of [-1, 1]) {
+        pumpkin(-3.6, s * 28.2); pumpkin(3.6, s * 28.2, 0.6); pumpkin(-13, s * 19.5, 0.45); pumpkin(8, s * 12.8); pumpkin(17, s * 8, 0.65); pumpkin(-21, s * 30);
+        lantern(-2.4, s * 22); lantern(2.4, s * 16); lantern(-2.4, s * 10); lantern(-15, s * 31.2); lantern(15, s * 31.2);
+      }
       for (const d of M.decor) {
         if (d.kind !== "deadtree") continue;
         for (let k = 0; k < 4; k++) {
@@ -680,6 +722,19 @@
     }
     return merge(...parts);
   });
+  // A ghost: a pale glowing sheet, round on top and flaring to a ragged hem, two dark eyes and an open mouth, its arms
+  // out. Faces +z, its middle at y 0.
+  const ghost = cached(() => {
+    const sheet = "#e8eefc", parts = [
+      lathe({ profile: [[0, 0.75], [0.3, 0.68], [0.45, 0.45], [0.5, 0.1], [0.56, -0.35], [0.66, -0.62], [0, -0.62]], segments: 10, color: sheet, emissive: 0.55 })
+    ];
+    // The ragged hem: tatters hanging below.
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; parts.push(box({ w: 0.2, h: 0.22, d: 0.2, color: sheet, emissive: 0.5, offset: { x: Math.sin(a) * 0.55, y: -0.72 - (k % 2) * 0.08, z: Math.cos(a) * 0.55 } })); }
+    parts.push(box({ w: 0.11, h: 0.17, d: 0.05, color: "#141018", offset: { x: -0.15, y: 0.35, z: 0.46 } }), box({ w: 0.11, h: 0.17, d: 0.05, color: "#141018", offset: { x: 0.15, y: 0.35, z: 0.46 } }));
+    parts.push(box({ w: 0.16, h: 0.2, d: 0.05, color: "#141018", offset: { y: 0.08, z: 0.5 } }));
+    for (const s of [-1, 1]) parts.push(box({ w: 0.36, h: 0.14, d: 0.16, color: sheet, emissive: 0.5, offset: { x: s * 0.6, y: 0.08, z: 0.12 } }));
+    return merge(...parts);
+  });
   // The fuse light on top of every device; the scene blinks it faster as the fuse runs down.
   const walletLight = cached(() => box({ w: 0.06, h: 0.05, d: 0.06, color: "#ff2a1a", emissive: 1 }));
   // The FREE WALLETS machine: a red cabinet on a plinth, a glowing window with the six devices in it, a marquee, a
@@ -727,5 +782,5 @@
     for (let y = 0.15; y <= top; y += 0.3) parts.push(box({ w, h: 0.05, d: 0.05, color: "#b0905a", offset: { y } }));
     return merge(...parts);
   });
-  BL.blockModels = { walletDevice, walletLight, vend, net2, jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  BL.blockModels = { ghost, walletDevice, walletLight, vend, net2, jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();
