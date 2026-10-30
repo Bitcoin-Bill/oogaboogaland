@@ -98,17 +98,17 @@
   // rack is on the platform; the zipline leaves from the platform's gap side and runs down into the other end (`zips`).
   const TOP = CONFIG.TOWER_TOP, RAIL = TOP + 0.9;
   const TOWER = [-19, -16, 24.5, 27.5], GAP = [25.4, 26.6];
-  const towerBlocks = ([x0, x1, z0, z1]) => [
+  const towerBlocks = ([x0, x1, z0, z1], GAP = [25.4, 26.6]) => [
     [x0, x0 + 0.4, z0, z0 + 0.4, TOP - 0.3, 0], [x1 - 0.4, x1, z0, z0 + 0.4, TOP - 0.3, 0], [x0, x0 + 0.4, z1 - 0.4, z1, TOP - 0.3, 0], [x1 - 0.4, x1, z1 - 0.4, z1, TOP - 0.3, 0],
     [x0, x1, z0, z1, TOP, TOP - 0.3],
     [x0, x0 + 0.25, z0, z1, RAIL, TOP], [x0, x1, z0, z0 + 0.25, RAIL, TOP], [x0, x1, z1 - 0.25, z1, RAIL, TOP],
     [x1 - 0.25, x1, z0, GAP[0], RAIL, TOP], [x1 - 0.25, x1, GAP[1], z1, RAIL, TOP]
   ];
   // A map from blue's half (`half`, turned for red) and its middle (`middle`, put in once), with the towers added.
-  const turnedMap = (half, middle, steps = []) => {
+  const turnedMap = (half, middle, steps = [], tower = TOWER, gap = GAP) => {
     const BLOCKS = [...middle], stepSet = new Set();
     for (const b of half) { const r = turned(b); BLOCKS.push(b, r); if (steps.includes(b)) stepSet.add(b).add(r); }
-    for (const b of towerBlocks(TOWER)) BLOCKS.push(b, turned(b));
+    for (const b of towerBlocks(tower, gap)) BLOCKS.push(b, turned(b));
     return { BLOCKS, steps: stepSet };
   };
   const both = (list) => ({ blue: list, red: flip(list) });
@@ -279,20 +279,104 @@
       gorillas: [[-6, 5], [6, -5], [10, 6], [-10, -6]]
     };
   };
-  const ARENAS = { fort: fortChaos(), town: oogaTown(), jungle: gorillaJungle() };
+  // Haunted Hollow: a bigger field (60 x 100 m), a graveyard, and at each end a haunted house up on a raised yard 3 m
+  // high, reached by stairs at its front. The block isn't out in the open: it's down in the cellar under the yard, in
+  // the back room of a little maze. The cellar has two ways in: the side doors at ground level, through a front
+  // passage and a middle one (each wall leaving a gap at the other end), or the stairs down from inside the house,
+  // which come out right by the block. `nav` is the cellar's way through, for the bots.
+  const hauntedHollow = () => {
+    const half = [], steps = [], decor = [];
+    const YARD = 3, UNDER = 2.7;
+    // The yard over the cellar: a floor with the stairwell's hole in it.
+    half.push([-14, 14, 32, 43, YARD, UNDER], [-14, 14, 46.8, 49, YARD, UNDER], [-14, -6, 43, 46.8, YARD, UNDER], [-3, 14, 43, 46.8, YARD, UNDER]);
+    // The cellar's outer walls, a side door into its front passage at each side.
+    half.push([-14, 14, 32, 32.4, UNDER, 0], [-14, 14, 48.6, 49, UNDER, 0]);
+    for (const s of [-1, 1]) {
+      const x0 = s > 0 ? 13.6 : -14, x1 = s > 0 ? 14 : -13.6;
+      half.push([x0, x1, 32.4, 33, UNDER, 0], [x0, x1, 35.5, 48.6, UNDER, 0]);
+    }
+    // The maze: the front passage's wall leaves a gap on the right, the middle passage's on the left.
+    half.push([-13.6, 8, 38, 38.4, UNDER, 0], [-8, 13.6, 42, 42.4, UNDER, 0]);
+    // Junk down there: barrels and boxes to hide behind.
+    half.push(at(-3, 35.5, 1, 1, 1.1), at(4, 36.5, 1.2, 0.8, 1.4), at(-9, 41.5, 0.9, 0.9, 1.2), at(5, 39, 1, 1, 1), at(8, 46, 1.4, 1, 1.6), at(-13, 44, 0.8, 0.8, 1.2));
+    // Stairs from the field up to the yard, seven steps either side of its middle.
+    for (let k = 1; k <= 7; k++) { const b = [-3, 3, 32 - (8 - k) * 0.49, 32 - (7 - k) * 0.49, k * YARD / 7, 0]; half.push(b); steps.push(b); }
+    // Stairs from inside the house down to the cellar's back room, along the hole, and a rail round it.
+    for (let k = 1; k <= 6; k++) { const b = [-6, -3, 43 + (k - 1) * 0.45, 43 + k * 0.45, YARD - k * YARD / 7, 0]; half.push(b); steps.push(b); }
+    half.push([-6.2, -6, 43, 47, YARD + 0.9, YARD], [-3, -2.8, 43, 47, YARD + 0.9, YARD], [-6, -3, 46.8, 47, YARD + 0.9, YARD]);
+    // The house on the yard: open to the sky, a front door, a side door to the yard, windows in its sides.
+    const H = YARD + 3.2;
+    half.push([-8, -1.3, 36, 36.4, H, YARD], [1.3, 8, 36, 36.4, H, YARD], [-8, 8, 46.6, 47, H, YARD]);
+    half.push([-8, -7.6, 36.4, 46.6, YARD + 1, YARD], [-8, -7.6, 36.4, 46.6, H, YARD + 2.2]);
+    half.push([7.6, 8, 36.4, 40, H, YARD], [7.6, 8, 42, 46.6, H, YARD], [7.6, 8, 40, 42, H, YARD + 2.4]);
+    // A rail round the yard's edge, open over the front stairs.
+    half.push([-14, -3, 32, 32.2, YARD + 0.7, YARD], [3, 14, 32, 32.2, YARD + 0.7, YARD], [-14, -13.8, 32, 49, YARD + 0.7, YARD], [13.8, 14, 32, 49, YARD + 0.7, YARD]);
+    // Inside the house: a table and an old wardrobe.
+    half.push(at(3, 40, 2, 1, YARD + 0.8, YARD), at(6.5, 45.5, 1.6, 0.8, YARD + 2.2, YARD));
+    // The graveyard: rows of headstones for cover, an iron fence, dead trees, and a crypt at each side.
+    for (const [x, z] of [[-9, 12], [-6, 12], [-3, 12], [3, 14], [6, 14], [9, 14], [-12, 18], [-9, 18], [12, 20], [15, 20], [-16, 7], [16, 9]]) half.push(at(x, z, 1, 0.35, 1.1));
+    half.push([-20, -12, 25, 25.3, 1.3, 0], [12, 20, 25, 25.3, 1.3, 0]);
+    const deadTree = (x, z, top = 5.5) => { half.push(at(x, z, 0.7, 0.7, top)); decor.push({ kind: "deadtree", x, z, y: top, r: 1.8 }); };
+    deadTree(-20, 14); deadTree(20, 16, 6); deadTree(-7, 22, 5); deadTree(23, 30, 6.5); deadTree(-24, 34, 6);
+    half.push([-25, -19, 4, 8, 2.6, 0]);
+    // The mausoleum in the middle, put in once: a stone tomb to climb and fight over, steps at each end.
+    const middle = [[-3, 3, -2, 2, 2.6, 0]];
+    for (const s of [-1, 1]) for (let k = 1; k <= 5; k++) middle.push([-1.2, 1.2, s > 0 ? 2 + (5 - k) * 0.45 : -2 - (6 - k) * 0.45, s > 0 ? 2 + (6 - k) * 0.45 : -2 - (5 - k) * 0.45, k * 2.6 / 6, 0]);
+    const tower = [-27, -24, 36, 39], gap = [37.4, 38.6];
+    const { BLOCKS, steps: stepSet } = turnedMap(half, middle, steps, tower, gap);
+    const allDecor = [];
+    for (const d of decor) allDecor.push(d, { ...d, x: -d.x, z: -d.z });
+    const two = (list) => [...list, ...flip(list)];
+    // The cellar's way through, blue's (red's turned): each side door outside and in, the gap at each passage's
+    // end, and the back room.
+    const navHalf = [[-15.4, 34.2], [-12.6, 34.2], [15.4, 34.2], [12.6, 34.2], [11, 36.4], [11, 40.2], [-11, 40.2], [-11, 44], [-10.5, 46], [-4.5, 46.4], [-16.5, 31], [16.5, 31], [-16.5, 49.6], [16.5, 49.6],
+      // Across the graveyard to the other half.
+      [10, 0], [22, 0], [-10.5, 22], [10.5, 22], [0, 17], [-17, 12]];
+    return {
+      id: "haunted", name: "Haunted Hollow", BLOCKS, steps: stepSet, decor: allDecor,
+      // The rivals' block isn't marked on the mini-map until it's out of its cellar: it has to be found.
+      hidden: true,
+      W: 30, L: 50, tower, gap, spawnZ: 26,
+      // The block's stand, in the cellar's back room.
+      stands: { blue: { x: -10.5, z: 46 }, red: { x: 10.5, z: -46 } },
+      // Where the visitor's Ooga stands on show on the board: before its house's stairs.
+      showcase: { blue: { x: 4, z: 24 }, red: { x: -4, z: -24 } },
+      // A catapult drops its Ooga into the other house, right over its stairs down.
+      drops: { blue: [4.5, -44], red: [-4.5, 44] },
+      zipEnd: [-4, 3.1, -29],
+      // Each house's cellar, and where an Ooga up on its yard drops in: the top of the stairs inside the house.
+      cellars: [{ box: [-14, 14, 32, 49], entry: [-4.5, 43.4] }, { box: [-14, 14, -49, -32], entry: [4.5, -43.4] }],
+      nav: { blue: navHalf, red: flip(navHalf) },
+      guard: { blue: { x: 0, z: 29 }, red: { x: 0, z: -29 } },
+      traps: two([[0, 35.4], [10, 40.2], [-12, 15], [16, 2], [-6, 26], [-1, 44]]),
+      crates: both([[-6, 23], [6, 23], [-9, 29], [9, 29]]),
+      plug: both([[0, 27.4], [-1.4, 26.4], [1.4, 26.4]]),
+      alley: both([[-17.5, 29.5], [17.5, 29.5]]),
+      caches: [[10, YARD, 38], [-10, YARD, -38], [0, 0, 40.2], [0, 0, -40.2], [0, 2.6, 0]],
+      tramps: two([[-17, 22], [10, 6]]),
+      powers: two([[-12, 34.2], [5, 44.5], [18, 12], [0, 9]]),
+      fire: [-24, 0],
+      catapults: both([[-9, 27]])
+    };
+  };
+  const ARENAS = { fort: fortChaos(), town: oogaTown(), jungle: gorillaJungle(), haunted: hauntedHollow() };
   // What every map shares: its size, the stands, the towers with their ladders and ziplines.
   // The banana peels the potato Oogas drop round their fire, offsets from it toward the field.
   const PEELS = [[3, 1.5], [2.2, -2.6], [0.6, 3.2], [0.8, -3.3]];
   for (const A of Object.values(ARENAS)) {
-    A.W = W; A.L = L;
+    // A map may be bigger (`W`, `L`, half its width and length) and put its stands, towers, landing spots and starts
+    // elsewhere; the rest share Fort Chaos's.
+    A.W = A.W || W; A.L = A.L || L;
     A.peels = PEELS.map(([dx, dz]) => [A.fire[0] + dx, A.fire[1] + dz]);
     // Where a catapult flings its Ooga: over the middle of the other end, a little in front of its stand.
-    A.drops = { blue: [0, -25], red: [0, 25] };
-    A.stands = { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } };
+    A.drops = A.drops || { blue: [0, -25], red: [0, 25] };
+    A.stands = A.stands || { blue: { x: 0, z: 28 }, red: { x: 0, z: -28 } };
+    A.spawnZ = A.spawnZ || 26;
     // Each tower's footprint [x0, x1, z0, z1] and the ladder up its inward side: a zone [x0, x1, z0, z1] to climb in,
     // and the way into the tower (dx, dz) a climber pushes toward.
-    A.towers = { blue: TOWER, red: turned([...TOWER, 0, 0]).slice(0, 4) };
-    A.ladders = { blue: { zone: [-16, -15.2, GAP[0], GAP[1]], dx: -1, dz: 0, top: TOP }, red: { zone: [15.2, 16, -GAP[1], -GAP[0]], dx: 1, dz: 0, top: TOP } };
+    const tw = A.tower || TOWER, gp = A.gap || GAP;
+    A.towers = { blue: tw, red: turned([...tw, 0, 0]).slice(0, 4) };
+    A.ladders = { blue: { zone: [tw[1], tw[1] + 0.8, gp[0], gp[1]], dx: -1, dz: 0, top: TOP }, red: { zone: [-tw[1] - 0.8, -tw[1], -gp[1], -gp[0]], dx: 1, dz: 0, top: TOP } };
     // Everything climbable: the towers' ladders and the map's own nets.
     A.climbs = [A.ladders.blue, A.ladders.red, ...(A.nets || [])];
     A.gorillas = A.gorillas || [];
@@ -301,9 +385,10 @@
     for (const [x, z] of A.vends) A.BLOCKS.push([x - 0.45, x + 0.45, z - 0.62, z + 0.62, 2.1, 0]);
     A.decor = A.decor || [];
     // A team's zipline: from its tower's gap (where the hands hang, `ZIP_HANG` over the feet) down into the other end.
+    const zb = A.zipEnd || [-3.5, 3.1, -28.5], za = [tw[1] - 0.6, (gp[0] + gp[1]) / 2];
     A.zips = {
-      blue: { ax: -16.6, ay: TOP + CONFIG.ZIP_HANG, az: 26, bx: -3.5, by: 3.1, bz: -28.5 },
-      red: { ax: 16.6, ay: TOP + CONFIG.ZIP_HANG, az: -26, bx: 3.5, by: 3.1, bz: 28.5 }
+      blue: { ax: za[0], ay: TOP + CONFIG.ZIP_HANG, az: za[1], bx: zb[0], by: zb[1], bz: zb[2] },
+      red: { ax: -za[0], ay: TOP + CONFIG.ZIP_HANG, az: -za[1], bx: -zb[0], by: zb[1], bz: -zb[2] }
     };
     for (const t of TEAMS) { const z = A.zips[t]; z.len = Math.hypot(z.bx - z.ax, z.by - z.ay, z.bz - z.az); }
   }
@@ -327,7 +412,7 @@
   };
   // Where the k-th of `size` Oogas a side starts, across the inside of its fort (red's turned half round).
   const startAt = (team, k, size) => {
-    const x = (k - (size - 1) / 2) * 2.4, z = 26 - (k % 2) * 1.2;
+    const x = (k - (size - 1) / 2) * 2.4, z = ARENA.spawnZ - (k % 2) * 1.2;
     return team === "blue" ? [x, z] : [-x, -z];
   };
   const mulberry32 = (seed) => () => {
@@ -377,6 +462,7 @@
         if (m === l) p.x = b[0] - r; else if (m === rt) p.x = b[1] + r; else if (m === nn) p.z = b[2] - r; else p.z = b[3] + r;
       }
     }
+    const W = ARENA.W, L = ARENA.L;
     if (p.x < -W + r) p.x = -W + r; else if (p.x > W - r) p.x = W - r;
     if (p.z < -L + r) p.z = -L + r; else if (p.z > L - r) p.z = L - r;
   };
@@ -407,7 +493,7 @@
       const b = boxAt(i);
       if (x > b[0] && x < b[1] && z > b[2] && z < b[3] && y < b[4] && y > b[5]) return true;
     }
-    return x < -W || x > W || z < -L || z > L;
+    return x < -ARENA.W || x > ARENA.W || z < -ARENA.L || z > ARENA.L;
   };
   // True when the straight line from (ax, az) to (bx, bz) misses every box, widened by r, that stands on the ground.
   // `over` skips boxes lower than it: a throw at chest height clears crates and low walls.
@@ -451,7 +537,7 @@
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
       climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
-      wallet: -1, knock: 0, soot: 0, vendGo: 0, vendI: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
+      wallet: -1, knock: 0, soot: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -489,7 +575,7 @@
   // True when a crate fits at (x, y, z): inside the arena, off the stands, overlapping no box at that height.
   const freeSpot = (sim, x, z, y = 0) => {
     const h = CONFIG.CRATE_HALF, top = y + CONFIG.CRATE_H;
-    if (x < -W + h || x > W - h || z < -L + h || z > L - h) return false;
+    if (x < -ARENA.W + h || x > ARENA.W - h || z < -ARENA.L + h || z > ARENA.L - h) return false;
     for (const t of TEAMS) { const s = ARENA.stands[t]; if (Math.hypot(x - s.x, z - s.z) < CONFIG.STAND_CLEAR) return false; }
     for (let i = 0, n = boxCount(); i < n; i++) {
       const b = boxAt(i);
@@ -617,7 +703,7 @@
     f.vy -= CONFIG.PASS_GRAVITY * dt;
     f.vx += sim.weather.x * CONFIG.SHOT_WIND * dt; f.vz += sim.weather.z * CONFIG.SHOT_WIND * dt;
     const nx = f.x + f.vx * dt, ny = f.y + f.vy * dt, nz = f.z + f.vz * dt;
-    const outside = nx < -W + 0.4 || nx > W - 0.4 || nz < -L + 0.4 || nz > L - 0.4;
+    const outside = nx < -ARENA.W + 0.4 || nx > ARENA.W - 0.4 || nz < -ARENA.L + 0.4 || nz > ARENA.L - 0.4;
     if (outside || (ny > 0 && solidAt(nx, ny, nz))) { f.vx = f.vz = 0; f.vy = Math.min(f.vy, 0); }
     else { f.x = nx; f.z = nz; }
     f.y = Math.max(ny, -1);
@@ -1135,6 +1221,68 @@
       }
     }
   };
+  // ---- Finding the way (maps with a `nav`: Haunted Hollow's cellars) ----
+  // The nodes of both halves, and which pairs see each other past the fixed blocks, worked out once a map.
+  const navCache = {};
+  const navFor = () => {
+    let N = navCache[ARENA.id];
+    if (N) return N;
+    const pts = [...ARENA.nav.blue, ...ARENA.nav.red], n = pts.length, keep = CRATES;
+    CRATES = [];
+    const see = Array.from({ length: n }, (_, i) => pts.map((q, j) => i !== j && clearLine(pts[i][0], pts[i][1], q[0], q[1], CONFIG.BODY_R * 0.8)));
+    CRATES = keep;
+    N = navCache[ARENA.id] = { pts, see, dist: new Float64Array(n + 1), prev: new Int16Array(n + 1), done: new Uint8Array(n + 1), seeEnd: new Uint8Array(n) };
+    return N;
+  };
+  // When the bot can't run straight at its goal, the next node on the shortest way there through the nodes, every
+  // half second; up on a house's yard with its goal in that house's cellar, the stairs down first.
+  const navigate = (sim, a, dt) => {
+    if (!ARENA.nav || a.riding || a.flight || a.climbing) return;
+    if (a.y > 1.5) {
+      for (const c of ARENA.cellars) {
+        const [x0, x1, z0, z1] = c.box;
+        if (goal.x > x0 && goal.x < x1 && goal.z > z0 && goal.z < z1 && a.x > x0 - 1 && a.x < x1 + 1 && a.z > z0 - 1 && a.z < z1 + 1) { goal.x = c.entry[0]; goal.z = c.entry[1]; return; }
+      }
+    }
+    if (clearLine(a.x, a.z, goal.x, goal.z, CONFIG.BODY_R * 0.9)) { a.navI = -1; return; }
+    const N = navFor(), pts = N.pts, n = pts.length;
+    if (a.navI >= 0 && (a.navT -= dt) > 0 && Math.hypot(pts[a.navI][0] - a.x, pts[a.navI][1] - a.z) > 0.7) { goal.x = pts[a.navI][0]; goal.z = pts[a.navI][1]; return; }
+    a.navT = 0.5;
+    // Dijkstra from the bot: node i's distance, the goal as node n.
+    const { dist, prev, done, seeEnd } = N;
+    for (let i = 0; i < n; i++) {
+      seeEnd[i] = clearLine(pts[i][0], pts[i][1], goal.x, goal.z, CONFIG.BODY_R * 0.8) ? 1 : 0;
+      dist[i] = clearLine(a.x, a.z, pts[i][0], pts[i][1], CONFIG.BODY_R * 0.8) ? Math.hypot(pts[i][0] - a.x, pts[i][1] - a.z) : Infinity;
+      prev[i] = -1; done[i] = 0;
+    }
+    dist[n] = Infinity; prev[n] = -1; done[n] = 0;
+    for (;;) {
+      let u = -1, best = Infinity;
+      for (let i = 0; i <= n; i++) if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+      if (u < 0 || u === n) break;
+      done[u] = 1;
+      const [ux, uz] = pts[u];
+      if (seeEnd[u]) { const d = best + Math.hypot(goal.x - ux, goal.z - uz); if (d < dist[n]) { dist[n] = d; prev[n] = u; } }
+      for (let v = 0; v < n; v++) {
+        if (done[v] || !N.see[u][v]) continue;
+        const d = best + Math.hypot(pts[v][0] - ux, pts[v][1] - uz);
+        if (d < dist[v]) { dist[v] = d; prev[v] = u; }
+      }
+    }
+    if (prev[n] < 0) {
+      // No way through from here: the nearest node in sight, to get somewhere that has one.
+      let near = -1, nd = Infinity;
+      for (let i = 0; i < n; i++) if (dist[i] < nd) { nd = dist[i]; near = i; }
+      a.navI = near;
+      if (near >= 0) { goal.x = pts[near][0]; goal.z = pts[near][1]; }
+      return;
+    }
+    // Back from the goal to the first node not already reached (one underfoot is passed on from).
+    let k = prev[n], next = -1;
+    while (k >= 0) { if (Math.hypot(pts[k][0] - a.x, pts[k][1] - a.z) > 0.7) next = k; k = prev[k]; }
+    a.navI = next;
+    if (next >= 0) { goal.x = pts[next][0]; goal.z = pts[next][1]; }
+  };
   // ---- The expert bot's extra moves ----
   // A free crate: live, nothing on it, low enough to lift.
   const freeCrate = (sim, c, a) => c.live && !crateOn(sim, c) && c.y <= a.y + 1.2;
@@ -1309,6 +1457,7 @@
       }
     }
     if (ex && a.hopT > 0) a.hopT -= dt;
+    if (a.detour <= 0 && !a.botClimb) navigate(sim, a, dt);
     const d = Math.hypot(goal.x - a.x, goal.z - a.z);
     // An autopiloted player (`auto`, the suite's and the debug handle's) runs at the player's sprint.
     const speed = (a.bot === "auto" ? CONFIG.SPEED * CONFIG.SPRINT : sim.bots.speed) * (a.carrying ? CONFIG.CARRY : 1) * (a.netted > 0 ? CONFIG.NET_SLOW : 1) * (a.boots > 0 ? CONFIG.BOOTS : 1) * (a.burnt > 0 ? CONFIG.BURN_SLOW : 1);

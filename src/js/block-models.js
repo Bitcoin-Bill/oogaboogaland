@@ -5,9 +5,8 @@
   const BL = window.BL = window.BL || {};
   const { box, bevelBox, merge, moved, turnedY, cached, variants, geometry, pushVert, face, tube, lathe } = BL.models;
   const { hexToRgb } = BL.math;
-  // Map-independent places (the stands, towers, ladders and ziplines) read Fort Chaos; each map's own ground and
-  // buildings are `arena(map index)`.
-  const SIM = BL.blockSim, A = SIM.ARENAS.fort;
+  // Each map's own ground and buildings are `arena(map index)`; its ziplines `zipline(map index * 2 + side)`.
+  const SIM = BL.blockSim;
   const TEAM = {
     blue: { paint: "#3a8dff", deep: "#1d4fa8", light: "#9cc8ff" },
     red: { paint: "#ff4a3a", deep: "#a8261d", light: "#ffb0a6" }
@@ -29,30 +28,82 @@
   // The ground: a sandy field with a darker strip down the middle and each half's end tinted to its team, then every
   // wall block in stone with a team-coloured cap near its fort, timber crates for the field's low cover, and the
   // centre tower in dark stone with an orange band.
+  // Haunted Hollow's own blocks: the yards' plank floors over the cellars, iron rails, the houses' grey boards with a
+  // purple trim, the cellars' mossy stone, headstones, the iron fence, dead trunks and the pale mausoleum. False for
+  // anything else (the towers, the junk), which is drawn as on the other maps.
+  const hauntedBlock = (parts, b, w, d, h, x, y, z, bottom) => {
+    const thin = Math.min(w, d);
+    if (b[4] > TOP - 0.5) return false;
+    if (bottom > 2.5 && bottom < 2.8 && h <= 0.35) {
+      parts.push(bevelBox({ w, h, d, color: "#3e3229", offset: { x, y, z } }));
+      for (let k = 1; k < Math.floor(w / 0.9); k++) parts.push(box({ w: 0.05, h: 0.02, d, color: "#2a211b", offset: { x: b[0] + k * 0.9, y: b[4] + 0.005, z } }));
+      return true;
+    }
+    if (bottom >= 2.9 && h <= 0.95 && thin <= 0.25) {
+      parts.push(box({ w, h: 0.06, d, color: "#1c1a20", offset: { x, y: b[4] - 0.03, z } }));
+      for (let k = (w > d ? b[0] : b[2]) + 0.25; k < (w > d ? b[1] : b[3]); k += 0.5) parts.push(box({ w: 0.05, h, d: 0.05, color: "#1c1a20", offset: { x: w > d ? k : x, y, z: w > d ? z : k } }));
+      return true;
+    }
+    if (bottom >= 2.9) {
+      parts.push(bevelBox({ w, h, d, color: "#5a5258", offset: { x, y, z } }));
+      for (let k = bottom + 0.4; k < b[4]; k += 0.4) parts.push(box({ w: w + 0.02, h: 0.03, d: d + 0.02, color: "#463f45", offset: { x, y: k, z } }));
+      parts.push(box({ w: w + 0.05, h: 0.14, d: d + 0.05, color: "#6a3fa0", emissive: 0.25, offset: { x, y: b[4] - 0.07, z } }));
+      return true;
+    }
+    if (h >= 4.5 && w <= 0.75 && d <= 0.75) {
+      parts.push(bevelBox({ w, h, d, color: "#2e2622", offset: { x, y, z } }));
+      return true;
+    }
+    if (bottom === 0 && Math.abs(h - 2.7) < 0.05 && Math.abs(z) >= 31.9) {
+      parts.push(bevelBox({ w, h, d, color: "#6a6670", offset: { x, y, z } }));
+      parts.push(box({ w: w + 0.03, h: 0.35, d: d + 0.03, color: "#4f5a3c", offset: { x, y: 0.18, z } }));
+      return true;
+    }
+    if (bottom === 0 && Math.abs(h - 1.1) < 0.05 && thin <= 0.4) {
+      // A headstone: a grey slab with a rounded top and a darker plinth.
+      parts.push(bevelBox({ w, h: h - 0.15, d, color: "#8e8e98", offset: { x, y: (h - 0.15) / 2, z } }));
+      parts.push(bevelBox({ w: w * 0.7, h: 0.18, d, color: "#8e8e98", offset: { x, y: h - 0.09, z } }));
+      parts.push(box({ w: w + 0.1, h: 0.12, d: d + 0.12, color: "#55555e", offset: { x, y: 0.06, z } }));
+      return true;
+    }
+    if (bottom === 0 && Math.abs(h - 1.3) < 0.05 && thin <= 0.35) {
+      // The iron fence: rails and spiked bars.
+      parts.push(box({ w, h: 0.06, d, color: "#1c1a20", offset: { x, y: 1.1, z } }), box({ w, h: 0.06, d, color: "#1c1a20", offset: { x, y: 0.3, z } }));
+      for (let k = b[0] + 0.15; k < b[1]; k += 0.3) parts.push(box({ w: 0.04, h, d: 0.04, color: "#1c1a20", offset: { x: k, y: h / 2, z } }));
+      return true;
+    }
+    if (bottom === 0 && Math.abs(x) <= 3.1 && Math.abs(z) <= 4.5 && h > 0.4) {
+      // The mausoleum and its steps: pale stone, a purple band round the tomb.
+      parts.push(bevelBox({ w, h, d, color: "#b4aeb8", offset: { x, y, z } }));
+      if (h > 2.5) parts.push(box({ w: w + 0.06, h: 0.25, d: d + 0.06, color: "#6a3fa0", emissive: 0.4, offset: { x, y: b[4] - 0.4, z } }));
+      return true;
+    }
+    return false;
+  };
   const arena = variants((mapIndex) => {
-    const M = SIM.ARENAS[SIM.MAPS[mapIndex]], town = M.id === "town", jungle = M.id === "jungle", parts = [];
-    parts.push(box({ w: A.W * 2 + 4, h: 1, d: A.L * 2 + 4, color: "#6b5a3e", offset: { y: -0.5 } }));
-    parts.push(box({ w: A.W * 2, h: 0.04, d: A.L * 2, color: "#c9a96b", offset: { y: 0.02 } }));
-    parts.push(box({ w: A.W * 2, h: 0.05, d: 0.6, color: ORANGE, emissive: 0.25, offset: { y: 0.03 } }));
+    const M = SIM.ARENAS[SIM.MAPS[mapIndex]], town = M.id === "town", jungle = M.id === "jungle", haunted = M.id === "haunted", parts = [];
+    parts.push(box({ w: M.W * 2 + 4, h: 1, d: M.L * 2 + 4, color: "#6b5a3e", offset: { y: -0.5 } }));
+    parts.push(box({ w: M.W * 2, h: 0.04, d: M.L * 2, color: "#c9a96b", offset: { y: 0.02 } }));
+    parts.push(box({ w: M.W * 2, h: 0.05, d: 0.6, color: ORANGE, emissive: 0.25, offset: { y: 0.03 } }));
     for (const t of SIM.TEAMS) {
       const s = t === "blue" ? 1 : -1;
-      parts.push(box({ w: A.W * 2, h: 0.05, d: 12, color: t === "blue" ? "#b8b894" : "#c8a586", offset: { y: 0.025, z: s * (A.L - 6) } }));
+      parts.push(box({ w: M.W * 2, h: 0.05, d: 12, color: t === "blue" ? "#b8b894" : "#c8a586", offset: { y: 0.025, z: s * (M.L - 6) } }));
       // A ring of team paint round the stand, flush with the ground.
       for (let k = 0; k < 16; k++) {
         const a = k / 16 * Math.PI * 2;
-        parts.push(box({ w: 0.5, h: 0.06, d: 0.18, color: TEAM[t].paint, emissive: 0.3, offset: { x: A.stands[t].x + Math.sin(a) * SIM.CONFIG.STAND_R, y: 0.03, z: A.stands[t].z + Math.cos(a) * SIM.CONFIG.STAND_R } }));
+        parts.push(box({ w: 0.5, h: 0.06, d: 0.18, color: TEAM[t].paint, emissive: 0.3, offset: { x: M.stands[t].x + Math.sin(a) * SIM.CONFIG.STAND_R, y: 0.03, z: M.stands[t].z + Math.cos(a) * SIM.CONFIG.STAND_R } }));
       }
     }
     // A low rim round the field.
     for (const s of [-1, 1]) {
-      parts.push(bevelBox({ w: 0.6, h: 0.8, d: A.L * 2 + 0.6, color: "#7d7468", offset: { x: s * (A.W + 0.3), y: 0.4 } }));
-      parts.push(bevelBox({ w: A.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (A.L + 0.3), y: 0.4 } }));
+      parts.push(bevelBox({ w: 0.6, h: 0.8, d: M.L * 2 + 0.6, color: "#7d7468", offset: { x: s * (M.W + 0.3), y: 0.4 } }));
+      parts.push(bevelBox({ w: M.W * 2 + 1.2, h: 0.8, d: 0.6, color: "#7d7468", offset: { z: s * (M.L + 0.3), y: 0.4 } }));
     }
     if (jungle) {
       // Jungle floor: moss over the sand, darker patches, and the leaves of every tree (decor: nothing stops in them).
-      parts.push(box({ w: A.W * 2, h: 0.045, d: A.L * 2 - 26, color: "#5f7a3a", offset: { y: 0.03 } }));
+      parts.push(box({ w: M.W * 2, h: 0.045, d: M.L * 2 - 26, color: "#5f7a3a", offset: { y: 0.03 } }));
       const r = (k) => ((Math.sin(k * 12.9898) * 43758.5453) % 1 + 1) % 1;
-      for (let k = 0; k < 40; k++) parts.push(box({ w: 1 + r(k) * 2.5, h: 0.05, d: 1 + r(k + 50) * 2.5, color: k % 2 ? "#4c6a2e" : "#6e8a44", offset: { x: (r(k + 100) - 0.5) * A.W * 1.9, y: 0.035, z: (r(k + 150) - 0.5) * (A.L * 2 - 28) } }));
+      for (let k = 0; k < 40; k++) parts.push(box({ w: 1 + r(k) * 2.5, h: 0.05, d: 1 + r(k + 50) * 2.5, color: k % 2 ? "#4c6a2e" : "#6e8a44", offset: { x: (r(k + 100) - 0.5) * M.W * 1.9, y: 0.035, z: (r(k + 150) - 0.5) * (M.L * 2 - 28) } }));
       for (const d of M.decor) {
         if (d.kind !== "canopy") continue;
         for (let k = 0; k < 6; k++) {
@@ -62,10 +113,24 @@
         parts.push(bevelBox({ w: d.r * 1.1, h: 1.1, d: d.r * 1.1, color: "#3a7a30", offset: { x: d.x, y: d.y + 0.9, z: d.z } }));
       }
     }
+    if (haunted) {
+      // Haunted Hollow: dead grass over the field, bare patches, and each dead tree's crooked branches.
+      parts.push(box({ w: M.W * 2, h: 0.045, d: M.L * 2 - 4, color: "#4a5238", offset: { y: 0.03 } }));
+      const r = (k) => ((Math.sin(k * 7.233) * 43758.5453) % 1 + 1) % 1;
+      for (let k = 0; k < 60; k++) parts.push(box({ w: 1 + r(k) * 3, h: 0.05, d: 1 + r(k + 70) * 3, color: k % 3 ? "#3d4430" : "#5a5a44", offset: { x: (r(k + 140) - 0.5) * M.W * 1.9, y: 0.035, z: (r(k + 210) - 0.5) * (M.L * 2 - 8) } }));
+      for (const d of M.decor) {
+        if (d.kind !== "deadtree") continue;
+        for (let k = 0; k < 4; k++) {
+          const a = k * 1.7 + d.x, len = 1.2 + (k % 2) * 0.6, y = d.y - 0.6 - k * 0.7;
+          parts.push(box({ w: 0.2, h: 0.2, d: len, color: "#2e2622", offset: { x: d.x + Math.sin(a) * len / 2, y, z: d.z + Math.cos(a) * len / 2 } }));
+          parts.push(box({ w: 0.14, h: 0.6, d: 0.14, color: "#2e2622", offset: { x: d.x + Math.sin(a) * len, y: y + 0.3, z: d.z + Math.cos(a) * len } }));
+        }
+      }
+    }
     if (town) {
       // Cobbled streets: a darker band down the middle and across the square.
-      parts.push(box({ w: 18, h: 0.05, d: A.L * 2 - 20, color: "#a89270", offset: { y: 0.03 } }));
-      parts.push(box({ w: A.W * 2, h: 0.05, d: 8, color: "#a89270", offset: { y: 0.035 } }));
+      parts.push(box({ w: 18, h: 0.05, d: M.L * 2 - 20, color: "#a89270", offset: { y: 0.03 } }));
+      parts.push(box({ w: M.W * 2, h: 0.05, d: 8, color: "#a89270", offset: { y: 0.035 } }));
     }
     for (const b of M.BLOCKS) {
       const w = b[1] - b[0], d = b[3] - b[2], bottom = b[5] || 0, h = b[4] - bottom, x = (b[0] + b[1]) / 2, z = (b[2] + b[3]) / 2, y = bottom + h / 2;
@@ -83,6 +148,7 @@
         parts.push(box({ w: w + 0.04, h: 0.2, d: d + 0.04, color: bank ? TEAM[z > 0 ? "blue" : "red"].paint : "#7a5a3a", emissive: bank ? 0.15 : 0, offset: { x, y: b[4] - 0.25, z } }));
         continue;
       }
+      if (haunted && hauntedBlock(parts, b, w, d, h, x, y, z, bottom)) continue;
       if (jungle && w <= 1.7 && d <= 1.7 && h >= 5) {
         // A tree trunk: bark with paler rings and a vine.
         parts.push(bevelBox({ w, h, d, color: "#5a3e26", offset: { x, y, z } }));
@@ -430,8 +496,9 @@
     moved(turnedY(gun(8 + i), Math.PI / 2), 0, 0.7, 0)
   ));
   // A zipline: a cable sagging a little between its anchors, in the team's colour, and a pole at the low end.
-  const zipline = variants((i) => {
-    const z = A.zips[SIM.TEAMS[i]], c = TEAM[SIM.TEAMS[i]];
+  const zipline = variants((k) => {
+    // Keyed by map and side: map index times two, plus the side.
+    const i = k & 1, z = SIM.ARENAS[SIM.MAPS[k >> 1]].zips[SIM.TEAMS[i]], c = TEAM[SIM.TEAMS[i]];
     const cable = tube({ path: (t) => ({ x: z.ax + (z.bx - z.ax) * t, y: z.ay + (z.by - z.ay) * t + 0.15, z: z.az + (z.bz - z.az) * t }), radius: () => 0.04, rings: 24, segments: 4, colorFn: () => c.light, emissive: 0.5 });
     return merge(cable,
       box({ w: 0.16, h: z.by + 0.4, d: 0.16, color: "#5a3a22", offset: { x: z.bx, y: (z.by + 0.4) / 2, z: z.bz } }),

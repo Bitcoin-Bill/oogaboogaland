@@ -527,9 +527,10 @@
   // The mini-map: the field turned so the rivals' fort is at the top, the forts and towers drawn once
   // (`mapBase`), then the blocks and every Ooga, ten times a second.
   let mapBase = null, mapT = 0;
-  const MAP_K = 2;
-  const mapX = (x) => ((sim.team === "blue" ? x : -x) + SIM.ARENA.W) * MAP_K;
-  const mapY = (z) => ((sim.team === "blue" ? z : -z) + SIM.ARENA.L) * MAP_K;
+  // The mini-map's scale: the field fills its 88 x 148 canvas, a bigger map drawn smaller.
+  const mapK = () => Math.min(88 / (2 * SIM.ARENA.W), 148 / (2 * SIM.ARENA.L));
+  const mapX = (x) => ((sim.team === "blue" ? x : -x) + SIM.ARENA.W) * mapK() + (88 - 2 * SIM.ARENA.W * mapK()) / 2;
+  const mapY = (z) => ((sim.team === "blue" ? z : -z) + SIM.ARENA.L) * mapK() + (148 - 2 * SIM.ARENA.L * mapK()) / 2;
   const drawMapBase = () => {
     const c = document.createElement("canvas");
     c.width = el.map.width; c.height = el.map.height;
@@ -544,6 +545,7 @@
     }
     for (const t of SIM.TEAMS) {
       const s = SIM.ARENA.stands[t];
+      if (SIM.ARENA.hidden && t !== sim.team) continue;
       g.strokeStyle = BM.TEAM[t].paint;
       g.lineWidth = 2;
       g.strokeRect(mapX(s.x) - 4, mapY(s.z) - 4, 8, 8);
@@ -560,6 +562,8 @@
     for (const t of SIM.TEAMS) {
       const f = sim.flags[t];
       if (f.state === "dropped" && Math.sin(elapsed * 10) < 0) continue;
+      // A hidden block sitting on its stand isn't shown: it has to be found.
+      if (SIM.ARENA.hidden && t !== sim.team && f.state === "home") continue;
       g.fillStyle = BM.ORANGE;
       g.fillRect(mapX(f.x) - 3, mapY(f.z) - 3, 6, 6);
       g.fillStyle = BM.TEAM[t].paint;
@@ -1534,7 +1538,8 @@
       return;
     }
     // The visitor's Ooga on its showcase spot, a step inside the gate, turning.
-    const me = sim.actors[0], x = s.x, z = s.z - sign * 2.5;
+    const show = SIM.ARENA.showcase ? SIM.ARENA.showcase[t] : null;
+    const me = sim.actors[0], x = show ? show.x : s.x, z = show ? show.z : s.z - sign * 2.5;
     preview.spin = wrap(preview.spin + dt * 0.7);
     me.x = x; me.z = z; me.y = 0; me.grounded = true; me.moving = 0;
     me.carrying = null; me.holding = false; me.splat = me.trapped = me.burnt = me.slip = 0;
@@ -1674,6 +1679,15 @@
     mapRoot = place(createNode());
     const add = (node) => { addChild(mapRoot, node); return node; };
     add(createNode({ geometry: BM.arena(SIM.MAPS.indexOf(selection.map)) }));
+    // The stands, and the sniper towers' ladders and rifle racks and the ziplines, where this map has them.
+    const mapIndex = SIM.MAPS.indexOf(selection.map);
+    for (const t of SIM.TEAMS) {
+      const st = A.stands[t], l = A.ladders[t], [x0, x1, z0, z1] = A.towers[t], i = TEAM_INDEX[t];
+      add(createNode({ geometry: BM.stand(i), position: { x: st.x, y: 0, z: st.z } }));
+      add(createNode({ geometry: BM.ladder(), position: { x: l.dx < 0 ? x1 + 0.05 : x0 - 0.05, y: 0, z: (l.zone[2] + l.zone[3]) / 2 } }));
+      add(createNode({ geometry: BM.rack(i), position: { x: l.dx < 0 ? x0 + 0.7 : x1 - 0.7, y: C.TOWER_TOP, z: (z0 + z1) / 2 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }));
+      add(createNode({ geometry: BM.zipline(mapIndex * 2 + i) }));
+    }
     pads = A.traps.map(([x, z]) => add(createNode({ geometry: BM.pad(), position: { x, y: 0, z } })));
     powerNodes = A.powers.map(([x, z]) => add(createNode({ geometry: BM.power(0), position: { x, y: 0, z } })));
     trampNodes = A.tramps.map(([x, z]) => add(createNode({ geometry: BM.tramp(), position: { x, y: 0, z } })));
@@ -1877,8 +1891,6 @@
     blocks = {};
     ticks = {};
     for (const t of SIM.TEAMS) {
-      const s = SIM.ARENA.stands[t];
-      place(createNode({ geometry: BM.stand(TEAM_INDEX[t]), position: { x: s.x, y: 0, z: s.z } }));
       const node = place(createNode({ geometry: BM.block(TEAM_INDEX[t]) }));
       const tickRoot = place(createNode());
       ticks[t] = [];
@@ -1888,13 +1900,6 @@
         ticks[t].push(n);
       }
       blocks[t] = { node, tickRoot };
-    }
-    // The sniper towers' ladders and rifle racks and the ziplines, the same on every map.
-    for (const t of SIM.TEAMS) {
-      const l = SIM.ARENA.ladders[t], [x0, x1, z0, z1] = SIM.ARENA.towers[t], i = TEAM_INDEX[t];
-      place(createNode({ geometry: BM.ladder(), position: { x: l.dx < 0 ? x1 + 0.05 : x0 - 0.05, y: 0, z: (l.zone[2] + l.zone[3]) / 2 } }));
-      place(createNode({ geometry: BM.rack(i), position: { x: l.dx < 0 ? x0 + 0.7 : x1 - 0.7, y: C.TOWER_TOP, z: (z0 + z1) / 2 }, rotation: { x: 0, y: Math.PI / 2, z: 0 } }));
-      place(createNode({ geometry: BM.zipline(i) }));
     }
     for (const t of SIM.TEAMS) iceNodes[t] = place(createNode({ geometry: BM.ice(), visible: false }));
     mapRoot = null;
