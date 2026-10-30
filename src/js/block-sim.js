@@ -1731,7 +1731,8 @@
     const stand = ARENA.stands[a.team], home = a.y < 1.4 && (a.x - stand.x) ** 2 + (a.z - stand.z) ** 2 < CONFIG.STAND_R * CONFIG.STAND_R;
     // Where a stolen block is mined: the stand, or a map's own scoring spot (`goals`) where it has one.
     const gl = ARENA.goals ? ARENA.goals[a.team] : stand, gr = ARENA.goals ? CONFIG.GOAL_R : CONFIG.STAND_R;
-    const atGoal = a.y < 1.4 && (a.x - gl.x) ** 2 + (a.z - gl.z) ** 2 < gr * gr;
+    // A map with its own spot scores there and at the stand both.
+    const atGoal = home || (a.y < 1.4 && (a.x - gl.x) ** 2 + (a.z - gl.z) ** 2 < gr * gr);
     if (home && refill(a)) emit(sim, "refill", a.team, a.id, a.x, a.y, a.z);
     // Up a tower the rifle is in hand (`sniper` 1); stepping off leaves it on the rack.
     const up = onTower(a) ? 1 : 0;
@@ -1806,7 +1807,7 @@
       homeFlag(own);
       a.captures++;
       sim.score[a.team]++;
-      emit(sim, "capture", a.team, a.id, gl.x, 0, gl.z);
+      emit(sim, "capture", a.team, a.id, a.x, 0, a.z);
       // A Golden AK for the miner while any are left.
       if (sim.goldLeft > 0 && !a.gold) {
         sim.goldLeft--;
