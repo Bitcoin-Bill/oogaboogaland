@@ -722,6 +722,20 @@
     }
     return merge(...parts);
   });
+  // The laser-eyes beam: a white-hot core in a red glow, one metre long along +z from the origin (the scene stretches
+  // it to the beam's length), in two strands a hand apart, one from each eye.
+  const beam = cached(() => {
+    const parts = [];
+    for (const x of [-0.07, 0.07]) {
+      parts.push(box({ w: 0.035, h: 0.035, d: 1, color: "#fff4f0", emissive: 1, offset: { x, z: 0.5 } }));
+      parts.push(box({ w: 0.09, h: 0.09, d: 1, color: "#ff2a1a", emissive: 1, offset: { x, z: 0.5 } }));
+    }
+    const geo = merge(...parts);
+    geo.castShadow = false;
+    return geo;
+  });
+  // Laser eyes lit: two glowing red eyes, set over the Ooga's own.
+  const laserEyes = cached(() => merge(box({ w: 0.1, h: 0.07, d: 0.06, color: "#ff3a1a", emissive: 1, offset: { x: -0.07 } }), box({ w: 0.1, h: 0.07, d: 0.06, color: "#ff3a1a", emissive: 1, offset: { x: 0.07 } })));
   // A ghost: a pale glowing sheet, round on top and flaring to a ragged hem, two dark eyes and an open mouth, its arms
   // out. Faces +z, its middle at y 0.
   const ghost = cached(() => {
@@ -782,5 +796,5 @@
     for (let y = 0.15; y <= top; y += 0.3) parts.push(box({ w, h: 0.05, d: 0.05, color: "#b0905a", offset: { y } }));
     return merge(...parts);
   });
-  BL.blockModels = { ghost, walletDevice, walletLight, vend, net2, jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
+  BL.blockModels = { beam, laserEyes, ghost, walletDevice, walletLight, vend, net2, jetpack, jetFlames, monkey, catapult, catapultArm, chute, goldBall, banana, bananaPile, peel, firePit, flames, potato, potatoArm, power, ice, tramp, TEAM, ORANGE, GUNS, arena, stand, block, tick, ball, splat, ring, pad, bubble, crate, grenade, rocket, net, draped, streak, gun, ladder, rack, zipline, trolley, cache, SPLATS: 6 };
 })();
