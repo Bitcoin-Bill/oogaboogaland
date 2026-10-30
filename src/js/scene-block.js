@@ -610,7 +610,7 @@
         if (e.actor >= 0) say(e.actor, LINES.splat, 1.2);
       } else if (e.type === "pickup") {
         fx.burst(e.x, 1.2, e.z, 14, ORANGE_BITS, 2);
-        if (me) { center("GOT THE BLOCK!", 1100); notice(SIM.ARENA.goals ? "Run it to the glowing ring at the foot of your house's front steps" : COARSE ? "Run it home · Drop hands it off" : "Run it home to your stand · G drops it", 4000); }
+        if (me) { center("GOT THE BLOCK!", 1100); notice(SIM.ARENA.goals ? "Run it to the glowing ring at the foot of your house's front steps (or down to your block's spot in your cellar)" : COARSE ? "Run it home · Drop hands it off" : "Run it home to your stand · G drops it", 4000); }
         // The block's side is the event's team; whose side picked it up is the carrier's.
         else if (sim.actors[e.actor].team === sim.team) notice("Teammate has the block! Cover them!", 2500);
         else { notice("They took your block! Paint the carrier!", 2500); say(1, LINES.lost); }
