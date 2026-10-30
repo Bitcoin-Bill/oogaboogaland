@@ -51,6 +51,7 @@
   const QUIZ_BITS = ["#3dff7a", "#b8ffcf"].map((c) => models.particleGeometry(c, 0.09, 1));
   const NET_BITS = ["#7fe08a", "#c8ffd0"].map((c) => models.particleGeometry(c, 0.08, 0.6));
   const WOOD_BITS = ["#9a6a3a", "#5a3a22"].map((c) => models.particleGeometry(c, 0.1, 0));
+  const GHOST_BITS = ["#e8eefc", "#b9a8ff"].map((c) => models.particleGeometry(c, 0.1, 1));
   const SMOKE_BITS = ["#3d3d44", "#6a6a72"].map((c) => models.particleGeometry(c, 0.12, 0));
   const BLAST_BITS = ["#ff8a1f", "#ffd66b", "#3d3d44", "#efe6cc"].map((c, i) => models.particleGeometry(c, 0.09, i < 2 ? 1 : 0));
   const STAR_BITS = ["#ffe066", "#fff3d6"].map((c) => models.particleGeometry(c, 0.09, 1));
@@ -477,6 +478,8 @@
     else if (t === "burn") c.burn(me ? 1 : k);
     else if (t === "slip") c.slip(me ? 1 : k);
     else if (t === "grab") c.roar(me ? 1 : k);
+    else if (t === "boo") c.boo(me ? 1 : k);
+    else if (t === "ghostpop") c.ghostPop(k);
     else if (t === "struggle" && me) c.grunt();
     else if (t === "breakfree" && me) c.free();
     else if (t === "gorillahit") c.yelp(k);
@@ -515,6 +518,8 @@
     else if (t === "trap") feed(`${who} is stuck in a quiz`, e.team);
     else if (t === "burn") feed(`${who} burnt their feet in the fire!`, e.team);
     else if (t === "slip") feed(`${who} slipped on a banana peel!`, e.team);
+    else if (t === "boo") feed(`A ghost spooked ${e.actor === 0 ? "you" : who}!`, e.team);
+    else if (t === "ghostpop" && e.actor >= 0) feed(`${nameOf(e.actor)} popped a ghost`, sim.actors[e.actor].team);
     else if (t === "rekt") feed(e.by >= 0 && e.by !== e.actor ? `${nameOf(e.by)}'s wallet rekt ${who}` : `${who} got rekt by a free wallet`, e.by >= 0 ? sim.actors[e.by].team : e.team);
     else if (t === "grab") feed(`A gorilla grabbed ${e.actor === 0 ? "you" : who}!`, e.team);
     else if (t === "breakfree") feed(`${who} wriggled free of a gorilla`, e.team);
@@ -750,7 +755,12 @@
       } else if (e.type === "rekt") {
         if (me) { center("REKT!", 1100); notice("Wallet blast! Knocked back and sooted", 1600); }
         say(e.actor, ["Rekt", "Not your keys!", "Trust me bro?"], 1.4);
-      } else if (e.type === "grab") {
+      } else if (e.type === "boo") {
+        fx.burst(e.x, e.y, e.z, 14, GHOST_BITS, 2.2);
+        if (me) { center("BOO!", 900); notice(sim.actors[0].carrying ? "Spooked stiff!" : "Spooked stiff! Shoot ghosts to pop them", 1600); }
+        else say(e.actor, ["Eek!", "A g-g-ghost!", "Nope nope nope"], 1.3);
+      } else if (e.type === "ghostpop") fx.burst(e.x, e.y, e.z, 16, GHOST_BITS, 2.6);
+      else if (e.type === "grab") {
         fx.burst(e.x, 1.6, e.z, 12, WOOD_BITS, 2.2);
         gorillaPoke(e.actor);
         if (me) {
@@ -1052,6 +1062,8 @@
   const dropBlock = () => {
     if (phase !== "play") return false;
     if (SIM.drop(sim, 0)) return true;
+    // No block in hand: G sets a held wallet down, ticking.
+    if (SIM.dropWallet(sim, 0)) { notice(`Wallet set down · it goes off in ${C.WALLET_FUSE} s · get clear!`, 1800); return true; }
     notice("Nothing to drop", 900);
     return false;
   };
@@ -1184,7 +1196,7 @@
       if (a.chute.visible) a.chute.geometry = BM.chute(TEAM_INDEX[s.team]);
       // The gun in hand: the visitor's chosen tool, a bot's last throw; none while carrying, lifting or riding.
       const g = GUN_OF[i === 0 ? tool : s.lastKind || "paint"];
-      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && s.wallet < 0 && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
+      const armed = phase === "play" && g >= 0 && !s.carrying && !s.holding && !s.riding && !s.climbing && !s.flight && s.splat <= 0 && s.trapped <= 0 && s.burnt <= 0 && s.slip <= 0;
       if (a.gun) {
         a.gun.visible = armed;
         if (armed) a.gun.geometry = BM.gun(g * 2 + TEAM_INDEX[s.team]);
@@ -1210,6 +1222,13 @@
         // Thinking: one hand on the chin, the other on the hip.
         p.armR.rotation.x = -2 + Math.sin(elapsed * 2 + i) * 0.1;
         p.armL.rotation.x = -0.3;
+        p.legL.rotation.x = p.legR.rotation.x = 0;
+        continue;
+      }
+      if (s.spooked > 0) {
+        // Spooked stiff: arms straight up, knees locked, shaking.
+        const w = Math.sin(elapsed * 40) * 0.06;
+        p.armL.rotation.x = p.armR.rotation.x = -3 + w;
         p.legL.rotation.x = p.legR.rotation.x = 0;
         continue;
       }
@@ -1257,9 +1276,13 @@
       const swing = Math.sin(a.phase) * Math.min(1, sp / 3);
       p.legR.rotation.x = swing * 0.6;
       p.legL.rotation.x = -swing * 0.6;
-      if (s.carrying || s.holding || s.wallet >= 0) {
-        // Both hands up holding the block (or a crate, or a wallet) overhead.
+      if (s.carrying || s.holding) {
+        // Both hands up holding the block (or a crate) overhead.
         p.armL.rotation.x = p.armR.rotation.x = -2.9;
+      } else if (s.wallet >= 0) {
+        // A wallet up in the left hand; the right keeps the gun.
+        p.armL.rotation.x = -2.5;
+        p.armR.rotation.x = armed ? -1.45 : -0.2 - swing * 0.35;
       } else if (armed) {
         // Gun up and forward, the other hand under it; a big launcher sits higher, on the shoulder.
         const kick = s.cooldown > (s.bot ? sim.bots.cool : SIM.TOOLS.paint.cool) - 0.12 ? 0.18 : 0;
@@ -1396,9 +1419,15 @@
   };
   // The wallets: over a head, in the air turning, or lying where they stopped; the fuse light blinks once a second,
   // then three times, then all but steady, with a beep each blink near the visitor, louder and higher as it runs out.
+  let walletHeld = 0;
   const poseWallets = (elapsed) => {
     if (!walletNodes) return;
     const me = sim.actors[0];
+    // Holding one a while: a reminder of how to be rid of it.
+    if (me.wallet >= 0 && phase === "play") {
+      if (!walletHeld) walletHeld = elapsed;
+      else if (elapsed - walletHeld > 12) { walletHeld = elapsed; notice(COARSE ? "Still holding a wallet · Paint! throws it · Drop sets it down" : "Still holding a wallet · click or Y throws it · G sets it down", 2600); }
+    } else walletHeld = 0;
     for (let i = 0; i < walletNodes.length; i++) {
       const w = sim.wallets[i], n = walletNodes[i];
       // Stuck on the visitor's own back, it stays a secret: not shown, not heard.
@@ -1578,6 +1607,7 @@
     posePads(elapsed);
     poseFire(elapsed);
     poseGorillas(dt, elapsed);
+    poseGhosts(elapsed);
     poseShots();
     poseWallets(elapsed);
     if (phase === "board") boardView(elapsed, dt);
@@ -1722,6 +1752,9 @@
       const key = `${Math.round(Math.max(w, 1.2) * 10)}:${Math.round(n.top * 10)}`;
       add(createNode({ geometry: BM.net2(key), position: { x: (x0 + x1) / 2, y: 0, z: (z0 + z1) / 2 }, rotation: { x: 0.08, y: n.dx ? Math.PI / 2 : 0, z: 0 } }));
     }
+    // Haunted Hollow's ghosts, one node each (the sim has the haunts both ways round).
+    ghostNodes = [];
+    for (let i = 0; i < (A.ghosts || []).length * 2; i++) ghostNodes.push(add(createNode({ geometry: BM.ghost(), visible: false, scale: { x: 1.1, y: 1.1, z: 1.1 } })));
     disposeGorillas();
     gorillaRigs = A.gorillas.map(([x, z]) => {
       const rig = BL.agent.create({ managed: true, groundAt: () => 0, x, z, scale: GORILLA_SCALE });
@@ -1730,6 +1763,21 @@
     });
   };
   // The gorillas follow the sim: walking or charging, standing still holding an Ooga up, or dazed when painted.
+  let ghostNodes = [];
+  // The ghosts drift, bob and sway, leaning into a chase; gone, they're hidden.
+  const poseGhosts = (elapsed) => {
+    if (!sim || !ghostNodes.length) return;
+    for (let i = 0; i < ghostNodes.length; i++) {
+      const g = sim.ghosts[i], n = ghostNodes[i];
+      if (!g) { n.visible = false; continue; }
+      n.visible = g.state !== 2;
+      if (!n.visible) continue;
+      setVec(n.position, g.x, g.y + 0.2, g.z);
+      n.rotation.y = g.heading + Math.sin(elapsed * 1.7 + i) * 0.25;
+      n.rotation.x = g.state === 1 ? 0.25 : 0.05 * Math.sin(elapsed * 2 + i);
+      n.rotation.z = Math.sin(elapsed * 1.3 + i * 2) * 0.12;
+    }
+  };
   const GORILLA_SCALE = 1.35;
   let gorillaRigs = [];
   const disposeGorillas = () => { for (const rig of gorillaRigs) rig.dispose(); gorillaRigs = []; };

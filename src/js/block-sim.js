@@ -58,6 +58,10 @@
     // its fuse runs out, and a blast sets off any other within `WALLET_CHAIN`, knocking everyone near it back.
     WALLET_CAP: 12, WALLET_FUSE: 5, WALLET_STICK_R: 0.65, VEND_R: 1.9, VEND_COOL: 5, WALLET_SPEED: 13, WALLET_LIFT: 2, WALLET_GRAVITY: 14,
     WALLET_BLAST: 3.2, WALLET_CHAIN: 2.5, WALLET_PUSH: 9, WALLET_CAP_N: 8, KNOCK_S: 0.55, SOOT_S: 3,
+    // Haunted Hollow's ghosts: they drift through walls round their haunt, chase an Ooga that comes within
+    // `GHOST_SIGHT`, and a touch (`GHOST_R`) spooks it stiff for `SPOOK_S`, dropping any block; then the ghost fades
+    // and comes back after `GHOST_BACK`. Paint or a blast pops one sooner.
+    GHOST_SPEED: 1.4, GHOST_CHASE: 3, GHOST_SIGHT: 6, GHOST_R: 0.7, SPOOK_S: 1.2, GHOST_BACK: 14, GHOST_POP: 10,
     TOWER_TOP: 6.4, CLIMB: 3.6, ZIP_SPEED: 15, ZIP_HANG: 1.9, ZIP_R: 1.6, CACHE_S: 15, CACHE_R: 1.2
   };
   // The tools: speed, upward lob, gravity, life in seconds, hit radius, burst radius (0 for none), cooldown, and how
@@ -356,7 +360,9 @@
       tramps: two([[-17, 22], [10, 6]]),
       powers: two([[-12, 34.2], [5, 44.5], [18, 12], [0, 9]]),
       fire: [-24, 0],
-      catapults: both([[-9, 27]])
+      catapults: both([[-9, 27]]),
+      // The ghosts' haunts [x, z, reach]: one in each cellar, and two in each half of the graveyard.
+      ghosts: two([[0, 40, 6], [-12, 14, 7], [12, 18, 6]])
     };
   };
   const ARENAS = { fort: fortChaos(), town: oogaTown(), jungle: gorillaJungle(), haunted: hauntedHollow() };
@@ -537,7 +543,7 @@
       blocked: null, stuck: 0, lastX: 0, lastZ: 0, detour: 0, aim: 0, trapped: 0, think: 0, grounded: true, jumps: 0, crouch: false,
       waiting: false, stamina: 4, tired: false, sprinting: false, rest: 0, botJump: false, jump2At: 0, tries: 0, progT: 0, lastD: 0, netted: 0, grenade: 0, rocket: 0, net: 0, sniper: 0, crates: 0, holding: false, bonked: false,
       climbing: false, riding: false, zipT: 0, flight: 0, zipLine: "blue", lastKind: "paint", grabbed: 0, grabHits: 0, fuel: 2.6, jetting: false, boots: 0, laser: 0, burnt: 0, slip: 0, gold: false, akMag: 30, akReload: 0, monkeys: 0,
-      wallet: -1, knock: 0, soot: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
+      wallet: -1, knock: 0, soot: 0, spooked: 0, vendGo: 0, vendI: 0, navI: -1, navT: 0, route: "", routeT: 0, botClimb: false, botStop: false, botStraight: false, crateGo: 0, crateX: 0, crateZ: 0, routeBan: 0, jetT: 0, hopT: 0, crateT: 0, stacks: 0,
       detourX: 0, detourZ: 0, painted: 0, captures: 0, splats: 0, hits: 0, longShot: 0, rescues: 0
     }));
     const flags = {};
@@ -549,13 +555,15 @@
     const powers = A.powers.map(([x, z]) => ({ x, z, kind: 0, dark: 0 }));
     const peels = A.peels.map(([x, z]) => ({ x, z, dark: 0 }));
     const gorillas = A.gorillas.map(([x, z]) => ({ hx: x, hz: z, x, y: 0, z, vx: 0, vz: 0, heading: 0, state: 0, t: 0, holding: -1, held: 0, wx: x, wz: z }));
+    // The ghosts: `state` 0 drifting, 1 chasing, 2 gone (faded or popped) till `t` runs out; each keeps to its haunt.
+    const ghosts = (A.ghosts || []).map(([x, z, r]) => ({ hx: x, hz: z, leash: r, x, y: 1, z, heading: 0, state: 0, t: 0, wx: x, wz: z, phase: x * 0.7 + z }));
     // The wallets: `state` 0 is held over its Ooga's head (no fuse yet), 1 thrown, 2 lying on the ground, 3 stuck to
     // the rival it hit (`stuck`, its back); the machines' cool-downs.
     const wallets = Array.from({ length: CONFIG.WALLET_CAP }, () => ({ live: false, state: 0, owner: -1, team: null, look: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0, spin: 0, stuck: -1 }));
     const vends = A.vends.map(([x, z]) => ({ x, z, dark: 0 }));
     const events = Array.from({ length: CONFIG.MAX_EVENTS }, () => ({ type: "", team: null, actor: -1, by: -1, x: 0, y: 0, z: 0 }));
     const weather = { kind: "clear", left: 0, angle: 0, strength: 0, target: 0, x: 0, z: 0 };
-    const sim = { goldLeft: CONFIG.GOLD_GUNS, map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, gorillas, wallets, vends, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
+    const sim = { goldLeft: CONFIG.GOLD_GUNS, map, live: null, team, rival, seed, target, size, skill, bots: SKILLS[skill] || SKILLS.normal, prepS: prep, prep: 0, rng: mulberry32(seed), actors, flags, shots, crates, traps, caches, powers, peels, gorillas, ghosts, wallets, vends, halving: { blue: 0, red: 0 }, cold: { blue: 0, red: 0 }, events, weather, eventCount: 0, score: { blue: 0, red: 0 }, time: 0, flip: false, over: false, winner: null, acc: 0 };
     reset(sim);
     return sim;
   };
@@ -632,6 +640,7 @@
     for (const c of sim.caches) c.dark = 0;
     for (const p of sim.peels) p.dark = 0;
     for (const w of sim.wallets) w.live = false;
+    for (const g of sim.ghosts) { g.x = g.wx = g.hx; g.z = g.wz = g.hz; g.state = 0; g.t = 0; }
     for (const v of sim.vends) v.dark = 0;
     for (const g of sim.gorillas) { g.x = g.wx = g.hx; g.z = g.wz = g.hz; g.vx = g.vz = 0; g.state = G_ROAM; g.t = 0; g.holding = -1; g.held = 0; }
     sim.goldLeft = CONFIG.GOLD_GUNS;
@@ -1053,6 +1062,18 @@
     emit(sim, "wthrow", a.team, id, w.x, w.y, w.z);
     return true;
   };
+  // Set the held device down at the feet, ticking: a trap for whoever comes by.
+  const dropWallet = (sim, id = 0) => {
+    use(sim);
+    const a = sim.actors[id];
+    if (a.wallet < 0 || sim.over) return false;
+    const w = sim.wallets[a.wallet];
+    w.state = 2; w.fuse = CONFIG.WALLET_FUSE; w.x = a.x - Math.sin(a.heading) * 0.6; w.z = a.z - Math.cos(a.heading) * 0.6;
+    w.y = groundAt(w.x, w.z, a.y + 0.3, 0.1); w.vx = w.vy = w.vz = 0;
+    a.wallet = -1;
+    emit(sim, "wdrop", a.team, id, w.x, w.y, w.z);
+    return true;
+  };
   // A blast: it sets off every live device within `WALLET_CHAIN` of one going off, chained, as one blast that widens
   // with the square root of how many and pushes harder with their count. Everyone in reach, either side, is knocked
   // back and sooted, dropping any block and crate. Nobody is splatted: it's harmless, as in the store.
@@ -1077,6 +1098,7 @@
     const r = CONFIG.WALLET_BLAST * Math.sqrt(k), by = first.owner;
     emit(sim, "blast", first.team, by, x, Math.max(0.1, y), z, n);
     for (const g of sim.gorillas) if (g.state !== G_STUN && (g.x - x) ** 2 + (g.z - z) ** 2 < r * r) stunGorilla(sim, g, by);
+    for (const g of sim.ghosts) if (g.state !== 2 && (g.x - x) ** 2 + (g.z - z) ** 2 < r * r) popGhost(sim, g, by);
     for (const a of sim.actors) {
       const dx = a.x - x, dz = a.z - z, dy = a.y + 0.9 - y, d = Math.hypot(dx, dy, dz);
       if (d > r || a.trapped > 0) continue;
@@ -1097,8 +1119,9 @@
       if (!w.live) continue;
       // Held, it waits: the fuse only burns once it has been thrown.
       if (w.state === 0) {
+        // Up in the left hand, beside the head.
         const a = sim.actors[w.owner];
-        w.x = a.x; w.y = a.y + 2.2; w.z = a.z;
+        w.x = a.x + Math.cos(a.heading) * 0.45; w.y = a.y + 1.95; w.z = a.z - Math.sin(a.heading) * 0.45;
         continue;
       }
       w.fuse -= dt;
@@ -1135,10 +1158,60 @@
       if (w.fuse <= 0) blowWallet(sim, w);
     }
   };
+  // ---- Ghosts ----
+  const popGhost = (sim, g, by) => {
+    g.state = 2; g.t = CONFIG.GHOST_POP;
+    emit(sim, "ghostpop", null, by, g.x, g.y + 0.6, g.z);
+  };
+  const stepGhosts = (sim, dt) => {
+    for (const g of sim.ghosts) {
+      g.phase += dt;
+      if (g.state === 2) {
+        if ((g.t -= dt) > 0) continue;
+        // Back at its haunt, out of a grave.
+        g.state = 0; g.x = g.wx = g.hx; g.z = g.wz = g.hz;
+        emit(sim, "ghostback", null, -1, g.x, 1, g.z);
+      }
+      // The nearest Ooga it can reach from its haunt, on the ground floor (ghosts keep low).
+      let best = null, bd = CONFIG.GHOST_SIGHT * CONFIG.GHOST_SIGHT;
+      for (const a of sim.actors) {
+        if (a.splat > 0 || a.trapped > 0 || a.guard > 0 || a.knock > 0 || a.y > 2.4 || a.riding || a.flight) continue;
+        if ((a.x - g.hx) ** 2 + (a.z - g.hz) ** 2 > (g.leash + 3) ** 2) continue;
+        const d = (a.x - g.x) ** 2 + (a.z - g.z) ** 2;
+        if (d < bd) { bd = d; best = a; }
+      }
+      let tx, tz, speed;
+      if (best) {
+        g.state = 1; tx = best.x; tz = best.z; speed = CONFIG.GHOST_CHASE;
+        if (bd < CONFIG.GHOST_R * CONFIG.GHOST_R && Math.abs(best.y + 1 - g.y) < 1.4) {
+          // Boo: the Ooga freezes stiff, its block falls, and the ghost fades away.
+          best.vx = best.vz = 0; best.knock = CONFIG.SPOOK_S; best.spooked = CONFIG.SPOOK_S;
+          if (best.holding) { best.holding = false; emit(sim, "smash", best.team, best.id, best.x, best.y + 2, best.z); }
+          emit(sim, "boo", best.team, best.id, best.x, best.y + 1.2, best.z);
+          dropFlag(sim, best, "knock");
+          g.state = 2; g.t = CONFIG.GHOST_BACK;
+          continue;
+        }
+      } else {
+        g.state = 0; speed = CONFIG.GHOST_SPEED;
+        if ((g.wx - g.x) ** 2 + (g.wz - g.z) ** 2 < 0.4) {
+          const ang = sim.rng() * Math.PI * 2, rr = sim.rng() * g.leash;
+          g.wx = g.hx + Math.sin(ang) * rr; g.wz = g.hz + Math.cos(ang) * rr;
+        }
+        tx = g.wx; tz = g.wz;
+      }
+      // Through walls: no collision at all.
+      const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz) || 1, step = Math.min(d, speed * dt);
+      g.x += dx / d * step; g.z += dz / d * step;
+      g.heading = Math.atan2(dx, dz);
+      g.y = (best ? best.y : 0) + 1 + Math.sin(g.phase * 2.2) * 0.25;
+    }
+  };
   const burst = (sim, s) => {
     const r = TOOLS[s.kind].blast;
     emit(sim, s.kind === "rocket" ? "boom" : "pop", s.team, s.owner, s.x, Math.max(0.05, s.y), s.z);
     for (const g of sim.gorillas) if (g.state !== G_STUN && (g.x - s.x) ** 2 + (g.z - s.z) ** 2 < r * r) stunGorilla(sim, g, s.owner);
+    for (const g of sim.ghosts) if (g.state !== 2 && (g.x - s.x) ** 2 + (g.z - s.z) ** 2 < r * r) popGhost(sim, g, s.owner);
     for (const a of sim.actors) {
       if (a.team === s.team || !open(a)) continue;
       const dy = s.y - (a.y + 0.9);
@@ -1565,7 +1638,7 @@
     const own = sim.flags[a.team], theirs = sim.flags[other(a.team)];
     // Picking up: the rivals' flag from its stand or the ground, or your own team's flag where it was dropped.
     for (const f of [theirs, own]) {
-      if (a.carrying || a.holding || a.wallet >= 0 || f.state === "carried" || (f === own && f.state === "home")) continue;
+      if (a.carrying || a.holding || f.state === "carried" || (f === own && f.state === "home")) continue;
       // Cold storage: a block on its own stand can't be lifted while its side's freeze lasts.
       if (f.state === "home" && sim.cold[f.team] > 0) continue;
       if (f.state === "flying") {
@@ -1729,6 +1802,7 @@
       const free = a.splat <= 0 && a.trapped <= 0;
       let jump = false;
       if (a.knock > 0) a.knock -= dt;
+      if (a.spooked > 0) { a.spooked -= dt; a.vx = a.vz = 0; }
       if (a.soot > 0) a.soot = Math.max(0, a.soot - dt);
       if (a.slip > 0 || a.flight === 1 || a.knock > 0) {
         // No steering, no jumping: the slide (or the catapult's throw) carries on.
@@ -1884,6 +1958,7 @@
     for (let n = 0; n < N; n++) touchFlags(sim, sim.actors[sim.flip ? N - 1 - n : n]);
     for (const t of sim.traps) if (t.dark > 0) t.dark -= dt;
     if (sim.gorillas.length) stepGorillas(sim, dt);
+    if (sim.ghosts.length) stepGhosts(sim, dt);
     stepWallets(sim, dt);
     for (const c of sim.caches) if (c.dark > 0) c.dark = Math.max(0, c.dark - dt);
     for (const p of sim.powers) if (p.dark > 0) p.dark = Math.max(0, p.dark - dt);
@@ -1911,6 +1986,12 @@
         if (dy > -slack && dy < heightOf(a) + slack && (s.x - a.x) ** 2 + (s.z - a.z) ** 2 < tool.r * tool.r) { hit = a; break; }
       }
       // A gorilla in the way takes it, stunned.
+      // A ghost in the way pops.
+      if (!hit && sim.ghosts.length) {
+        let gh = null;
+        for (const g of sim.ghosts) if (g.state !== 2 && Math.abs(s.y - g.y) < 0.9 && (s.x - g.x) ** 2 + (s.z - g.z) ** 2 < 0.8) { gh = g; break; }
+        if (gh) { s.live = false; if (tool.blast) burst(sim, s); popGhost(sim, gh, s.owner); continue; }
+      }
       if (!hit && s.kind !== "net" && s.kind !== "crate") {
         let gHit = null;
         for (const g of sim.gorillas) if (g.state !== G_STUN && s.y < 2.3 && (s.x - g.x) ** 2 + (s.z - g.z) ** 2 < 0.95) { gHit = g; break; }
@@ -1948,7 +2029,7 @@
       tick(sim, CONFIG.STEP, input);
     }
   };
-  BL.blockSim = { WALLETS, takeWallet, throwWallet, nearVend, CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENAS, MAPS, TEAMS, other, create, reset, step, tick, setLive, newBlock, launch, nearCatapult, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
+  BL.blockSim = { WALLETS, takeWallet, throwWallet, dropWallet, nearVend, CONFIG, TOOLS, KINDS, SKILLS, POWERS, ARENAS, MAPS, TEAMS, other, create, reset, step, tick, setLive, newBlock, launch, nearCatapult, fire, drop, pass, build, grab, zip, nearZip, onTower, escape, clearLine, solidAt, resolve, groundAt };
   // The map last stepped (or reset), for the scene's and models' reads.
   Object.defineProperty(BL.blockSim, "ARENA", { get: () => ARENA, enumerable: true });
 })();

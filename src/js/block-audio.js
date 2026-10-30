@@ -165,6 +165,9 @@
       grunt: (k = 1) => blip("sawtooth", 180, 110, 0.01, 0.05, 0.1, 0.14 * k),
       yelp: (k = 1) => blip("square", 500, 220, 0.005, 0.06, 0.2, 0.16 * k),
       free: () => chord([0, 7, 12], 0.05, "triangle", 0.05, 0.18),
+      // A ghost: a wavering whoo, falling; a pop when it's painted away.
+      boo: (k = 1) => { for (let i = 0; i < 3; i++) blip("sine", 620 - i * 60, 240, 0.08, 0.25, 0.4, 0.14 * k, i * 0.12); },
+      ghostPop: (k = 1) => { blip("triangle", 900, 1800, 0.005, 0.04, 0.15, 0.14 * k); splatNoise(0.3 * k, 0.2); },
       // A wallet's fuse: a short beep, higher (`urgency` 0 to 2) as it runs out.
       beep: (k = 1, urgency = 0) => blip("square", 1400 + urgency * 500, 1400 + urgency * 500, 0.002, 0.03, 0.03, 0.08 * k)
     };
